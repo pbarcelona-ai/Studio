@@ -1,0 +1,132 @@
+REVIEW RESULTS
+Files reviewed: studio.html, scripts/studio.py, scripts/make_image.py (also edited, not in review scope: scripts/run_kaggle_model.sh, run_colab_model.sh, make_all.py)
+Errors found and fixed: delete_notebooks GET/POST mismatch (studio.html); tools/ -> scripts/ path (studio.py, run_*_model.sh);
+  unquoted "NOT FOUND" case pattern = bash syntax error (run_kaggle_model.sh:109).
+Warnings: see code_reviews/*_review.txt (UNKNOWN-status cutoff, Qwen untested, status parser unverified against a finished kernel).
+Checks run: py_compile on studio.py and make_image.py; bash -n on all scripts; live API test (GET delete_notebooks = 404, kernel_status validation).
+Not run: JS syntax check (node not installed), an end-to-end Kaggle run.
+Update (qwen_image_21_uc, moss_image_sft_nsfw): py_compile OK; notebooks compile; /api/plan accepts both on Kaggle T4 and blocks Colab T4.
+Update (tab restructure): fixed page-load TypeError (cur() before ST), missing .hidden rule, mode-radio blank cards, Characters /api/fetch slug.
+Checks: JS parse OK; headless Chrome load: 0 errors, 8 tabs switch; stub tests for followJob and Kaggle poller; /api/plan accepts new models.
+Not run: real Kaggle end-to-end, Characters flow, Make the Movie run.
+Update (UI): header/tab overlap fixed; model frames; one sentence per line; 151 missing CSS rule blocks restored. Checked in headless Chrome (dark theme only).
+Update (theme): yellow sun in dark theme; dark palette now follows the button (.dark) instead of the OS setting.
+Update (layout pass): Character List bug fixed (stray populateCharTable call); Generate tab merged into Movies; layout per reference. Browser-tested (7 tabs, messages, no JS errors). Not run: Preview/Generate movie POSTs, real Kaggle run.
+Update (Sync): POST sync route added; real bible.json list format supported; add-only, uses selected series. 13/13 handler tests pass.
+Update (Sync overwrite option): dry run + confirm + merge-style overwrite; 23/23 handler tests pass.
+Update (restructure): projects/books, projects/characters, projects/prompts via scripts/layout.py + migrate_layout.py (applied). 0 files lost; baseline-equal; 33/33 checks. Also fixed: bare script names in job steps, run_*_model.sh working directory, copy_file source resolution.
+Not run: real Kaggle/Colab, book steps, browser check of reference-image copy.
+Update (functional testing): 4 tiers run on a copy of the data: UI 32/32, local film making OK, AI chain OK (expand + bible + sync), real Kaggle run OK (Characters flow, no prefix).
+Fixed: archetype GET endpoints, Save message overwritten, notebookSlug scope, Kaggle names without bible- prefix. Real tree changes: studio.html, scripts/*, docs.
+STATUS: PASS
+
+autofill pass: studio.html autocomplete="off" on 40 fields. STATUS: PASS
+
+
+== remove flux_schnell ==
+Removed FLUX.1-schnell (gated on Hugging Face) from IMAGE_MODELS, MODEL_DEFAULTS, BIG_RAM_MODELS, the negative-prompt branch (studio.py), the make_image.py entry, run script usage text, studio.html notes, docs, and the two flux_schnell notebooks + colab .py. tpu_flux_jax (FLUX.1-dev, TPU) kept. py_compile + bash -n pass. Backups: *.pre_noflux.
+STATUS: PASS
+
+
+== moss_image_sft_nsfw torchao fix ==
+make_image.py: pip cell now also runs `pip uninstall -y -q torchao` (Kaggle torchao 0.10 < peft requirement 0.16 -> ImportError in LoRA injection). Notebook regenerated; py_compile passes. Not re-run on Kaggle.
+STATUS: PASS
+
+
+== Where to Run card moved ==
+studio.html: "Where to Run" card moved from Project tab to the top of Models tab; same markup/ids, div balance 0. Backup studio.html.pre_wheremove.
+STATUS: PASS
+
+
+== rename ==
+studio.html: tab label Project -> Import, card "Project Selection" -> "PDF Import"; messages that named the Project tab now say Import / Models tab (Kaggle username moved to Models earlier). ids/data-tab unchanged. Backup studio.html.pre_import.
+STATUS: PASS
+
+
+== creative tab merged into Movies ==
+studio.html: Creative tab button+panel removed; Creative Direction and Scene Enhancement cards now in Movies tab after Global Parameters (ids unchanged). Palette "Creative Direction" opens Movies and scrolls to it. Number shortcuts 1-6. Design doc says 6 tabs. div balance 0. Backup studio.html.pre_creative.
+STATUS: PASS
+
+
+== Import button ==
+studio.html: new Import card at the end of the Import tab (button, Stop, status, log). Uploads the chosen PDF, then runs the AI book steps (ingest, bible, write, build) via /api/plan + /api/run; no video/audio, nothing goes to Kaggle/Colab. Legacy books rebuild CSVs. Confirm before re-importing. book_write.py: creative_direction now optional (KeyError on fresh bible found by test). Tests: suite6 8/8 incl. real Claude run on a 3-chapter PDF in a throwaway copy. Backups: studio.html.pre_importbtn, book_write.py.pre_optional.
+STATUS: PASS
+
+
+== Cleanup button + Upload PDF removed ==
+studio.html: Cleanup card (button, status, log) after the Import card: /api/cleanup_scan -> list -> confirm -> /api/cleanup_delete (Trash). Upload PDF button and upload() removed; drop zone says "press Import"; Import uploads the dropped file. studio.py: cleanup keeps the 3 newest Bible_*.ipynb (mtime) plus the scripts of kept notebooks (KEEP_NOTEBOOKS); older ones and notebooks/ copies go to the Trash. Tests: suite1 32/32, suite6 incl. cleanup. Backups: studio.html.pre_cleanupbtn, studio.py.pre_cleanup.
+STATUS: PASS
+
+
+== Kaggle notebook cleanup ==
+studio.py: kaggle_cleanup_scan (keep newest 3 by last run; only notebooks matching this tool naming; RUNNING/QUEUED/NEW/UNKNOWN never deleted) and kaggle_cleanup_delete (re-scans, refuses while a job runs, kaggle kernels delete -y per ref, reports failures); routes GET /api/kaggle_cleanup_scan, POST /api/kaggle_cleanup_delete. studio.html: "Clean up Kaggle notebooks" button + accessible Continue/Cancel dialog (askContinue: focus on Cancel, Esc/outside click = cancel, Tab trapped). Tested with a stand-in Kaggle (suite7 7/7: cancel/Esc/outside delete nothing, Continue deletes listed, failure reported, busy and kept untouched); suite1 32/32. No real Kaggle objects deleted. Backups: studio.html.pre_kagglebtn, studio.py.pre_kagglecleanup.
+STATUS: PASS
+
+
+== log width ==
+studio.html: #importLog and #cleanupLog get class "fill" (stack items shrank to content). Measured in headless Chrome: both equal the Single Prompts log width and the card content width; a 900-char line does not widen them. Backup studio.html.pre_logwidth.
+STATUS: PASS
+
+
+== more text-to-video / text-to-image models ==
+make_video.py: +wan22_ti2v_5b, wan22_t2v_a14b(+_nsfw, GGUF+LoRA pair), hunyuan_video(+_nsfw, GGUF+LoRA), cogvideox_5b; per-model pip. make_image.py: +flux1_schnell, flux1_dev, sd35_large, sd35_large_turbo (public ungated copies + GGUF), flux2_klein_4b, chroma1_hd, qwen_image_21_nsfw_lora, noobai_xl, realvisxl_v5, illustrious_xl. studio.py: lists, VIDEO_GROUPS/IMAGE_GROUPS (sent in /api/status), defaults, BIG_RAM, sizing rules, wan_t4_check per model, TOOL_SLUG_RE for new notebook names. studio.html: grouped Models tab + optgroups + MODEL_NOTES + blurbs. run_colab_model.sh: installs gguf peft safetensors. Checks: repos/files/ungated verified via HF API; diffusers classes+call args verified (0.35.2 + source of main); Hunyuan and Wan LoRAs converted with diffusers code and all layers map; all notebooks compile; server plans accepted for all 16; UI suites 1,7,8,9 pass (32/7/2/5). NOT run on a GPU. Left out: MiniMax-H3(+Turbo LoRA), Mochi, I2VGen-XL, Retrocool collection (not found). Backups: *.pre_newmodels.
+STATUS: PASS
+
+2026-11-04 torchao fix in make_video.py/make_image.py (wan22/hunyuan/qwen LoRA notebooks): PASS
+
+2026-11-04 vae tiling fix make_video.py: PASS
+
+2026-11-04 studio.html model note layout + only-typed-text prompts: PASS
+
+2026-11-04 nsfw model/notebook rename to _lora: PASS
+
+2026-11-04 studio.html Single Prompts follows Models tab: PASS
+
+2026-11-04 wan 14B attention-size fix: PASS
+
+2026-11-04 autofill hardening: PASS
+
+2026-11-04 safari autofill + own suggestion list: PASS
+
+2026-11-05 scripts/regress_kaggle.py (new): PASS
+
+2026-11-05 make_image.py enable_vae_slicing fix: PASS
+
+2026-11-05 scripts/run_regression.sh (new) + regress_kaggle.py fail-fast: PASS
+
+2026-11-05 run_kaggle_model.sh push check/retry: PASS
+
+2026-11-05 regress_kaggle.py single test prompt: PASS
+
+2026-11-05 sd35_large T4 attention fix: PASS
+
+2026-11-05 qwen torchvision pip fix: PASS
+
+2026-11-05 qwen torchaudio pip fix: PASS
+
+2026-11-05 qwen sequential offload: PASS
+
+2026-11-05 moss_sharpness_slider as LoRA: PASS
+
+2026-11-05 qwen_image_21_uc LoRA mirror: PASS
+
+[note 2026-11-05] qwen_image_21_uc: kernel completed and produced image-0018.png; the harness reported a failure only because run_kaggle_model.sh was edited while running (bash reads scripts incrementally). Do not edit the run scripts during a regression run.
+
+2026-11-05 make_video.py HF_TOKEN secret cell: PASS
+
+2026-11-05 Hugging Face run option (hf_spaces.py, run_hf_space.py/.sh, studio.py, studio.html): PASS
+
+2026-11-05 make_video.py Wan 14B RAM fix: PASS (wan22_t2v_a14b regression PASS)
+2026-11-05 make_image.py / studio.py batch 1 images: PASS (static); Kaggle regression running
+
+2026-11-06 Kaggle regression: 34 of 34 models PASS (images 22 incl. batch 1, video 9, audio 3). Fixes: wan14b host RAM, z_image offload, hunyuan size, cogvideox_5b fp16 attention. PASS
+
+2026-11-06 audio batch 1 (qwen3_tts, chatterbox_turbo) + audio registry: PASS. Kaggle regression: 36 of 36 PASS.
+
+[2026-11-06] scripts/regress_kaggle.py: regression_prompt file support - PASS
+
+[2026-11-06] studio.html: Regression test card on Models tab - PASS (headless suite17 PASS)
+
+[2026-11-06] make_video.py + studio.py: hunyuan_video_15 added - PASS (static review; Kaggle regression pending)
+
+[2026-11-06] scripts/make_icon.py (new) + create_app_bundle.sh icon step - PASS (py_compile OK; icon checked visually; installed in the app)

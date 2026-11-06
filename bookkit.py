@@ -1,0 +1,338 @@
+"""Shared helpers for the new-book pipeline (book_ingest.py, book_bible.py, book_write.py, book_build.py).
+
+Everything for a book lives in projects/<slug>/ :
+  source/<name>.pdf      the uploaded PDF
+  source_text.txt        extracted text
+  chapters/chapter-NNN.txt, chapters.json
+  bible.json             style, characters (visual tokens + voice), locations
+  overrides.json         optional {"5": {"shots": 10}}  per-chapter shot counts
+  scripts/chapter-NNN.json   what Claude wrote for each chapter
+  all_shots.csv, all_chapters.csv, audio_shots.csv, audio_chapters.csv, movies.json   (built from the above)
+  videos/, audio/, films/
+"""
+import csv, json, math, os, re, shutil, subprocess, tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+PROJECTS = ROOT / "projects"
+SLUG_RE = re.compile(r"^[a-z0-9_]{2,40}$")
+
+# Kokoro voices by role, used when a character needs a voice of its own.
+VOICE_MAP = {"narrator": "bm_george", "male": "am_michael", "female": "af_bella", "elder": "bm_lewis",
+             "deity": "bm_lewis", "child": "af_sky", "villain": "am_adam"}
+WORDS_PER_SECOND = 2.5          # spoken narration
+CLIP_SECONDS = 4.0              # LTX-Video clip (97 frames at 24 fps)
+NEG_TAIL = ("photorealistic epic period film, cinematic natural lighting, realistic faces and anatomy, "
+            "no text, no subtitles, no logos, no watermark, no cartoon style")
+
+
+def slugify(s):
+    return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")[:40] or "book"
+
+
+def project_dir(slug):
+    if not SLUG_RE.match(slug):
+        raise ValueError(f"bad project name {slug!r}: use 2-40 lowercase letters, digits or underscores")
+    return PROJECTS / slug
+
+
+def words(text):
+    return len(text.split())
+
+
+def strip_verse_numbers(text):
+    """Drop inline verse/section numbers ("1 And it was ... 2 And in ...") that a voice would read aloud."""
+    text = re.sub(r"^\s*\d{1,3}[.:]?\s+(?=[A-Z“\"'‘(])", "", text)
+    return re.sub(r"(?<=[.!?;:”\"'’])\s+\d{1,3}[.:]?\s+(?=[A-Z“\"'‘(])", " ", text)
+
+
+def sentences(text):
+    parts = re.split(r"(?<=[.!?])[\"'”’)]*\s+", text.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
+def read_json(path, default=None):
+    path = Path(path)
+    return json.loads(path.read_text()) if path.exists() else default
+
+
+def write_json(path, data):
+    Path(path).write_text(json.dumps(data, indent=1, ensure_ascii=False))
+
+
+# ------------------------------------------------------------------ Claude Code, headless
+_CLEAN_DROP = ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "VIRTUAL_ENV", "__PYVENV_LAUNCHER__")
+COST = {"usd": 0.0, "calls": 0}
+
+
+def _env():
+    env = {k: v for k, v in os.environ.items() if k not in _CLEAN_DROP}
+    parts = [d for d in env.get("PATH", "").split(":") if d and "oss-cad-suite" not in d]
+    env["PATH"] = ":".join([str(Path.home() / ".local/bin"), "/usr/local/bin", "/opt/homebrew/bin"] + parts)
+    return env
+
+
+def extract_json(text):
+    """First balanced JSON object in text (Claude sometimes wraps it in a code fence or adds a sentence)."""
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("no JSON object in the reply")
+    depth, in_str, esc = 0, False, False
+    for i in range(start, len(text)):
+        c = text[i]
+        if in_str:
+            esc = (c == "\\") and not esc
+            if c == '"' and not esc:
+                in_str = False
+            elif c != "\\":
+                esc = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return json.loads(text[start:i + 1])
+    raise ValueError("JSON object is cut off")
+
+
+# engine name -> (command, family). `claude` and `fcc-claude` are the same CLI (fcc- routes it through the Free Claude
+# Code proxy); `codex` and `fcc-codex` are the Codex CLI the same way.
+ENGINES = {"claude": ("claude", "claude"), "fcc-claude": ("fcc-claude", "claude"),
+           "codex": ("codex", "codex"), "fcc-codex": ("fcc-codex", "codex")}
+
+
+def llm_json(prompt, system, model=None, engine="claude", validate=None, retries=2):
+    """One non-interactive call to a coding-agent CLI that must return a JSON object.
+
+    claude / fcc-claude: `claude -p` with a tiny custom system prompt, no tools, no MCP servers and no settings files,
+    which keeps each call at a few hundred tokens of overhead instead of ~30,000.
+    codex / fcc-codex: `codex exec` in an empty temp folder with a read-only sandbox; the reply is read from the
+    --output-last-message file.
+    `model` blank/None/"default" means the tool's own default (for `claude` itself that is sonnet).
+    `validate(data)` may raise ValueError; the error text is sent back for a corrected reply.
+    """
+    if engine not in ENGINES:
+        raise RuntimeError(f"unknown engine {engine!r}; use one of {sorted(ENGINES)}")
+    cmd_name, family = ENGINES[engine]
+    exe = shutil.which(cmd_name, path=_env()["PATH"])
+    if not exe:
+        raise RuntimeError(f"the `{cmd_name}` command was not found")
+    model = (model or "").strip()
+    if model.lower() == "default":
+        model = ""
+    if engine == "claude" and not model:
+        model = "sonnet"
+    feedback, last = "", None
+    for _ in range(retries + 1):
+        if family == "claude":
+            cmd = [exe, "-p"] + (["--model", model] if model else []) + [
+                "--tools", "", "--no-session-persistence", "--output-format", "json", "--system-prompt", system,
+                "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", "", "--disable-slash-commands"]
+            r = subprocess.run(cmd, input=prompt + feedback, text=True, capture_output=True, env=_env(), timeout=900)
+            if r.returncode != 0:
+                last = RuntimeError(f"{cmd_name} exited {r.returncode}: {(r.stderr or r.stdout)[:300]}")
+                feedback = ""
+                continue
+            outer = json.loads(r.stdout)
+            COST["usd"] += float(outer.get("total_cost_usd") or 0); COST["calls"] += 1
+            if outer.get("is_error"):
+                last = RuntimeError(f"{cmd_name} error: {str(outer.get('result'))[:300]}")
+                continue
+            text = outer.get("result", "")
+        else:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "last.txt"
+                cmd = [exe, "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-o", str(out)] + \
+                      (["-m", model] if model else []) + ["-"]
+                r = subprocess.run(cmd, input=f"{system}\n\n{prompt}{feedback}", text=True, capture_output=True,
+                                   env=_env(), cwd=tmp, timeout=900)
+                text = out.read_text() if out.exists() else ""
+            COST["calls"] += 1
+            if r.returncode != 0 or not text.strip():
+                last = RuntimeError(f"{cmd_name} exec failed ({r.returncode}): {(r.stderr or r.stdout)[-300:]}")
+                feedback = ""
+                continue
+        try:
+            data = extract_json(text)
+            if validate:
+                validate(data)
+            return data
+        except (ValueError, json.JSONDecodeError) as e:
+            last = e
+            feedback = f"\n\nYour previous reply was rejected: {e}. Reply again with ONLY the corrected JSON object."
+    raise RuntimeError(f"{engine} did not return usable JSON after {retries + 1} tries: {last}")
+
+
+claude_json = llm_json          # old name, kept for any script that still imports it
+
+
+def cost_note():
+    """', $0.05 at list price' when the engine reports a cost (claude does; codex does not), else ''."""
+    return f", ${COST['usd']:.2f} at list price" if COST["usd"] else ""
+
+
+# ------------------------------------------------------------------ shot allocation and prompt text
+def shot_count(chapter_words, words_per_shot, lo, hi, override=None):
+    if override:
+        return max(1, int(override))
+    return max(lo, min(hi, math.ceil(chapter_words / max(words_per_shot, 1))))
+
+
+def slice_text(text, n):
+    """Cut text into n contiguous slices at sentence boundaries with roughly equal word counts."""
+    sents = sentences(text)
+    n = max(1, min(n, len(sents)))
+    total = sum(words(s) for s in sents)
+    out, cur, acc, target = [], [], 0, total / n
+    for i, s in enumerate(sents):
+        cur.append(s); acc += words(s)
+        left_sents = len(sents) - i - 1
+        left_slices = n - len(out) - 1
+        if len(out) < n - 1 and (acc >= target or left_sents == left_slices):
+            out.append(" ".join(cur)); cur, acc = [], 0
+    if cur:
+        out.append(" ".join(cur))
+    return out
+
+
+def compose_prompt(visual, characters, bible, limit=1000):
+    """Visual description + the bible's exact character tokens + style + creative direction, kept under the model's prompt window."""
+    known = {c["name"].lower(): c for c in bible.get("characters", [])}
+    tokens = []
+    for n in characters:
+        c = known.get(str(n).lower())
+        if c:
+            tok = re.sub(rf"^{re.escape(c['name'])}\s*[:,-]\s*", "", c["token"], flags=re.I)   # don't repeat the name
+            tokens.append(f"{c['name'].upper()}: {tok}")
+    base = visual.strip().rstrip(".")
+    style = (bible.get("visual_style") or "").strip().rstrip(".")
+    creative_dir = (bible.get("creative_direction") or "").strip().rstrip(".")
+    for tail in (f"{style}, {creative_dir}, {NEG_TAIL}", f"{style}, {NEG_TAIL}", NEG_TAIL, ""):
+        parts = [base] + tokens + ([tail] if tail else [])
+        text = ", ".join(parts)
+        if len(text) <= limit:
+            return text
+    while tokens and len(", ".join([base] + tokens)) > limit:
+        tokens.pop()
+    return (", ".join([base] + tokens))[:limit].rsplit(" ", 1)[0]
+
+
+# ------------------------------------------------------------------ movies: ~N minutes each, always ending on a chapter end
+def read_csv(path):
+    return list(csv.DictReader(open(path, newline=""))) if Path(path).exists() else []
+
+
+def estimate_seconds(narration):
+    """Length of a shot once narration is stretched to fit: the clip, or the speech plus padding if that is longer."""
+    return max(CLIP_SECONDS, words(narration or "") / WORDS_PER_SECOND + 0.4)
+
+
+def group_chapters(chapters, target_seconds):
+    """chapters: [{label, rows:(first,last), seconds}] in order -> list of movies (lists of chapters).
+
+    Each movie ends at a chapter end. Among the possible end points it takes the one whose total is closest to the
+    target (never ending a movie early at a point more than 25% over target unless one chapter alone is longer than
+    that). A short tail (< 40% of target) is folded into the previous movie.
+    """
+    movies, i = [], 0
+    while i < len(chapters):
+        total, best, j = 0.0, None, i
+        while j < len(chapters):
+            total += chapters[j]["seconds"]
+            if best is None or abs(total - target_seconds) < abs(best[1] - target_seconds):
+                best = (j, total)
+            if total > target_seconds * 1.25:
+                break
+            j += 1
+        movies.append(chapters[i:best[0] + 1])
+        i = best[0] + 1
+    if len(movies) > 1 and sum(c["seconds"] for c in movies[-1]) < 0.4 * target_seconds:
+        movies[-2] += movies.pop()
+    return movies
+
+
+def build_movies(pdir, minutes=10.0):
+    """Write movies.json for a project: one plan for 'shots' mode and one for 'chapters' mode."""
+    pdir = Path(pdir)
+    plan = {"minutes": minutes}
+    for mode, shots_csv, audio_csv in (("shots", "all_shots.csv", "audio_shots.csv"),
+                                       ("chapters", "all_chapters.csv", "audio_chapters.csv")):
+        prompts, audio = read_csv(pdir / shots_csv), read_csv(pdir / audio_csv)
+        if not prompts:
+            continue
+        chapters, order = {}, []
+        for i, row in enumerate(prompts, start=1):
+            narr = audio[i - 1]["narration"] if i - 1 < len(audio) else ""
+            c = chapters.setdefault(row["chapter"], {"label": row["chapter"], "rows": [i, i], "seconds": 0.0})
+            c["rows"][1] = i
+            c["seconds"] += estimate_seconds(narr)
+            if row["chapter"] not in order:
+                order.append(row["chapter"])
+        groups = group_chapters([chapters[k] for k in order], minutes * 60)
+        plan[mode] = [{"id": n, "chapters": [c["label"] for c in g],
+                       "first_chapter": g[0]["label"], "last_chapter": g[-1]["label"],
+                       "rows": [g[0]["rows"][0], g[-1]["rows"][1]],
+                       "clips": g[-1]["rows"][1] - g[0]["rows"][0] + 1,
+                       "est_seconds": round(sum(c["seconds"] for c in g))}
+                      for n, g in enumerate(groups, start=1)]
+    write_json(pdir / "movies.json", plan)
+    return plan
+
+
+# ------------------------------------------------------------------ your own edits to a scene's prompts
+# projects/<name>/prompt_edits.json:  {"<chapter>#<shot>": {"chapter":..., "shot":..., "updated":...,
+#     "fields": {"prompt": {"original": "...", "edited": "..."}, "narration": {...}, "sfx": {...}, "music": {...}}}}
+# The CSVs are rebuilt from the book text/markdown whenever the prompts are rebuilt, so edits live here and are re-applied after each
+# rebuild (legacy_extract.py and book_build.py call apply_prompt_edits at the end).
+EDIT_FIELDS = {"prompt": ("all_shots.csv", "all_chapters.csv"), "narration": ("audio_shots.csv", "audio_chapters.csv"),
+               "sfx": ("audio_shots.csv", "audio_chapters.csv"), "music": ("audio_shots.csv", "audio_chapters.csv")}
+
+
+def _write_csv(path, rows):
+    if not rows:
+        return
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+
+
+def _narration_lines(row, text):
+    """Replace the spoken text of a row; the first line's speaker (and voice) is kept."""
+    try:
+        old = json.loads(row.get("lines_json") or "[]")
+    except ValueError:
+        old = []
+    first = old[0] if old else ["NARRATOR"]
+    return json.dumps([[first[0], text] + ([first[2]] if len(first) > 2 else [])], ensure_ascii=False)
+
+
+def set_scene_field(pdir, chapter, shot, field, value):
+    """Write one field of one scene into every CSV that carries it. Returns how many rows were changed."""
+    pdir, changed = Path(pdir), 0
+    for name in EDIT_FIELDS[field]:
+        rows = read_csv(pdir / name)
+        hit = False
+        for r in rows:
+            if r.get("chapter") == chapter and str(r.get("shot")) == str(shot) and r.get(field) != value:
+                r[field] = value
+                if field == "narration" and "lines_json" in r:
+                    r["lines_json"] = _narration_lines(r, value)
+                hit = True; changed += 1
+        if hit:
+            _write_csv(pdir / name, rows)
+    return changed
+
+
+def apply_prompt_edits(pdir):
+    """Re-apply every saved edit (after the CSVs were rebuilt). Returns the number of rows changed."""
+    pdir = Path(pdir)
+    edits = read_json(pdir / "prompt_edits.json", {})
+    n = 0
+    for e in edits.values():
+        for field, v in e.get("fields", {}).items():
+            n += set_scene_field(pdir, e["chapter"], e["shot"], field, v["edited"])
+    return n

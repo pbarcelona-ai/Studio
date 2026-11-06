@@ -1,0 +1,71 @@
+# Keep only the source: *.html, *.py and the shell scripts the Studio calls. Everything the Studio or the model scripts GENERATE is ignored.
+
+# Python caches, wherever they are
+__pycache__/
+*.py[cod]
+
+# macOS / editors
+.DS_Store
+*.swp
+
+# Generated notebooks and the per-model scripts written by scripts/make_*.py
+*.ipynb
+.ipynb_checkpoints/
+/colab_generate_*.py
+
+# Generated pictures, clips, sound and archives
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.tar
+*.zip
+*.gguf
+*.safetensors
+
+# Project data, books, downloads and run output (all generated or user-supplied)
+/projects/
+/books/
+/my_downloads/
+/notebooks/
+/graphify-out/
+/studio_orig/
+
+# Logs, session state and regression reports (regression_prompt.txt is an input and is kept)
+*.log
+.studio_session.json
+/regression_kaggle_report.*
+/test_*.json
+/20*-local-command-*.txt
+
+# Code review reports written by the review pass
+/code_reviews/
+
+# Documentation folder
+/docs/
+
+# Documents that are not source
+*.pdf
+
+# Backups and copies made while editing
+*.pre_*
+*.backup
+*.backup[0-9]*
+*.backup.*
+*.backuppb
+* copy*
+*.oldprompt.json
+
+# Local Claude Code settings and secrets
+.claude/settings.local.json
+.env
+*.env

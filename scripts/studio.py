@@ -1,0 +1,2111 @@
+#!/usr/bin/env python3
+"""Local control page for the Bible film pipeline.
+
+    cd /Users/paulbarcelona/Downloads/Bible && python3 studio.py
+
+Opens http://127.0.0.1:8765/?t=<token>. Pick a book (project), optionally upload a new PDF, tick what to do, and this
+server runs the project's own scripts one after another: book_ingest.py, book_bible.py, book_write.py, book_build.py
+(prompts written by Claude Code), run_kaggle_model.sh / run_colab_model.sh (video and audio on a free GPU), then
+merge_videos.py / mix_film.py (one film per ~10-minute movie).
+Safety: listens on 127.0.0.1 only, every API call needs the random token printed at start-up, and only whitelisted
+scripts with validated arguments can run (no shell, no free-form commands).
+"""
+import argparse, csv, io, json, mimetypes, os, re, secrets, shutil, signal, subprocess, threading, time, webbrowser
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+from bookkit import EDIT_FIELDS, SLUG_RE, build_movies, llm_json, read_json, set_scene_field, slugify, write_json
+import character_tokens
+import hf_spaces
+import layout
+from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
+
+ROOT = Path(__file__).resolve().parent.parent
+PROJECTS = ROOT / "projects"
+LIBRARY = ROOT / "books"          # every book PDF lives here; the page lists them
+SESSION_FILE = ROOT / ".studio_session.json"  # persistent session storage
+
+# Session persistence: try to load existing session, otherwise generate new
+def load_or_create_session():
+    """Load existing session or create new one."""
+    if SESSION_FILE.exists():
+        try:
+            import json
+            session = json.loads(SESSION_FILE.read_text())
+            # Verify the session is still valid (server might be running on that port)
+            if "token" in session and "port" in session:
+                return session["token"], session["port"]
+        except Exception:
+            pass
+    # Create new session
+    return secrets.token_urlsafe(16), None
+
+TOKEN, SESSION_PORT = load_or_create_session()
+
+VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_video", "cogvideox", "cogvideox_5b",
+                "wan22_t2v_a14b_lora", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan"]     # tpu_wan = Kaggle TPU experiment
+# How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
+VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
+                ("CogVideoX", ["cogvideox", "cogvideox_5b"]), ("Uncensored (adult content)", ["wan22_t2v_a14b_lora", "hunyuan_video_lora"]),
+                ("TPU (Kaggle only)", ["tpu_wan"])]
+# Audio models: name -> (role, label, short note). The role decides which sound it makes (narration / sfx / music) and the file prefix it writes.
+AUDIO_MODELS = {
+    "kokoro": ("narration", "Kokoro", "fast, light narration voices"),
+    "qwen3_tts": ("narration", "Qwen3-TTS 1.7B", "newer, more natural voices (Jan 2026)"),
+    "chatterbox_turbo": ("narration", "Chatterbox-Turbo", "natural voice, understands tags like [chuckle]"),
+    "mmaudio": ("sfx", "MMAudio", "experimental"),
+    "musicgen": ("music", "MusicGen", "15 s background score"),
+}
+AUDIO_KINDS = list(AUDIO_MODELS)
+AUDIO_ROLE_TITLES = {"narration": "Narration", "sfx": "Sound effects", "music": "Music"}
+IMAGE_MODELS = ["sdxl_turbo", "sdxl", "sd35_large", "sd35_large_turbo", "flux1_schnell", "flux1_dev", "flux2_klein_4b", "qwen_image_21",
+                "moss_image_sft", "moss_image_base", "moss_sharpness_slider",
+                "qwen_image_21_uc", "qwen_image_21_lora", "moss_image_sft_lora", "chroma1_hd", "noobai_xl", "realvisxl_v5", "illustrious_xl",
+                "z_image_turbo", "z_image", "ernie_image_turbo", "qwen_image_21_turbo",
+                "tpu_mage_flow", "tpu_flux_jax"]                          # the tpu_ ones run only on Kaggle's TPU
+IMAGE_GROUPS = [("Stable Diffusion", ["sdxl_turbo", "sdxl", "sd35_large", "sd35_large_turbo"]), ("FLUX", ["flux1_schnell", "flux1_dev", "flux2_klein_4b"]),
+                ("Qwen-Image", ["qwen_image_21", "qwen_image_21_turbo"]), ("Z-Image", ["z_image_turbo", "z_image"]), ("ERNIE-Image", ["ernie_image_turbo"]), ("MOSS-Image", ["moss_image_sft", "moss_image_base", "moss_sharpness_slider"]),
+                ("Uncensored (adult content)", ["qwen_image_21_uc", "qwen_image_21_lora", "moss_image_sft_lora", "chroma1_hd", "noobai_xl", "realvisxl_v5", "illustrious_xl"]),
+                ("TPU (Kaggle only)", ["tpu_mage_flow", "tpu_flux_jax"])]
+# Defaults baked into each generator script; shown as placeholders on the page. "locked" = fields the model ignores (greyed out).
+MODEL_DEFAULTS = {
+    "ltx_video": {"width": 768, "height": 320, "frames": 97, "steps": 40, "guidance": 3.0},
+    "wan": {"width": 512, "height": 288, "frames": 33, "steps": 30, "guidance": 5.0},
+    "cogvideox": {"width": 720, "height": 480, "frames": 49, "steps": 50, "guidance": 6.0, "locked": ["width", "height", "frames"]},
+    "cogvideox_5b": {"width": 720, "height": 480, "frames": 49, "steps": 50, "guidance": 6.0, "locked": ["width", "height", "frames"]},
+    "wan22_ti2v_5b": {"width": 704, "height": 384, "frames": 33, "steps": 30, "guidance": 5.0},
+    "wan22_t2v_a14b": {"width": 448, "height": 256, "frames": 25, "steps": 30, "guidance": 4.0},
+    "wan22_t2v_a14b_lora": {"width": 448, "height": 256, "frames": 25, "steps": 30, "guidance": 4.0},
+    "hunyuan_video": {"width": 480, "height": 272, "frames": 33, "steps": 30, "guidance": 6.0, "locked": ["negative"]},
+    "hunyuan_video_lora": {"width": 480, "height": 272, "frames": 33, "steps": 30, "guidance": 6.0, "locked": ["negative"]},
+    "hunyuan_video_15": {"width": 640, "height": 368, "frames": 33, "steps": 30, "guidance": 1.0, "locked": ["negative", "guidance"]},
+    "tpu_wan": {"width": 832, "height": 480, "frames": 33, "steps": 30, "guidance": 5.0, "locked": ["width", "height", "frames"]},   # same settings for every row
+    "tpu_mage_flow": {"width": 512, "height": 512, "steps": 4, "guidance": 0.0, "locked": ["height", "steps", "guidance", "negative"]},   # width picks 512/768/1024
+    "tpu_flux_jax": {"width": 512, "height": 512, "steps": 20, "guidance": 4.0, "locked": ["negative"]},
+    "sdxl_turbo": {"width": 512, "height": 512, "steps": 4, "guidance": 0.0},
+    "sdxl": {"width": 1024, "height": 1024, "steps": 30, "guidance": 7.0},
+    "sd35_large": {"width": 768, "height": 768, "steps": 28, "guidance": 3.5},
+    "sd35_large_turbo": {"width": 1024, "height": 1024, "steps": 4, "guidance": 0.0},
+    "flux1_schnell": {"width": 1024, "height": 1024, "steps": 4, "guidance": 0.0, "locked": ["negative", "guidance"]},
+    "flux1_dev": {"width": 1024, "height": 1024, "steps": 28, "guidance": 3.5, "locked": ["negative"]},
+    "flux2_klein_4b": {"width": 1024, "height": 1024, "steps": 4, "guidance": 1.0, "locked": ["negative"]},
+    "chroma1_hd": {"width": 1024, "height": 1024, "steps": 40, "guidance": 3.0},
+    "qwen_image_21_lora": {"width": 1024, "height": 1024, "steps": 40, "guidance": 0.0, "locked": ["negative", "guidance"]},
+    "noobai_xl": {"width": 1024, "height": 1024, "steps": 28, "guidance": 5.0},
+    "realvisxl_v5": {"width": 1024, "height": 1024, "steps": 30, "guidance": 5.0},
+    "illustrious_xl": {"width": 1024, "height": 1024, "steps": 28, "guidance": 5.5},
+    "z_image_turbo": {"width": 1024, "height": 1024, "steps": 9, "guidance": 0.0, "locked": ["negative", "guidance"]},
+    "z_image": {"width": 1024, "height": 1024, "steps": 50, "guidance": 4.0},
+    "ernie_image_turbo": {"width": 1024, "height": 1024, "steps": 8, "guidance": 1.0, "locked": ["negative"]},
+    "qwen_image_21_turbo": {"width": 1024, "height": 1024, "locked": ["steps", "negative", "guidance"]},
+    "qwen_image_21": {"width": 1024, "height": 1024, "steps": 40, "guidance": 0.0, "locked": ["negative", "guidance"]},
+    "qwen_image_21_uc": {"width": 1024, "height": 1024, "steps": 40, "guidance": 0.0, "locked": ["negative", "guidance"]},
+    "moss_image_sft_lora": {"width": 1024, "height": 1024, "steps": 30, "guidance": 3.0},
+    "moss_image_sft": {"width": 1024, "height": 1024, "steps": 50, "guidance": 3.0},
+    "moss_image_base": {"width": 1024, "height": 1024, "steps": 50, "guidance": 3.0},
+    "moss_sharpness_slider": {"width": 1024, "height": 1024, "steps": 50, "guidance": 3.0},
+}
+LEGACY = {"adam_eve", "enoch"}        # imported production bibles; rebuilt with legacy_extract.py
+# Suggestions only: the page lets you type ANY model name that `claude --model` accepts (aliases or full IDs).
+CLAUDE_MODELS = ["sonnet", "opus", "haiku", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
+
+# Character series mapping: project slug -> character series name
+# This determines which character token set to use for a project
+CHARACTER_SERIES = {
+    "adam_eve": "bible",
+    "enoch": "bible",
+    # Add more mappings as new series are added
+    # "mcnally_1": "mcnally",
+    # "mcnally_2": "mcnally",
+}
+
+def get_character_series(slug):
+    """Get the character series for a project slug."""
+    return CHARACTER_SERIES.get(slug, slug)  # default to project slug if not mapped
+MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{1,79}$")
+GPUS = {  # "paid"/"restricted" are warnings only; Kaggle's own docs say some accelerators are not open to everyone
+    "colab": [("T4", "T4 (free tier, often unavailable)"), ("L4", "L4 (paid)"), ("A100", "A100 (paid)"), ("H100", "H100 (paid)")],
+    "kaggle": [("NvidiaTeslaT4", "T4 x2 (free)"), ("NvidiaL4", "L4 (may be restricted)"),
+               ("NvidiaTeslaA100", "A100 (may be restricted)"), ("NvidiaH100", "H100 (may be restricted)"),
+               ("TpuV5E8", "TPU v5e-8 (experimental; only for tpu_wan)")],
+    "huggingface": [("ZeroGPU", "ZeroGPU: Hugging Face's shared GPUs (free daily quota)")],     # runs a public Space, only for the models in hf_spaces.py
+}
+MAX_UPLOAD = 300 * 1024 * 1024
+
+# Run jobs in a clean environment: the OSS CAD Suite shell setup sets PYTHONHOME and puts its own Python first
+# on PATH, which breaks uv-managed Pythons. Drop those so `uv run` and `python3` behave normally.
+_PATH = [d for d in os.environ.get("PATH", "").split(":") if d and "oss-cad-suite" not in d]
+ENV_PATH = ":".join([f"{Path.home()}/.local/bin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"] + _PATH)
+DROP_ENV = ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "PYTHONSTARTUP", "VIRTUAL_ENV", "__PYVENV_LAUNCHER__")
+
+
+def clean_env():
+    env = {k: v for k, v in os.environ.items() if k not in DROP_ENV and "OSS_CAD" not in k}
+    env.update({"PATH": ENV_PATH, "PYTHONUNBUFFERED": "1"})
+    return env
+
+
+# ---------------------------------------------------------------- project discovery
+def count_files(folder, pattern):
+    return len(list(folder.glob(pattern))) if folder.exists() else 0
+
+
+def library_files():
+    LIBRARY.mkdir(exist_ok=True)
+    return sorted(p.name for p in LIBRARY.glob("*.pdf"))
+
+
+def pdf_choices(slug):
+    """PDFs a project can be read from: the matching file in books/ first, then PDFs already copied to its source/."""
+    out = [{"value": f"books/{f}", "label": f"books/{f}"} for f in library_files() if slugify(Path(f).stem) == slug]
+    out += [{"value": f"books/{f}", "label": f"books/{f} (other)"} for f in library_files() if slugify(Path(f).stem) != slug]
+    src = pdir(slug) / "source"
+    out += [{"value": p.name, "label": f"{layout.rel(slug)}/source/{p.name}"} for p in sorted(src.glob("*.pdf"))] if src.exists() else []
+    return out
+
+
+def project_info(slug):
+    d = pdir(slug)
+    chapters = read_json(d / "chapters.json", {})
+    if (d / "all_shots.csv").exists() and not (d / "movies.json").exists():
+        build_movies(d, 10)
+    movies = read_json(d / "movies.json", {})
+
+    # Sync character tokens from bible.json
+    series = get_character_series(slug)
+    character_tokens.sync_characters_from_project(slug)
+    char_list = character_tokens.list_characters(series)
+
+    return {
+        "slug": slug, "legacy": slug in LEGACY, "not_started": not d.exists(), "pdf_choices": pdf_choices(slug),
+        "pdfs": sorted(p.name for p in (d / "source").glob("*.pdf")) if (d / "source").exists() else [],
+        "chapters": len(chapters.get("chapters", [])), "split_method": chapters.get("method"),
+        "bible": (d / "bible.json").exists(), "scripts": count_files(d / "scripts", "chapter-*.json"),
+        "built": (d / "all_shots.csv").exists(),
+        "character_series": series,
+        "characters": char_list,
+        "movies": {"shots": movies.get("shots", []), "chapters": movies.get("chapters", [])},
+        "have": {
+            **{f"videos/{m}": count_files(d / "videos" / m, "shot-*.mp4") for m in VIDEO_MODELS},
+            **{f"videos/{m}_chapters": count_files(d / "videos" / f"{m}_chapters", "shot-*.mp4") for m in VIDEO_MODELS},
+            **{f"audio/{k}": count_files(d / "audio" / k, "*.wav") for k in AUDIO_KINDS},
+            **{f"audio/{k}_chapters": count_files(d / "audio" / f"{k}_chapters", "*.wav") for k in AUDIO_KINDS},
+            "films": count_files(d / "films", "*.mp4"),
+        },
+    }
+
+
+FCC_CATALOG = Path.home() / ".fcc" / "codex-model-catalog.json"
+NOT_CHAT = ("guard", "safety", "embed", "parse", "translate", "topic-control", "calibration", "diffusion")
+
+
+def codex_models():
+    """Model names from the Free Claude Code catalog that look like chat/text models (suggestions for codex engines)."""
+    try:
+        data = json.loads(FCC_CATALOG.read_text())
+        items = data["models"] if isinstance(data, dict) else data
+        slugs = [m["slug"] for m in items if isinstance(m, dict) and MODEL_RE.match(m.get("slug", ""))]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    return [x for x in slugs if not any(k in x.lower() for k in NOT_CHAT)]
+
+
+def is_promptset(slug):
+    d = layout.find_dir(slug)
+    return bool(d) and (d / "promptset.json").exists()
+
+
+def promptset_info(slug):
+    d = pdir(slug, "prompts")
+    return {"slug": slug, "video_rows": len(read_csv_rows(d / "all_shots.csv")), "image_rows": len(read_csv_rows(d / "all_images.csv")),
+            "have": {**{f"videos/{m}": count_files(d / "videos" / m, "shot-*.mp4") for m in VIDEO_MODELS},
+                     **{f"images/{m}": count_files(d / "images" / m, "image-*.png") for m in IMAGE_MODELS}}}
+
+
+def read_csv_rows(path):
+    try:
+        with open(path, newline="") as f:
+            return list(csv.DictReader(f))
+    except OSError:
+        return []
+
+
+def status():
+    for base in (layout.BOOKS, layout.CHARACTERS, layout.PROMPTS):
+        base.mkdir(parents=True, exist_ok=True)
+    sets = layout.promptset_slugs()               # Single Prompts sets and character image sets
+    slugs = set(layout.book_slugs())              # books
+    slugs |= {slugify(Path(f).stem) for f in library_files()}          # books in books/ that have no project yet
+    slugs = sorted(x for x in slugs if SLUG_RE.match(x))
+    return {
+        "tools": {t: bool(shutil.which(t, path=ENV_PATH)) for t in ("claude", "fcc-claude", "codex", "fcc-codex", "colab", "kaggle", "uv")},
+        "projects": [project_info(s) for s in slugs], "library": library_files(),
+        "promptsets": [promptset_info(x) for x in sets], "image_models": IMAGE_MODELS, "model_defaults": MODEL_DEFAULTS,
+        "blockers": blockers(),
+        "gpu_blockers": {svc: {g: gpu_blocker(svc, g) for g, _ in gl if gpu_blocker(svc, g)} for svc, gl in GPUS.items()},
+        "video_models": VIDEO_MODELS, "video_groups": VIDEO_GROUPS, "image_groups": IMAGE_GROUPS, "audio_kinds": AUDIO_KINDS, "audio_models": {k: {"role": r, "label": l, "note": n} for k, (r, l, n) in AUDIO_MODELS.items()}, "audio_roles": AUDIO_ROLE_TITLES, "gpus": GPUS, "claude_models": CLAUDE_MODELS,
+        "codex_models": codex_models(),
+    }
+
+
+# ---- Global Parameters ----
+GLOBAL_PARAMS_FILE = "global_params.json"
+
+def load_global_params(project):
+    """Load global parameters for a project."""
+    path = pdir(project) / GLOBAL_PARAMS_FILE
+    if not path.exists():
+        return {"positives": "", "negatives": ""}
+    try:
+        import json
+        return json.loads(path.read_text())
+    except Exception:
+        return {"positives": "", "negatives": ""}
+
+def save_global_params(project, positives, negatives):
+    """Save global parameters for a project."""
+    path = pdir(project) / GLOBAL_PARAMS_FILE
+    pdir(project).mkdir(parents=True, exist_ok=True)
+    import json
+    path.write_text(json.dumps({"positives": positives, "negatives": negatives}, indent=1))
+
+
+# ---------------------------------------------------------------- plan -> validated argv steps
+class PlanError(ValueError):
+    pass
+
+
+def num(opt, key, default, cast=float, lo=None, hi=None):
+    try:
+        v = cast(opt.get(key) if opt.get(key) not in (None, "") else default)
+    except (TypeError, ValueError):
+        raise PlanError(f"{key} must be a number")
+    if (lo is not None and v < lo) or (hi is not None and v > hi):
+        raise PlanError(f"{key} must be between {lo} and {hi}")
+    return v
+
+
+def resolve_project_file(spec):
+    """A file named as '<project>/<path inside it>' (e.g. 'char_adam/images/sdxl_turbo/image-0001.png') or as a path from the repository
+    root ('projects/characters/char_adam/...'). The project name is looked up in books/, characters/ and prompts/ (see layout.py)."""
+    spec = str(spec).replace("\\", "/").lstrip("/")
+    if spec.startswith("projects/"):
+        return ROOT / spec
+    head, _, rest = spec.partition("/")
+    if SLUG_RE.match(head) and layout.find_dir(head):
+        return layout.find_dir(head) / rest
+    return ROOT / spec                    # not a project: the caller's "must be within projects/" check refuses it
+
+
+def script_argv(argv):
+    """Steps name their Python scripts bare ("book_bible.py") but the job runs from the repository root and the scripts live in scripts/."""
+    out = []
+    for a in argv:
+        if a.endswith(".py") and "/" not in a and not (ROOT / a).exists() and (ROOT / "scripts" / a).exists():
+            a = f"scripts/{a}"
+        out.append(a)
+    return out
+
+
+def shell_form(step):
+    if "expand" in step:
+        return "(chosen when the earlier steps finish: " + step["label"] + ")"
+    env = " ".join(f"{k}={v}" for k, v in step["env"].items())
+    return (env + " " if env else "") + " ".join(script_argv(step["argv"]))
+
+
+ENGINES = ["claude", "fcc-claude", "codex", "fcc-codex"]
+
+
+def engine_args(opt):
+    """--engine and --model for the Claude/Codex steps. A blank model means that tool's own default."""
+    engine = opt.get("engine") or "claude"
+    if engine not in ENGINES:
+        raise PlanError("engine must be one of " + ", ".join(ENGINES))
+    model = (opt.get("claude_model") or "").strip()
+    if model and not MODEL_RE.match(model):          # any name the tool accepts; only unsafe characters are refused
+        raise PlanError("model name may only use letters, digits and . _ : / [ ] -")
+    return ["--engine", engine] + (["--model", model] if model else [])
+
+
+def book_args(opt):
+    """Settings for book_write.py (also used for the estimate)."""
+    narration = opt.get("narration", "condensed")
+    if narration not in ("condensed", "verbatim"):
+        raise PlanError("narration must be condensed or verbatim")
+    args = ["--narration", narration, "--min-shots", str(num(opt, "min_shots", 1, int, 1, 60)),
+            "--max-shots", str(num(opt, "max_shots", 12, int, 1, 200))] + engine_args(opt) + [
+            "--workers", str(num(opt, "workers", 2, int, 1, 6)), "--minutes", str(num(opt, "movie_minutes", 10, float, 1, 120))]
+    if opt.get("words_per_shot"):
+        args += ["--words-per-shot", str(num(opt, "words_per_shot", 60, int, 5, 2000))]
+    if opt.get("force_write"):
+        args.append("--force")              # rewrite chapters that already have a script
+    if opt.get("chapters"):
+        if not re.fullmatch(r"\d{1,4}(-\d{1,4})?", str(opt["chapters"]).strip()):
+            raise PlanError("chapters must look like 5 or 5-12")
+        args += ["--chapters", str(opt["chapters"]).strip()]
+    return args
+
+
+def project_slug(opt):
+    slug = opt.get("project", "")
+    if not SLUG_RE.match(slug):
+        raise PlanError("pick a book (project)")
+    if not (pdir(slug)).is_dir() and not (opt.get("steps", {}).get("ingest") and str(opt.get("pdf", "")).startswith("books/")):
+        raise PlanError(f"{slug} has not been started: tick 'Read the PDF and split it into chapters' first")
+    return slug
+
+
+def book_steps(opt, slug):
+    st = opt.get("steps", {})
+    minutes = str(num(opt, "movie_minutes", 10, float, 1, 120))
+    steps = []
+    if slug in LEGACY:
+        if st.get("extract"):
+            extra = ["--enoch-chars", str(num(opt, "enoch_chars", 300, int, 0, 100000))] if slug == "enoch" else []
+            steps.append({"label": f"Rebuild {slug} prompt CSVs", "argv": ["python3", "legacy_extract.py", slug] + extra, "env": {}})
+            steps.append({"label": "Plan movies", "argv": ["python3", "plan_movies.py", slug, "--minutes", minutes], "env": {}})
+        return steps
+    if st.get("ingest"):
+        raw = str(opt.get("pdf", ""))
+        name = Path(raw).name
+        path = f"books/{name}" if raw.startswith("books/") else f"{layout.rel(slug)}/source/{name}"
+        if not name.lower().endswith(".pdf") or not (ROOT / path).exists():
+            raise PlanError("choose a PDF to read (put PDFs in the books folder)")
+        steps.append({"label": f"Read PDF and split chapters ({name})", "env": {},
+                      "argv": ["uv", "run", "--with", "pypdf", "python", "book_ingest.py", slug, path]})
+    if st.get("bible"):
+        steps.append({"label": "Write the continuity bible", "env": {},
+                      "argv": ["python3", "book_bible.py", slug] + engine_args(opt) + ["--force"]})
+    if st.get("write"):
+        steps.append({"label": "Write shots, narration, sound and music", "env": {},
+                      "argv": ["python3", "book_write.py", slug] + book_args(opt)})
+    if st.get("build"):
+        steps.append({"label": "Build CSVs and plan movies", "argv": ["python3", "book_build.py", slug, "--minutes", minutes], "env": {}})
+    return steps
+
+
+def chunks(lo, hi, batch):
+    if batch <= 0:
+        yield lo, hi
+        return
+    s = lo
+    while s <= hi:
+        yield s, min(s + batch - 1, hi)
+        s += batch
+
+
+# Set to True once a TPU notebook started from the command line really gets a TPU. On Oct 27, 2026 two such runs were
+# accepted by Kaggle (enable_tpu=true, machine_shape=TpuV5E8) but the sessions had no TPU: no /dev/accel* devices,
+# CPU-only JAX, and 0.00 h of the 20 h weekly TPU quota used. See README_TPU_EXPERIMENT.md.
+TPU_CLI_WORKS = True
+TPU_CLI_NOTE = ("Kaggle did not attach a TPU to notebooks started from the command line (tested twice, 0 h of TPU quota used; "
+                "TPUs may also just have been busy). Try the notebook in the Kaggle web page, or retest later (README_TPU_EXPERIMENT.md)")
+
+
+def gpu_blocker(service, gpu):
+    return TPU_CLI_NOTE if gpu.startswith("Tpu") and not TPU_CLI_WORKS else None
+
+
+TPU_ONLY = {"tpu_wan", "tpu_mage_flow", "tpu_flux_jax"}      # JAX models that run only on Kaggle's TPU v5e-8
+BIG_RAM_MODELS = {"wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lora", "hunyuan_video", "hunyuan_video_lora", "hunyuan_video_15", "cogvideox_5b",
+                  "sd35_large", "sd35_large_turbo", "flux1_schnell", "flux1_dev", "flux2_klein_4b", "chroma1_hd", "qwen_image_21_lora", "z_image", "ernie_image_turbo", "qwen_image_21_turbo",
+                  "qwen_image_21", "qwen_image_21_uc", "moss_image_sft_lora", "moss_image_sft", "moss_image_base"}      # 12-25 GB of weights: more system RAM than Colab's free tier
+
+
+def model_blocker(name, service, gpu):
+    """Why this video/image/audio model cannot run with this service and GPU, or None if it can (it may still be untested)."""
+    if service == "huggingface":
+        return None if name in hf_spaces.SPACES else "no public Hugging Face Space is set up for this model (see scripts/hf_spaces.py)"
+    on_tpu = gpu.startswith("Tpu")
+    if name in TPU_ONLY:
+        if service != "kaggle":
+            return "TPU runs are only offered through Kaggle"
+        if on_tpu:
+            return gpu_blocker(service, gpu)
+        return "needs the TPU v5e-8 accelerator"
+    if on_tpu:
+        return "needs a CUDA GPU, not a TPU"
+    if name == "sd35_medium":
+        return "gated model: needs a Hugging Face token, which the command-line runs cannot pass (use the notebook, see README_TEXT_TO_MEDIA.md)"
+    if name in BIG_RAM_MODELS and service == "colab" and gpu == "T4":
+        return "needs more system RAM than Colab's free tier has (use Kaggle)"
+    return None
+
+
+def blockers():
+    """{model: {service: {gpu: reason}}} for every combination that cannot work (sent to the page so it can grey them out)."""
+    out = {}
+    for name in VIDEO_MODELS + IMAGE_MODELS + AUDIO_KINDS:
+        for service, gpus in GPUS.items():
+            for g, _ in gpus:
+                why = model_blocker(name, service, g)
+                if why:
+                    out.setdefault(name, {}).setdefault(service, {})[g] = why
+    return out
+
+
+def check_models(service, gpu, names):
+    for n in names:
+        why = model_blocker(n, service, gpu)
+        if why:
+            raise PlanError(f"{n} cannot run on {service} {gpu}: {why}")
+
+
+def make_runner(service, gpu, user, slug):
+    """Returns runner(model, first_row, last_row, csv_name) -> (argv, env) for the Kaggle or Colab CLI scripts."""
+    def runner(model, s, e, csv_name):
+        env = {"PROJECT": slug, "SHOTS_CSV": csv_name}
+        if service == "colab":
+            return ["scripts/run_colab_model.sh", model, str(s), str(e), gpu], env
+        if service == "huggingface":
+            return ["scripts/run_hf_space.sh", model, str(s), str(e)], env
+        env.update({"KAGGLE_USER": user, "KAGGLE_ACCELERATOR": gpu})
+        return ["scripts/run_kaggle_model.sh", model, str(s), str(e)], env
+    return runner
+
+
+def generation_steps(opt, slug):
+    """Video/audio/merge/mix steps for the chosen movies. Needs movies.json, so it may run after the book steps."""
+    service = opt.get("service")
+    if service not in GPUS:
+        raise PlanError("service must be kaggle or colab")
+    gpu = opt.get("gpu")
+    if gpu not in [g for g, _ in GPUS[service]]:
+        raise PlanError(f"gpu {gpu!r} is not an option for {service}")
+    if gpu_blocker(service, gpu):
+        raise PlanError(gpu_blocker(service, gpu))
+    st = opt.get("steps", {})
+    chapters_mode = opt.get("granularity") == "chapters"
+    vmodels = [m for m in opt.get("video_models", []) if m in VIDEO_MODELS]
+    akinds = [k for k in opt.get("audio", []) if k in AUDIO_KINDS]
+    user = (opt.get("kaggle_user") or "").strip()
+    if service == "kaggle" and (st.get("video") or st.get("audio")) and not re.fullmatch(r"[A-Za-z0-9_-]{2,40}", user):
+        raise PlanError("enter your Kaggle username (letters, digits, - and _)")
+    check_models(service, gpu, (vmodels if st.get("video") else []) + (akinds if st.get("audio") else []))
+    batch = num(opt, "batch", 0, int, 0, 100000)
+    sync = opt.get("sync", "stretch")
+    if sync not in ("stretch", "speed", "trim"):
+        raise PlanError("bad sync mode")
+    vols = {k: num(opt.get("vol", {}), k, d, float, 0, 5) for k, d in (("narration", 1.0), ("sfx", 0.5), ("music", 0.25))}
+
+    plan = read_json(pdir(slug) / "movies.json", {})
+    movies = plan.get("chapters" if chapters_mode else "shots", [])
+    if not movies:
+        raise PlanError("no movies planned yet for this book and mode: run the 'Build CSVs and plan movies' step first")
+    sel = opt.get("movies", {})
+    if sel.get("mode") == "all":
+        chosen = movies
+    elif sel.get("mode") == "first":
+        chosen = movies[: num(sel, "n", 1, int, 1, 1000)]
+    else:
+        ids = {int(i) for i in sel.get("ids", [])}
+        chosen = [m for m in movies if m["id"] in ids]
+    if not chosen:
+        raise PlanError("tick at least one movie")
+    lo_o = num(opt, "range_start", 0, int, 0) or None
+    hi_o = num(opt, "range_end", 0, int, 0) or None
+
+    suf = "_chapters" if chapters_mode else ""
+    vcsv = "all_chapters.csv" if chapters_mode else "all_shots.csv"
+    acsv = "audio_chapters.csv" if chapters_mode else "audio_shots.csv"
+    steps = []
+
+    runner = make_runner(service, gpu, user, slug)
+
+    done = set()
+    for mv in chosen:
+        lo, hi = mv["rows"]
+        lo, hi = max(lo, lo_o or lo), min(hi, hi_o or hi)
+        for s, e in (chunks(lo, hi, batch) if lo <= hi else []):
+            if st.get("video"):
+                for m in vmodels:
+                    if (m, s, e) not in done:
+                        done.add((m, s, e)); argv, env = runner(m, s, e, vcsv)
+                        steps.append({"label": f"Movie {mv['id']} video {m}: rows {s}-{e}", "argv": argv, "env": env})
+            if st.get("audio"):
+                for k in akinds:
+                    if (k, s, e) not in done:
+                        done.add((k, s, e)); argv, env = runner(f"audio_{k}", s, e, acsv)
+                        steps.append({"label": f"Movie {mv['id']} audio {k}: rows {s}-{e}", "argv": argv, "env": env})
+    uv = ["uv", "run", "--with", "imageio-ffmpeg", "python"]
+    for mv in chosen:
+        lo, hi = mv["rows"]
+        name = f"{slug}-movie-{mv['id']:02d}{suf}"
+        for m in vmodels:
+            if st.get("merge"):
+                steps.append({"label": f"Movie {mv['id']} silent film ({m})", "env": {},
+                              "argv": uv + ["merge_videos.py", f"videos/{m}{suf}", f"{name}_{m}_silent.mp4", "--project", slug,
+                                            "--start", str(lo), "--end", str(hi)]})
+            if st.get("mix"):
+                steps.append({"label": f"Movie {mv['id']} final film with audio ({m})", "env": {},
+                              "argv": uv + ["mix_film.py", "--project", slug, "--model", m, "--start", str(lo), "--end", str(hi),
+                                            "--sync", sync, "--out", f"{name}_{m}.mp4",
+                                            "--vol-narration", str(vols["narration"]), "--vol-sfx", str(vols["sfx"]),
+                                            "--vol-music", str(vols["music"])] + (["--chapters"] if chapters_mode else [])})
+    return steps
+
+
+def build_plan(opt, commit=False):
+    if opt.get("mode") == "prompts":
+        return prompt_plan(opt, commit)
+    slug = project_slug(opt)
+    st = opt.get("steps", {})
+    steps = book_steps(opt, slug)
+    if any(st.get(k) for k in ("video", "audio", "merge", "mix")):
+        if any(s["label"].startswith(("Build CSVs", "Rebuild", "Plan movies")) for s in steps):
+            steps.append({"label": "generate the chosen movies", "expand": True})   # movies.json changes while the plan runs
+        else:
+            steps += generation_steps(opt, slug)
+    if not steps:
+        raise PlanError("nothing selected: tick at least one step")
+    return steps
+
+
+def estimate(opt):
+    slug = project_slug(opt)
+    if slug in LEGACY:
+        raise PlanError("estimates are for books made from a PDF")
+    if not (pdir(slug) / "chapters.json").exists():
+        raise PlanError("read the PDF first (tick 'Read PDF and split chapters'), then the estimate can run")
+    r = subprocess.run(script_argv(["python3", "book_write.py", slug] + book_args(opt) + ["--dry-run"]), cwd=ROOT, env=clean_env(),
+                       capture_output=True, text=True, timeout=60)
+    return (r.stdout + r.stderr).strip() or "no output"
+
+
+# ---------------------------------------------------------------- single prompts (text to video / text to image)
+VIDEO_COLS = ["chapter", "shot", "prompt", "negative", "width", "height", "frames", "steps", "guidance", "seed"]
+IMAGE_COLS = ["chapter", "shot", "prompt", "negative", "width", "height", "steps", "guidance", "seed"]
+
+
+def snap(value, multiple, lo, hi):
+    """Round a size/frame count to what the model accepts and keep it in range."""
+    v = int(round(value / multiple)) * multiple
+    return max(lo, min(hi, v))
+
+
+def prompt_set_slug(opt, create_ok):
+    slug = (opt.get("set") or "").strip().lower()
+    if not SLUG_RE.match(slug):
+        raise PlanError("name the prompt set: 2-40 lowercase letters, digits or underscores")
+    d = pdir(slug, "prompts")
+    if d.exists() and not is_promptset(slug):
+        raise PlanError(f"{slug} is a book, not a prompt set; pick another name")
+    return slug
+
+
+def prompt_rows(opt, slug, kind, model, first_row):
+    prompts = [ln.strip() for ln in str(opt.get("prompts", "")).splitlines() if ln.strip()]
+    if not prompts:
+        raise PlanError("type at least one prompt (one per line)")
+    if len(prompts) > 100 or any(len(p) > 2000 for p in prompts):
+        raise PlanError("up to 100 prompts at a time, 2000 characters each")
+    o = opt.get("opts", {}) or {}
+    variations = num(o, "variations", 1, int, 1, 8)
+    w = num(o, "width", 0, int, 0, 4096) or None
+    h = num(o, "height", 0, int, 0, 4096) or None
+    frames = num(o, "frames", 0, int, 0, 400) or None
+    steps = num(o, "steps", 0, int, 0, 150) or None
+    guidance = o.get("guidance")
+    guidance = None if guidance in (None, "") else num(o, "guidance", 0, float, 0, 30)
+    seed = o.get("seed")
+    seed = None if seed in (None, "") else num(o, "seed", 0, int, 0, 2**31 - 1)
+    negative = str(o.get("negative") or "").strip()[:500]
+    if kind == "video":
+        if model == "ltx_video":
+            w = snap(w, 32, 256, 1280) if w else None; h = snap(h, 32, 256, 1280) if h else None
+            frames = snap(frames - 1, 8, 8, 160) + 1 if frames else None          # 8*k+1
+        elif model in ("wan", "wan22_t2v_a14b", "wan22_t2v_a14b_lora"):
+            w = snap(w, 16, 256, 1280) if w else None; h = snap(h, 16, 256, 1280) if h else None
+            frames = snap(frames - 1, 4, 4, 120) + 1 if frames else None          # 4*k+1
+        elif model == "wan22_ti2v_5b":
+            w = snap(w, 32, 256, 1280) if w else None; h = snap(h, 32, 256, 1280) if h else None
+            frames = snap(frames - 1, 4, 4, 120) + 1 if frames else None
+        elif model in ("hunyuan_video", "hunyuan_video_lora"):
+            w = snap(w, 16, 256, 1280) if w else None; h = snap(h, 16, 256, 1280) if h else None
+            frames = snap(frames - 1, 4, 4, 128) + 1 if frames else None
+            negative = ""                                                           # HunyuanVideo has no negative prompt
+        else:                                                                       # cogvideox (2B and 5B): fixed size and length
+            w = h = frames = None
+    elif model == "tpu_mage_flow":                    # the author's runner makes square 512, 768 or 1024 images in 4 steps
+        size = max(w or 0, h or 0)
+        w = h = min((512, 768, 1024), key=lambda r: abs(r - size)) if size else None
+        steps = guidance = None
+        negative = ""
+    elif model == "tpu_flux_jax":
+        w = snap(w, 16, 256, 1024) if w else None; h = snap(h, 16, 256, 1024) if h else None
+        negative = ""
+    else:
+        w = snap(w, 16, 256, 1536) if w else None; h = snap(h, 16, 256, 1536) if h else None
+    rows, n = [], first_row
+    for p in prompts:
+        for v in range(variations):
+            row = {"chapter": slug, "shot": n, "prompt": p, "negative": negative, "width": w or "", "height": h or "",
+                   "steps": steps or "", "guidance": "" if guidance is None else guidance,
+                   "seed": "" if seed is None else seed + v}
+            if kind == "video":
+                row["frames"] = frames or ""
+            rows.append(row)
+            n += 1
+    return rows
+
+
+def append_rows(path, cols, new_rows):
+    old = read_csv_rows(path)
+    fields = list(cols) + [c for r in old for c in r if c not in cols]
+    fields = list(dict.fromkeys(fields))
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(old + new_rows)
+
+
+WAN_HEADS = {"wan": 12, "wan22_ti2v_5b": 24, "wan22_t2v_a14b": 40, "wan22_t2v_a14b_lora": 40, "hunyuan_video": 24, "hunyuan_video_lora": 24}      # attention heads per model
+WAN_ATTN_CAP_GIB = {"wan": 2.5, "wan22_ti2v_5b": 2.5, "wan22_t2v_a14b": 1.8, "wan22_t2v_a14b_lora": 1.8, "hunyuan_video": 2.5, "hunyuan_video_lora": 2.5}   # what is left on a 14.5 GiB T4 next to the weights
+
+
+def wan_t4_check(gpu, w, h, frames, model="wan"):
+    """Wan on a T4 runs plain attention in fp32: one matrix is 4 x heads x tokens^2 bytes (the 14B model has 40 heads: 512x288x33 asked for 4.01 GiB
+    with 2.2 GiB free and crashed). Refuse sizes that cannot fit."""
+    if "T4" not in gpu:
+        return
+    d = MODEL_DEFAULTS[model]
+    w, h, frames = w or d["width"], h or d["height"], frames or d["frames"]
+    div = 32 if model == "wan22_ti2v_5b" else 16                  # the 5B model's VAE is 2x more compact per side
+    per_token2 = 4 * WAN_HEADS[model]
+    tokens = ((frames - 1) // 4 + 1) * (h // div) * (w // div)
+    need = per_token2 * tokens * tokens / 2**30
+    cap = WAN_ATTN_CAP_GIB[model]
+    if need > cap:
+        limit = int((cap * 2**30 / per_token2) ** 0.5)
+        raise PlanError(f"{model} at {w}x{h} with {frames} frames needs about {need:.1f} GiB for one attention matrix on a T4 (only about {cap:.1f} GiB is free next to the model); "
+                        f"keep ((frames-1)//4+1) x (height/{div}) x (width/{div}) under about {limit:,} (now {tokens:,}), for example "
+                        f"{'448x256 with 25 frames' if WAN_HEADS[model] == 40 else '480x272 with 33 frames' if model.startswith('hunyuan') else '512x288 with 33 frames'}, or use an L4/A100")
+
+
+# Image models whose attention matrix can overflow a T4: (heads, images per pass, GiB free next to the weights, text tokens). The T4 runs plain fp32 attention:
+# one matrix is 4 x heads x batch x tokens^2 bytes (SD 3.5 Large at 1024x1024 with guidance asked for 5.55 GiB and crashed).
+IMAGE_ATTN = {"sd35_large": (38, 2, 3.0, 333), "sd35_large_turbo": (38, 1, 3.0, 333)}
+
+
+def image_t4_check(gpu, w, h, model):
+    if "T4" not in gpu or model not in IMAGE_ATTN:
+        return
+    d = MODEL_DEFAULTS[model]
+    w, h = w or d["width"], h or d["height"]
+    heads, batch, cap, text = IMAGE_ATTN[model]
+    tokens = (w // 16) * (h // 16) + text
+    need = 4 * heads * batch * tokens * tokens / 2**30
+    if need > cap:
+        limit = int((cap * 2**30 / (4 * heads * batch)) ** 0.5) - text
+        side = int((limit ** 0.5) * 16)
+        raise PlanError(f"{model} at {w}x{h} needs about {need:.1f} GiB for one attention matrix on a T4 (only about {cap:.1f} GiB is free next to the model); "
+                        f"keep it to about {side}x{side} or smaller, or use an L4/A100")
+
+
+def prompt_plan(opt, commit):
+    slug = prompt_set_slug(opt, True)
+    kind = opt.get("kind")
+    if kind not in ("video", "image"):
+        raise PlanError("choose video or image")
+    model = opt.get("model")
+    if model not in (VIDEO_MODELS if kind == "video" else IMAGE_MODELS):
+        raise PlanError("unknown model for that kind")
+    service = opt.get("service")
+    if service not in GPUS:
+        raise PlanError("service must be kaggle or colab")
+    gpu = opt.get("gpu")
+    if gpu not in [g for g, _ in GPUS[service]]:
+        raise PlanError(f"gpu {gpu!r} is not an option for {service}")
+    if gpu_blocker(service, gpu):
+        raise PlanError(gpu_blocker(service, gpu))
+    user = (opt.get("kaggle_user") or "").strip()
+    if service == "kaggle" and not re.fullmatch(r"[A-Za-z0-9_-]{2,40}", user):
+        raise PlanError("enter your Kaggle username (letters, digits, - and _)")
+    check_models(service, gpu, [model])
+    batch = num(opt, "batch", 0, int, 0, 100000)
+    d = pdir(slug, "prompts")
+    csv_name, cols = ("all_shots.csv", VIDEO_COLS) if kind == "video" else ("all_images.csv", IMAGE_COLS)
+
+    # Check if we should overwrite the CSV (for single image generation)
+    overwrite = opt.get("opts", {}).get("overwrite", False)
+    if overwrite and (d / csv_name).exists():
+        (d / csv_name).unlink()
+
+    first = len(read_csv_rows(d / csv_name)) + 1
+    rows = prompt_rows(opt, slug, kind, model, first)
+    if model in WAN_HEADS:
+        for r in rows:
+            wan_t4_check(gpu, int(r["width"] or 0), int(r["height"] or 0), int(r.get("frames") or 0), model)
+    if kind == "image" and model in IMAGE_ATTN:
+        for r in rows:
+            image_t4_check(gpu, int(r["width"] or 0), int(r["height"] or 0), model)
+    last = first + len(rows) - 1
+    if commit:
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "promptset.json").write_text(json.dumps({"type": "prompts"}))
+        append_rows(d / csv_name, cols, rows)
+    runner = make_runner(service, gpu, user, slug)
+    runner_model = model if kind == "video" else f"image_{model}"
+    steps = []
+    for s_, e_ in chunks(first, last, batch):
+        argv, env = runner(runner_model, s_, e_, csv_name)
+        steps.append({"label": f"{kind} {model}: rows {s_}-{e_}", "argv": argv, "env": env})
+    return steps
+
+
+def expand_idea(opt):
+    kind = opt.get("kind")
+    if kind not in ("video", "image"):
+        raise PlanError("choose video or image")
+    idea = str(opt.get("idea") or "").strip()
+    if not idea or len(idea) > 1000:
+        raise PlanError("write a short idea (up to 1000 characters)")
+    count = num(opt, "count", 3, int, 1, 4)
+    args = engine_args(opt)
+    engine = args[1]
+    model = args[3] if len(args) > 3 else None
+
+    # Load global parameters for the project
+    project = opt.get("project", "")
+    global_positives = ""
+    global_negatives = ""
+    if project:
+        global_params = load_global_params(project)
+        global_positives = global_params.get("positives", "")
+        global_negatives = global_params.get("negatives", "")
+
+    what = ("a text-to-video model. Each prompt is one 4-6 second clip: 40-70 words naming the subject, what happens "
+            "over the clip, the camera movement, the setting, the light and the style.") if kind == "video" else (
+            "a text-to-image model. Each prompt is one picture: 30-60 words naming the subject, composition, setting, "
+            "light, style and lens or medium.")
+
+    global_section = ""
+    if global_positives or global_negatives:
+        global_section = "\nGLOBAL PROMPT PARAMETERS (apply to ALL prompts):\n"
+        if global_positives:
+            global_section += f"  Always include: {global_positives}\n"
+        if global_negatives:
+            global_section += f"  Always avoid: {global_negatives}\n"
+
+    prompt = (f'Idea: "{idea}"\n{global_section}\n\nWrite {count} different, vivid prompts for {what} No on-screen text, no logos, nothing '
+              f'that depends on previous prompts. Reply with one JSON object: {{"prompts": ["...", ...]}} with exactly {count} strings.')
+
+    def check(d):
+        ps = d.get("prompts")
+        if not isinstance(ps, list) or len(ps) != count or not all(isinstance(x, str) and len(x) > 20 for x in ps):
+            raise ValueError(f"'prompts' must be a list of exactly {count} strings")
+
+    data = llm_json(prompt, f"You write prompts for {kind} generation models. You reply with a single JSON object and nothing else.",
+                    model=model, engine=engine, validate=check)
+
+    # Append global parameters to each generated prompt
+    prompts = [x.strip() for x in data["prompts"]]
+    if global_positives or global_negatives:
+        final_prompts = []
+        for p in prompts:
+            parts = [p]
+            if global_positives:
+                parts.append(global_positives)
+            # Add the standard negative tail
+            neg_tail = "photorealistic epic period film, cinematic natural lighting, realistic faces and anatomy, no text, no subtitles, no logos, no watermark, no cartoon style"
+            if global_negatives:
+                neg_tail = f"{global_negatives}, {neg_tail}"
+            parts.append(neg_tail)
+            final_prompts.append(", ".join(parts))
+        return final_prompts
+    return prompts
+
+
+def clip_prompt(slug, row):
+    """Get the original prompt for a specific clip/row in a project."""
+    if not SLUG_RE.match(slug):
+        raise PlanError("bad project name")
+    d = pdir(slug)
+    if not d.is_dir():
+        raise PlanError("project not found")
+
+    # Try to find the prompt from all_shots.csv or all_chapters.csv
+    for csv_name in ("all_shots.csv", "all_chapters.csv", "all_images.csv"):
+        rows = read_csv_rows(d / csv_name)
+        if 0 < row <= len(rows):
+            return {"prompt": rows[row - 1].get("prompt", "")}
+    return {"prompt": ""}
+
+
+def enhance_prompt(opt):
+    """Enhance a prompt based on user instruction."""
+    project = opt.get("project", "")
+    row = opt.get("row", 0)
+    original_prompt = opt.get("original_prompt", "")
+    instruction = opt.get("instruction", "").strip()
+    preview_only = opt.get("preview_only", False)
+
+    if not SLUG_RE.match(project):
+        raise PlanError("bad project name")
+    if not original_prompt:
+        raise PlanError("no original prompt provided")
+    if not instruction:
+        raise PlanError("no enhancement instruction provided")
+
+    d = pdir(project)
+    if not d.is_dir():
+        raise PlanError("project not found")
+
+    # Load global parameters for the project
+    global_params = load_global_params(project)
+    global_positives = global_params.get("positives", "")
+    global_negatives = global_params.get("negatives", "")
+
+    # Get the bible for context
+    bible = {}
+    bible_path = d / "bible.json"
+    if bible_path.exists():
+        try:
+            bible = json.loads(bible_path.read_text())
+        except Exception:
+            pass
+
+    # Get the engine and model
+    args = engine_args(opt)
+    engine = args[1]
+    model = args[3] if len(args) > 3 else None
+
+    # Build the enhancement prompt
+    bible_context = ""
+    if bible:
+        style = bible.get("style", {})
+        visual = style.get("visual", "")
+        if visual:
+            bible_context += f"\nVisual style: {visual}"
+        characters = bible.get("characters", {})
+        if characters:
+            char_desc = ", ".join(f"{k}: {v.get('visual_token', '')}" for k, v in characters.items() if v.get('visual_token'))
+            bible_context += f"\nCharacters: {char_desc}"
+
+    # Include global parameters in the enhancement prompt
+    global_section = ""
+    if global_positives or global_negatives:
+        global_section = "\nGLOBAL PROMPT PARAMETERS (must be preserved in the enhanced prompt):\n"
+        if global_positives:
+            global_section += f"  Always include: {global_positives}\n"
+        if global_negatives:
+            global_section += f"  Always avoid: {global_negatives}\n"
+
+    what = "a text-to-video prompt for a 4-6 second clip" if "video" in (opt.get("kind", "") or "") else "a text-to-image prompt"
+    preview_text = "Preview only - do NOT save the updated prompt, just show what it would look like." if preview_only else "Provide the updated prompt ready to use."
+
+    prompt = (f'Original prompt:\n{original_prompt}\n\n'
+              f'Bible context:{bible_context}\n'
+              f'{global_section}\n'
+              f'User instruction: {instruction}\n\n'
+              f'Rewrite the prompt incorporating the instruction. Keep the same format and length. '
+              f'{preview_text} Reply with JSON: {{"updated_prompt": "...", "feedback": "..."}}')
+
+    def check(d):
+        if "updated_prompt" not in d or not isinstance(d["updated_prompt"], str) or len(d["updated_prompt"]) < 10:
+            raise ValueError("missing or invalid updated_prompt")
+
+    data = llm_json(prompt, "You are a prompt engineer enhancing prompts for video/image generation models. "
+                        "Reply with a single JSON object and nothing else.",
+                    model=model, engine=engine, validate=check)
+
+    updated_prompt = data.get("updated_prompt", original_prompt)
+
+    # Ensure global parameters are included in the updated prompt
+    if global_positives and global_positives not in updated_prompt:
+        updated_prompt = updated_prompt + ", " + global_positives
+    # Add negative tail if not present
+    neg_tail = "photorealistic epic period film, cinematic natural lighting, realistic faces and anatomy, no text, no subtitles, no logos, no watermark, no cartoon style"
+    if global_negatives:
+        neg_tail = f"{global_negatives}, {neg_tail}"
+    if neg_tail not in updated_prompt:
+        updated_prompt = updated_prompt + ", " + neg_tail
+
+    result = {
+        "updated_prompt": updated_prompt,
+        "feedback": data.get("feedback", "Updated" if not preview_only else "Preview ready")
+    }
+
+    if not preview_only:
+        # Update the CSV file with the new prompt
+        updated = False
+        for csv_name in ("all_shots.csv", "all_chapters.csv", "all_images.csv"):
+            csv_path = d / csv_name
+            if csv_path.exists():
+                rows = read_csv_rows(csv_path)
+                if 0 < row <= len(rows):
+                    rows[row - 1]["prompt"] = data["updated_prompt"]
+                    # Write back the CSV
+                    with open(csv_path, "w", newline="") as f:
+                        if rows:
+                            writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                            writer.writeheader()
+                            writer.writerows(rows)
+                    updated = True
+                    break
+        if updated:
+            result["feedback"] = "Prompt updated and saved to CSV"
+
+    return result
+
+
+def gallery(slug, limit=60):
+    """Newest results of a project: clips, images and films, each with the prompt that made it."""
+    d = pdir(slug)
+    if not d.is_dir():
+        return []
+    prompts = {name: read_csv_rows(d / name) for name in ("all_shots.csv", "all_chapters.csv", "all_images.csv")}
+    items = []
+    for sub, pattern, kind in (("videos", "*/shot-*.mp4", "video"), ("images", "*/image-*.png", "image"), ("films", "*.mp4", "film")):
+        for f in (d / sub).glob(pattern) if (d / sub).exists() else []:
+            model = f.parent.name if kind != "film" else ""
+            n = int(re.search(r"(\d+)", f.stem).group(1)) if kind != "film" else 0
+            csv_name = "all_images.csv" if kind == "image" else "all_chapters.csv" if model.endswith("_chapters") else "all_shots.csv"
+            rows = prompts.get(csv_name, [])
+            text = rows[n - 1]["prompt"] if kind != "film" and 0 < n <= len(rows) else ""
+            items.append({"kind": kind, "model": model, "row": n, "name": f.name, "prompt": text[:600],
+                          "path": f.relative_to(d).as_posix(), "mtime": f.stat().st_mtime})
+    items.sort(key=lambda x: -x["mtime"])
+    return items[:limit]
+
+
+# ---------------------------------------------------------------- Kaggle runs: list them and fetch their results
+KERNEL_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,120}$")
+
+
+# Notebook names made by run_kaggle_model.sh:  <project>-<model><-chapters>-<first row>-<last row>   (older runs had a "bible-" prefix)
+TOOL_SLUG_RE = re.compile(r"^(?:bible-)?[a-z0-9-]+?-(?:image-[a-z0-9-]+?|audio-[a-z0-9-]+?|ltx-video|wan[a-z0-9]*(?:-[a-z0-9]+)*?|hunyuan-video(?:-lora|-nsfw)?|cogvideox(?:-5b)?|tpu-[a-z0-9-]+?)(?:-chapters)?-\d+-\d+$")
+
+
+def guess_project(slug):
+    """Longest book / character set / prompt set whose name (underscores -> dashes) starts the notebook name (same rule as fetch_kaggle_run.sh)."""
+    slug = slug[len("bible-"):] if slug.startswith("bible-") and not any(d.name.replace("_", "-").startswith("bible-") for d in layout.all_dirs()) else slug
+    best = ""
+    for d in layout.all_dirs():
+        if d.is_dir() and slug.startswith(f"{d.name.replace('_', '-')}-") and len(d.name) > len(best):
+            best = d.name
+    return best
+
+
+def kaggle_runs(limit=10):
+    """Your newest Kaggle notebooks made by this tool, with their status. Read-only."""
+    kaggle = shutil.which("kaggle", path=ENV_PATH)
+    if not kaggle:
+        raise PlanError("the kaggle command is not installed (uv tool install kaggle)")
+    r = subprocess.run([kaggle, "kernels", "list", "-m", "--sort-by", "dateRun", "--page-size", str(limit), "-v"],
+                       env=clean_env(), capture_output=True, text=True, timeout=45)
+    if r.returncode != 0:
+        raise PlanError("Kaggle said: " + (r.stderr or r.stdout).strip()[-200:])
+    lines = r.stdout.splitlines()
+    start = next((i for i, ln in enumerate(lines) if ln.startswith("ref,")), None)
+    if start is None:
+        return []
+    rows = [x for x in csv.DictReader(io.StringIO("\n".join(lines[start:]))) if TOOL_SLUG_RE.match(x["ref"].split("/")[-1]) or guess_project(x["ref"].split("/")[-1])]
+
+    def status_of(ref):
+        t = subprocess.run([kaggle, "kernels", "status", ref], env=clean_env(), capture_output=True, text=True, timeout=40)
+        m = re.search(r"KernelWorkerStatus\.([A-Za-z]+)", t.stdout + t.stderr)
+        return m.group(1) if m else "UNKNOWN"
+
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        statuses = list(ex.map(status_of, [x["ref"] for x in rows]))
+    return [{"ref": x["ref"], "slug": x["ref"].split("/")[-1], "status": st, "last_run": x.get("lastRunTime", "")[:16],
+             "project": guess_project(x["ref"].split("/")[-1])} for x, st in zip(rows, statuses)]
+
+
+KERNEL_REF_RE = re.compile(r"^[A-Za-z0-9_-]{2,40}/[a-z0-9][a-z0-9-]{2,120}$")
+DOWNLOADS_DIR = ROOT / "my_downloads"
+
+
+def kernel_ref(value):
+    """Accept 'owner/slug'; raise PlanError for anything else (it goes on a command line)."""
+    ref = str(value or "").strip()
+    if not KERNEL_REF_RE.match(ref):
+        raise PlanError("notebook must look like owner/notebook-name")
+    return ref
+
+
+def kernel_status(ref):
+    """Run `kaggle kernels status owner/slug` and return one of RUNNING, QUEUED, COMPLETE, ERROR, CANCEL_ACKNOWLEDGED, UNKNOWN."""
+    kaggle = shutil.which("kaggle", path=ENV_PATH)
+    if not kaggle:
+        raise PlanError("the kaggle command is not installed (uv tool install kaggle)")
+    r = subprocess.run([kaggle, "kernels", "status", ref], env=clean_env(), capture_output=True, text=True, timeout=40)
+    text = (r.stdout + r.stderr).strip()
+    m = re.search(r"KernelWorkerStatus\.([A-Za-z_]+)", text) or (re.search(r'status\s+"?([A-Za-z_]+)"?', text) if r.returncode == 0 else None)
+    return {"ref": ref, "status": m.group(1).upper() if m else "UNKNOWN", "raw": text[-300:]}
+
+
+def kernel_output(ref):
+    """Run `kaggle kernels output owner/slug -p my_downloads/<slug>` and list whatever files landed there (names are not checked)."""
+    kaggle = shutil.which("kaggle", path=ENV_PATH)
+    if not kaggle:
+        raise PlanError("the kaggle command is not installed (uv tool install kaggle)")
+    dest = DOWNLOADS_DIR / ref.split("/")[-1]
+    dest.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run([kaggle, "kernels", "output", ref, "-p", str(dest), "-o"], env=clean_env(),
+                       capture_output=True, text=True, timeout=600)
+    files = sorted(str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file())
+    return {"ref": ref, "dir": str(dest.relative_to(ROOT)), "files": files, "ok": r.returncode == 0,
+            "message": (r.stderr or r.stdout).strip()[-300:]}
+
+
+def fetch_step(opt):
+    slug = str(opt.get("slug", "")).strip()
+    if not KERNEL_SLUG_RE.match(slug):
+        raise PlanError("that is not a Kaggle notebook name")
+    argv = ["scripts/fetch_kaggle_run.sh", slug]
+    if opt.get("wait"):
+        argv.append("--wait")
+    project = str(opt.get("project") or "").strip()
+    if project:
+        if not SLUG_RE.match(project) or not (pdir(project)).is_dir():
+            raise PlanError("unknown project")
+        argv += ["--project", project]
+    # exit code 2 = "still running on Kaggle", which is information, not a failure
+    return {"label": f"Fetch results of {slug}" + (" (waiting for it to finish)" if opt.get("wait") else ""), "argv": argv, "env": {}, "ok_codes": (0, 2)}
+
+
+# ---------------------------------------------------------------- make a film from the downloaded files you tick
+AUDIO_KINDS_FILES = {"narration": "narration-*.wav", "sfx": "sfx-*.wav", "music": "music-*.wav"}
+FILM_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,60}$")
+
+
+def media_inventory(slug):
+    """What has been downloaded for a project: clip folders and audio folders with the rows each holds, plus a line of text per row."""
+    d = pdir(slug)
+    if not SLUG_RE.match(slug) or not d.is_dir():
+        raise PlanError("pick a book or prompt set first")
+    inv = {"videos": {}, "narration": {}, "sfx": {}, "music": {}, "texts": {}}
+
+    def rows_of(folder, pattern):
+        out = []
+        for f in folder.glob(pattern):
+            m = re.search(r"-(\d+)\.", f.name)
+            if m:
+                out.append(int(m.group(1)))
+        return sorted(out)
+
+    for sub in sorted((d / "videos").glob("*")) if (d / "videos").is_dir() else []:
+        rows = rows_of(sub, "shot-*.mp4") if sub.is_dir() else []
+        if rows:
+            inv["videos"][f"videos/{sub.name}"] = rows
+    for sub in sorted((d / "audio").glob("*")) if (d / "audio").is_dir() else []:
+        if sub.is_dir():
+            for kind, pattern in AUDIO_KINDS_FILES.items():
+                rows = rows_of(sub, pattern)
+                if rows:
+                    inv[kind][f"audio/{sub.name}"] = rows
+    for src, rows in inv["videos"].items():
+        csv_name = "all_chapters.csv" if src.endswith("_chapters") else "all_shots.csv"
+        table = read_csv_rows(d / csv_name)
+        inv["texts"][src] = {str(n): (f"{table[n - 1]['chapter']}: {table[n - 1]['prompt']}"[:110] if 0 < n <= len(table) else "") for n in rows}
+    return inv
+
+
+def film_step(opt):
+    slug = str(opt.get("project", ""))
+    inv = media_inventory(slug)
+    name = str(opt.get("name") or "my_film").strip()
+    if not FILM_NAME_RE.match(name):
+        raise PlanError("film name: letters, digits, - and _ only (up to 60)")
+    vsrc = opt.get("video_source")
+    if vsrc not in inv["videos"]:
+        raise PlanError("choose where the video clips come from")
+    srcs = {}
+    for kind in AUDIO_KINDS_FILES:
+        v = (opt.get("sources") or {}).get(kind) or ""
+        if v and v not in inv[kind]:
+            raise PlanError(f"unknown {kind} folder {v!r}")
+        srcs[kind] = v
+    have = {"video": set(inv["videos"][vsrc]), **{k: set(inv[k][srcs[k]]) if srcs[k] else set() for k in AUDIO_KINDS_FILES}}
+    clips = []
+    for item in opt.get("rows") or []:
+        n = int(item.get("n"))
+        if n not in have["video"]:
+            raise PlanError(f"row {n} has no clip in {vsrc}")
+        c = {"row": n, "video": f"{vsrc}/shot-{n:04d}.mp4"}
+        for kind in AUDIO_KINDS_FILES:
+            use = bool(item.get(kind)) and n in have[kind]
+            c[kind] = f"{srcs[kind]}/{kind}-{n:04d}.wav" if use else None
+        clips.append(c)
+    if not clips:
+        raise PlanError("tick at least one clip")
+    sync = opt.get("sync", "stretch")
+    if sync not in ("stretch", "speed", "trim"):
+        raise PlanError("bad sync mode")
+    vols = {k: num(opt.get("vol", {}), k, d, float, 0, 5) for k, d in (("narration", 1.0), ("sfx", 0.5), ("music", 0.25))}
+    (pdir(slug) / "films").mkdir(exist_ok=True)
+    return slug, clips, {"label": f"Make film {name}.mp4 from {len(clips)} clip(s)", "env": {},
+        "argv": ["uv", "run", "--with", "imageio-ffmpeg", "python", "mix_film.py", "--project", slug, "--selection", "films/_selection.json",
+                 "--sync", sync, "--out", f"{name}.mp4", "--vol-narration", str(vols["narration"]), "--vol-sfx", str(vols["sfx"]),
+                 "--vol-music", str(vols["music"])]}
+
+
+# ---------------------------------------------------------------- clean-up: find old generated files, move them to the Trash
+CLEAN_CATEGORIES = [   # id, title, ticked by default, what to know
+    ("pycache", "Python cache folders", True, "Made automatically by Python; they come back by themselves."),
+    ("notebooks", "Old generated notebooks and scripts (the 3 newest notebooks are kept)", True,
+     "Written by the scripts in scripts/. They are re-created automatically when a run needs one, or with the Re-create button. "
+     "The 3 most recently changed notebooks, and the scripts that go with them, are kept."),
+    ("temp", "Temporary and leftover files", True, "Partial uploads, old progress markers, the film selection file and stray logs inside video folders."),
+    ("empty", "Empty output folders", True, "Folders in videos/, audio/ and images/ with nothing in them."),
+    ("logs", "Kaggle run logs", False, "Kept for troubleshooting failed runs; safe to delete once the run no longer matters."),
+    ("stale", "Outputs numbered past the end of the prompt file", False, "Clips, audio or images for rows that no longer exist (left over after the prompts were shortened or re-split)."),
+    ("other", "Folders made by other tools", False, "graphify-out is made by your graphify tool, not by this project."),
+]
+KEEP_NOTEBOOKS = 3                       # clean-up keeps this many of the newest generated notebooks
+OUTPUT_PATTERN = re.compile(r"^(shot|image|narration|sfx|music)-(\d{4})(_alt\d)?\.(mp4|png|wav)$")
+
+
+def _size(path):
+    if path.is_file():
+        return path.stat().st_size
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def cleanup_scan():
+    found = {c[0]: [] for c in CLEAN_CATEGORIES}
+
+    def add(cat, path):
+        if path.exists() and not any(i["path"] == str(path.relative_to(ROOT)) for i in found[cat]):
+            found[cat].append({"path": str(path.relative_to(ROOT)), "bytes": _size(path), "dir": path.is_dir()})
+
+    for dirpath, dirnames, _ in os.walk(ROOT):
+        dirnames[:] = [d for d in dirnames if d not in (".git", "node_modules", "source")]       # never walk into a book's source folder
+        if "__pycache__" in dirnames:
+            add("pycache", Path(dirpath) / "__pycache__")
+            dirnames.remove("__pycache__")
+    nb_dirs = [ROOT, ROOT / "notebooks"]
+    notebooks = sorted((f for d in nb_dirs if d.is_dir() for f in d.glob("Bible_*.ipynb")), key=lambda f: (f.stat().st_mtime, f.name), reverse=True)
+    kept_keys = {m.group(1) for f in notebooks[:KEEP_NOTEBOOKS] if (m := re.match(r"Bible_(?:Colab|Kaggle)_(.+)\.ipynb$", f.name))}
+    for f in notebooks[KEEP_NOTEBOOKS:]:
+        add("notebooks", f)
+    for d in nb_dirs:
+        for f in (d.glob("colab_generate_*.py") if d.is_dir() else []):
+            if f.name[len("colab_generate_"):-3] not in kept_keys:        # keep the script that belongs to a kept notebook
+                add("notebooks", f)
+    for pat in (".batch_progress*", ".adam_progress", ".enoch_progress", ".generation_progress"):
+        for f in ROOT.glob(pat):
+            add("temp", f)
+    for f in (ROOT / "books").glob("*.part") if (ROOT / "books").exists() else []:
+        add("temp", f)
+    for proj in layout.all_dirs():
+        if not proj.is_dir():
+            continue
+        for f in list((proj / "source").glob("*.part")) + [proj / "films" / "_selection.json"] + list((proj / "videos").glob("*.log")):
+            add("temp", f)
+        for f in (proj / "logs").glob("*.log") if (proj / "logs").exists() else []:
+            add("logs", f)
+        rows = {name: len(read_csv_rows(proj / name)) for name in ("all_shots.csv", "all_chapters.csv", "audio_shots.csv", "audio_chapters.csv", "all_images.csv")}
+        for top in ("videos", "audio", "images"):
+            for sub in sorted((proj / top).glob("*")) if (proj / top).is_dir() else []:
+                if not sub.is_dir():
+                    continue
+                files = [f for f in sub.iterdir() if f.is_file()]
+                if not files:
+                    add("empty", sub)
+                    continue
+                chapters = sub.name.endswith("_chapters")
+                csv_name = "all_images.csv" if top == "images" else (("audio_chapters.csv" if chapters else "audio_shots.csv") if top == "audio" else ("all_chapters.csv" if chapters else "all_shots.csv"))
+                limit = rows.get(csv_name, 0)
+                if not limit:
+                    continue                                    # no prompt file to compare with: leave everything alone
+                for f in files:
+                    m = OUTPUT_PATTERN.match(f.name)
+                    if m and int(m.group(2)) > limit:
+                        add("stale", f)
+    add("other", ROOT / "graphify-out")
+    return [{"id": cid, "title": title, "default": default, "note": note, "items": sorted(found[cid], key=lambda i: i["path"]),
+             "bytes": sum(i["bytes"] for i in found[cid])} for cid, title, default, note in CLEAN_CATEGORIES]
+
+
+def move_to_trash(paths, label):
+    """Move files/folders (given relative to the project folder) into ~/.Trash/<label>-<time>/, keeping their folder structure."""
+    dest = Path.home() / ".Trash" / f"{label}-{time.strftime('%Y%m%d-%H%M%S')}"
+    moved, total = 0, 0
+    for rel in paths:
+        src = (ROOT / rel).resolve()
+        if ROOT.resolve() not in src.parents or not src.exists():          # only things inside this project, and only if still there
+            continue
+        target = dest / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        total += _size(src)
+        shutil.move(str(src), str(target))
+        moved += 1
+    return {"moved": moved, "bytes": total, "trash": str(dest) if moved else ""}
+
+
+def cleanup_delete(categories):
+    wanted = {c for c in categories if c in {x[0] for x in CLEAN_CATEGORIES}}
+    if not wanted:
+        raise PlanError("tick at least one group")
+    paths, seen = [], []
+    for cat in cleanup_scan():                                              # re-scan: only what the server finds itself is ever removed
+        if cat["id"] in wanted:
+            for item in cat["items"]:
+                if not any(item["path"] == p or item["path"].startswith(p + "/") for p in seen):
+                    paths.append(item["path"]); seen.append(item["path"])
+    return move_to_trash(paths, "pistachio-cleanup")
+
+
+# ---------------------------------------------------------------- downloaded files: list them, move chosen ones to the Trash (to regenerate)
+def files_inventory(slug):
+    """Every downloaded clip, audio file, image and film of a project, grouped by folder, with the row it belongs to."""
+    d = pdir(slug)
+    if not SLUG_RE.match(slug) or not d.is_dir():
+        raise PlanError("pick a book or prompt set first")
+    tables = {n: read_csv_rows(d / n) for n in ("all_shots.csv", "all_chapters.csv", "audio_shots.csv", "audio_chapters.csv", "all_images.csv")}
+    folders = {}
+    for top in ("videos", "audio", "images"):
+        for sub in sorted((d / top).glob("*")) if (d / top).is_dir() else []:
+            files = []
+            for f in sorted(sub.iterdir()) if sub.is_dir() else []:
+                m = OUTPUT_PATTERN.match(f.name)
+                if not m:
+                    continue
+                n = int(m.group(2))
+                chapters = sub.name.endswith("_chapters")
+                csv_name = "all_images.csv" if top == "images" else (("audio_chapters.csv" if chapters else "audio_shots.csv") if top == "audio" else ("all_chapters.csv" if chapters else "all_shots.csv"))
+                rows = tables.get(csv_name, [])
+                row = rows[n - 1] if 0 < n <= len(rows) else None
+                text = ""
+                if row:
+                    text = (f"{row['chapter']}: " + (row.get("prompt") or row.get("narration") or row.get("sfx") or ""))[:100]
+                files.append({"name": f.name, "row": n, "bytes": f.stat().st_size, "text": text})
+            if files:
+                folders[f"{top}/{sub.name}"] = files
+    films = [{"name": f.name, "row": 0, "bytes": f.stat().st_size, "text": ""} for f in sorted((d / "films").glob("*.mp4"))] if (d / "films").is_dir() else []
+    if films:
+        folders["films"] = films
+    return folders
+
+
+def trash_files(slug, folder, names):
+    inv = files_inventory(slug)
+    if folder not in inv:
+        raise PlanError("unknown folder")
+    known = {f["name"] for f in inv[folder]}
+    chosen = [n for n in names if n in known]
+    if not chosen:
+        raise PlanError("tick at least one file")
+    res = move_to_trash([f"{layout.rel(slug)}/{folder}/{n}" for n in chosen], "pistachio-deleted")
+    # a folder emptied by this is tidied away too
+    d = pdir(slug) / folder
+    try:
+        if d.is_dir() and not any(d.iterdir()) and folder != "films":
+            d.rmdir()
+    except OSError:
+        pass
+    return res
+
+
+# ---------------------------------------------------------------- scene prompts: look at them, add your own details, get suggestions, save
+FIELD_LIMITS = {"prompt": 1500, "narration": 600, "sfx": 600, "music": 600}
+FIELD_TITLES = {"prompt": "video prompt", "narration": "narration", "sfx": "sound-effects prompt", "music": "music prompt"}
+
+
+def _scene_tables(slug):
+    d = pdir(slug)
+    if not SLUG_RE.match(slug) or not d.is_dir():
+        raise PlanError("pick a book or prompt set first")
+    shots = read_csv_rows(d / "all_shots.csv")
+    if not shots:
+        raise PlanError("this project has no video prompts yet (build the prompt files first)")
+    return d, shots, read_csv_rows(d / "audio_shots.csv")
+
+
+def _audio_row(shots, audio, i):
+    if i < len(audio) and audio[i]["chapter"] == shots[i]["chapter"] and str(audio[i]["shot"]) == str(shots[i]["shot"]):
+        return audio[i]
+    return {}
+
+
+def scene_data(slug, chapter=""):
+    d, shots, audio = _scene_tables(slug)
+    edits = read_json(d / "prompt_edits.json", {})
+    order, counts, edited = [], {}, {}
+    for r in shots:
+        if r["chapter"] not in counts:
+            order.append(r["chapter"]); counts[r["chapter"]] = 0; edited[r["chapter"]] = 0
+        counts[r["chapter"]] += 1
+    for e in edits.values():
+        if e.get("chapter") in edited:
+            edited[e["chapter"]] += 1
+    chapter = chapter if chapter in counts else order[0]
+    existing = {}                                           # which downloaded files already exist, per row (shot-mode folders only)
+    for top, pattern in (("videos", "shot-{:04d}.mp4"), ("audio", None)):
+        for sub in sorted((d / top).glob("*")) if (d / top).is_dir() else []:
+            if sub.is_dir() and not sub.name.endswith("_chapters"):
+                for f in sub.iterdir():
+                    m = OUTPUT_PATTERN.match(f.name)
+                    if m and m.group(1) != "image":
+                        existing.setdefault(int(m.group(2)), []).append(f"{top}/{sub.name}/{f.name}")
+    items = []
+    for i, r in enumerate(shots):
+        if r["chapter"] != chapter:
+            continue
+        a = _audio_row(shots, audio, i)
+        mine = edits.get(f"{chapter}#{r['shot']}", {}).get("fields", {})
+        items.append({"shot": int(r["shot"]), "row": i + 1, "prompt": r["prompt"], "narration": a.get("narration", ""),
+                      "sfx": a.get("sfx", ""), "music": a.get("music", ""), "has_audio": bool(a),
+                      "edited": {k: v["original"] for k, v in mine.items()}, "clips": sorted(existing.get(i + 1, []))})
+    return {"chapters": [{"chapter": c, "shots": counts[c], "edited": edited[c]} for c in order], "chapter": chapter, "shots": items}
+
+
+def _check_scene_args(opt):
+    slug = str(opt.get("project", ""))
+    d, shots, audio = _scene_tables(slug)
+    chapter, field = str(opt.get("chapter", "")), str(opt.get("field", "prompt"))
+    try:
+        shot = int(opt.get("shot"))
+    except (TypeError, ValueError):
+        raise PlanError("choose a shot")
+    if field not in EDIT_FIELDS:
+        raise PlanError("unknown field")
+    idx = next((i for i, r in enumerate(shots) if r["chapter"] == chapter and str(r["shot"]) == str(shot)), None)
+    if idx is None:
+        raise PlanError("that scene does not exist in this project")
+    if field != "prompt" and not _audio_row(shots, audio, idx):
+        raise PlanError("this project has no narration/sound/music prompts to edit")
+    return slug, d, shots, audio, idx, chapter, shot, field
+
+
+def _current(shots, audio, idx, field):
+    return shots[idx]["prompt"] if field == "prompt" else _audio_row(shots, audio, idx).get(field, "")
+
+
+def prompt_save(opt):
+    slug, d, shots, audio, idx, chapter, shot, _ = _check_scene_args({**opt, "field": "prompt"})
+    fields = opt.get("fields") or {}
+    if not isinstance(fields, dict) or not fields:
+        raise PlanError("nothing to save")
+    edits = read_json(d / "prompt_edits.json", {})
+    key = f"{chapter}#{shot}"
+    entry = edits.setdefault(key, {"chapter": chapter, "shot": shot, "fields": {}})
+    saved, reverted = [], []
+    for field, new in fields.items():
+        if field not in EDIT_FIELDS:
+            raise PlanError(f"unknown field {field!r}")
+        if field != "prompt" and not _audio_row(shots, audio, idx):
+            raise PlanError("this project has no narration/sound/music prompts to edit")
+        new = " ".join(str(new).split())
+        if not new or len(new) > FIELD_LIMITS[field]:
+            raise PlanError(f"the {FIELD_TITLES[field]} must be 1 to {FIELD_LIMITS[field]} characters")
+        cur = _current(shots, audio, idx, field)
+        orig = entry["fields"].get(field, {}).get("original", cur)
+        if new == orig:                                      # back to the original text: the same as reverting
+            entry["fields"].pop(field, None); reverted.append(field)
+        else:
+            entry["fields"][field] = {"original": orig, "edited": new}; saved.append(field)
+        set_scene_field(d, chapter, shot, field, new)
+    if not entry["fields"]:
+        edits.pop(key, None)
+    else:
+        entry["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    write_json(d / "prompt_edits.json", edits)
+    return {"saved": saved, "reverted": reverted, "row": idx + 1}
+
+
+def prompt_revert(opt):
+    slug, d, shots, audio, idx, chapter, shot, _ = _check_scene_args({**opt, "field": "prompt"})
+    edits = read_json(d / "prompt_edits.json", {})
+    entry = edits.get(f"{chapter}#{shot}")
+    if not entry:
+        raise PlanError("this scene has no saved edits")
+    only = opt.get("field")
+    for field in [f for f in list(entry["fields"]) if not only or f == only]:
+        set_scene_field(d, chapter, shot, field, entry["fields"][field]["original"])
+        del entry["fields"][field]
+    if not entry["fields"]:
+        edits.pop(f"{chapter}#{shot}", None)
+    write_json(d / "prompt_edits.json", edits)
+    return {"row": idx + 1}
+
+
+def prompt_suggest(opt):
+    slug, d, shots, audio, idx, chapter, shot, field = _check_scene_args(opt)
+    hint = " ".join(str(opt.get("hint") or "").split())
+    if not hint or len(hint) > 1500:
+        raise PlanError("write your idea or hint first (up to 1500 characters)")
+    count = num(opt, "count", 3, int, 1, 4)
+    current = " ".join(str(opt.get("current") or "").split()) or _current(shots, audio, idx, field)
+    a = _audio_row(shots, audio, idx)
+    same = [i for i, r in enumerate(shots) if r["chapter"] == chapter]
+    before = shots[idx - 1]["prompt"][:350] if idx - 1 in same else ""
+    after = shots[idx + 1]["prompt"][:350] if idx + 1 in same else ""
+    source = ""
+    mm = re.match(rf"^{re.escape(slug)}-(\d+)$", chapter)
+    if mm:
+        sc = read_json(d / "scripts" / f"chapter-{int(mm.group(1)):03d}.json", {})
+        sh = (sc.get("shots") or [])
+        source = (sh[shot - 1].get("slice") or "")[:900] if 0 < shot <= len(sh) else ""
+    bible = read_json(d / "bible.json", {})
+    chars = "; ".join(f"{c['name']}: {c['token']}" for c in bible.get("characters", []))[:1800]
+    rules = {
+        "prompt": ("a text-to-video prompt for ONE continuous shot of about 4 seconds: shot size, camera movement, subject, action, setting, light. "
+                   "No on-screen text, nothing modern. Keep any fixed character descriptions (like NAME: description) and any trailing style/quality "
+                   "phrases exactly as they are in the current prompt. At most 900 characters.", 900),
+        "narration": ("one line the narrator speaks over the shot, at most 14 words, in the same voice as the current line.", 200),
+        "sfx": ("a description of ambience and sound effects to hear in the shot, at most 25 words, no speech or music.", 300),
+        "music": ("a description of the score for the shot (instruments, mood, tempo), at most 25 words.", 300),
+    }
+    rule, limit = rules[field]
+    prompt = (f"A director is refining ONE scene of a film adapted from a book. They want to change the {FIELD_TITLES[field]}.\n\n"
+              f"CURRENT {FIELD_TITLES[field].upper()}:\n{current}\n\n"
+              + (f"THE BOOK TEXT FOR THIS SHOT:\n{source}\n\n" if source else "")
+              + (f"WHAT IS SPOKEN OVER THIS SHOT: {a.get('narration', '')}\n\n" if a.get("narration") and field != "narration" else "")
+              + (f"PREVIOUS SHOT'S PROMPT (for continuity): {before}\n" if before else "") + (f"NEXT SHOT'S PROMPT: {after}\n" if after else "")
+              + (f"\nCHARACTERS (keep their descriptions unchanged): {chars}\n" if chars and field == "prompt" else "")
+              + f"\nTHE DIRECTOR'S IDEA OR HINT (include it, even though the book text does not mention it; be creative about how):\n{hint}\n\n"
+              f"Write {count} different versions of the {FIELD_TITLES[field]} that work the idea in. Each must be {rule}\n"
+              f'Reply with one JSON object: {{"suggestions": ["...", ...]}} with exactly {count} strings.')
+
+    def check(data):
+        sug = data.get("suggestions")
+        if not isinstance(sug, list) or len(sug) != count or not all(isinstance(x, str) and 10 < len(x.strip()) <= limit + 100 for x in sug):
+            raise ValueError(f"'suggestions' must be {count} strings, each at most {limit} characters")
+
+    args = engine_args(opt)
+    data = llm_json(prompt, "You are a film director and prompt writer. You reply with a single JSON object and nothing else.",
+                    model=(args[3] if len(args) > 3 else None), engine=args[1], validate=check)
+    return [x.strip() for x in data["suggestions"]]
+
+
+KEEP_KAGGLE_NOTEBOOKS = 3
+ACTIVE_STATUSES = {"RUNNING", "QUEUED", "NEW", "UNKNOWN"}          # never delete a notebook that may still be running (or whose state is unknown)
+
+
+def kaggle_cleanup_scan():
+    """Which of YOUR Kaggle notebooks made by this tool would be deleted: all but the newest KEEP_KAGGLE_NOTEBOOKS. Read-only.
+    Only notebooks whose names match this tool's naming are considered; anything else in the account is never listed."""
+    runs = sorted(kaggle_runs(limit=100), key=lambda r: r["last_run"], reverse=True)
+    keep, remove, busy = runs[:KEEP_KAGGLE_NOTEBOOKS], [], []
+    for r in runs[KEEP_KAGGLE_NOTEBOOKS:]:
+        (busy if r["status"] in ACTIVE_STATUSES else remove).append(r)
+    return {"keep": keep, "remove": remove, "busy": busy, "keep_count": KEEP_KAGGLE_NOTEBOOKS}
+
+
+def kaggle_cleanup_delete():
+    """Delete the notebooks the scan lists (it is re-run here: the browser never names what to delete)."""
+    if JOB.running:
+        raise PlanError("a job is running; wait for it to finish first")
+    kaggle = shutil.which("kaggle", path=ENV_PATH)
+    if not kaggle:
+        raise PlanError("the kaggle command is not installed (uv tool install kaggle)")
+    deleted, failed = [], []
+    for r in kaggle_cleanup_scan()["remove"]:
+        ref = kernel_ref(r["ref"])
+        t = subprocess.run([kaggle, "kernels", "delete", "-y", ref], env=clean_env(), capture_output=True, text=True, timeout=60)
+        if t.returncode == 0:
+            deleted.append(ref)
+        else:
+            failed.append({"ref": ref, "error": (t.stderr or t.stdout).strip()[-200:]})
+    return {"deleted": deleted, "failed": failed}
+
+
+def recreate_notebooks():
+    r = subprocess.run(["python3", "scripts/make_all.py"], cwd=ROOT, env=clean_env(), capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        raise PlanError("could not re-create the notebooks: " + (r.stderr or r.stdout)[-300:])
+    return {"notebooks": len(list(ROOT.glob("Bible_*.ipynb"))), "scripts": len(list(ROOT.glob("colab_generate_*.py")))}
+
+
+def delete_notebooks():
+    """Delete all generated notebook and script files."""
+    deleted = {"notebooks": 0, "scripts": 0}
+    for pattern in ("Bible_*.ipynb", "colab_generate_*.py"):
+        for f in ROOT.glob(pattern):
+            f.unlink()
+            if f.suffix == ".ipynb":
+                deleted["notebooks"] += 1
+            else:
+                deleted["scripts"] += 1
+    return deleted
+
+
+# ---------------------------------------------------------------- job runner
+class Job:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.lines, self.running, self.proc, self.stop_flag = [], False, None, False
+        self.current = ""
+
+    def log(self, line):
+        with self.lock:
+            self.lines.append(line)
+
+    def start(self, steps, opt):
+        with self.lock:
+            if self.running:
+                raise PlanError("a job is already running")
+            self.lines, self.running, self.stop_flag = [], True, False
+        threading.Thread(target=self._run, args=(list(steps), opt), daemon=True).start()
+
+    def _run(self, steps, opt):
+        keep_going = bool(opt.get("keep_going"))
+        env_base = clean_env()
+        n = 0
+        while n < len(steps):
+            step = steps[n]
+            n += 1
+            if self.stop_flag:
+                break
+            if "expand" in step:
+                try:
+                    new = generation_steps(opt, project_slug(opt))
+                except PlanError as e:
+                    self.log(f"!! cannot plan the movies: {e}")
+                    break
+                self.log(f"\n===== planned {len(new)} generation step(s) for the chosen movies")
+                steps[n:n] = new
+                continue
+            self.current = f"{n}/{len(steps)} {step['label']}"
+            self.log(f"\n===== [{n}/{len(steps)}] {step['label']}\n$ {shell_form(step)}")
+            try:
+                self.proc = subprocess.Popen(script_argv(step["argv"]), cwd=ROOT, env={**env_base, **step["env"]}, text=True,
+                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+                for line in self.proc.stdout:
+                    self.log(line.rstrip("\n"))
+                code = self.proc.wait()
+            except FileNotFoundError as e:
+                self.log(f"!! cannot start: {e}")
+                code = 127
+            if self.stop_flag:
+                break
+            if code not in step.get("ok_codes", (0,)):
+                self.log(f"!! step failed with exit code {code}")
+                if not keep_going:
+                    self.log("Stopped. Fix the problem and run again (finished work is kept).")
+                    break
+        with self.lock:
+            self.running = False
+            self.current = ""
+        self.log("\n===== job finished" + (" (stopped)" if self.stop_flag else ""))
+
+    def stop(self):
+        self.stop_flag = True
+        if self.proc and self.proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+
+JOB = Job()
+
+
+# ---------------------------------------------------------------- HTTP
+class Handler(BaseHTTPRequestHandler):
+    server_version = "PistachiosStudio"
+
+    def log_message(self, *a):
+        pass
+
+    def _host_ok(self):
+        host, origin, port = self.headers.get("Host", ""), self.headers.get("Origin"), self.server.server_port
+        return host in (f"127.0.0.1:{port}", f"localhost:{port}") and (
+            origin is None or origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"))
+
+    def _send(self, code, body, ctype="application/json"):
+        data = body if isinstance(body, bytes) else body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _json(self, code, obj):
+        self._send(code, json.dumps(obj))
+
+    def _authed(self):
+        return self._host_ok() and secrets.compare_digest(self.headers.get("X-Studio-Token", ""), TOKEN)
+
+    def do_GET(self):
+        url = urlparse(self.path)
+        if url.path == "/":
+            if not self._host_ok() or not secrets.compare_digest(parse_qs(url.query).get("t", [""])[0], TOKEN):
+                return self._send(403, "Open the link printed by studio.py (it contains the token).", "text/plain")
+            return self._send(200, (ROOT / "studio.html").read_text().replace("__TOKEN__", TOKEN), "text/html; charset=utf-8")
+        if url.path.startswith("/file/"):
+            return self._file(url)
+        if not self._authed():
+            return self._json(403, {"error": "forbidden"})
+        if url.path == "/api/scenes":
+            q = parse_qs(url.query)
+            try:
+                return self._json(200, scene_data(q.get("project", [""])[0], q.get("chapter", [""])[0]))
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+        if url.path == "/api/files":
+            try:
+                return self._json(200, {"folders": files_inventory(parse_qs(url.query).get("project", [""])[0])})
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+        if url.path == "/api/cleanup_scan":
+            return self._json(200, {"categories": cleanup_scan()})
+        if url.path == "/api/media":
+            try:
+                return self._json(200, media_inventory(parse_qs(url.query).get("project", [""])[0]))
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+        if url.path == "/api/kaggle_runs":
+            try:
+                return self._json(200, {"runs": kaggle_runs()})
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+            except subprocess.TimeoutExpired:
+                return self._json(400, {"error": "Kaggle did not answer in time; try again"})
+        if url.path == "/api/kaggle_cleanup_scan":
+            try:
+                return self._json(200, kaggle_cleanup_scan())
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+            except subprocess.TimeoutExpired:
+                return self._json(400, {"error": "Kaggle did not answer in time; try again"})
+        if url.path == "/api/kernel_status":
+            try:
+                return self._json(200, kernel_status(kernel_ref(parse_qs(url.query).get("ref", [""])[0])))
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+            except subprocess.TimeoutExpired:
+                return self._json(400, {"error": "Kaggle did not answer in time; try again"})
+        if url.path == "/api/gallery":
+            slug = parse_qs(url.query).get("project", [""])[0]
+            return self._json(200, {"items": gallery(slug) if SLUG_RE.match(slug) else []})
+        if url.path == "/api/status":
+            return self._json(200, status())
+        if url.path == "/api/log":
+            since = int(parse_qs(url.query).get("since", ["0"])[0])
+            with JOB.lock:
+                return self._json(200, {"lines": JOB.lines[since:], "next": len(JOB.lines),
+                                        "running": JOB.running, "current": JOB.current})
+        if url.path == "/api/clip_prompt":
+            q = parse_qs(url.query)
+            try:
+                return self._json(200, clip_prompt(q.get("project", [""])[0], int(q.get("row", ["0"])[0])))
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+        if url.path == "/api/characters":
+            q = parse_qs(url.query)
+            action = q.get("action", ["list"])[0]
+            series = q.get("series", [""])[0]
+            try:
+                if action == "list_series":
+                    return self._json(200, {"series": character_tokens.list_series()})
+                elif action == "list":
+                    return self._json(200, {"series": character_tokens.list_series(), "characters": character_tokens.list_characters(series)})
+                elif action == "get":
+                    name = q.get("name", [""])[0]
+                    char = character_tokens.load_character(series, name)
+                    return self._json(200, {"character": char})
+                elif action == "tokens":
+                    return self._json(200, {"tokens": character_tokens.get_all_character_tokens(series)})
+                elif action == "sync":
+                    project = q.get("project", [""])[0]
+                    count = character_tokens.sync_characters_from_project(project)
+                    return self._json(200, {"synced": count, "series": series})
+                elif action == "archetypes":
+                    # the Characters tab wants {archetype: {...}} (keys fill the dropdown)
+                    return self._json(200, {"archetypes": {a.value: {"label": a.value.replace("_", " ").title(), **character_tokens.get_archetype_fields(a)}
+                                                           for a in character_tokens.CharacterArchetype}})
+                elif action == "archetype_fields":
+                    # and {field: {type, required}} for the chosen archetype (a * marks required ones)
+                    name = q.get("archetype", [""])[0]
+                    try:
+                        archetype = character_tokens.CharacterArchetype(name)
+                    except ValueError:
+                        return self._json(400, {"error": f"unknown archetype: {name}"})
+                    cfg = character_tokens.get_archetype_fields(archetype)
+                    fields = {}
+                    for key, required in (("required_physical", True), ("optional_physical", False), ("required_fields", True), ("optional_fields", False)):
+                        for f in cfg.get(key, []):
+                            fields[f] = {"type": "string", "required": required}
+                    return self._json(200, {"archetype": name, "fields": fields})
+                elif action == "valid_values":
+                    # dropdown choices: all fields at once, or one field with ?field=
+                    field = q.get("field", [""])[0]
+                    if field:
+                        values = character_tokens.get_valid_values(field)
+                        return self._json(200, {"field": field, "values": values, "valid_values": {field: values}})
+                    return self._json(200, {"valid_values": {k: list(v) for k, v in character_tokens.VALID_VALUES.items()}})
+                else:
+                    return self._json(400, {"error": f"unknown action: {action}"})
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+        if url.path == "/api/global_params":
+            q = parse_qs(url.query)
+            project = q.get("project", [""])[0]
+            if not project:
+                return self._json(400, {"error": "project is required"})
+            try:
+                params = load_global_params(project)
+                return self._json(200, params)
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+        self._json(404, {"error": "not found"})
+
+    MEDIA = {".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg", ".wav": "audio/wav"}
+
+    def _file(self, url):
+        """Serve a result file: /file/<project>/<path under it>?t=<token>. Only media inside projects/<project>/."""
+        if not self._host_ok() or not secrets.compare_digest(parse_qs(url.query).get("t", [""])[0], TOKEN):
+            return self._json(403, {"error": "forbidden"})
+        parts = url.path[len("/file/"):].split("/", 1)
+        if len(parts) != 2 or not SLUG_RE.match(parts[0]):
+            return self._json(404, {"error": "not found"})
+        base = pdir(parts[0]).resolve()
+        target = (base / parts[1]).resolve()
+        if base not in target.parents or target.suffix.lower() not in self.MEDIA or not target.is_file():
+            return self._json(404, {"error": "not found"})
+        size, start, end, code = target.stat().st_size, 0, target.stat().st_size - 1, 200
+        rng = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
+        if rng and (rng.group(1) or rng.group(2)):
+            if rng.group(1):
+                start = int(rng.group(1)); end = int(rng.group(2)) if rng.group(2) else end
+            else:
+                start = max(size - int(rng.group(2)), 0)
+            end = min(end, size - 1)
+            if start > end:
+                self.send_response(416); self.send_header("Content-Range", f"bytes */{size}"); self.end_headers(); return
+            code = 206
+        self.send_response(code)
+        self.send_header("Content-Type", self.MEDIA[target.suffix.lower()])
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        if code == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with open(target, "rb") as f:
+            f.seek(start)
+            left = end - start + 1
+            while left:
+                chunk = f.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk); left -= len(chunk)
+
+    def _upload(self, url):
+        q = parse_qs(url.query)
+        fname = re.sub(r"[^A-Za-z0-9._ -]", "_", Path(q.get("filename", ["book.pdf"])[0]).name).strip()
+        if not fname.lower().endswith(".pdf") or len(fname) < 5:
+            return self._json(400, {"error": "only .pdf files"})
+        if not SLUG_RE.match(slugify(Path(fname).stem)):
+            return self._json(400, {"error": "that file name has no letters or digits to name the book from"})
+        size = int(self.headers.get("Content-Length", 0))
+        if size <= 0 or size > MAX_UPLOAD:
+            return self._json(400, {"error": f"file must be 1 byte to {MAX_UPLOAD // 2**20} MB"})
+        LIBRARY.mkdir(exist_ok=True)
+        tmp = LIBRARY / (fname + ".part")
+        left = size
+        with open(tmp, "wb") as f:
+            while left:
+                chunk = self.rfile.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                f.write(chunk); left -= len(chunk)
+        with open(tmp, "rb") as f:
+            ok = f.read(5) == b"%PDF-"
+        if left or not ok:
+            tmp.unlink(missing_ok=True)
+            return self._json(400, {"error": "that is not a complete PDF file"})
+        tmp.replace(LIBRARY / fname)
+        return self._json(200, {"filename": fname, "project": slugify(Path(fname).stem), "bytes": size})
+
+    def do_HEAD(self):
+        # Handle HEAD requests the same as GET but without sending the body
+        # We can reuse the GET logic but skip the body writing
+        self.do_GET()
+
+    def do_POST(self):
+        if not self._authed():
+            return self._json(403, {"error": "forbidden"})
+        url = urlparse(self.path)
+        try:
+            if url.path == "/api/upload":
+                return self._upload(url)
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)) or 0) or b"{}")
+            if url.path == "/api/plan":
+                steps = build_plan(body)
+                return self._json(200, {"steps": [{"label": s["label"], "cmd": shell_form(s)} for s in steps]})
+            if url.path == "/api/estimate":
+                return self._json(200, {"text": estimate(body)})
+            if url.path == "/api/prompt_suggest":
+                return self._json(200, {"suggestions": prompt_suggest(body)})
+            if url.path == "/api/prompt_save":
+                return self._json(200, prompt_save(body))
+            if url.path == "/api/prompt_revert":
+                return self._json(200, prompt_revert(body))
+            if url.path == "/api/trash_files":
+                if JOB.running:
+                    raise PlanError("a job is running; wait for it to finish first")
+                return self._json(200, trash_files(str(body.get("project", "")), str(body.get("folder", "")), [str(n) for n in body.get("names", [])]))
+            if url.path == "/api/cleanup_delete":
+                if JOB.running:
+                    raise PlanError("a job is running; wait for it to finish first")
+                return self._json(200, cleanup_delete(body.get("categories") or []))
+            if url.path == "/api/kaggle_cleanup_delete":
+                try:
+                    return self._json(200, kaggle_cleanup_delete())
+                except subprocess.TimeoutExpired:
+                    return self._json(400, {"error": "Kaggle did not answer in time; try again"})
+            if url.path == "/api/recreate_notebooks":
+                return self._json(200, recreate_notebooks())
+            if url.path == "/api/delete_notebooks":
+                return self._json(200, delete_notebooks())
+            if url.path == "/api/kernel_output":
+                try:
+                    return self._json(200, kernel_output(kernel_ref(body.get("ref"))))
+                except subprocess.TimeoutExpired:
+                    return self._json(400, {"error": "Kaggle download timed out; try again"})
+            if url.path == "/api/make_film":
+                slug, clips, step = film_step(body)
+                (pdir(slug) / "films" / "_selection.json").write_text(json.dumps({"clips": clips}, indent=1))
+                JOB.start([step], body)
+                return self._json(200, {"clips": len(clips)})
+            if url.path == "/api/fetch":
+                JOB.start([fetch_step(body)], body)
+                return self._json(200, {"started": 1})
+            if url.path == "/api/expand":
+                return self._json(200, {"prompts": expand_idea(body)})
+            if url.path == "/api/enhance_prompt":
+                return self._json(200, enhance_prompt(body))
+            if url.path == "/api/global_params":
+                project = body.get("project", "")
+                if not project:
+                    return self._json(400, {"error": "project is required"})
+                positives = body.get("positives", "")
+                negatives = body.get("negatives", "")
+                try:
+                    save_global_params(project, positives, negatives)
+                    return self._json(200, {"saved": True})
+                except PlanError as e:
+                    return self._json(400, {"error": str(e)})
+            if url.path == "/api/characters":
+                action = body.get("action", "")
+                try:
+                    if action == "save":
+                        char = body.get("character", {})
+                        path = character_tokens.save_character(char)
+                        return self._json(200, {"saved": True, "path": str(path)})
+                    elif action == "add_reference":
+                        series = body.get("series", "")
+                        name = body.get("name", "")
+                        image_path = body.get("image_path", "")
+                        ok = character_tokens.add_reference_image(series, name, image_path)
+                        return self._json(200, {"updated": ok})
+                    elif action == "update_lora":
+                        series = body.get("series", "")
+                        name = body.get("name", "")
+                        lora_repo = body.get("lora_repo", "")
+                        trigger_word = body.get("trigger_word", "")
+                        base_model = body.get("base_model", "")
+                        ok = character_tokens.update_lora_info(series, name, lora_repo, trigger_word, base_model)
+                        return self._json(200, {"updated": ok})
+                    elif action == "create":
+                        series = body.get("series", "")
+                        name = body.get("name", "")
+                        description = body.get("description", "")
+                        visual_token = body.get("visual_token", "")
+                        char = character_tokens.create_character_from_description(series, name, description, visual_token)
+                        path = character_tokens.save_character(char)
+                        return self._json(200, {"created": True, "character": char, "path": str(path)})
+                    elif action == "delete":
+                        series = body.get("series", "")
+                        name = body.get("name", "")
+                        ok = character_tokens.delete_character(series, name)
+                        return self._json(200, {"deleted": ok})
+                    elif action == "archetypes":
+                        return self._json(200, {"archetypes": [{"value": a.value, "label": a.value.replace("_", " ").title()} for a in character_tokens.CharacterArchetype]})
+                    elif action == "archetype_fields":
+                        archetype_str = body.get("archetype", "")
+                        try:
+                            archetype = character_tokens.CharacterArchetype(archetype_str)
+                        except ValueError:
+                            return self._json(400, {"error": f"unknown archetype: {archetype_str}"})
+                        config = character_tokens.get_archetype_fields(archetype)
+                        return self._json(200, {"fields": config})
+                    elif action == "valid_values":
+                        field = body.get("field", "")
+                        values = character_tokens.get_valid_values(field)
+                        return self._json(200, {"field": field, "values": values})
+                    elif action == "sync":
+                        # Copy the characters of a project's bible.json into the series chosen on the page. Adds only, unless overwrite is set (dry_run counts without writing).
+                        project = str(body.get("project", "")).strip()
+                        series = str(body.get("series", "")).strip()
+                        if not SLUG_RE.match(project) or not (pdir(project)).is_dir():
+                            raise PlanError("unknown project")
+                        if not series:
+                            raise PlanError("pick a series first")
+                        r = character_tokens.sync_from_bible(project, series, overwrite=bool(body.get("overwrite")), dry_run=bool(body.get("dry_run")))
+                        if not r["bible"]:
+                            raise PlanError(f"{project} has no bible.json, so there is nothing to sync. Sync reads the continuity bible that "
+                                            f"\"Write the continuity bible\" creates for a PDF book; imported books such as adam_eve do not have one.")
+                        return self._json(200, {**r, "count": r["added"]})
+                    elif action == "validate":
+                        char = body.get("character", {})
+                        archetype_str = body.get("archetype", "")
+                        try:
+                            archetype = character_tokens.CharacterArchetype(archetype_str) if archetype_str else None
+                        except ValueError:
+                            return self._json(400, {"error": f"unknown archetype: {archetype_str}"})
+                        errors = character_tokens.validate_character(char, archetype)
+                        return self._json(200, {"valid": len(errors) == 0, "errors": errors})
+                    elif action == "template":
+                        archetype_str = body.get("archetype", "")
+                        series = body.get("series", "")
+                        name = body.get("name", "")
+                        try:
+                            archetype = character_tokens.CharacterArchetype(archetype_str)
+                        except ValueError:
+                            return self._json(400, {"error": f"unknown archetype: {archetype_str}"})
+                        template = character_tokens.create_character_template(archetype, name, series)
+                        return self._json(200, {"template": template})
+                    else:
+                        return self._json(400, {"error": f"unknown action: {action}"})
+                except PlanError as e:
+                    return self._json(400, {"error": str(e)})
+            if url.path == "/api/run":
+                steps = build_plan(body, commit=True)       # prompt mode writes its rows here, not when previewing
+                JOB.start(steps, body)
+                return self._json(200, {"started": len(steps)})
+            if url.path == "/api/stop":
+                JOB.stop()
+                return self._json(200, {"stopping": True})
+            if url.path == "/api/extract_frame":
+                # Extract a frame from a video file using OpenCV
+                project = body.get("project", "")
+                video = body.get("video", "")
+                frame = body.get("frame", 16)
+                model = body.get("model", "wan")
+                if not project or not video:
+                    return self._json(400, {"error": "project and video are required"})
+                if not SLUG_RE.match(project):
+                    return self._json(400, {"error": "bad project name"})
+                video_path = pdir(project) / "videos" / model / video
+                if not video_path.exists():
+                    return self._json(404, {"error": "video not found"})
+                # Create output path in the same directory
+                output_path = video_path.parent / f"{video_path.stem}_frame{frame:04d}.png"
+                try:
+                    import cv2
+                    cap = cv2.VideoCapture(str(video_path))
+                    if not cap.isOpened():
+                        return self._json(500, {"error": "could not open video"})
+                    # Set frame position
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
+                    ret, frame_img = cap.read()
+                    cap.release()
+                    if not ret:
+                        return self._json(500, {"error": f"could not read frame {frame}"})
+                    cv2.imwrite(str(output_path), frame_img)
+                    if not output_path.exists():
+                        return self._json(500, {"error": "frame extraction failed - output not created"})
+                    return self._json(200, {"success": True, "frame_path": str(output_path)})
+                except ImportError:
+                    return self._json(500, {"error": "OpenCV (cv2) not installed"})
+                except Exception as e:
+                    return self._json(500, {"error": str(e)})
+            if url.path == "/api/copy_file":
+                # Copy a file to a destination within projects/
+                source = body.get("source", "")
+                dest = body.get("dest", "")
+                if not source or not dest:
+                    return self._json(400, {"error": "source and dest are required"})
+                src_path = resolve_project_file(source)
+                # Ensure source is within projects/
+                try:
+                    src_path.resolve().relative_to(PROJECTS.resolve())
+                except ValueError:
+                    return self._json(403, {"error": "source must be within projects/"})
+                # Ensure dest is within projects/
+                dest_path = Path(dest)
+                if not dest_path.is_absolute():
+                    dest_path = ROOT / dest_path
+                try:
+                    dest_path.resolve().relative_to(PROJECTS.resolve())
+                except ValueError:
+                    return self._json(403, {"error": "dest must be within projects/"})
+                # Create parent directories
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    shutil.copy2(src_path, dest_path)
+                    return self._json(200, {"success": True, "dest": str(dest_path)})
+                except Exception as e:
+                    return self._json(500, {"error": str(e)})
+        except PlanError as e:
+            return self._json(400, {"error": str(e)})
+        except (ValueError, KeyError, TypeError) as e:
+            return self._json(400, {"error": f"bad request: {e}"})
+        self._json(404, {"error": "not found"})
+
+
+def save_session(token: str, port: int):
+    """Save session info to file."""
+    try:
+        import json
+        SESSION_FILE.write_text(json.dumps({"token": token, "port": port}))
+    except Exception:
+        pass
+
+def remove_session():
+    """Remove session file on clean shutdown."""
+    try:
+        if SESSION_FILE.exists():
+            SESSION_FILE.unlink()
+    except Exception:
+        pass
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--no-open", action="store_true")
+    ap.add_argument("--new-session", action="store_true", help="Force new session (don't reuse existing)")
+    a = ap.parse_args()
+
+    # If --new-session, remove old session file
+    if a.new_session:
+        remove_session()
+        global TOKEN, SESSION_PORT
+        TOKEN = secrets.token_urlsafe(16)
+        SESSION_PORT = None
+
+    srv = None
+    # Try session port first, then the requested port range
+    ports_to_try = []
+    if SESSION_PORT:
+        ports_to_try.append(SESSION_PORT)
+    ports_to_try.extend(range(a.port, a.port + 20))
+
+    for port in ports_to_try:
+        try:
+            srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            break
+        except OSError:
+            continue
+
+    if srv is None:
+        raise SystemExit("no free port found")
+
+    # Save session with actual port
+    save_session(TOKEN, srv.server_port)
+
+    url = f"http://127.0.0.1:{srv.server_port}/?t={TOKEN}"
+    print(f"Pistachio's Studio running. Open: {url}\nCtrl-C to stop.", flush=True)
+    if not a.no_open:
+        webbrowser.open(url)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        JOB.stop()
+        remove_session()
+        print("\nstopped")
+
+
+if __name__ == "__main__":
+    main()
