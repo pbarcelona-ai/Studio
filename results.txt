@@ -332,3 +332,8 @@ Files reviewed: studio.html (runImport)
 Errors (blocking): fixed: the Import button ran all four book steps regardless of the ticks (the card says "Run the ticked book steps").
 Warnings: none. Suggestions: none.
 Status: PASS
+
+==== Review pass 2026-11-08 (8): stacked step buttons around optional steps ====
+Files reviewed: studio.html (addStepNav, .step-nav__col CSS)
+Errors (blocking): none. Warnings: none. Suggestions: none.
+Status: PASS

@@ -1341,6 +1341,8 @@
   /* previous / next step buttons at the foot of each step card (same names and order as the rail) */
   .step-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-strong); }
   .step-nav button { min-height: 40px; }
+  .step-nav__col { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 120px; }
+  .step-nav__col--next { align-items: flex-end; }
   .step-nav__here { font-size: 12px; color: var(--fg-muted); flex: 1; text-align: center; }
   /* "What are you making?": the film's look, one at a time, shown under the tabs on every page */
   .lookbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-elevated); }
@@ -6444,16 +6446,31 @@ document.querySelectorAll('#pipelineStepper .stepper__step').forEach(el => el.ad
         if (last && last.card === card) last.to = i; else cards.push({ card, from: i, to: i });
     });
     const names = c => steps.slice(c.from, c.to + 1).map(name).join(' and ');     // a shared card is named by all its steps ("Video and Audio")
+    const optional = c => steps.slice(c.from, c.to + 1).every(el => el.classList.contains('optional'));
+    // Beside an optional step the bar also offers the step after it, so it can be skipped: going forward the optional step is on top and
+    // the next required one below it; going back the required one is on top and the optional one below it. An optional card links plainly.
+    const around = (k, dir) => {
+        const out = [];
+        for (let j = k + dir; j >= 0 && j < cards.length; j += dir) {
+            out.push(cards[j]);
+            if (optional(cards[k]) || !optional(cards[j])) break;
+        }
+        return dir > 0 ? out : out.reverse().sort((a, b) => optional(a) - optional(b));
+    };
     cards.forEach((c, k) => {
         const body = c.card.querySelector(':scope > .card__body') || c.card;
         const nav = document.createElement('nav');
         nav.className = 'step-nav';
         nav.setAttribute('aria-label', 'Book to film steps');
-        const prev = cards[k - 1], next = cards[k + 1];
         const btn = (to, text) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.addEventListener('click', () => goToStep(steps[to.from])); return b; };
-        if (prev) nav.appendChild(btn(prev, '\u2190 ' + names(prev)));
+        const col = (list, back) => {
+            const d = document.createElement('div'); d.className = 'step-nav__col' + (back ? '' : ' step-nav__col--next');
+            list.forEach(t => d.appendChild(btn(t, back ? '\u2190 ' + names(t) : names(t) + ' \u2192')));
+            return d;
+        };
+        nav.appendChild(col(around(k, -1), true));
         const mid = document.createElement('span'); mid.className = 'step-nav__here'; mid.textContent = `Step: ${names(c)}`; nav.appendChild(mid);
-        if (next) nav.appendChild(btn(next, names(next) + ' \u2192'));
+        nav.appendChild(col(around(k, 1), false));
         body.appendChild(nav);
     });
 })();
