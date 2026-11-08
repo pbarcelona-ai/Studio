@@ -1,0 +1,6 @@
+# Optional, large (about 2 GB): the 3D depth view. Install with ./install.sh --3d
+numpy
+opencv-python-headless
+transformers
+torch
+timm

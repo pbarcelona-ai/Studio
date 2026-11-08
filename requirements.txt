@@ -1,0 +1,8 @@
+# What Pistachio's Studio needs on your computer (install.sh installs these into .venv)
+kaggle>=2.0        # needs Python 3.11+; runs the free GPU notebooks and downloads the results
+uv                 # runs the PDF reader and the film joiner
+pillow             # small preview pictures
+pypdf              # reads book PDFs
+imageio-ffmpeg     # joins clips into a film (brings its own ffmpeg)
+gradio_client      # Hugging Face Spaces runs
+six                # the Kaggle program uses it but does not list it

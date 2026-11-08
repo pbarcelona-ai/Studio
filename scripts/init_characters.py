@@ -15,7 +15,7 @@ from pathlib import Path
 adam = {
     "name": "Adam",
     "series": "main",
-    "visual_token": "ADAM: first man, about 30, tall lean olive-brown skin, long dark brown hair, short dark beard, deep brown eyes, grief-worn face",
+    "visual_token": "ADAM: first man, about 30, tall lean olive-brown skin, long dark brown hair, short dark beard, deep brown eyes, wearing a simple earth-tone rough woven linen tunic",
     "trigger_words": ["adam", "first man", "biblical figure", "adam_token"],
     "physical_traits": {
         "age": "30",
@@ -49,7 +49,7 @@ adam = {
 eve = {
     "name": "Eve",
     "series": "main",
-    "visual_token": "EVE: first woman, about 26, warm golden-brown skin, very long dark wavy hair, large dark eyes, tear-streaked remorseful face",
+    "visual_token": "EVE: first woman, about 26, warm golden-brown skin, very long dark wavy hair, large dark eyes, wearing a simple earth-tone rough woven linen tunic",
     "trigger_words": ["eve", "first woman", "biblical figure", "eve_token"],
     "physical_traits": {
         "age": "26",
