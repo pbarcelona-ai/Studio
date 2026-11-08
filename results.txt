@@ -253,3 +253,9 @@ REVIEW RESULTS (FLUX.2 klein references, GPU test)
 Files reviewed: scripts/make_image.py (generated notebook Studio_Kaggle_image_flux2_klein_4b.ipynb parsed)
 Errors found and fixed: two reference pictures ran out of GPU memory on a T4 and the fallback failed too (memory freed inside the except block). Verified on Kaggle: 3/3 keyframes.
 Status: PASS
+
+REVIEW RESULTS (upscaling, keyframe-to-video GPU test)
+Files reviewed: scripts/make_video.py (upscale_x2; ltx_video_i2v note), scripts/studio.py (upscale_step, model_blocker), studio.html (Upscale button); also scripts/run_kaggle_model.sh (bash -n, stand-in kaggle tests). Lower-level: layout.py unchanged.
+GPU tests on Kaggle T4 (throwaway book zz_kaggle_test): FLUX.2 klein keyframes with character pictures 3/3; LTX-Video from keyframes 3/3 (~10 min each, first frame = keyframe); Real-ESRGAN x2 3/3 (~40 s each, 768x320 -> 1536x640, 24 fps kept).
+Errors found: none open.
+Status: PASS

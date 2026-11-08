@@ -50,6 +50,7 @@ VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_
                 "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan",     # tpu_wan = Kaggle TPU experiment
                 "ltx_video_i2v", "wan22_ti2v_5b_i2v"]                     # image-to-video: animate each shot's keyframe
 I2V_MODELS = {"ltx_video_i2v", "wan22_ti2v_5b_i2v"}
+UPSCALE_MODELS = {"upscale_x2"}                              # enlarge clips already made (make_video.py); Kaggle only
 REF_IMAGE_MODELS = {"flux2_klein_4b"}                                    # keyframe models that take character reference pictures                      # need keyframes (images/<model>_keyframes) for every row they make
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
 VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
@@ -443,6 +444,8 @@ def model_blocker(name, service, gpu):
     """Why this video/image/audio model cannot run with this service and GPU, or None if it can (it may still be untested)."""
     if service == "huggingface" and name not in I2V_MODELS:
         return None if name in hf_spaces.SPACES else "no public Hugging Face Space is set up for this model (see scripts/hf_spaces.py)"
+    if name in UPSCALE_MODELS and service != "kaggle":
+        return "upscales clips you already made, which only the Kaggle runner uploads (use Kaggle)"
     if name in I2V_MODELS and service != "kaggle":
         return "starts from keyframes, which only the Kaggle runner uploads (use Kaggle)"
     on_tpu = gpu.startswith("Tpu")
@@ -949,6 +952,36 @@ def animatic_step(body):
             raise PlanError("bad keyframe model name")
         argv += ["--keyframes", kf]
     return {"label": f"Make animatic for rows {start}-{end}", "argv": argv, "env": {}}
+
+
+def upscale_step(body):
+    """Step that upscales the clips of one video folder, rows start..end, on Kaggle (run_kaggle_model.sh upscale_x2): the result is
+    videos/<source>_x2, which Make Film then offers as a video source."""
+    slug = str(body.get("project", ""))
+    if not SLUG_RE.match(slug) or not pdir(slug).is_dir():
+        raise PlanError("pick a book or prompt set first")
+    inv = media_inventory(slug)
+    key = str(body.get("source") or "")                       # as Make Film names it: videos/<folder>
+    src = key.split("/", 1)[1] if key.startswith("videos/") else ""
+    if key not in inv["videos"] or not re.fullmatch(r"[a-z0-9_]{2,60}", src):
+        raise PlanError("choose the video folder to upscale")
+    if src.endswith("_x2"):
+        raise PlanError("these clips are already upscaled")
+    start, end = num(body, "start", 1, int, 1, 100000), num(body, "end", 1, int, 1, 100000)
+    if end < start:
+        raise PlanError("end is before start")
+    have = set(inv["videos"][key])
+    missing = [n for n in range(start, end + 1) if n not in have]
+    if missing:
+        raise PlanError(f"no clip in {src} for row(s) {', '.join(map(str, missing[:10]))}{' ...' if len(missing) > 10 else ''}")
+    gpu = body.get("gpu") or "NvidiaTeslaT4"
+    if gpu not in [g for g, _ in GPUS["kaggle"]] or gpu.startswith("Tpu"):
+        raise PlanError("choose a Kaggle GPU")
+    user = (body.get("kaggle_user") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{2,40}", user):
+        raise PlanError("enter your Kaggle username (letters, digits, - and _), Models tab")
+    return {"label": f"Upscale {src} rows {start}-{end} 2x on Kaggle", "argv": ["scripts/run_kaggle_model.sh", "upscale_x2", str(start), str(end)],
+            "env": {"PROJECT": slug, "SHOTS_CSV": "all_shots.csv", "KAGGLE_USER": user, "KAGGLE_ACCELERATOR": gpu, "UPSCALE_SOURCE": src}}
 
 
 def build_plan(opt, commit=False):
@@ -2713,6 +2746,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, creative_direction(body))
             if url.path == "/api/creative_direction_get":
                 return self._json(200, creative_direction_get(body))
+            if url.path == "/api/upscale":
+                JOB.start([upscale_step(body)], body)
+                return self._json(200, {"started": 1})
             if url.path == "/api/voice_cast":
                 return self._json(200, voice_cast(body))
             if url.path == "/api/make_animatic":

@@ -6,6 +6,7 @@
 #        SHOTS_CSV=all_chapters.csv KAGGLE_USER=yourname ./run_kaggle_model.sh wan 1 5   # one prompt per chapter
 #        SHOTS_CSV=keyframes.csv KAGGLE_USER=yourname ./run_kaggle_model.sh image_sdxl 1 20   # keyframes -> images/sdxl_keyframes
 #        KEYFRAME_MODEL=sdxl KAGGLE_USER=yourname ./run_kaggle_model.sh ltx_video_i2v 1 20   # animate those keyframes
+#        UPSCALE_SOURCE=ltx_video_i2v KAGGLE_USER=yourname ./run_kaggle_model.sh upscale_x2 1 20   # videos/ltx_video_i2v -> videos/ltx_video_i2v_x2
 # Uploads the prompt CSVs as a private dataset, runs the Kaggle notebook on a GPU, waits, and
 # downloads the clips into ./videos/MODEL (or ./videos/MODEL_chapters in chapter mode).
 set -euo pipefail
@@ -49,6 +50,20 @@ case "$MODEL" in *_i2v)
   [ -z "$MISSING" ] || { echo "!! no keyframe in $KFDIR for row(s):$MISSING - make keyframes for these rows first"; exit 1; }
   echo "== keyframes from $KFDIR" ;;
 esac
+# Upscalers (upscale_*) enlarge clips already made: videos/<UPSCALE_SOURCE>/shot-NNNN.mp4, uploaded as in-NNNN.mp4, come back in videos/<UPSCALE_SOURCE>_x2.
+UPDIR=""
+case "$MODEL" in upscale_*)
+  case "$SHOTS_CSV" in all_shots.csv) ;; *) echo "$MODEL works per shot (all_shots.csv), not with $SHOTS_CSV"; exit 1 ;; esac
+  SRC=${UPSCALE_SOURCE:?set UPSCALE_SOURCE to the video folder to upscale (for example ltx_video_i2v)}
+  [[ "$SRC" =~ ^[a-z0-9_]{2,60}$ ]] || { echo "bad UPSCALE_SOURCE: $SRC"; exit 1; }
+  UPDIR="$PD/videos/$SRC"
+  [ -d "$UPDIR" ] || { echo "!! no clips folder $UPDIR"; exit 1; }
+  MISSING=""
+  for N in $(seq "$START" "$END"); do [ -f "$UPDIR/$(printf 'shot-%04d.mp4' "$N")" ] || MISSING="$MISSING $N"; done
+  [ -z "$MISSING" ] || { echo "!! no clip in $UPDIR for row(s):$MISSING"; exit 1; }
+  OUTDIR="$PD/videos/${SRC}_${MODEL#upscale_}"
+  echo "== upscaling clips from $UPDIR into $OUTDIR" ;;
+esac
 KPREFIX=${KAGGLE_PREFIX:-}                                   # no prefix unless you set KAGGLE_PREFIX (for example KAGGLE_PREFIX=mine-)
 DS="${KPREFIX}${PROJECT//_/-}-prompts"                      # one Kaggle dataset per project (Kaggle wants 3+ characters in the name and 6+ in the title, so a short set name like xv gets "-prompts")
 SLUG="${KPREFIX}${PROJECT//_/-}-${MODEL//_/-}${MODE}-${START}-${END}"        # slug must equal the lower-cased, dashed title
@@ -58,6 +73,9 @@ WORK="$(mktemp -d)"; trap 'rm -rf "$WORK" "$GEN"' EXIT
 mkdir -p "$WORK/ds"; for f in all_shots.csv all_chapters.csv audio_shots.csv audio_chapters.csv all_images.csv keyframes.csv; do [ -f "$PD/$f" ] && cp "$PD/$f" "$WORK/ds/"; done
 if [ "$SHOTS_CSV" = keyframes.csv ] && [ -d "$PD/keyframe_refs" ]; then   # character pictures that steer the keyframes (see make_keyframes_csv.py --refs)
   cp "$PD"/keyframe_refs/ref-*.png "$WORK/ds/" 2>/dev/null || true
+fi
+if [ -n "$UPDIR" ]; then         # this run's clips to upscale, flat beside the CSV
+  for N in $(seq "$START" "$END"); do cp "$UPDIR/$(printf 'shot-%04d.mp4' "$N")" "$WORK/ds/$(printf 'in-%04d.mp4' "$N")"; done
 fi
 if [ -n "$KFDIR" ]; then         # this run's keyframes, flat beside the CSV (a dataset upload skips sub-folders)
   for N in $(seq "$START" "$END"); do cp "$KFDIR/$(printf 'image-%04d.png' "$N")" "$WORK/ds/$(printf 'kf-%04d.png' "$N")"; done

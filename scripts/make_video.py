@@ -68,6 +68,7 @@ OPT = '''def opt(row, key, default, cast=int):
 
 '''
 PIP_GGUF = "!pip install -q -U diffusers transformers accelerate sentencepiece protobuf imageio imageio-ffmpeg ftfy gguf peft safetensors\n!pip uninstall -y -q torchao      # Kaggle ships torchao 0.10, which the new peft rejects; nothing here needs it"
+PIP_BASE = "!pip install -q -U diffusers imageio imageio-ffmpeg"      # export_to_video only (no generator weights)
 _GGUF_WAN = """from diffusers import AutoencoderKLWan, GGUFQuantizationConfig, WanPipeline, WanTransformer3DModel
 from huggingface_hub import hf_hub_download
 
@@ -262,7 +263,7 @@ def keyframe(row, width, height):
 
 MODELS["ltx_video_i2v"] = dict(
   title="LTX-Video, from keyframes", repo="Lightricks/LTX-Video", fps=24,
-  note="LTX-Video animating each shot's keyframe (image-to-video), so every clip starts from the still you approved on the Storyboard. Same speed and size as LTX-Video (768x320, ~4 s); fits a free T4. Needs keyframes for the rows first. Kaggle only. EXPERIMENTAL: not run on a GPU yet.",
+  note="LTX-Video animating each shot's keyframe (image-to-video), so every clip starts from the still you approved on the Storyboard. 768x320, ~4 s at 24 fps. Tested on a Kaggle T4: about 10 minutes per clip at 40 steps; the clip opens exactly on its keyframe. Needs keyframes for the rows first. Kaggle only.",
   config=MODELS["ltx_video"]["config"],
   load='from diffusers import LTXImageToVideoPipeline\n\npipe = LTXImageToVideoPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()\npipe.vae.enable_tiling()',
   gen=OPT + _KEYFRAME + '''def generate(row, seed):
@@ -287,6 +288,50 @@ pipe.enable_model_cpu_offload()""",
                 width=w, height=h, num_frames=opt(row, "frames", NUM_FRAMES),
                 num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
                 generator=torch.Generator("cuda").manual_seed(seed)).frames[0]''')
+
+
+# ---------------------------------------------------------------------------------------------------------------------------
+# Upscaling: not a generator. Each row's existing clip (uploaded by the run script next to the CSV as in-NNNN.mp4, from
+# videos/<UPSCALE_SOURCE>/) is enlarged frame by frame with Real-ESRGAN x2 (BSD-3, loaded with the spandrel library) and saved
+# with its own frame rate. The run script puts the result in videos/<source>_x2/, which Make Film offers as a video source.
+# ---------------------------------------------------------------------------------------------------------------------------
+MODELS["upscale_x2"] = dict(
+  title="Upscale clips 2x (Real-ESRGAN)", repo="xinntao/Real-ESRGAN", fps=24,
+  pip=PIP_BASE + " spandrel",
+  note="Doubles the width and height of clips you already made (for example 768x320 -> 1536x640) with Real-ESRGAN x2, frame by frame, keeping each clip's frame rate. Tested on a Kaggle T4: about 40 seconds per 4-second 768x320 clip. Kaggle only. The upscaled clips land in videos/<source>_x2.",
+  config='WEIGHTS_URL = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth"\nFPS = 24        # replaced by each clip\'s own frame rate\nBATCH = 4       # frames upscaled at once',
+  load="""import urllib.request
+from spandrel import ModelLoader
+
+_WEIGHTS = Path("/tmp/RealESRGAN_x2plus.pth")      # outside /kaggle/working, so it is not downloaded back with the clips
+if not _WEIGHTS.exists():
+    urllib.request.urlretrieve(WEIGHTS_URL, _WEIGHTS)
+model = ModelLoader().load_from_file(str(_WEIGHTS)).model.eval().cuda().half()""",
+  gen=OPT + '''import imageio
+import numpy as np
+from PIL import Image
+
+_IN_ROOT = Path(CSV_PATH).parent if "CSV_PATH" in globals() else Path("/content")
+
+
+def generate(row, seed):
+    """This row's clip (in-NNNN.mp4 next to the CSV), every frame upscaled 2x. Sets FPS to the clip's own rate for saving."""
+    global FPS
+    n = next(k for k, r in enumerate(shots, 1) if r is row)
+    hits = sorted(_IN_ROOT.rglob(f"in-{n:04d}.mp4"))
+    if not hits:
+        raise FileNotFoundError(f"no clip in-{n:04d}.mp4 for row {n}: the run uploads the clips of the chosen video folder")
+    reader = imageio.get_reader(str(hits[0]), "ffmpeg")
+    FPS = reader.get_meta_data().get("fps") or 24        # the loop reads FPS after generate() returns
+    frames = [f for f in reader]
+    reader.close()
+    out = []
+    with torch.no_grad():
+        for i in range(0, len(frames), BATCH):
+            x = torch.from_numpy(np.stack(frames[i:i + BATCH])).cuda().permute(0, 3, 1, 2).half().div(255)
+            y = model(x).clamp(0, 1).mul(255).round().byte().permute(0, 2, 3, 1).cpu().numpy()
+            out += [Image.fromarray(f) for f in y]
+    return out''')
 
 
 def script(name, m):

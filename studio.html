@@ -2324,6 +2324,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <button id="bFilmAll">Tick everything available</button>
         <button id="bFilmNone">Untick all</button>
         <button id="bFilmMake" class="primary">Make video</button>
+        <button type="button" id="bUpscale" title="Real-ESRGAN x2 on a Kaggle T4, about 40 seconds per clip. The clips come back as a new video source, <folder>_x2.">Upscale these clips 2x (Kaggle)</button>
         <span id="fsummary" class="warn"></span>
       </div>
       <div class="movies" id="ftable" style="margin-top:8px;max-height:380px"></div>
@@ -3647,6 +3648,18 @@ $("bCleanup").onclick = runCleanup; $("bKaggleCleanup").onclick = runKaggleClean
 $("bEstimate").onclick = estimate;
 $("bFilmLoad").onclick = () => loadFilm(false); $("bMakeFilm").onclick = () => loadFilm(true); $("bFilmAll").onclick = () => tickAll(true); $("bFilmNone").onclick = () => tickAll(false);
 $("bFilmMake").onclick = makeFilm;
+$("bUpscale").addEventListener("click", async () => {      // the ticked rows' range of the chosen video folder, enlarged on Kaggle
+  const rows = filmSelection().map(r => r.n);
+  if (!film || !rows.length) { $("filmmsg").textContent = "load the files and tick the clips to upscale"; $("filmmsg").className = "err"; return; }
+  const src = $("fvideo").value, start = Math.min(...rows), end = Math.max(...rows);
+  if (!confirm(`Upscale rows ${start}-${end} of ${src} 2x on Kaggle?\n\nThis uses Kaggle GPU time (about 40 seconds per clip). The bigger clips come back as ${src}_x2, offered under "Video clips from".`)) return;
+  const gpu = [...$("gpu").options].some(o => o.value === $("gpu").value && /^Nvidia/.test(o.value)) ? $("gpu").value : "NvidiaTeslaT4";
+  try {
+    await api("/api/upscale", { project: film.proj, source: src, start, end, gpu, kaggle_user: $("kuser").value.trim() });
+    $("filmmsg").textContent = "upscaling started: see the log"; $("filmmsg").className = "warn";
+    since = 0; $("log").textContent = ""; building = true; poll();
+  } catch (e) { $("filmmsg").textContent = e.message; $("filmmsg").className = "err"; }
+});
 $("bDirSend").onclick = dirSend;
 $("bDirClear").onclick = dirClear;
 $("bDirFollowup").onclick = dirFollowup;
