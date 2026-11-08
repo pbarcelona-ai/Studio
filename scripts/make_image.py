@@ -263,10 +263,34 @@ MODELS["flux2_klein_4b"] = dict(title="FLUX.2 klein 4B", repo="black-forest-labs
   pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf",
   config='MODEL_ID = "black-forest-labs/FLUX.2-klein-4B"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 1.0',
   load='from diffusers import Flux2KleinPipeline\n\npipe = Flux2KleinPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()',
-  gen='''def generate(row, seed):
-    return pipe(prompt=row["prompt"], width=opt(row, "width", WIDTH), height=opt(row, "height", HEIGHT),
-                num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
-                generator=torch.Generator("cpu").manual_seed(seed)).images[0]''')
+  gen='''from PIL import Image
+
+_REF_ROOT = Path(CSV_PATH).parent if "CSV_PATH" in globals() else Path("/content")
+
+
+def references(row):
+    """Character pictures named in the row's refs column (keyframes only), found next to the CSV. None when there are none."""
+    pics = []
+    for name in [n for n in (row.get("refs") or "").split("|") if n]:
+        hits = sorted(_REF_ROOT.rglob(name))
+        if hits:
+            pics.append(Image.open(hits[0]).convert("RGB"))
+        else:
+            print(f"   reference picture {name} not found; continuing without it", flush=True)
+    return pics or None
+
+
+def generate(row, seed):
+    kw = dict(prompt=row["prompt"], width=opt(row, "width", WIDTH), height=opt(row, "height", HEIGHT),
+              num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float))
+    refs = references(row)
+    if refs:
+        try:       # each picture adds tokens to every attention step; on a T4 that can run out of memory
+            return pipe(image=refs, generator=torch.Generator("cpu").manual_seed(seed), **kw).images[0]
+        except torch.cuda.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            print("   out of GPU memory with reference pictures; this image is made without them", flush=True)
+    return pipe(generator=torch.Generator("cpu").manual_seed(seed), **kw).images[0]''')
 
 # --- adult-content (uncensored) additions. Community models; use only for clearly adult, fictional subjects. ---
 MODELS["chroma1_hd"] = dict(title="Chroma1-HD (GGUF)", repo="lodestones/Chroma1-HD",

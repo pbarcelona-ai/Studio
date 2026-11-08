@@ -56,6 +56,9 @@ WORK="$(mktemp -d)"; trap 'rm -rf "$WORK" "$GEN"' EXIT
 
 # 1. Dataset with the prompt CSVs (create once, new version afterwards)
 mkdir -p "$WORK/ds"; for f in all_shots.csv all_chapters.csv audio_shots.csv audio_chapters.csv all_images.csv keyframes.csv; do [ -f "$PD/$f" ] && cp "$PD/$f" "$WORK/ds/"; done
+if [ "$SHOTS_CSV" = keyframes.csv ] && [ -d "$PD/keyframe_refs" ]; then   # character pictures that steer the keyframes (see make_keyframes_csv.py --refs)
+  cp "$PD"/keyframe_refs/ref-*.png "$WORK/ds/" 2>/dev/null || true
+fi
 if [ -n "$KFDIR" ]; then         # this run's keyframes, flat beside the CSV (a dataset upload skips sub-folders)
   for N in $(seq "$START" "$END"); do cp "$KFDIR/$(printf 'image-%04d.png' "$N")" "$WORK/ds/$(printf 'kf-%04d.png' "$N")"; done
 fi

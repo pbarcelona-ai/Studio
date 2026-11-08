@@ -22,7 +22,8 @@ for f in sorted((pdir / "scripts").glob("chapter-*.json")):
     d = read_json(f)
     label = f"{args.project}-{d['chapter']:03d}"
     for s in d["shots"]:
-        prompts.append({"chapter": label, "shot": s["n"], "prompt": s["prompt"]})
+        prompts.append({"chapter": label, "shot": s["n"], "prompt": s["prompt"],
+                        "characters": "|".join(str(c) for c in s.get("characters", []))})     # who is in the shot (keyframe reference pictures)
         line = [s["speaker"], s["narration"]] + ([s["voice"]] if s.get("voice") else [])
         lines = s["lines"] if "lines" in s else [line]          # dialogue mode: one line per quote, none for a silent shot
         audio.append({"chapter": label, "shot": s["n"], "lines_json": json.dumps(lines, ensure_ascii=False),
@@ -49,7 +50,7 @@ def first_per_chapter(rows):
     return out
 
 
-write("all_shots.csv", ["chapter", "shot", "prompt"], prompts)
+write("all_shots.csv", ["chapter", "shot", "prompt", "characters"], prompts)
 write("all_chapters.csv", ["chapter", "shot", "prompt"], first_per_chapter(prompts))
 write("audio_shots.csv", AUDIO_FIELDS, audio)
 write("audio_chapters.csv", AUDIO_FIELDS, first_per_chapter(audio))

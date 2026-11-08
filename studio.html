@@ -1610,7 +1610,7 @@
         <div style="margin:0 0 6px 26px"><select id="pdf"></select></div>
         <label class="opt"><input type="checkbox" id="b_continuity"><span>Write the continuity book<small>Characters, look, voices. One AI call. Edit <code id="bookFile">the book's own .json file</code> afterwards if you like.</small></span></label>
         <label class="opt"><input type="checkbox" id="b_write"><span>Write shots, narration, sound and music<small>One AI call per chapter; finished chapters are skipped.</small></span></label>
-        <label class="opt" style="margin-left:26px"><input type="checkbox" id="b_force"><span>Redo chapters that are already written<small>Use to change narration style, shot counts or the continuity book. Old clips no longer match; see README_NEW_BOOK.md "Redo".</small></span></label>
+        <label class="opt" style="margin-left:26px"><input type="checkbox" id="b_force"><span>Redo chapters that are already written<small>Use to change narration style, shot counts or the continuity book. Old clips no longer match, so make them again.</small></span></label>
         <label class="opt"><input type="checkbox" id="b_build"><span>Build the CSV files and plan the movies</span></label>
       </div>
       <div>
@@ -1812,7 +1812,7 @@
       <div style="min-width:90px"><label class="f">Seed</label><input type="number" id="pseed" min="0" autocomplete="off"></div>
       <div style="min-width:110px"><label class="f">Variations of each</label><input type="number" id="pvar" min="1" max="8" value="1" autocomplete="off"></div>
     </div>
-    <p class="warn">Sizes are rounded to what the model accepts. Each variation is its own clip or picture with a different seed. Video models: LTX frames are 8k+1 (97 = 4 s), Wan 4k+1 (81 = 5 s); CogVideoX ignores size and frames. Gated models (Stable Diffusion 3.5) need a Hugging Face token, see README_TEXT_TO_MEDIA.md.</p>
+    <p class="warn">Sizes are rounded to what the model accepts. Each variation is its own clip or picture with a different seed. Video models: LTX frames are 8k+1 (97 = 4 s), Wan 4k+1 (81 = 5 s); CogVideoX ignores size and frames. Gated models (Stable Diffusion 3.5) need a Hugging Face token (add HF_TOKEN in Setup).</p>
   </section>
             </div>
         </div>
@@ -2171,7 +2171,10 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
       </div>
       <div>
         <label class="f" for="kfmodel">Keyframe image model</label>
-        <select id="kfmodel" style="margin-bottom:8px"></select>
+        <select id="kfmodel" style="margin-bottom:4px"></select>
+        <label class="opt" style="margin-bottom:8px"><input type="checkbox" id="kfrefs" checked><span>Steer keyframes with character pictures<small id="kfrefsNote">Each character's reference picture (Characters tab) keeps their face and costume the same in every still. FLUX.2 klein only.</small></span></label>
+        <label class="f" for="kfseries">Character pictures from</label>
+        <select id="kfseries" style="margin-bottom:8px"></select>
         <label class="f">When narration is longer than the clip</label>
         <select id="sync"><option value="stretch">Stretch video to fit (default)</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select>
         <div class="row" style="gap:8px;margin-top:8px">
@@ -2426,7 +2429,7 @@ function options() {
     sync: $("sync").value, keep_going: $("keep").checked, vol: { narration: $("vn").value, sfx: $("vs").value, music: $("vm").value },
     narration: $("narration").value, engine: $("engine").value, force_write: $("b_force").checked, claude_model: $("cmodel").value, chapters: $("chs").value, words_per_shot: $("wps").value,
     min_shots: $("minshots").value, max_shots: $("maxshots").value, movie_minutes: $("mmin").value, workers: $("workers").value,
-    enoch_chars: $("echars").value, keyframe_model: $("kfmodel").value,
+    enoch_chars: $("echars").value, keyframe_model: $("kfmodel").value, keyframe_refs: $("kfrefs").checked && !$("kfrefs").disabled, keyframe_series: $("kfseries").value,
     movies: sel === "ids" ? { mode: "ids", ids: checked("movie") } : sel === "first" ? { mode: "first", n: $("mfirst").value } : { mode: "all" },
     steps: { ingest: $("b_ingest").checked, continuity: $("b_continuity").checked, write: $("b_write").checked, build: $("b_build").checked,
              extract: $("s_extract").checked, keyframes: $("s_keyframes").checked, video: $("s_video").checked, audio: $("s_audio").checked, merge: $("s_merge").checked, mix: $("s_mix").checked },
@@ -2479,6 +2482,28 @@ function fillKeyframeModels() {
   const all = ST.image_models || [], first = KEYFRAME_FIRST.filter(m => all.includes(m));
   const order = [...first, ...all.filter(m => !first.includes(m) && !/^tpu_/.test(m))];     // TPU image models cannot share a run with a GPU video model
   $("kfmodel").innerHTML = order.map(m => `<option value="${m}">${m}</option>`).join("");
+  syncKeyframeRefs();
+}
+// Only some image models take reference pictures; for the others the option is greyed out and not sent.
+const REF_IMAGE_MODELS = ["flux2_klein_4b"];
+function syncKeyframeRefs() {
+  const ok = REF_IMAGE_MODELS.includes($("kfmodel").value);
+  $("kfrefs").disabled = !ok;
+  $("kfseries").disabled = !ok || !$("kfrefs").checked;
+  $("kfrefsNote").textContent = ok ? "Each character's reference picture (Characters tab) keeps their face and costume the same in every still."
+                                   : `${$("kfmodel").value} cannot take reference pictures; choose ${REF_IMAGE_MODELS.join(" or ")} to use them.`;
+}
+$("kfmodel").addEventListener("change", syncKeyframeRefs);
+$("kfrefs").addEventListener("change", () => { $("kfseries").disabled = !$("kfrefs").checked || $("kfrefs").disabled; });
+// The series list, with the chosen book's own series picked when it has one (a new book gets a series named after it).
+async function fillKeyframeSeries() {
+  const p = cur(), sel = $("kfseries"), keep = sel.value;
+  try {
+    const { series } = await api("/api/characters?action=list_series");
+    sel.innerHTML = series.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("") || '<option value="">(no character series yet)</option>';
+    const own = p && p.character_series;
+    sel.value = series.includes(keep) ? keep : series.includes(own) ? own : (series[0] || "");
+  } catch (e) { /* the option still works with the book's own series */ }
 }
 
 // Tick what the selected book needs next. Runs when you pick a book, after an upload and when a job ends.
@@ -2552,6 +2577,7 @@ async function loadStatus(applyDef) {
     $("imodels").innerHTML = modelGroupsHtml("imodel", ST.image_groups, ST.image_models || []);
     renderAudioModels();
     fillKeyframeModels();
+    fillKeyframeSeries();
     updatePromptModels();
     fillGpus();
   }
@@ -3090,7 +3116,7 @@ const MODEL_NOTES = { cogvideox: "Size and length are fixed by the model (720x48
                   qwen_image_21_uc: "Experimental, adult content, no filter. Base Qwen-Image-2.1 plus the abenzerps uncensored LoRA (the quantized GGUF files in that repo are ComfyUI-only and not used). Clearly adult, fictional subjects only. Kaggle recommended.",
                   moss_image_sft_lora: "Experimental, adult content, no filter. MOSS-Image-SFT plus the axiomofmind NSFW LoRA (scale 0.8, 30 steps). Trigger moss_xvstyle is added for you. Clearly adult, fictional subjects only. 25 GB: Kaggle only, realistically.",
                   qwen_image_21: "Experimental. Qwen-Image-2.1 (7B, Qwen Research License): strong text and portraits; 40 steps, no negative prompt. Kaggle recommended.",
-                  sd35_medium: "Experimental and gated: needs a Hugging Face token (README_TEXT_TO_MEDIA.md).", sdxl_turbo: "Fastest. Good for trying ideas.",
+                  sd35_medium: "Experimental and gated: needs a Hugging Face token.", sdxl_turbo: "Fastest. Good for trying ideas.",
                   moss_image_sft: "Experimental. 25 GB model, 50 steps: slow on a T4 and tight on RAM (Kaggle only, realistically).", moss_image_base: "Experimental. The base model; moss_image_sft is the everyday one.",
                   ltx_video: "Fastest video model.", wan: "Better motion, slower. On a T4 keep it small (512x288, 33 frames): bigger sizes run out of memory.",
                   tpu_wan: "EXPERIMENT: Wan 14B video on Kaggle TPU v5e-8. Untested; same size and length for every row.",
@@ -6713,6 +6739,7 @@ showToast = function(message, type, duration) {
                          : `<div class="pz-media" aria-label="No keyframe yet for shot ${c.n}"><span class="pz-badge">${c.n}</span><span style="font-size:var(--text-sm)">no keyframe yet</span></div>`;
         const clipBtns = clips.map(([m, f]) => `<button type="button" class="pz-chip" data-clip="${esc(proj + "/" + f)}" data-cap="${esc(m + " - " + cap)}">▶ ${esc(m)}</button>`).join("");
         return `<article class="pz-tile">${still}<div class="pz-body"><span class="pz-cat">${esc(c.chapter)} · shot ${esc(c.shot)}</span>` +
+          (c.characters && c.characters.length ? `<span class="pz-cat">${c.characters.map(esc).join(" · ")}</span>` : "") +
           `<span title="${esc(c.prompt)}">${esc(c.prompt.length > 160 ? c.prompt.slice(0, 160) + "…" : c.prompt)}</span>` +
           (c.narration ? `<em style="color:var(--fg-muted)">“${esc(c.narration)}”</em>` : "") +
           (clipBtns ? `<div class="pz-row" style="flex-wrap:wrap;gap:6px">${clipBtns}</div>` : "") + `</div></article>`;

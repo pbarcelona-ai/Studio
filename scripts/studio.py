@@ -49,7 +49,8 @@ TOKEN, SESSION_PORT = load_or_create_session()
 VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_video", "cogvideox", "cogvideox_5b",
                 "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan",     # tpu_wan = Kaggle TPU experiment
                 "ltx_video_i2v", "wan22_ti2v_5b_i2v"]                     # image-to-video: animate each shot's keyframe
-I2V_MODELS = {"ltx_video_i2v", "wan22_ti2v_5b_i2v"}                      # need keyframes (images/<model>_keyframes) for every row they make
+I2V_MODELS = {"ltx_video_i2v", "wan22_ti2v_5b_i2v"}
+REF_IMAGE_MODELS = {"flux2_klein_4b"}                                    # keyframe models that take character reference pictures                      # need keyframes (images/<model>_keyframes) for every row they make
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
 VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
                 ("CogVideoX", ["cogvideox", "cogvideox_5b"]), ("Uncensored (adult content)", ["wan22_t2v_a14b_lora", "hunyuan_video_lora"]),
@@ -420,10 +421,10 @@ def chunks(lo, hi, batch):
 
 # Set to True once a TPU notebook started from the command line really gets a TPU. On Oct 27, 2026 two such runs were
 # accepted by Kaggle (enable_tpu=true, machine_shape=TpuV5E8) but the sessions had no TPU: no /dev/accel* devices,
-# CPU-only JAX, and 0.00 h of the 20 h weekly TPU quota used. See README_TPU_EXPERIMENT.md.
+# CPU-only JAX, and 0.00 h of the 20 h weekly TPU quota used.
 TPU_CLI_WORKS = True
 TPU_CLI_NOTE = ("Kaggle did not attach a TPU to notebooks started from the command line (tested twice, 0 h of TPU quota used; "
-                "TPUs may also just have been busy). Try the notebook in the Kaggle web page, or retest later (README_TPU_EXPERIMENT.md)")
+                "TPUs may also just have been busy). Try the notebook in the Kaggle web page, or retest later")
 
 
 def gpu_blocker(service, gpu):
@@ -452,7 +453,7 @@ def model_blocker(name, service, gpu):
     if on_tpu:
         return "needs a CUDA GPU, not a TPU"
     if name == "sd35_medium":
-        return "gated model: needs a Hugging Face token, which the command-line runs cannot pass (use the notebook, see README_TEXT_TO_MEDIA.md)"
+        return "gated model: needs a Hugging Face token, which the command-line runs cannot pass (run the notebook on the Kaggle page with your token added as a secret)"
     if name in BIG_RAM_MODELS and service == "colab" and gpu == "T4":
         return "needs more system RAM than Colab's free tier has (use Kaggle)"
     return None
@@ -512,6 +513,9 @@ def generation_steps(opt, slug):
         raise PlanError("choose the image model that makes the keyframes")
     if kmodel and kmodel not in IMAGE_MODELS:
         raise PlanError("unknown keyframe image model")
+    refs = bool(opt.get("keyframe_refs")) and bool(st.get("keyframes"))
+    if refs and kmodel not in REF_IMAGE_MODELS:
+        raise PlanError(f"character pictures steer only {', '.join(sorted(REF_IMAGE_MODELS))} keyframes: pick it, or untick 'Steer keyframes with character pictures'")
     if st.get("keyframes") and service != "kaggle":
         raise PlanError("keyframes are made on Kaggle (the Colab and Hugging Face runners do not keep them apart from other images): choose Kaggle")
     i2v = [m for m in vmodels if m in I2V_MODELS] if st.get("video") else []
@@ -549,8 +553,11 @@ def generation_steps(opt, slug):
     runner = make_runner(service, gpu, user, slug)
     if st.get("keyframes"):
         kw, kh = keyframe_size(kmodel, (i2v or vmodels or ["ltx_video"])[0])
-        steps.append({"label": f"Write keyframes.csv ({kw}x{kh})", "env": {},
-                      "argv": ["python3", "make_keyframes_csv.py", slug, "--width", str(kw), "--height", str(kh)]})
+        series = opt.get("keyframe_series") or get_character_series(slug)     # the pictures can come from any series (Characters tab)
+        if refs and series not in character_tokens.list_series():
+            raise PlanError(f"no character series named {series!r}: choose one on the Characters tab")
+        steps.append({"label": f"Write keyframes.csv ({kw}x{kh}" + (f", character pictures from '{series}')" if refs else ")"), "env": {},
+                      "argv": ["python3", "make_keyframes_csv.py", slug, "--width", str(kw), "--height", str(kh)] + (["--refs", series] if refs else [])})
 
     done = set()
     for mv in chosen:
@@ -615,6 +622,7 @@ def storyboard(slug, start, end):
     for n in range(start, end + 1):
         r, a = shots[n - 1], (audio[n - 1] if n <= len(audio) else {})
         cards.append({"n": n, "chapter": r.get("chapter", ""), "shot": r.get("shot", ""), "prompt": r.get("prompt", ""),
+                      "characters": [c for c in (r.get("characters") or "").split("|") if c],
                       "narration": a.get("narration", ""),
                       "keyframes": {k.name.removesuffix("_keyframes"): f"images/{k.name}/image-{n:04d}.png" for k in kdirs if (k / f"image-{n:04d}.png").is_file()},
                       "clips": {v.name: f"videos/{v.name}/shot-{n:04d}.mp4" for v in vdirs if (v / f"shot-{n:04d}.mp4").is_file()}})

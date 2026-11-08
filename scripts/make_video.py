@@ -359,13 +359,13 @@ if failed and len(failed) == last - START + 1:
 
 def notebook(name, m, platform):
     if platform == "colab":
-        intro = (f"# Pistachio's Studio: {m['title']} on Colab\n\n{m['note']}\n\nSee README_COLAB_GUI_{name.upper()}.md. "
+        intro = (f"# Pistachio's Studio: {m['title']} on Colab\n\n{m['note']}\n\n"
                  "Runtime → Change runtime type → **T4 GPU**. Put `all_shots.csv` / `all_chapters.csv` in `MyDrive/PistachioStudio/`.")
         setup = [code("from google.colab import drive\ndrive.mount('/content/drive')")]
         paths = ("from pathlib import Path\nBASE = Path('/content/drive/MyDrive/PistachioStudio')\n" + CSV_LINE +
                  "\nCSV_PATH = BASE / CSV_NAME\n" + SUFFIX + f"\nOUT = BASE / 'videos' / ('{name}' + SUFFIX)")
     else:
-        intro = (f"# Pistachio's Studio: {m['title']} on Kaggle\n\n{m['note']}\n\nSee README_KAGGLE_GUI_{name.upper()}.md. "
+        intro = (f"# Pistachio's Studio: {m['title']} on Kaggle\n\n{m['note']}\n\n"
                  "Right panel: **Accelerator = GPU T4 x2**, **Internet = On**, add your dataset containing `all_shots.csv` / `all_chapters.csv`. "
                  "Clips are written to `/kaggle/working/videos/` and show up in the Output tab.")
         setup = []

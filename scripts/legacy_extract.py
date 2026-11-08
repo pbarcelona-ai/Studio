@@ -7,7 +7,7 @@ Writes into projects/<name>/:  all_shots.csv, all_chapters.csv, audio_shots.csv,
 (chapter,shot,prompt  and  chapter,shot,lines_json,narration,sfx,music). Row N of the audio files is the audio for
 row N of the matching video file. Adam & Eve text comes from each chapter's 'Narration & dialogue' and
 'Sound & music' sections; Enoch narrates the Charles verse text in enoch_verses.json (extract_enoch_text.py).
-New books go through book_*.py instead (README_NEW_BOOK.md).
+New books go through book_*.py instead.
 """
 import argparse, csv, json, re
 from pathlib import Path

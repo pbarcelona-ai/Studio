@@ -250,12 +250,12 @@ def code(t): return {"cell_type": "code", "metadata": {}, "execution_count": Non
 def notebook(k, m, platform):
     SUF = "SUFFIX = '_chapters' if 'chapters' in CSV_NAME else ''"
     if platform == "colab":
-        intro = f"# Pistachio's Studio audio: {m['title']} on Colab\n\n{m['note']}\n\nSee README_AUDIO.md. Put `audio_shots.csv` / `audio_chapters.csv` in `MyDrive/PistachioStudio/`."
+        intro = f"# Pistachio's Studio audio: {m['title']} on Colab\n\n{m['note']}\n\nPut `audio_shots.csv` / `audio_chapters.csv` in `MyDrive/PistachioStudio/`."
         setup = [code("from google.colab import drive\ndrive.mount('/content/drive')")]
         paths = ("from pathlib import Path\nBASE = Path('/content/drive/MyDrive/PistachioStudio')\nCSV_NAME = 'audio_shots.csv'   # or 'audio_chapters.csv'\n"
                  "CSV_PATH = BASE / CSV_NAME\n" + SUF + f"\nOUT = BASE / 'audio' / ('{k}' + SUFFIX)")
     else:
-        intro = (f"# Pistachio's Studio audio: {m['title']} on Kaggle\n\n{m['note']}\n\nSee README_AUDIO.md. Accelerator = GPU T4 x2, Internet = On, "
+        intro = (f"# Pistachio's Studio audio: {m['title']} on Kaggle\n\n{m['note']}\n\nAccelerator = GPU T4 x2, Internet = On, "
                  "dataset with the CSVs attached. Files go to `/kaggle/working/audio/`.")
         setup = []
         paths = ("from pathlib import Path\nCSV_NAME = 'audio_shots.csv'   # or 'audio_chapters.csv'\n"
