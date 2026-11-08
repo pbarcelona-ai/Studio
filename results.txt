@@ -242,3 +242,9 @@ Errors found and fixed: book_build.py failed on every rebuild since the characte
 Warnings: LOW - CSV writes in place (existing pattern).
 Tested: throwaway books (deleted), headless Chrome Voice Cast card.
 Status: PASS
+
+REVIEW RESULTS (film table upgrades)
+Files reviewed: scripts/mix_film.py, scripts/studio.py, studio.html (lower-level: layout.py unchanged)
+Errors found and fixed: num() let NaN through its range checks.
+Tested: synthetic clips through mix_film.py directly and through the page (headless Chrome); throwaway book zz_film_test.
+Status: PASS

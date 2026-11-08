@@ -300,6 +300,8 @@ def num(opt, key, default, cast=float, lo=None, hi=None):
         v = cast(opt.get(key) if opt.get(key) not in (None, "") else default)
     except (TypeError, ValueError):
         raise PlanError(f"{key} must be a number")
+    if cast is float and v != v:                       # NaN passes every comparison below
+        raise PlanError(f"{key} must be a number")
     if (lo is not None and v < lo) or (hi is not None and v > hi):
         raise PlanError(f"{key} must be between {lo} and {hi}")
     return v
@@ -1847,12 +1849,16 @@ def film_step(opt):
             raise PlanError(f"unknown {kind} folder {v!r}")
         srcs[kind] = v
     have = {"video": set(inv["videos"][vsrc]), **{k: set(inv[k][srcs[k]]) if srcs[k] else set() for k in AUDIO_KINDS_FILES}}
-    clips = []
-    for item in opt.get("rows") or []:
+    clips, seen = [], set()
+    for item in opt.get("rows") or []:                     # in the page's order: the table can reorder clips
         n = int(item.get("n"))
         if n not in have["video"]:
             raise PlanError(f"row {n} has no clip in {vsrc}")
-        c = {"row": n, "video": f"{vsrc}/shot-{n:04d}.mp4"}
+        if n in seen:
+            raise PlanError(f"row {n} is listed twice")
+        seen.add(n)
+        c = {"row": n, "video": f"{vsrc}/shot-{n:04d}.mp4",
+             "trim_start": num(item, "trim_start", 0.0, float, 0, 30), "trim_end": num(item, "trim_end", 0.0, float, 0, 30)}
         for kind in AUDIO_KINDS_FILES:
             use = bool(item.get(kind)) and n in have[kind]
             c[kind] = f"{srcs[kind]}/{kind}-{n:04d}.wav" if use else None
@@ -1863,11 +1869,17 @@ def film_step(opt):
     if sync not in ("stretch", "speed", "trim"):
         raise PlanError("bad sync mode")
     vols = {k: num(opt.get("vol", {}), k, d, float, 0, 5) for k, d in (("narration", 1.0), ("sfx", 0.5), ("music", 0.25))}
+    transition = opt.get("transition", "cut")
+    if transition not in ("cut", "fade"):
+        raise PlanError("bad transition")
+    fade = num(opt, "fade", 0.5, float, 0.1, 1.5)
+    titles = {k: re.sub(r"[\x00-\x1f\x7f]", " ", str(opt.get(k) or "")).strip()[:120] for k in ("title", "end_title")}   # one line of plain text each
     (pdir(slug) / "films").mkdir(exist_ok=True)
-    return slug, clips, {"label": f"Make film {name}.mp4 from {len(clips)} clip(s)", "env": {},
+    extra = ["--transition", transition, "--fade", str(fade)] + (["--burn-captions"] if opt.get("burn_captions") else [])
+    return slug, {"clips": clips, **titles}, {"label": f"Make film {name}.mp4 from {len(clips)} clip(s)", "env": {},
         "argv": ["uv", "run", "--with", "imageio-ffmpeg", "python", "mix_film.py", "--project", slug, "--selection", "films/_selection.json",
                  "--sync", sync, "--out", f"{name}.mp4", "--vol-narration", str(vols["narration"]), "--vol-sfx", str(vols["sfx"]),
-                 "--vol-music", str(vols["music"])]}
+                 "--vol-music", str(vols["music"])] + extra}
 
 
 # ---------------------------------------------------------------- clean-up: find old generated files, move them to the Trash
@@ -2691,10 +2703,10 @@ class Handler(BaseHTTPRequestHandler):
                 except subprocess.TimeoutExpired:
                     return self._json(400, {"error": "Kaggle download timed out; try again"})
             if url.path == "/api/make_film":
-                slug, clips, step = film_step(body)
-                (pdir(slug) / "films" / "_selection.json").write_text(json.dumps({"clips": clips}, indent=1))
+                slug, selection, step = film_step(body)
+                (pdir(slug) / "films" / "_selection.json").write_text(json.dumps(selection, indent=1))
                 JOB.start([step], body)
-                return self._json(200, {"clips": len(clips)})
+                return self._json(200, {"clips": len(selection["clips"])})
             if url.path == "/api/new_scene":
                 return self._json(200, new_scene(body))
             if url.path == "/api/creative_direction":

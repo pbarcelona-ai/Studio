@@ -2298,7 +2298,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
             <div class="card__body">
                 <section id="filmpanel">
     <h2>Make the film from downloaded files <span class="warn" id="filmsrc"></span> <span class="warn" id="filmmsg" role="status"></span> <button id="bFilmLoad" style="padding:2px 10px;margin-left:8px">Load downloaded files</button></h2>
-    <p class="warn">Choose where the clips and each kind of audio come from, then tick the rows to use. Only files already downloaded into the project are offered (see "Kaggle runs: fetch results"). Rows you leave unticked are left out; the film follows row order. The finished film appears under Results.</p>
+    <p class="warn">Choose where the clips and each kind of audio come from, then tick the rows to use. Only files already downloaded into the project are offered (see "Kaggle runs: fetch results"). Rows you leave unticked are left out; the film follows the table's order (move rows with the arrows), and each clip can be trimmed at the start or end. The finished film appears under Results.</p>
     <div id="filmbody">
       <div class="stack">
         <div><label class="f">Video clips from</label><select id="fvideo"></select></div>
@@ -2311,6 +2311,13 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <div class="vol-slider"><label class="f" for="fvn">Voice <output id="fvnOut" for="fvn">1.00</output></label><input type="range" id="fvn" min="0" max="2" step="0.05" value="1.0" data-out="fvnOut"></div>
         <div class="vol-slider"><label class="f" for="fvs">Effects <output id="fvsOut" for="fvs">0.50</output></label><input type="range" id="fvs" min="0" max="2" step="0.05" value="0.5" data-out="fvsOut"></div>
         <div class="vol-slider"><label class="f" for="fvm">Music <output id="fvmOut" for="fvm">0.25</output></label><input type="range" id="fvm" min="0" max="2" step="0.05" value="0.25" data-out="fvmOut"></div>
+        <div><label class="f" for="ftrans">Between clips</label><select id="ftrans"><option value="cut">Cut</option><option value="fade">Fade through black</option></select></div>
+        <div><label class="f" for="ffade">Fade length (seconds)</label><input type="number" id="ffade" min="0.1" max="1.5" step="0.1" value="0.5"></div>
+      </div>
+      <div class="stack" style="margin-top:12px">
+        <div><label class="f" for="ftitle">Opening title card (optional)</label><input type="text" id="ftitle" maxlength="120" autocomplete="off" placeholder="e.g. The Garden"></div>
+        <div><label class="f" for="fendtitle">End card (optional)</label><input type="text" id="fendtitle" maxlength="120" autocomplete="off" placeholder="e.g. The End"></div>
+        <label class="opt"><input type="checkbox" id="fburn"><span>Draw captions into the picture<small>The .srt caption file is written either way.</small></span></label>
         <div><label class="f" for="fname">Film file (saved as films/&lt;file&gt;.mp4)</label><input type="text" id="fname" name="film_file" value="my_film" spellcheck="false" autocapitalize="off" autocomplete="nope" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
       </div>
       <div class="row" style="margin-top:8px;align-items:center">
@@ -3478,13 +3485,15 @@ function renderFilmTable() {
   const cols = [["video", "clip"], ["narration", "narration"], ["sfx", "effects"], ["music", "music"]];
   const table = document.createElement("table");
   const head = document.createElement("tr");
-  head.innerHTML = "<th>row</th><th>what it shows</th>" + cols.map(([k, t]) => `<th><label style="cursor:pointer"><input type="checkbox" class="colall" data-col="${k}" checked> ${t}</label></th>`).join("");
+  head.innerHTML = "<th>order</th><th>row</th><th>what it shows</th><th title=\"Seconds cut off the start and end of the clip (the narration is not cut)\">trim start / end (s)</th>" + cols.map(([k, t]) => `<th><label style="cursor:pointer"><input type="checkbox" class="colall" data-col="${k}" checked> ${t}</label></th>`).join("");
   table.appendChild(head);
   for (const n of rows) {
     const tr = document.createElement("tr"); tr.dataset.row = n;
     const td = (content) => { const c = document.createElement("td"); c.innerHTML = content; tr.appendChild(c); return c; };
+    td(`<span style="white-space:nowrap"><button type="button" class="fmove" data-dir="-1" aria-label="Move row ${n} earlier" style="padding:2px 8px">&uarr;</button><button type="button" class="fmove" data-dir="1" aria-label="Move row ${n} later" style="padding:2px 8px">&darr;</button></span>`);
     td(String(n));
     const t = td(""); t.textContent = inv.texts[vs][String(n)] || ""; t.style.maxWidth = "380px"; t.style.fontSize = "12px"; t.style.color = "var(--fg-muted)";
+    td(`<span style="white-space:nowrap"><input type="number" class="ftrim" data-end="start" min="0" max="30" step="0.1" value="0" aria-label="Seconds cut from the start of row ${n}" style="width:64px"> <input type="number" class="ftrim" data-end="end" min="0" max="30" step="0.1" value="0" aria-label="Seconds cut from the end of row ${n}" style="width:64px"></span>`);
     for (const [k] of cols) {
       const available = k === "video" || have[k].has(n);
       const c = td(`<input type="checkbox" class="cell" data-col="${k}" ${available ? "checked" : "disabled"} title="${available ? "" : "no file for this row in the chosen folder"}">`);
@@ -3493,6 +3502,16 @@ function renderFilmTable() {
     table.appendChild(tr);
   }
   $("ftable").innerHTML = ""; $("ftable").appendChild(table);
+  table.addEventListener("click", ev => {          // move a row up or down: the film follows the table's order
+    const b = ev.target.closest("button.fmove");
+    if (!b) return;
+    const tr = b.closest("tr"), dir = Number(b.dataset.dir);
+    const other = dir < 0 ? tr.previousElementSibling : tr.nextElementSibling;
+    if (!other || !other.dataset.row) return;
+    if (dir < 0) other.before(tr); else other.after(tr);
+    b.focus();
+    updateFilmSummary();
+  });
   table.addEventListener("change", ev => {
     const t = ev.target;
     if (t.classList.contains("colall")) table.querySelectorAll(`input.cell[data-col="${t.dataset.col}"]:not(:disabled)`).forEach(c => { c.checked = t.checked; });
@@ -3506,7 +3525,8 @@ function filmSelection() {
     const get = k => tr.querySelector(`input.cell[data-col="${k}"]`).checked;
     const rowNum = Number(tr.dataset.row);
     const prompt = (film && film.inv && film.inv.texts && film.inv.texts[$("fvideo").value] && film.inv.texts[$("fvideo").value][String(rowNum)]) || "";
-    return { n: rowNum, video: get("video"), narration: get("narration"), sfx: get("sfx"), music: get("music"), prompt };
+    const trim = k => Math.min(Math.max(Number(tr.querySelector(`input.ftrim[data-end="${k}"]`).value) || 0, 0), 30);
+    return { n: rowNum, video: get("video"), narration: get("narration"), sfx: get("sfx"), music: get("music"), prompt, trim_start: trim("start"), trim_end: trim("end") };
   }).filter(r => r.video);
 }
 
@@ -3528,7 +3548,8 @@ async function makeFilm() {
   const rows = filmSelection();
   const body = { project: film.proj, name: $("fname").value.trim(), video_source: $("fvideo").value,
                  sources: { narration: $("fnarr").value, sfx: $("fsfx").value, music: $("fmusic").value },
-                 rows: rows.map(r => ({ n: r.n, narration: r.narration, sfx: r.sfx, music: r.music })), sync: $("fsync").value,
+                 rows: rows.map(r => ({ n: r.n, narration: r.narration, sfx: r.sfx, music: r.music, trim_start: r.trim_start, trim_end: r.trim_end })), sync: $("fsync").value,
+                 transition: $("ftrans").value, fade: $("ffade").value, title: $("ftitle").value.trim(), end_title: $("fendtitle").value.trim(), burn_captions: $("fburn").checked,
                  vol: { narration: $("fvn").value, sfx: $("fvs").value, music: $("fvm").value } };
   $("msg").textContent = ""; $("msg").className = "warn";
   try {
