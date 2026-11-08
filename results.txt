@@ -225,3 +225,8 @@ REVIEW RESULTS (animatic)
 Files reviewed: scripts/make_animatic.py, scripts/studio.py, studio.html (lower-level: layout.py unchanged)
 Errors found: none. make_animatic.py tested with a throwaway book (deleted); the plan step tested with validation cases.
 Status: PASS
+
+REVIEW RESULTS (creative direction, new scene)
+Files reviewed: scripts/studio.py, studio.html (lower-level: bookkit.py, character_tokens.py, layout.py unchanged)
+Errors found and fixed: escapeHtml did not escape; three missing server routes added. Tested with throwaway books (deleted).
+Status: PASS

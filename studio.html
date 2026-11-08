@@ -3636,7 +3636,7 @@ async function dirSend() {
     const j = await api("/api/creative_direction", {
       project: proj,
       messages: [...dirConv, {role: "user", content: notes}],
-      continuity: proj ? await (await fetch(`/api/continuity?project=${encodeURIComponent(proj)}`)).json().catch(() => ({})) : {}
+      engine: $("engine").value, claude_model: $("cmodel").value
     });
     dirConv = j.messages;
     renderDirResponse();
@@ -3664,7 +3664,7 @@ async function dirFollowup() {
     const j = await api("/api/creative_direction", {
       project: proj,
       messages: [...dirConv, {role: "user", content: txt}],
-      continuity: proj ? await (await fetch(`/api/continuity?project=${encodeURIComponent(proj)}`)).json().catch(() => ({})) : {}
+      engine: $("engine").value, claude_model: $("cmodel").value
     });
     dirConv = j.messages;
     renderDirResponse();
@@ -3715,7 +3715,7 @@ function renderDirResponse() {
 }
 
 function escapeHtml(s) {
-  return s.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // Load saved direction on project change
@@ -3914,6 +3914,7 @@ function enhClear() {
 
 // ---- New Scene Functions ----
 let newSceneConv = [];
+let newSceneDraft = null;      // the last previewed shot, so Apply inserts exactly what was shown
 
 async function newScenePreview() {
   const desc = $("newSceneDesc").value.trim();
@@ -3934,8 +3935,10 @@ async function newScenePreview() {
       chapter: chapter,
       position: position,
       description: desc,
-      preview_only: true
+      preview_only: true,
+      engine: $("engine").value, claude_model: $("cmodel").value
     });
+    newSceneDraft = { prompt: j.prompt, narration: j.narration, desc };
 
     newSceneConv.push({role: "user", content: desc});
     newSceneConv.push({role: "assistant", content: j.preview || j.scene || "Preview generated"});
@@ -3967,7 +3970,9 @@ async function newSceneApply() {
       chapter: chapter,
       position: position,
       description: desc,
-      preview_only: false
+      preview_only: false,
+      prompt: newSceneDraft && newSceneDraft.desc === desc ? newSceneDraft.prompt : "",
+      narration: newSceneDraft && newSceneDraft.desc === desc ? newSceneDraft.narration : ""
     });
 
     newSceneConv.push({role: "user", content: desc});

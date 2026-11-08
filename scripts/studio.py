@@ -720,6 +720,149 @@ def pick_take(body):
     return {"current_from_take": k}
 
 
+CD_SYSTEM = ("You are a film director's creative partner helping to set the look, tone, sound and pacing of a film adapted from a book. "
+             "You reply with a single JSON object and nothing else.")
+
+
+def _direction_book(slug):
+    if not SLUG_RE.match(slug or "") or slug in LEGACY:
+        raise PlanError("pick a book made from a PDF or text")
+    d = pdir(slug)
+    if not d.is_dir():
+        raise PlanError("pick a book first")
+    return d
+
+
+def creative_direction_get(opt):
+    """The saved direction conversation of a book and the direction the writing steps use (continuity book field creative_direction)."""
+    d = _direction_book(str(opt.get("project", "")))
+    conv = read_json(d / "creative_direction.json", {})
+    msgs = conv.get("messages") if isinstance(conv, dict) else None
+    return {"messages": msgs if isinstance(msgs, list) else [], "direction": (read_json(continuity_file(d), {}) or {}).get("creative_direction", "")}
+
+
+def creative_direction(opt):
+    """One turn of the direction chat. The AI answers and, when the director is happy, also returns the finished direction; that text is
+    saved in the continuity book as creative_direction, which book_write.py passes to every chapter it writes."""
+    d = _direction_book(str(opt.get("project", "")))
+    msgs = opt.get("messages")
+    if not isinstance(msgs, list) or not msgs or len(msgs) > 60:
+        raise PlanError("write something first")
+    clean = []
+    for m in msgs:
+        if not isinstance(m, dict) or m.get("role") not in ("user", "assistant") or not isinstance(m.get("content"), str):
+            raise PlanError("bad conversation")
+        clean.append({"role": m["role"], "content": m["content"][:4000], **({"finalized": True} if m.get("finalized") else {})})
+    if clean[-1]["role"] != "user" or not clean[-1]["content"].strip():
+        raise PlanError("write something first")
+    book = read_json(continuity_file(d), {}) or {}
+    chars = "; ".join(f"{c.get('name')}: {c.get('token')}" for c in book.get("characters", []))[:1500]
+    transcript = "\n\n".join(f"{'DIRECTOR' if m['role'] == 'user' else 'YOU'}: {m['content']}" for m in clean)
+    prompt = (f"Book: {d.name}.\n" + (f"Characters: {chars}\n" if chars else "") + (f"Current direction: {book['creative_direction']}\n" if book.get("creative_direction") else "")
+              + f"\nTHE CONVERSATION SO FAR:\n{transcript}\n\n"
+              "Reply to the director's last message in a few sentences: react, suggest concrete choices (camera, light, colour, sound, pacing), ask at most one question. "
+              "If they have given enough to write a complete direction, also fill \"direction\" with the finished direction, a paragraph of at most 120 words "
+              "that a screenwriter and a prompt writer can follow; otherwise leave it as an empty string.\n"
+              'Reply with one JSON object: {"reply": "...", "direction": "..."}')
+
+    def check(data):
+        if not isinstance(data.get("reply"), str) or not data["reply"].strip() or not isinstance(data.get("direction", ""), str):
+            raise ValueError("'reply' must be text and 'direction' text or empty")
+        if len(data["direction"]) > 1200:
+            raise ValueError("'direction' must be at most 120 words")
+
+    args = engine_args(opt)
+    data = llm_json(prompt, CD_SYSTEM, model=(args[3] if len(args) > 3 else None), engine=args[1], validate=check)
+    direction = data.get("direction", "").strip()
+    clean.append({"role": "assistant", "content": data["reply"].strip() + (f"\n\nDIRECTION:\n{direction}" if direction else ""),
+                  **({"finalized": True} if direction else {})})
+    write_json(d / "creative_direction.json", {"messages": clean})
+    if direction:
+        book["creative_direction"] = direction
+        if continuity_file(d).exists():          # only a book that already has its continuity book; never invent one here
+            write_json(continuity_file(d), book)
+    return {"messages": clean, "status": "direction saved: the writing steps will use it" if direction and continuity_file(d).exists()
+            else ("direction ready; read the book first so it can be saved" if direction else "")}
+
+
+def _write_rows(path, rows):
+    fields = list(rows[0].keys())
+    tmp = Path(str(path) + ".tmp")
+    with open(tmp, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=fields)
+        w.writeheader()
+        w.writerows(rows)
+    os.replace(tmp, path)
+
+
+def new_scene(opt):
+    """A new shot written by the AI before or after the chapter's shots. preview_only returns the text; applying inserts one row into
+    all_shots.csv (and audio_shots.csv) and renumbers the chapter's shots. Applying is refused once clips, pictures or audio exist,
+    because every later row would shift and the files would no longer match their shots."""
+    slug = str(opt.get("project", ""))
+    d, shots, audio = _scene_tables(slug)
+    desc = " ".join(str(opt.get("description") or "").split())
+    if not desc or len(desc) > 1500:
+        raise PlanError("describe the new scene (up to 1500 characters)")
+    ch = str(opt.get("chapter", ""))
+    if not ch.isdigit():
+        raise PlanError("choose a chapter")
+    chapter = f"{slug}-{int(ch)}"
+    pos = opt.get("position", "after")
+    if pos not in ("before", "after"):
+        raise PlanError("position must be before or after")
+    idxs = [i for i, r in enumerate(shots) if r["chapter"] == chapter]
+    if not idxs:
+        raise PlanError(f"chapter {ch} has no shots")
+    series = str(opt.get("series") or "")
+    chars = ""
+    if series:
+        if series not in character_tokens.list_series():
+            raise PlanError("unknown character series")
+        chars = character_tokens.get_all_character_tokens(series)[:1800]
+    near = shots[idxs[0]] if pos == "before" else shots[idxs[-1]]
+    prompt = (f"A director wants to add ONE new shot {pos} the shot below, in a film adapted from a book.\n\nTHE NEIGHBOURING SHOT: {near['prompt'][:600]}\n"
+              + (f"\nCHARACTERS (keep their descriptions unchanged): {chars}\n" if chars else "")
+              + f"\nWHAT THE NEW SHOT SHOULD SHOW: {desc}\n\n"
+              "Write a text-to-video prompt for one continuous shot of about 4 seconds (shot size, camera movement, subject, action, setting, light; no on-screen text) "
+              "at most 900 characters, and one line of narration of at most 14 words.\n"
+              'Reply with one JSON object: {"prompt": "...", "narration": "..."}')
+
+    def check(data):
+        if not all(isinstance(data.get(k), str) and 10 < len(data[k].strip()) <= 1000 for k in ("prompt", "narration")):
+            raise ValueError("'prompt' and 'narration' must be text")
+
+    if opt.get("preview_only"):
+        args = engine_args(opt)
+        data = llm_json(prompt, "You are a film director and prompt writer. You reply with a single JSON object and nothing else.",
+                        model=(args[3] if len(args) > 3 else None), engine=args[1], validate=check)
+        return {"preview": f"PROMPT: {data['prompt'].strip()}\nNARRATION: {data['narration'].strip()}", "prompt": data["prompt"].strip(), "narration": data["narration"].strip(),
+                "feedback": "Preview ready. Click Apply & Insert to add it."}
+    for top in ("videos", "audio", "images"):
+        if (d / top).is_dir() and any(f.is_file() for f in (d / top).rglob("*") if f.suffix in (".mp4", ".wav", ".png")):
+            raise PlanError("this book already has clips, pictures or audio: a new shot would shift their numbers. Add it before generating, or retake shots instead")
+    text, narr = str(opt.get("prompt") or "").strip(), str(opt.get("narration") or "").strip()
+    if not text or len(text) > 1000 or len(narr) > 1000:
+        raise PlanError("preview the scene first")
+    at = idxs[0] if pos == "before" else idxs[-1] + 1
+    row = {k: "" for k in shots[0]}
+    row.update(chapter=chapter, prompt=text)
+    shots.insert(at, row)
+    for n, i in enumerate((i for i, r in enumerate(shots) if r["chapter"] == chapter), 1):
+        shots[i]["shot"] = str(n)
+    _write_rows(d / "all_shots.csv", shots)
+    if audio:
+        arow = {k: "" for k in audio[0]}
+        arow.update(chapter=chapter, narration=narr)
+        a_at = next((i for i, r in enumerate(audio) if r["chapter"] == chapter), len(audio)) if pos == "before" else \
+            (max((i for i, r in enumerate(audio) if r["chapter"] == chapter), default=len(audio) - 1) + 1)
+        audio.insert(a_at, arow)
+        for n, i in enumerate((i for i, r in enumerate(audio) if r["chapter"] == chapter), 1):
+            audio[i]["shot"] = str(n)
+        _write_rows(d / "audio_shots.csv", audio)
+    return {"scene": f"Inserted as shot {shots[at]['shot']} of chapter {ch}"}
+
+
 def animatic_step(body):
     """Step that makes films/animatic_<start>-<end>.mp4 from the keyframes (and narration, if made) of rows start..end."""
     slug = str(body.get("project", ""))
@@ -2485,6 +2628,12 @@ class Handler(BaseHTTPRequestHandler):
                 (pdir(slug) / "films" / "_selection.json").write_text(json.dumps({"clips": clips}, indent=1))
                 JOB.start([step], body)
                 return self._json(200, {"clips": len(clips)})
+            if url.path == "/api/new_scene":
+                return self._json(200, new_scene(body))
+            if url.path == "/api/creative_direction":
+                return self._json(200, creative_direction(body))
+            if url.path == "/api/creative_direction_get":
+                return self._json(200, creative_direction_get(body))
             if url.path == "/api/make_animatic":
                 JOB.start([animatic_step(body)], body)
                 return self._json(200, {"started": 1})
