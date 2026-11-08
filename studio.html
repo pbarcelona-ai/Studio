@@ -1338,6 +1338,10 @@
   .svc-opt > span { font-size: 1.35rem; font-weight: 600; line-height: 1.3; }
   .svc-opt input[type=radio] { width: 22px; height: 22px; margin-top: 4px; }
   .svc-opt small { font-size: var(--text-xs); font-weight: 400; }
+  /* previous / next step buttons at the foot of each step card (same names and order as the rail) */
+  .step-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-strong); }
+  .step-nav button { min-height: 40px; }
+  .step-nav__here { font-size: 12px; color: var(--fg-muted); flex: 1; text-align: center; }
   /* "What are you making?": the film's look, one at a time, shown under the tabs on every page */
   .lookbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-elevated); }
   .lookbar__title { font-size: var(--text-sm, 0.95rem); margin: 0; font-weight: 600; }
@@ -1585,15 +1589,15 @@
 
     <!-- Book-to-film rail: where the selected book is, shown on every tab. Each step opens the tab where it is done. -->
     <nav class="stepper" id="pipelineStepper" aria-label="Book to film progress">
-      <button type="button" class="stepper__step" data-step="ingest" data-go="project" data-target="bookpanel"><span class="stepper__circle">1</span><span class="stepper__label">Read book</span></button>
-      <button type="button" class="stepper__step" data-step="continuity" data-go="project" data-target="bookpanel"><span class="stepper__circle">2</span><span class="stepper__label">Continuity book</span></button>
-      <button type="button" class="stepper__step optional" data-step="cast" data-go="characters"><span class="stepper__circle">3</span><span class="stepper__label">Cast (optional)</span></button>
-      <button type="button" class="stepper__step" data-step="write" data-go="project" data-target="bookpanel"><span class="stepper__circle">4</span><span class="stepper__label">Write shots</span></button>
-      <button type="button" class="stepper__step" data-step="build" data-go="project" data-target="bookpanel"><span class="stepper__circle">5</span><span class="stepper__label">Build CSVs</span></button>
+      <button type="button" class="stepper__step" data-step="ingest" data-go="project" data-target="stepRead"><span class="stepper__circle">1</span><span class="stepper__label">Read book</span></button>
+      <button type="button" class="stepper__step" data-step="continuity" data-go="project" data-target="stepContinuity"><span class="stepper__circle">2</span><span class="stepper__label">Continuity book</span></button>
+      <button type="button" class="stepper__step optional" data-step="cast" data-go="characters" data-target="castCard"><span class="stepper__circle">3</span><span class="stepper__label">Cast (optional)</span></button>
+      <button type="button" class="stepper__step" data-step="write" data-go="project" data-target="stepWrite"><span class="stepper__circle">4</span><span class="stepper__label">Write shots</span></button>
+      <button type="button" class="stepper__step" data-step="build" data-go="project" data-target="stepBuild"><span class="stepper__circle">5</span><span class="stepper__label">Build CSVs</span></button>
       <button type="button" class="stepper__step optional" data-step="board" data-go="movies" data-target="storyboardCard"><span class="stepper__circle">6</span><span class="stepper__label">Storyboard (optional)</span></button>
-      <button type="button" class="stepper__step" data-step="video" data-go="movies" data-target="movieRunCard"><span class="stepper__circle">7</span><span class="stepper__label">Video</span></button>
-      <button type="button" class="stepper__step" data-step="audio" data-go="movies" data-target="movieRunCard"><span class="stepper__circle">8</span><span class="stepper__label">Audio</span></button>
-      <button type="button" class="stepper__step" data-step="film" data-go="results" data-target="filmpanel"><span class="stepper__circle">9</span><span class="stepper__label">Final film</span></button>
+      <button type="button" class="stepper__step" data-step="video" data-go="movies" data-target="videoAudioCard"><span class="stepper__circle">7</span><span class="stepper__label">Video</span></button>
+      <button type="button" class="stepper__step" data-step="audio" data-go="movies" data-target="videoAudioCard"><span class="stepper__circle">8</span><span class="stepper__label">Audio</span></button>
+      <button type="button" class="stepper__step" data-step="film" data-go="results" data-target="filmCard"><span class="stepper__circle">9</span><span class="stepper__label">Final film</span></button>
     </nav>
     <p id="stepperHint" class="warn" aria-live="polite"></p>
 
@@ -1613,8 +1617,28 @@
         
         <div class="card">
             <div class="card__header">
-                <h2 class="card__title">Import</h2>
-                <p class="card__subtitle">Choose a book (PDF), a text file, or paste text. The AI reads it and writes its prompts. Nothing is sent to Kaggle or Colab.</p>
+                <h2 class="card__title">AI Prompt Writer</h2>
+            </div>
+            <div class="card__body">
+                <section id="aipanel">
+    <h2>Choose the AI to Write Prompts</h2>
+    <div class="stack">
+      <div><label class="f" for="engine">Who writes the prompts</label>
+        <select id="engine"><option value="claude">claude (Claude Code)</option><option value="fcc-claude">fcc-claude (Claude Code via Free Claude Code proxy)</option><option value="codex">codex (Codex CLI, your ChatGPT login)</option><option value="fcc-codex">fcc-codex (Codex via Free Claude Code proxy)</option><option value="hf">hf (open models on Hugging Face: Qwen3.8, GLM, DeepSeek...; needs HF_TOKEN)</option><option value="local">local (a language model on this computer)</option></select></div>
+      <div><label class="f" for="cmodel">Model (any name that tool accepts; blank = its default)</label>
+        <input type="text" id="cmodel" list="models" value="sonnet" spellcheck="false" autocomplete="off"><datalist id="models"></datalist></div>
+      <label class="opt"><input type="checkbox" id="localLlm" aria-disabled="true" aria-describedby="localLlmNote"><span>Run the writer on this computer<small id="localLlmNote" class="warn"></small></span></label>
+      <small id="engineNote" class="warn" role="status" aria-live="polite"></small>
+      <small class="warn">Used by "Make the prompts" for a book and by "Expand my idea" for single prompts.</small>
+    </div>
+  </section>
+            </div>
+        </div>
+
+        <div class="card" id="stepRead">
+            <div class="card__header">
+                <h2 class="card__title">Read book</h2>
+                <p class="card__subtitle">Choose a book (PDF), a text file, or paste text, and split it into chapters. Nothing is sent to Kaggle or Colab.</p>
             </div>
             <div class="card__body">
                 <section id="whatoimplement" class="bookonly">
@@ -1636,25 +1660,35 @@
       </div>
     </div>
   </section>
+                <section class="bookonly bookstep" style="margin-top:12px">
+        <label class="opt"><input type="checkbox" id="b_ingest"><span>Read the PDF and split it into chapters</span></label>
+        <div style="margin:0 0 6px 26px"><select id="pdf"></select></div>
+                </section>
             </div>
         </div>
 
-        <div class="card">
+        <div class="card" id="stepContinuity">
             <div class="card__header">
-                <h2 class="card__title">Book Processing</h2>
-                <p class="card__subtitle">Set how the book is read and split, then press Import</p>
+                <h2 class="card__title">Continuity book</h2>
+                <p class="card__subtitle">The characters, the look and the voices, written once for the whole book</p>
             </div>
             <div class="card__body">
-                <section id="bookpanel" class="bookonly">
-    <div class="row">
-      <div>
-        <label class="opt"><input type="checkbox" id="b_ingest"><span>Read the PDF and split it into chapters</span></label>
-        <div style="margin:0 0 6px 26px"><select id="pdf"></select></div>
+                <section class="bookonly bookstep">
         <label class="opt"><input type="checkbox" id="b_continuity"><span>Write the continuity book<small>Characters, look, voices. One AI call. Edit <code id="bookFile">the book's own .json file</code> afterwards if you like.</small></span></label>
+                </section>
+            </div>
+        </div>
+
+        <div class="card" id="stepWrite">
+            <div class="card__header">
+                <h2 class="card__title">Write shots</h2>
+                <p class="card__subtitle">Shots, narration, sound and music for every chapter</p>
+            </div>
+            <div class="card__body">
+                <section class="bookonly bookstep">
         <label class="opt"><input type="checkbox" id="b_write"><span>Write shots, narration, sound and music<small>One AI call per chapter; finished chapters are skipped.</small></span></label>
         <label class="opt" style="margin-left:26px"><input type="checkbox" id="b_force"><span>Redo chapters that are already written<small>Use to change narration style, shot counts or the continuity book. Old clips no longer match, so make them again.</small></span></label>
-        <label class="opt"><input type="checkbox" id="b_build"><span>Build the CSV files and plan the movies</span></label>
-      </div>
+    <div class="row" style="margin-top:8px">
       <div>
         <label class="f">Narration</label>
         <select id="narration"><option value="condensed">Condensed: short lines written to fit each clip</option><option value="dialogue">Dialogue: only the words in double quotes are spoken</option><option value="verbatim">Verbatim: the book's own words, split across shots</option></select>
@@ -1664,8 +1698,7 @@
         <label class="f">Words of the book per shot (blank = auto)</label><input type="number" id="wps" min="5" placeholder="60 / 25" autocomplete="off">
         <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Min shots</label><input type="number" id="minshots" value="1" min="1" autocomplete="off"></div>
         <div style="min-width:70px"><label class="f">Max shots</label><input type="number" id="maxshots" value="12" min="1" autocomplete="off"></div></div>
-        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Movie minutes</label><input type="number" id="mmin" value="10" min="1" autocomplete="off"></div>
-        <div style="min-width:70px"><label class="f">AI at once</label><input type="number" id="workers" value="2" min="1" max="6" autocomplete="off"></div></div>
+        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">AI at once</label><input type="number" id="workers" value="2" min="1" max="6" autocomplete="off"></div></div>
       </div>
     </div>
     <div class="row" style="align-items:center;margin-top:8px"><button id="bEstimate">Estimate size and cost</button><span class="warn">Needs the PDF read first. No AI calls; shows shots, film length, movies and GPU hours.</span></div>
@@ -1676,36 +1709,38 @@
       <div id="chShotsBody" style="max-height:320px;overflow:auto"></div>
       <div class="row" style="align-items:center;margin-top:6px"><button id="bChShotsSave">Save shot counts</button><button id="bChShotsClear">Clear all</button><span class="warn" id="chShotsMsg"></span></div>
     </details>
-  </section>
+                </section>
+            </div>
+        </div>
+
+        <div class="card" id="stepBuild">
+            <div class="card__header">
+                <h2 class="card__title">Build CSVs</h2>
+                <p class="card__subtitle">The CSV files the generators read, and the movies they are grouped into</p>
+            </div>
+            <div class="card__body">
+                <section class="bookonly bookstep">
+        <label class="opt"><input type="checkbox" id="b_build"><span>Build the CSV files and plan the movies</span></label>
+        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Movie minutes</label><input type="number" id="mmin" value="10" min="1" autocomplete="off"></div></div>
+                </section>
+            </div>
+        </div>
+
+        <div class="card" id="bookRunCard">
+            <div class="card__header">
+                <h2 class="card__title">Run the ticked book steps</h2>
+                <p class="card__subtitle">Read book, Continuity book, Write shots and Build CSVs run in that order when ticked</p>
+            </div>
+            <div class="card__body">
                 <div class="stack" style="margin-top:12px">
                     <div class="row">
                         <button id="bImport" class="primary" type="button">Import</button>
                         <button id="bImportStop" type="button" disabled>Stop</button>
                     </div>
-                    <small class="warn">If you chose a file above, or pasted text, it is saved to the books folder first. Then it is split into chapters, the AI chosen in AI Prompt Writer writes the continuity book and the shots, narration, sound and music for every chapter, and the CSV files are built. This can take a while and uses that AI. Video and audio are made later, on the Movies tab. The log shows each step.</small>
+                    <small class="warn">Runs the steps ticked in the cards above. If you chose a file in Read book, or pasted text, it is saved to the books folder first. Then it is split into chapters, the AI chosen in AI Prompt Writer writes the continuity book and the shots, narration, sound and music for every chapter, and the CSV files are built. This can take a while and uses that AI. Video and audio are made later, on the Movies tab. The log shows each step.</small>
                     <div id="importStatus" class="warn" aria-live="polite"></div>
                     <pre id="importLog" class="fill" data-empty="1" aria-live="polite" style="max-height:340px;overflow:auto">nothing running</pre>
                 </div>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card__header">
-                <h2 class="card__title">AI Prompt Writer</h2>
-            </div>
-            <div class="card__body">
-                <section id="aipanel">
-    <h2>Choose the AI to Write Prompts</h2>
-    <div class="stack">
-      <div><label class="f" for="engine">Who writes the prompts</label>
-        <select id="engine"><option value="claude">claude (Claude Code)</option><option value="fcc-claude">fcc-claude (Claude Code via Free Claude Code proxy)</option><option value="codex">codex (Codex CLI, your ChatGPT login)</option><option value="fcc-codex">fcc-codex (Codex via Free Claude Code proxy)</option><option value="hf">hf (open models on Hugging Face: Qwen3.8, GLM, DeepSeek...; needs HF_TOKEN)</option><option value="local">local (a language model on this computer)</option></select></div>
-      <div><label class="f" for="cmodel">Model (any name that tool accepts; blank = its default)</label>
-        <input type="text" id="cmodel" list="models" value="sonnet" spellcheck="false" autocomplete="off"><datalist id="models"></datalist></div>
-      <label class="opt"><input type="checkbox" id="localLlm" aria-disabled="true" aria-describedby="localLlmNote"><span>Run the writer on this computer<small id="localLlmNote" class="warn"></small></span></label>
-      <small id="engineNote" class="warn" role="status" aria-live="polite"></small>
-      <small class="warn">Used by "Make the prompts" for a book and by "Expand my idea" for single prompts.</small>
-    </div>
-  </section>
             </div>
         </div>
 
@@ -1735,7 +1770,6 @@
             </div>
             <div class="card__body">
                 <section>
-    <h2>1. Where to run</h2>
     <div class="stack">
       <div class="svc-row">
         <label class="opt svc-opt"><input type="radio" name="svc" value="kaggle" checked><span>Kaggle<small>Free weekly GPU. Needs sign-in and a phone-verified account.</small></span></label>
@@ -1905,14 +1939,14 @@
 
     <!-- CHARACTERS TAB -->
     <div class="tab-panel" id="panel-characters" role="tabpanel" aria-labelledby="tab-characters">
-        <div class="card">
+        <div class="card" id="castCard">
             <div class="card__header">
-                <h2 class="card__title">Character Tokens</h2>
+                <h2 class="card__title">Cast (optional)</h2>
                 <p class="card__subtitle">Consistent characters across films in a series</p>
             </div>
             <div class="card__body">
                 <section class="bookonly" id="characterpanel">
-    <h2>Character Tokens <span class="warn">(consistent characters across films)</span></h2>
+    <h2>Character tokens <span class="warn">(the same characters across films)</span></h2>
     <p class="warn" style="margin-bottom:12px">Character tokens define visual appearance, voice, and LoRA info for consistent generation across multiple films in a series. Select a series, then manage its characters.</p>
     <div class="stack">
       <div><label class="f" for="charSeries">Series</label><select id="charSeries"></select></div>
@@ -2178,7 +2212,6 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
             </div>
             <div class="card__body">
                 <section id="legacypanel" class="hidden bookonly">
-    <h2>8. Imported book</h2>
     <label class="opt"><input type="checkbox" id="s_extract"><span>Rebuild the prompt CSVs from the production notes<small>Only needed after editing the markdown.</small></span></label>
     <div id="enochbox" class="hidden" style="margin-left:26px"><label class="f">Enoch verse text per clip (characters, 0 = whole chapter)</label><input type="number" id="echars" min="0" value="300" style="width:110px" autocomplete="off"></div>
   </section>
@@ -2191,7 +2224,6 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
             </div>
             <div class="card__body">
                 <section class="bookonly">
-    <h2>9. Which movies</h2>
     <div class="row">
       <div>
         <label class="opt"><input type="radio" name="gran" value="chapters" checked><span>One clip per chapter</span></label>
@@ -2212,7 +2244,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         
         <div class="card" id="storyboardCard">
             <div class="card__header">
-                <h2 class="card__title">Storyboard</h2>
+                <h2 class="card__title">Storyboard (optional)</h2>
                 <p class="card__subtitle">One card per shot: its keyframe still, the words spoken over it, and the clips made from it</p>
             </div>
             <div class="card__body">
@@ -2230,13 +2262,12 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
             </div>
         </div>
 
-        <div class="card">
+        <div class="card" id="videoAudioCard">
             <div class="card__header">
-                <h2 class="card__title">Steps to Run</h2>
+                <h2 class="card__title">Video and Audio</h2>
             </div>
             <div class="card__body">
                 <section class="bookonly">
-    <h2>10. Steps to run</h2>
     <div class="preset-row" role="group" aria-label="Quality preset">
       <span class="f" style="margin:0">Quality:</span>
       <button type="button" class="preset-btn" data-preset="draft" aria-pressed="false" title="Fastest models: check framing and timing before a long run">Quick test</button>
@@ -2352,9 +2383,9 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
             </div>
         </div>
         
-        <div class="card">
+        <div class="card" id="filmCard">
             <div class="card__header">
-                <h2 class="card__title">Make Film</h2>
+                <h2 class="card__title">Final film</h2>
             </div>
             <div class="card__body">
                 <section id="filmpanel">
@@ -2649,7 +2680,7 @@ function showBookFile() {
 function renderProject(applyDef) {
   showBookFile();
   const p = cur();
-  $("bookpanel").classList.toggle("hidden", !!(p && p.legacy));
+  document.querySelectorAll(".bookstep").forEach(e => e.classList.toggle("hidden", !!(p && p.legacy)));
   $("legacypanel").classList.toggle("hidden", !(p && p.legacy));
   $("enochbox").classList.toggle("hidden", !(p && p.slug === "enoch"));
   updateEmptyStates();
@@ -2657,7 +2688,7 @@ function renderProject(applyDef) {
   if (!p) { $("chips").innerHTML = ""; $("movies").innerHTML = ""; $("have").innerHTML = ""; return; }
   const chip = (t, d) => `<span class="chip ${d ? "done" : ""}">${d ? "✓ " : ""}${t}</span>`;
   $("chips").innerHTML = p.legacy ? chip("imported book", true) + chip(`${p.movies.shots.length} movies planned`, p.movies.shots.length) :
-    (p.not_started ? chip("not started: tick 'Read the PDF…' below", false) : chip("PDF read", p.pdfs.length)) + chip(p.chapters ? `${p.chapters} chapters (split by ${p.split_method})` : "not split", p.chapters) +
+    (p.not_started ? chip("not started: tick 'Read the PDF' below and run it", false) : chip("PDF read", p.pdfs.length)) + chip(p.chapters ? `${p.chapters} chapters (split by ${p.split_method})` : "not split", p.chapters) +
     chip("continuity book", p.continuity) + chip(`${p.scripts} chapters scripted`, p.scripts) + chip("CSVs built", p.built);
   $("pdf").innerHTML = p.pdf_choices.map(c => `<option value="${c.value}">${c.label}</option>`).join("") || "<option value=''>(put a PDF in the books folder)</option>";
   if (applyDef) applyDefaults(p);
@@ -2862,7 +2893,7 @@ function updateMSummary() {
   const planned = p && p.movies ? (p.movies[radio("gran")] || []).length : 0;
   const size = picked.length ? `${picked.length} movie(s), ${clips} clips, about ${(secs / 60).toFixed(1)} min of film`
              : planned ? "no movies picked yet" : "no movies planned yet (build the CSVs first)";
-  $("mSummary").textContent = (p ? `Book: ${p.slug} · ${size}` : "No book selected") + " · " + (steps.length ? "steps: " + steps.join(", ") : "no steps ticked (choose them in Steps to Run above)");
+  $("mSummary").textContent = (p ? `Book: ${p.slug} · ${size}` : "No book selected") + " · " + (steps.length ? "steps: " + steps.join(", ") : "no steps ticked (choose them in Video and Audio above)");
 }
 
 // The planned movies the Which Movies card points at: the ticked ones, the first N, or all. Movies that do not exist yet are not counted.
@@ -3285,7 +3316,7 @@ function updateEmptyStates() {
     if (!body) return;
     if (card.dataset.autohidden) { card.classList.remove("hidden"); delete card.dataset.autohidden; }
     const old = body.querySelector(":scope > .empty-state");
-    const kids = [...body.children].filter(c => !c.classList.contains("empty-state"));
+    const kids = [...body.children].filter(c => !c.classList.contains("empty-state") && !c.classList.contains("step-nav"));
     const allHidden = kids.length > 0 && kids.every(c => c.classList.contains("hidden"));
     if (!allHidden) { if (old) old.remove(); return; }
     let text, label, target;
@@ -3293,7 +3324,7 @@ function updateEmptyStates() {
       text = "This card is for Single Prompts mode."; label = "Switch to Single Prompts"; target = "prompts";
     } else if (prompts) {
       text = "This card is hidden because the mode is Single Prompts."; label = "Switch to Book from a PDF"; target = "book";
-    } else if (p && p.legacy && body.querySelector("#bookpanel")) {
+    } else if (p && p.legacy && body.querySelector(".bookstep")) {
       text = `${p.slug} is an imported book, so the PDF steps do not apply. Use Imported Book Tools, or pick another project in the Import tab.`;
     } else {
       card.classList.add("hidden"); card.dataset.autohidden = "1";   // nothing useful to say: hide the whole card
@@ -3324,7 +3355,7 @@ function updateEmptyStates() {
 function setMode() {
   if (typeof resetFilm === "function") resetFilm();
   const prompts = radio("mode") === "prompts";
-  document.querySelectorAll(".bookonly").forEach(e => e.classList.toggle("hidden", prompts || (e.id === "legacypanel" && !(cur() && cur().legacy)) || (e.id === "bookpanel" && cur() && cur().legacy)));
+  document.querySelectorAll(".bookonly").forEach(e => e.classList.toggle("hidden", prompts || (e.id === "legacypanel" && !(cur() && cur().legacy)) || (e.classList.contains("bookstep") && cur() && cur().legacy)));
   document.querySelectorAll(".promptonly").forEach(e => e.classList.toggle("hidden", !prompts));
   updateEmptyStates();
   loadGallery();
@@ -6344,13 +6375,13 @@ function initTabs() {
 // ===== STEPPER (book-to-film rail above the tabs) =====
 // Each step is done when its files exist (from /api/status), not when a checkbox is ticked. "cast" is optional and never the current step.
 const STEP_NEXT = {
-    ingest: 'Next: on the Import tab, tick "Read the PDF" and run it.',
-    continuity: 'Next: on the Import tab, write the continuity book.',
-    write: 'Next: on the Import tab, write the shots, narration, sound and music.',
-    build: 'Next: on the Import tab, build the CSV files and plan the movies.',
-    video: 'Next: on the Movies tab, pick a quality preset and generate the video (or make keyframes first and check them on the Storyboard).',
-    audio: 'Next: on the Movies tab, generate the narration, effects and music.',
-    film: 'Next: on the Results tab, use Make film to join the clips and sound.',
+    ingest: 'Next: Read book (Import tab).',
+    continuity: 'Next: Continuity book (Import tab).',
+    write: 'Next: Write shots (Import tab).',
+    build: 'Next: Build CSVs (Import tab).',
+    video: 'Next: Video (Movies tab, Video and Audio card; or make keyframes first and check them in Storyboard).',
+    audio: 'Next: Audio (Movies tab, Video and Audio card).',
+    film: 'Next: Final film (Results tab).',
 };
 function stepDone(p) {
     const have = p.have || {};
@@ -6394,6 +6425,32 @@ function goToStep(el) {
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 document.querySelectorAll('#pipelineStepper .stepper__step').forEach(el => el.addEventListener('click', () => goToStep(el)));
+// Every step card gets "previous step / next step" buttons taken from the rail, so the cards can be followed forwards and backwards
+// in the same order and with the same names as the rail. Steps that share a card (Video, Audio) share one bar.
+(function addStepNav() {
+    const steps = [...document.querySelectorAll('#pipelineStepper .stepper__step')];
+    const name = el => el.querySelector('.stepper__label').textContent;
+    const cards = [];
+    steps.forEach((el, i) => {
+        const card = el.dataset.target && $(el.dataset.target);
+        if (!card) return;
+        const last = cards[cards.length - 1];
+        if (last && last.card === card) last.to = i; else cards.push({ card, from: i, to: i });
+    });
+    const names = c => steps.slice(c.from, c.to + 1).map(name).join(' and ');     // a shared card is named by all its steps ("Video and Audio")
+    cards.forEach((c, k) => {
+        const body = c.card.querySelector(':scope > .card__body') || c.card;
+        const nav = document.createElement('nav');
+        nav.className = 'step-nav';
+        nav.setAttribute('aria-label', 'Book to film steps');
+        const prev = cards[k - 1], next = cards[k + 1];
+        const btn = (to, text) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.addEventListener('click', () => goToStep(steps[to.from])); return b; };
+        if (prev) nav.appendChild(btn(prev, '\u2190 ' + names(prev)));
+        const mid = document.createElement('span'); mid.className = 'step-nav__here'; mid.textContent = `Step: ${names(c)}`; nav.appendChild(mid);
+        if (next) nav.appendChild(btn(next, names(next) + ' \u2192'));
+        body.appendChild(nav);
+    });
+})();
 
 // ===== COMMAND PALETTE =====
 const COMMANDS = [

@@ -318,3 +318,11 @@ Files reviewed: studio.html (renderSuggestions, STEP_INPUT, suggestChosen, syncS
 Errors (blocking): none remaining. Fixed: keyframe tick read after a re-sync cleared it, so keyframes never turned on.
 Warnings: none. Suggestions: none.
 Status: PASS
+
+==== Review pass 2026-11-08 (6): step cards follow the rail; two more looks ====
+Files reviewed: studio.html (Import tab step cards, renamed step cards, rail targets, step navigation, empty-state check), scripts/model_advisor.py
+  (travel_poster, cyberpunk_3d), scripts/studio.py and README.md (wording only), scripts/make_keyframes_csv.py (unchanged code; new choices via LOOKS)
+Errors (blocking): none. Fixed during the pass: Final film's back button named "Audio" instead of the shared "Video and Audio" card.
+Warnings: none. Suggestions: none.
+Requirements: no *_prompt.md files exist for these modules.
+Status: PASS

@@ -902,7 +902,7 @@ def voice_cast(opt):
     character series (the Characters tab)."""
     d = _direction_book(str(opt.get("project", "")))
     if not (d / "audio_shots.csv").exists():
-        raise PlanError("build the CSVs first (Book Processing)")
+        raise PlanError("build the CSVs first (Build CSVs, Import tab)")
     result = {"changed": [], "moved": 0}
     if opt.get("cast") is not None:
         cast = opt["cast"]
@@ -3064,7 +3064,7 @@ class Handler(BaseHTTPRequestHandler):
                         except ValueError as e:
                             raise PlanError(str(e))
                         if not r["found"]:
-                            raise PlanError(f"{project} has no continuity book file ({project}.json) yet: write it first with \"Write the continuity book\" in Book Processing.")
+                            raise PlanError(f"{project} has no continuity book file ({project}.json) yet: write it first with the Continuity book step on the Import tab.")
                         return self._json(200, r)
                     elif action == "validate":
                         char = body.get("character", {})

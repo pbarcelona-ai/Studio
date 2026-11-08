@@ -38,7 +38,9 @@ can see them or use your Kaggle hours; your generations run in **your** Kaggle a
 ## Using it
 
 - **Import** card (first tab): pick a book (PDF or .txt/.md file) or paste some text, and the AI prompt writer turns it into prompts.
-- **Book Processing** card (also on the first tab): words per shot, min/max shots, and an optional shot count for each chapter, then the Import button.
+- The **Import** tab follows the steps on the rail above the tabs: **Read book**, **Continuity book**, **Write shots** (words per shot, min/max shots,
+  an optional shot count for each chapter) and **Build CSVs**; tick the steps you want and press Import in "Run the ticked book steps".
+  Each step card has buttons to the previous and next step, with the same names as the rail.
 - **Characters** tab: tick characters and press "Send ticked to the book" to copy your edited visual tokens into the book; "Get characters from the book" copies the other way.
 - **Single Prompts** tab: type or paste prompts (one per line), pick models, press run. Results land in `projects/` inside this folder.
 - **Models** tab: every image, video and audio model, with notes, plus the Studio's regression test that tries one prompt on all models.

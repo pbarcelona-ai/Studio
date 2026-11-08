@@ -1,4 +1,4 @@
-"""The look of the film (live action, claymation, 3D animated, hybrid) and which models the Studio suggests for each step of making it.
+"""The look of the film (live action, claymation, 3D animated, hybrid, vintage travel poster, cyberpunk neon 3D) and which models the Studio suggests for each step of making it.
 
 The Studio page shows the looks as buttons (one at a time) and asks suggest() which model to use for every step: pictures, keyframes,
 video clips (from keyframes or from text), narration, music and upscaling. A suggestion is the first model in the step's list that can run
@@ -15,6 +15,8 @@ LOOKS = {   # id -> label on the button, one-line description
     "claymation": ("Claymation", "Stop-motion with handmade clay figures and miniature sets."),
     "pixar_3d": ("3D Pixar", "A 3D animated feature: stylised characters, soft light, rich colour."),
     "pixar_disney": ("Pixar-Disney hybrid", "3D animation with a classic storybook, hand-drawn fairy-tale feel."),
+    "travel_poster": ("Vintage travel poster", "Flat, bold shapes in a few printed colours, like a 1930s railway or airline poster."),
+    "cyberpunk_3d": ("Cyberpunk neon 3D", "A 3D-rendered neon city at night: glowing signs, rain, fog and reflections."),
 }
 DEFAULT_LOOK = "live_action"
 
@@ -39,6 +41,16 @@ STYLE = {
         "positives": "3d animated feature with a classic hand-drawn fairy-tale feel, painterly textures, storybook lighting, expressive faces, graceful character animation, lush colour",
         "negatives": "photorealistic, live action, photograph, real people, claymation, anime, gritty, uncanny realistic skin",
     },
+    "travel_poster": {
+        "lead": "Vintage travel poster illustration, flat bold shapes, limited printed colour palette",
+        "positives": "vintage travel poster style, 1930s art deco lithograph, flat bold shapes, limited colour palette, screen-print grain, strong silhouettes, sweeping perspective, sunlit sky gradients",
+        "negatives": "photorealistic, photograph, live action, 3d render, cgi, glossy, anime, cluttered detail, garbled lettering, watermark",
+    },
+    "cyberpunk_3d": {
+        "lead": "Cyberpunk neon 3D render, glowing signs, night city",
+        "positives": "cyberpunk neon 3d render, night city, glowing magenta and cyan neon signs, rain-slick reflective streets, volumetric fog, holographic displays, rim lighting, high contrast",
+        "negatives": "daylight, pastoral, vintage, flat 2d drawing, watercolor, claymation, washed-out colours, low contrast",
+    },
 }
 
 STEPS = {   # id -> (title, where it is chosen on the page)
@@ -48,7 +60,7 @@ STEPS = {   # id -> (title, where it is chosen on the page)
     "video_t2v": ("Video clips from text", "Models tab: Video Models"),
     "narration": ("Narration", "Models tab: Audio Models"),
     "music": ("Music", "Models tab: Audio Models"),
-    "upscale": ("Upscaling", "Results tab: Make Film, Upscaler"),
+    "upscale": ("Upscaling", "Results tab: Final film, Upscaler"),
 }
 
 # Per step, in order of preference: (model, why, least GPU GB for this to be the pick or None). An entry with a GB figure is skipped
@@ -112,6 +124,25 @@ SUGGEST = {
         **_VOICE,
         "upscale": _UP_STYLISED,
     },
+}
+# The two newer looks reuse the stylised lists above; their reasons stay true for any look.
+SUGGEST["travel_poster"] = {
+    "image": [("qwen_image_21", "follows long style descriptions closely and is good at graphic layouts; slow (about an hour a picture on a T4)", 22), _FLUX2,
+              ("qwen_image_21_turbo", "Qwen-Image in fewer steps (tested on a T4, about 15 minutes)", None), _SDXL],
+    "keyframe": _KEYFRAMES,
+    "video_i2v": _I2V,
+    "video_t2v": _STYLISED_T2V,
+    **_VOICE,
+    "upscale": _UP_STYLISED,
+}
+SUGGEST["cyberpunk_3d"] = {
+    "image": [_FLUX2, ("qwen_image_21", "follows long style descriptions closely; slow (about an hour a picture on a T4)", 22),
+              ("z_image_turbo", "fine detail in few steps (tested on a T4, about 16 minutes)", None), _SDXL],
+    "keyframe": _KEYFRAMES,
+    "video_i2v": _I2V,
+    "video_t2v": _STYLISED_T2V,
+    **_VOICE,
+    "upscale": _UP_STYLISED,
 }
 GENERIC_NEGATIVE = "blurry, low quality, deformed, watermark, text"
 
