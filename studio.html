@@ -1353,6 +1353,9 @@
   .sugg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sugg-table th, .sugg-table td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--border-strong); }
   .sugg-table td small, .sugg-table th small { display: block; color: var(--fg-muted); font-weight: 400; }
+  .sugg-choice { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; cursor: pointer; }
+  .sugg-choice input { width: 20px; height: 20px; margin-top: 1px; flex: none; }
+  .sugg-choice.off { opacity: .55; cursor: not-allowed; }
   /* Make Film timeline: one row of clips (width = seconds on screen), the narration under it, title cards at the ends */
   .timeline { position: relative; overflow-x: auto; border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 8px 4px; background: var(--bg-elevated); margin-top: 8px; }
   .tl-lane { position: relative; height: 52px; margin-bottom: 6px; }
@@ -3677,15 +3680,58 @@ function renderSuggestions() {
   const l = lookOf(SUGG.look);
   const gpuText = $("gpu").selectedOptions[0] ? $("gpu").selectedOptions[0].textContent : SUGG.gpu;
   $("suggestFor").textContent = `${l ? l.label : SUGG.look} · ${SUGG.service === "computer" ? "this computer" : SUGG.service} · ${gpuText}`;
-  const rows = Object.values(SUGG.steps).map(st => {
-    const pick = st.pick ? `<b>${escapeHtml(modelLabel(st.pick.model))}</b><small>${escapeHtml(st.pick.why)}</small>` : `<span class="err">${escapeHtml(st.note || "nothing here can run with this choice of where to run")}</span>`;
-    const alts = st.alternatives.map(a => `${escapeHtml(modelLabel(a.model))}<small>${escapeHtml(a.blocked ? "not now: " + a.blocked : a.why)}</small>`).join("") || "<small>none</small>";
+  const box = (step, m, text, why, off) => `<label class="sugg-choice${off ? " off" : ""}"><input type="checkbox" class="sugg-pick" data-step="${step}" value="${escapeHtml(m)}"${off ? " disabled" : ""}>`
+    + `<span>${text}<small>${escapeHtml(why)}</small></span></label>`;
+  const rows = Object.entries(SUGG.steps).map(([step, st]) => {
+    const pick = st.pick ? box(step, st.pick.model, `<b>${escapeHtml(modelLabel(st.pick.model))}</b>`, st.pick.why, !!st.note)
+                         : `<span class="err">${escapeHtml(st.note || "nothing here can run with this choice of where to run")}</span>`;
+    const alts = st.alternatives.map(a => box(step, a.model, escapeHtml(modelLabel(a.model)), a.blocked ? "not now: " + a.blocked : a.why, !!a.blocked || !!st.note)).join("") || "<small>none</small>";
     return `<tr><th scope="row">${escapeHtml(st.title)}<small>${escapeHtml(st.where)}</small></th><td>${pick}</td><td>${alts}</td></tr>`;
   }).join("");
   $("suggestBody").innerHTML = (SUGG.gpu_problem ? `<p class="err">${escapeHtml(SUGG.gpu_problem)}</p>` : "")
     + `<table class="sugg-table"><thead><tr><th scope="col">Step</th><th scope="col">Suggested</th><th scope="col">Other choices</th></tr></thead><tbody>${rows}</tbody></table>`;
   markSuggested();
+  syncSuggestChecks();
 }
+// The ticks in the Suggested Models card are another view of the real choices: picture / video / audio models (Video & Audio Models card),
+// the keyframe model with the keyframes step (Movies tab), and the upscaler (Make Film). Ticking here changes those; changing those re-ticks here.
+const STEP_INPUT = { image: "imodel", video_i2v: "vmodel", video_t2v: "vmodel", narration: "audio", music: "audio" };
+function modelInput(name, m) { return [...document.querySelectorAll(`input[name=${name}]`)].find(i => i.value === m); }
+function suggestChosen(step, m) {
+  if (STEP_INPUT[step]) { const i = modelInput(STEP_INPUT[step], m); return !!(i && i.checked); }
+  if (step === "keyframe") return $("s_keyframes").checked && $("kfmodel").value === m;
+  if (step === "upscale") return $("fupmodel").value === m;
+  return false;
+}
+function syncSuggestChecks() {
+  document.querySelectorAll("#suggestBody input.sugg-pick").forEach(c => {
+    c.checked = suggestChosen(c.dataset.step, c.value);
+    const target = STEP_INPUT[c.dataset.step] ? modelInput(STEP_INPUT[c.dataset.step], c.value) : null;
+    const gone = STEP_INPUT[c.dataset.step] && (!target || target.disabled);          // not offered, or greyed out in the models card
+    if (gone && !c.closest("label").classList.contains("off")) { c.disabled = true; c.title = target ? (target.closest("label") || {}).title || "unavailable here" : "not in the model lists"; }
+  });
+}
+$("suggestBody").addEventListener("change", ev => {
+  const c = ev.target.closest("input.sugg-pick"); if (!c) return;
+  const step = c.dataset.step, m = c.value, on = c.checked;      // read first: the changes below re-sync these boxes
+  if (STEP_INPUT[step]) {
+    const i = modelInput(STEP_INPUT[step], m);
+    if (i && !i.disabled) { i.checked = on; i.dispatchEvent(new Event("change", { bubbles: true })); }
+  } else if (step === "keyframe") {               // one keyframe model: ticking one picks it and turns keyframes on; unticking turns them off
+    if (on) { $("kfmodel").value = m; $("kfmodel").dispatchEvent(new Event("change")); }
+    $("s_keyframes").checked = on; $("s_keyframes").dispatchEvent(new Event("change"));
+  } else if (step === "upscale" && on) {          // one upscaler at a time
+    $("fupmodel").value = m; showUpscaleNote();
+  }
+  if (typeof applyConstraints === "function") applyConstraints();
+  if (typeof updatePromptModels === "function") updatePromptModels();
+  markSuggested();
+  syncSuggestChecks();
+  $("suggestStatus").textContent = `${modelLabel(m)} ${suggestChosen(step, m) ? "selected" : "no longer selected"}`;
+  $("suggestStatus").className = "warn";
+});
+["vmodels", "imodels", "amodels"].forEach(id => $(id).addEventListener("change", syncSuggestChecks));
+["kfmodel", "s_keyframes", "fupmodel"].forEach(id => $(id).addEventListener("change", syncSuggestChecks));
 function pickOf(step) { return SUGG && SUGG.steps[step] && SUGG.steps[step].pick ? SUGG.steps[step].pick.model : ""; }
 function markSuggested() {                            // the "suggested" tag beside each suggested model, wherever models are chosen
   document.querySelectorAll(".sugg-tag[data-auto]").forEach(t => t.remove());
@@ -3733,6 +3779,7 @@ function useSuggestions() {
   if (typeof applyConstraints === "function") applyConstraints();
   if (typeof updatePromptModels === "function") updatePromptModels();
   markSuggested();
+  syncSuggestChecks();
   $("suggestStatus").textContent = done.length ? "Now using: " + done.map(modelLabel).join(", ") : "nothing could be selected here";
   $("suggestStatus").className = done.length ? "warn" : "err";
 }

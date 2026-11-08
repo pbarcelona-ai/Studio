@@ -312,3 +312,9 @@ Errors (blocking): none.
 Warnings: none. Suggestions: scripts/run_local_model.py: Linux lspci gives no memory size for non-NVIDIA cards.
 Requirements: no *_prompt.md files exist for these modules.
 Status: PASS
+
+==== Review pass 2026-11-08 (5): checkboxes in the Suggested Models card ====
+Files reviewed: studio.html (renderSuggestions, STEP_INPUT, suggestChosen, syncSuggestChecks, #suggestBody change handler, CSS .sugg-choice)
+Errors (blocking): none remaining. Fixed: keyframe tick read after a re-sync cleared it, so keyframes never turned on.
+Warnings: none. Suggestions: none.
+Status: PASS
