@@ -61,7 +61,7 @@ CHARACTERS_ROOT = PROJECTS / "characters"      # shared between books: <series>/
 # ===== COMPREHENSIVE TRAIT SYSTEM =====
 
 class CharacterArchetype(str, Enum):
-    """Character archetypes for biblical/epic narratives."""
+    """Character archetypes: plain human and the "any book" kinds, plus those for biblical and epic stories."""
     HUMAN = "human"                    # Mortal humans
     HUMAN_PRE_FALL = "human_pre_fall"  # Pre-Fall humans (Eden state)
     HUMAN_PROPHET = "human_prophet"    # Prophetic figures
@@ -73,12 +73,40 @@ class CharacterArchetype(str, Enum):
     ANGEL_SERAPHIM = "angel_seraphim"      # Highest order (Seraphim)
     ANGEL_LIVING_CREATURE = "angel_living_creature"  # Living Creatures
     DIVINE_PRESENCE = "divine_presence"    # God/theophany
+    CHILD = "child"                        # Any book: a child
+    CREATURE = "creature"                  # Any book: an animal, monster or fantasy being
+    ROBOT = "robot"                        # Any book: a robot or machine
+    SUPERNATURAL = "supernatural"          # Any book: a ghost, spirit, god or magical being
     FALLEN_ANGEL = "fallen_angel"          # Satan/demons
     FALLEN_DISGUISED = "fallen_disguised"  # Satan in disguise
 
 
 # Archetype field requirements
 ARCHETYPE_CONFIG = {
+    CharacterArchetype.CHILD: {
+        "required_physical": ["age", "hair", "eyes"],
+        "optional_physical": ["height", "build", "skin", "expression", "distinguishing_features"],
+        "required_fields": ["clothing"],
+        "optional_fields": ["voice", "accessories", "posture", "gait"],
+    },
+    CharacterArchetype.CREATURE: {
+        "required_physical": [],
+        "optional_physical": ["height", "build", "skin", "eyes", "expression", "distinguishing_features", "scars"],
+        "required_fields": [],
+        "optional_fields": ["voice", "clothing", "accessories", "posture", "gait"],
+    },
+    CharacterArchetype.ROBOT: {
+        "required_physical": [],
+        "optional_physical": ["height", "build", "eyes", "expression", "distinguishing_features"],
+        "required_fields": [],
+        "optional_fields": ["voice", "clothing", "accessories", "weapons", "armor", "posture", "gait"],
+    },
+    CharacterArchetype.SUPERNATURAL: {
+        "required_physical": [],
+        "optional_physical": ["age", "height", "build", "skin", "hair", "eyes", "expression", "distinguishing_features", "luminosity"],
+        "required_fields": [],
+        "optional_fields": ["voice", "clothing", "accessories", "posture", "gait", "aura"],
+    },
     CharacterArchetype.HUMAN: {
         "required_physical": ["age", "height", "build", "skin", "hair", "eyes"],
         "optional_physical": ["facial_hair", "expression", "distinguishing_features", "scars", "tattoos"],
@@ -382,6 +410,7 @@ SCHEMA = {
         "form": {"type": "string"},
         "formlessness": {"type": "string"},
         "lora": {"type": "object"},
+        "stages": {"type": "array"},
         "reference_images": {"type": "array", "items": {"type": "string"}},
         "consistency_notes": {"type": "string"},
         "created": {"type": "string"},
@@ -529,6 +558,7 @@ def _character_from_book_entry(name: str, data: Dict) -> Dict:
         "lora": {"repo": "", "trigger_word": "", "base_model": "", "trained": False},
         "reference_images": [],
         "consistency_notes": data.get("notes", ""),
+        "stages": data.get("stages") or [],
     }
 
 
@@ -556,7 +586,7 @@ def extract_characters_from_book(book_path: Path) -> List[Dict]:
 
 
 # The fields a continuity book can supply. On overwrite only these are replaced, and only when the book has a value for them.
-BOOK_FIELDS = ("visual_token", "physical_traits", "clothing", "voice", "consistency_notes")
+BOOK_FIELDS = ("visual_token", "physical_traits", "clothing", "voice", "consistency_notes", "stages")
 
 
 def sync_from_book(project_slug: str, series: Optional[str] = None, overwrite: bool = False, dry_run: bool = False) -> Dict:
@@ -624,7 +654,7 @@ def send_to_book(project_slug: str, series: str, names: List[str], dry_run: bool
         word = VOICE_WORD_OF.get(str(src.get("voice", "")).strip())
         cur = by_name.get(name.lower())
         if cur is None:
-            new = {"name": name, "token": token, "voice": word or "male"}
+            new = {"name": name, "token": token, "voice": word or "male", **({"stages": src["stages"]} if src.get("stages") else {})}
             if not dry_run:
                 chars.append(new)
             report["added"] += 1
@@ -638,6 +668,11 @@ def send_to_book(project_slug: str, series: str, names: List[str], dry_run: bool
             changed = True
             if not dry_run:
                 cur["voice"] = word
+        stages = src.get("stages") or []
+        if stages != (cur.get("stages") or []):      # life stages travel with the token (book_write.py picks one by chapter)
+            changed = True
+            if not dry_run:
+                cur["stages"] = stages
         report["updated" if changed else "unchanged"] += 1
     if not dry_run and (report["updated"] or report["added"]):
         tmp = path.with_name(path.name + ".tmp")
@@ -771,6 +806,65 @@ def get_all_character_tokens(series: str) -> str:
             tokens.append(f"### {full['name']}\n" + " | ".join(token_parts))
 
     return "\n\nCHARACTER TOKENS FOR " + series.upper() + ":\n" + "\n\n".join(tokens)
+
+
+PICTURE_TYPES = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def _listed_path(path) -> Path:
+    p = Path(path)
+    return p if p.is_absolute() else ROOT / p
+
+
+def first_reference(series: str, character_name: str, stage: str = "") -> Optional[Path]:
+    """The picture that stands for this character: for a life stage, the first in its references/<stage>/ folder; else the first file in the
+    saved list that exists, else the first picture in the character's references/ folder. None if there is none."""
+    folder = get_reference_dir(series, character_name)
+    if stage:
+        sub = folder / slugify(str(stage))
+        pics = sorted(x for x in sub.iterdir() if x.suffix.lower() in PICTURE_TYPES) if sub.is_dir() else []
+        if pics:
+            return pics[0]
+    char = load_character(series, character_name) or {}
+    for r in char.get("reference_images") or []:
+        p = _listed_path(r)
+        if p.is_file() and p.suffix.lower() in PICTURE_TYPES:
+            return p
+    pics = sorted(x for x in folder.iterdir() if x.suffix.lower() in PICTURE_TYPES) if folder.is_dir() else []
+    return pics[0] if pics else None
+
+
+def reference_pictures(series: str, character_name: str) -> List[Dict]:
+    """Every picture of a character for the page: the list's files in order, then the folder's other files. {"path" (from the repository root),
+    "name", "listed", "exists", "used" (this is the one that stands for the character), "file" (<series folder>/<path inside it>, for /thumb and /file)}."""
+    used, base, out, seen = first_reference(series, character_name), get_series_dir(series).resolve(), [], set()
+    folder = get_reference_dir(series, character_name)
+    char = load_character(series, character_name) or {}
+    candidates = [(_listed_path(r), True) for r in char.get("reference_images") or []]
+    candidates += [(x, False) for x in (sorted(folder.iterdir()) if folder.is_dir() else []) if x.suffix.lower() in PICTURE_TYPES]
+    for p, listed in candidates:
+        rp = p.resolve()
+        if rp in seen:
+            continue
+        seen.add(rp)
+        inside = base in rp.parents
+        out.append({"path": rp.relative_to(ROOT.resolve()).as_posix() if ROOT.resolve() in rp.parents else str(p), "name": p.name, "listed": listed, "exists": p.is_file(),
+                    "used": bool(used) and rp == used.resolve(), "file": f"{base.name}/{rp.relative_to(base).as_posix()}" if inside and p.is_file() else ""})
+    return out
+
+
+def use_reference(series: str, character_name: str, path: str) -> bool:
+    """Make this picture the one that stands for the character: the first in its list (added if it was only in the folder). It must be one of the character's pictures."""
+    char = load_character(series, character_name)
+    if not char:
+        return False
+    match = next((r for r in reference_pictures(series, character_name) if r["path"] == path and r["exists"]), None)
+    if match is None:
+        return False
+    keep = [r for r in (char.get("reference_images") or []) if _listed_path(r).resolve() != _listed_path(path).resolve()]
+    char["reference_images"] = [path] + keep
+    save_character(char)
+    return True
 
 
 def add_reference_image(series: str, character_name: str, image_path: str) -> bool:

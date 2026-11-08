@@ -12,11 +12,12 @@ scripts with validated arguments can run (no shell, no free-form commands).
 """
 import argparse, csv, hashlib, io, json, mimetypes, os, re, secrets, shutil, signal, struct, subprocess, sys, threading, time, webbrowser
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from bookkit import EDIT_FIELDS, KOKORO_VOICE_RE, KOKORO_VOICES, VOICE_CAST_FILE, apply_voice_cast, read_voice_cast, voice_id, continuity_file, LOCAL_LLM_URL, SLUG_RE, build_movies, hf_json, llm_json, local_chat, read_json, set_scene_field, slugify, write_json
+from bookkit import ASPECTS, EDIT_FIELDS, NEG_TAIL, KOKORO_VOICE_RE, KOKORO_VOICES, VOICE_CAST_FILE, apply_voice_cast, read_voice_cast, voice_id, continuity_file, LOCAL_LLM_URL, SLUG_RE, build_movies, hf_json, llm_json, local_chat, read_json, set_scene_field, slugify, write_json
 import character_tokens
 import hf_spaces
 import prompt_guides
@@ -50,8 +51,8 @@ TOKEN, SESSION_PORT = load_or_create_session()
 
 VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_video", "cogvideox", "cogvideox_5b",
                 "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan",     # tpu_wan = Kaggle TPU experiment
-                "ltx_video_i2v", "wan22_ti2v_5b_i2v"]                     # image-to-video: animate each shot's keyframe
-I2V_MODELS = {"ltx_video_i2v", "wan22_ti2v_5b_i2v"}
+                "ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v"]          # image-to-video: animate each shot's keyframe
+I2V_MODELS = {"ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v"}
 # Upscalers: enlarge clips already made (make_video.py); Kaggle or this computer. name -> (label, GPU memory it needs, least GPU GB, needs Ampere or newer)
 UPSCALE_MODELS = {
     "upscale_x2": ("Real-ESRGAN x2", "about 2-4 GB of GPU memory, any NVIDIA GPU. Tested on a Kaggle T4: about 40 s per clip", 3, False),
@@ -71,7 +72,7 @@ REF_IMAGE_MODELS = {"flux2_klein_4b"}                                    # keyfr
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
 VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
                 ("CogVideoX", ["cogvideox", "cogvideox_5b"]), ("Uncensored (adult content)", ["wan22_t2v_a14b_lora", "hunyuan_video_lora"]),
-                ("TPU (Kaggle only)", ["tpu_wan"]), ("From keyframes (image-to-video, Kaggle or this computer)", ["wan22_ti2v_5b_i2v", "ltx_video_i2v"])]
+                ("TPU (Kaggle only)", ["tpu_wan"]), ("From keyframes (image-to-video, Kaggle or this computer)", ["ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "ltx_video_i2v"])]
 # Audio models: name -> (role, label, short note). The role decides which sound it makes (narration / sfx / music) and the file prefix it writes.
 AUDIO_MODELS = {
     "kokoro": ("narration", "Kokoro", "fast, light narration voices"),
@@ -92,6 +93,7 @@ IMAGE_GROUPS = [("Stable Diffusion", ["sdxl_turbo", "sdxl", "sd35_large", "sd35_
                 ("Uncensored (adult content)", ["qwen_image_21_uc", "qwen_image_21_lora", "moss_image_sft_lora", "chroma1_hd", "noobai_xl", "realvisxl_v5", "illustrious_xl"]),
                 ("TPU (Kaggle only)", ["tpu_mage_flow", "tpu_flux_jax"])]
 # Defaults baked into each generator script; shown as placeholders on the page. "locked" = fields the model ignores (greyed out).
+SYNC_MODES = ("stretch", "gentle", "speed", "trim")     # mix_film.py --sync
 MODEL_DEFAULTS = {
     "ltx_video": {"width": 768, "height": 320, "frames": 97, "steps": 40, "guidance": 3.0},
     "wan": {"width": 512, "height": 288, "frames": 33, "steps": 30, "guidance": 5.0},
@@ -99,6 +101,7 @@ MODEL_DEFAULTS = {
     "cogvideox_5b": {"width": 720, "height": 480, "frames": 49, "steps": 50, "guidance": 6.0, "locked": ["width", "height", "frames"]},
     "wan22_ti2v_5b": {"width": 704, "height": 384, "frames": 33, "steps": 30, "guidance": 5.0},
     "ltx_video_i2v": {"width": 768, "height": 320, "frames": 97, "steps": 40, "guidance": 3.0},
+    "ltx_video_fast_i2v": {"width": 768, "height": 320, "frames": 97, "guidance": 1.0, "locked": ["steps"]},       # fixed 8-step schedule
     "wan22_ti2v_5b_i2v": {"width": 704, "height": 384, "frames": 33, "steps": 30, "guidance": 5.0},
     "wan22_t2v_a14b": {"width": 448, "height": 256, "frames": 25, "steps": 30, "guidance": 4.0},
     "wan22_t2v_a14b_lora": {"width": 448, "height": 256, "frames": 25, "steps": 30, "guidance": 4.0},
@@ -277,7 +280,7 @@ def status():
         "gpu_blockers": {svc: {g: gpu_blocker(svc, g) for g, _ in gl if gpu_blocker(svc, g)} for svc, gl in GPUS.items()},
         "video_models": VIDEO_MODELS, "video_groups": VIDEO_GROUPS, "image_groups": IMAGE_GROUPS, "audio_kinds": AUDIO_KINDS, "audio_models": {k: {"role": r, "label": l, "note": n} for k, (r, l, n) in AUDIO_MODELS.items()}, "audio_roles": AUDIO_ROLE_TITLES, "gpus": {**GPUS, "computer": [("local", local_gpu_label())]}, "computer_why": gpu_blocker("computer", "local"),
         "upscale_models": {k: {"label": l, "short": UPSCALE_SHORT[k], "memory": m, "least_gb": g, "ampere": a} for k, (l, m, g, a) in UPSCALE_MODELS.items()}, "claude_models": CLAUDE_MODELS, "hf_models": HF_MODELS, "hf_vision_models": HF_VISION_MODELS, "hf_token_set": bool(os.environ.get("HF_TOKEN", "").strip()), "local_llm": local_llm_status(),
-        "codex_models": codex_models(),
+        "codex_models": codex_models(), "auto_cleanup": not AUTO_CLEAN_OFF.exists(),
         "looks": [{"id": k, "label": l, "about": a, **model_advisor.STYLE[k]} for k, (l, a) in model_advisor.LOOKS.items()],
     }
 
@@ -385,6 +388,12 @@ def book_args(opt):
             "--workers", str(num(opt, "workers", 2, int, 1, 6)), "--minutes", str(num(opt, "movie_minutes", 10, float, 1, 120))]
     if opt.get("words_per_shot"):
         args += ["--words-per-shot", str(num(opt, "words_per_shot", 60, int, 5, 2000))]
+    if opt.get("look") in model_advisor.LOOKS:
+        args += ["--look", opt["look"]]     # only a realistic film ages its characters
+    if opt.get("scenes"):
+        args.append("--scenes")             # find the scenes first, so no shot straddles two of them
+    if opt.get("clip_seconds"):
+        args += ["--clip-seconds", str(num(opt, "clip_seconds", 4, float, 1, 30))]
     if opt.get("force_write"):
         args.append("--force")              # rewrite chapters that already have a script
     if opt.get("chapters"):
@@ -462,8 +471,14 @@ def all_gpus():
 
 
 def local_gpus():
-    """The NVIDIA GPUs the models can run on here [(name, GB, compute capability)]; [] if none (or not on Linux / WSL 2)."""
-    return [(g["name"], g["gb"], g["cap"]) for g in all_gpus() if g["nvidia_ready"]] if sys.platform.startswith("linux") else []
+    """The GPUs the models can run on here [(name, GB, compute capability or AMD gfx name)]: NVIDIA, or AMD with ROCm (experimental);
+    [] if none (or not on Linux / WSL 2)."""
+    return [(g["name"], g["gb"], g["cap"]) for g in run_local_model.usable(all_gpus())] if sys.platform.startswith("linux") else []
+
+
+def local_is_amd():
+    u = run_local_model.usable(all_gpus())
+    return bool(u) and not u[0]["nvidia_ready"]
 
 
 def local_gpu_label():
@@ -523,6 +538,8 @@ def model_blocker(name, service, gpu):
     """Why this video/image/audio model cannot run with this service and GPU, or None if it can (it may still be untested)."""
     if service == "huggingface" and name not in I2V_MODELS:
         return None if name in hf_spaces.SPACES else "no public Hugging Face Space is set up for this model (see scripts/hf_spaces.py)"
+    if service == "computer" and name in run_local_model.NVIDIA_ONLY and local_is_amd():
+        return "cannot run on this AMD GPU: " + run_local_model.NVIDIA_ONLY[name]
     if name in UPSCALE_MODELS:
         if service not in ("kaggle", "computer"):
             return "upscales clips you already made, which only the Kaggle and This computer runners hand to the model (use one of them)"
@@ -622,9 +639,13 @@ def generation_steps(opt, slug):
     check_models(service, gpu, (vmodels if st.get("video") else []) + (akinds if st.get("audio") else []) + ([kmodel] if st.get("keyframes") else []))
     batch = num(opt, "batch", 0, int, 0, 100000)
     sync = opt.get("sync", "stretch")
-    if sync not in ("stretch", "speed", "trim"):
+    if sync not in SYNC_MODES:
         raise PlanError("bad sync mode")
     vols = {k: num(opt.get("vol", {}), k, d, float, 0, 5) for k, d in (("narration", 1.0), ("sfx", 0.5), ("music", 0.25))}
+    aspect = str(opt.get("aspect") or "")
+    if aspect and aspect not in ASPECTS:
+        raise PlanError("unknown film shape")
+    music_bed = bool(opt.get("music_bed")) and not chapters_mode      # in chapter mode each chapter already has one cue
 
     plan = read_json(pdir(slug) / "movies.json", {})
     movies = plan.get("chapters" if chapters_mode else "shots", [])
@@ -649,8 +670,12 @@ def generation_steps(opt, slug):
     steps = []
 
     runner = make_runner(service, gpu, user, slug)
+    if st.get("keyframes") or st.get("video"):
+        fixed = [m for m in vmodels if "width" in (MODEL_DEFAULTS.get(m, {}).get("locked") or [])] if aspect else []
+        steps.append({"label": f"Film format: {aspect or 'each model its own shape'}" + (f" ({', '.join(fixed)} keep their own shape)" if fixed else ""), "env": {},
+                      "argv": ["python3", "film_format.py", slug, "--aspect", aspect or "model", "--chain", "on" if opt.get("chain") else "off"]})
     if st.get("keyframes"):
-        kw, kh = keyframe_size(kmodel, (i2v or vmodels or ["ltx_video"])[0])
+        kw, kh = keyframe_size(kmodel, (i2v or vmodels or ["ltx_video"])[0], aspect)
         series = opt.get("keyframe_series") or get_character_series(slug)     # the pictures can come from any series (Characters tab)
         if refs and series not in character_tokens.list_series():
             raise PlanError(f"no character series named {series!r}: choose one on the Characters tab")
@@ -675,9 +700,19 @@ def generation_steps(opt, slug):
                         steps.append({"label": f"Movie {mv['id']} video {m}: rows {s}-{e}", "argv": argv, "env": env})
             if st.get("audio"):
                 for k in akinds:
+                    if k == "musicgen" and music_bed:         # one cue per chapter instead, below
+                        continue
                     if (k, s, e) not in done:
                         done.add((k, s, e)); argv, env = runner(f"audio_{k}", s, e, acsv)
                         steps.append({"label": f"Movie {mv['id']} audio {k}: rows {s}-{e}", "argv": argv, "env": env})
+    if st.get("audio") and music_bed and "musicgen" in akinds:
+        labels = [r.get("chapter", "") for r in read_csv_rows(pdir(slug) / "audio_chapters.csv")]
+        for mv in chosen:
+            if mv["first_chapter"] in labels and mv["last_chapter"] in labels:
+                s, e = labels.index(mv["first_chapter"]) + 1, labels.index(mv["last_chapter"]) + 1
+                if ("cue", s, e) not in done:
+                    done.add(("cue", s, e)); argv, env = runner("audio_musicgen", s, e, "audio_chapters.csv")
+                    steps.append({"label": f"Movie {mv['id']} music, one cue per chapter: chapters {s}-{e}", "argv": argv, "env": env})
     uv = ["uv", "run", "--with", "imageio-ffmpeg", "python"]
     for mv in chosen:
         lo, hi = mv["rows"]
@@ -692,14 +727,34 @@ def generation_steps(opt, slug):
                               "argv": uv + ["mix_film.py", "--project", slug, "--model", m, "--start", str(lo), "--end", str(hi),
                                             "--sync", sync, "--out", f"{name}_{m}.mp4",
                                             "--vol-narration", str(vols["narration"]), "--vol-sfx", str(vols["sfx"]),
-                                            "--vol-music", str(vols["music"])] + (["--chapters"] if chapters_mode else [])})
+                                            "--vol-music", str(vols["music"])] + (["--chapters"] if chapters_mode else []) + sound_flags(opt, music_bed)})
     return steps
 
 
-def keyframe_size(image_model, video_model):
-    """Keyframe size: the video's shape at about the image model's usual pixel count, in multiples of 64 (so it suits every image model)."""
+def clean_stages(stages):
+    """A character's life stages from the page: a list of {"label", "chapters", "token"}. PlanError says what is wrong with one."""
+    out = []
+    for st in stages or []:
+        label, chapters, token = (str((st or {}).get(k) or "").strip() for k in ("label", "chapters", "token"))
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _-]{0,39}", label):
+            raise PlanError(f"life stage {label!r}: give it a short name with letters or digits")
+        if not re.fullmatch(r"\d{1,4}(-\d{0,4})?", chapters):
+            raise PlanError(f"life stage {label}: chapters must look like 5, 5-12 or 13-")
+        if not token or len(token) > 400:
+            raise PlanError(f"life stage {label}: the description must be 1-400 characters")
+        out.append({"label": label, "chapters": chapters, "token": token})
+    return out[:8]
+
+
+def sound_flags(opt, music_bed):
+    """mix_film.py options for the page's sound choices. Ducking and the loudness pass are on unless the page says no."""
+    return (["--no-duck"] if opt.get("duck") is False else []) + (["--no-loudnorm"] if opt.get("loudnorm") is False else []) + (["--music-bed"] if music_bed else [])
+
+
+def keyframe_size(image_model, video_model, aspect=""):
+    """Keyframe size: the film's shape (else the video's) at about the image model's usual pixel count, in multiples of 64 (so it suits every image model)."""
     v, i = MODEL_DEFAULTS.get(video_model, MODEL_DEFAULTS["ltx_video"]), MODEL_DEFAULTS.get(image_model, {"width": 1024, "height": 1024})
-    ratio, area = v["width"] / v["height"], i["width"] * i["height"]
+    ratio, area = ASPECTS.get(aspect) or v["width"] / v["height"], i["width"] * i["height"]
     w = max(256, min(2048, round((area * ratio) ** 0.5 / 64) * 64))
     h = max(256, min(2048, round(w / ratio / 64) * 64))
     return w, h
@@ -729,6 +784,9 @@ def storyboard(slug, start, end):
                                 **{f"keyframe:{k.name.removesuffix('_keyframes')}": take_files(k, "image", n, ".png", d) for k in kdirs}}})
     for c in cards:
         c["takes"] = {k: v for k, v in c["takes"].items() if v}
+    faces = (read_json(d / FACE_CHECK_FILE, {}) or {}).get("rows", {})
+    for c in cards:
+        c["face"] = faces.get(str(c["n"]))
     return {"rows": len(shots), "start": start, "end": end, "cards": cards,
             "keyframe_models": [k.name.removesuffix("_keyframes") for k in kdirs]}
 
@@ -1285,6 +1343,61 @@ def image_t4_check(gpu, w, h, model):
                         f"keep it to about {side}x{side} or smaller, or use an L4/A100")
 
 
+CHARACTER_REF_NAME = "ref-character.png"
+SAME_PERSON = "The same person as in the reference picture, same face and features: "
+
+
+def character_reference(opt, model, service):
+    """The picture that steers this run on the Characters tab, or None. Only a model that takes pictures, on a service that uploads them."""
+    ref = (opt.get("opts") or {}).get("reference") or {}
+    series, name = str(ref.get("series") or ""), str(ref.get("name") or "")
+    if not series or not name or model not in REF_IMAGE_MODELS or service not in ("kaggle", "computer"):
+        return None
+    if not SLUG_RE.match(series):
+        raise PlanError("bad series name")
+    return character_tokens.first_reference(series, name)
+
+
+def save_small_picture(src, dst, side=448):
+    """A copy of a reference picture, at most side pixels long. A plain copy if Pillow is missing or cannot read it; the notebook shrinks it then."""
+    try:
+        from PIL import Image
+        img = Image.open(src).convert("RGB")
+        img.thumbnail((side, side))
+        img.save(dst, "PNG")
+    except Exception:
+        shutil.copyfile(src, dst)
+
+
+def open_folder(series, name):
+    """Open the character's reference folder in Finder or the file manager (it is made if needed). Returns its path from the repository root."""
+    if not SLUG_RE.match(str(series)) or not str(name).strip():
+        raise PlanError("pick a series and a character first")
+    folder = character_tokens.ensure_reference_dir(series, name)
+    opener = "open" if sys.platform == "darwin" else "xdg-open"
+    if not shutil.which(opener):
+        raise PlanError(f"cannot open folders here; it is at {folder}")
+    subprocess.run([opener, str(folder)], check=True, timeout=10)
+    return str(folder.relative_to(ROOT))
+
+
+FACE_CHECK_FILE = "face_check.json"
+
+
+def face_check_step(opt):
+    """The job step for scripts/face_check.py."""
+    slug, series = str(opt.get("project") or ""), str(opt.get("series") or "")
+    if not SLUG_RE.match(slug) or not pdir(slug).is_dir():
+        raise PlanError("pick a book first")
+    if not SLUG_RE.match(series):
+        raise PlanError("choose the character series whose pictures to compare with")
+    start, end = num(opt, "start", 1, int, 1), num(opt, "end", 10**6, int, 1)
+    look = str(opt.get("look") or "")
+    return {"label": f"Check faces, shots {start}-{end}", "env": {},
+            "argv": ["uv", "run", "--with", "opencv-python-headless", "--with", "numpy", "python", "face_check.py", slug, "--series", series, "--start", str(start), "--end", str(end)]
+                    + (["--look", look] if look in model_advisor.LOOKS else [])}
+
+
 def prompt_plan(opt, commit):
     slug = prompt_set_slug(opt, True)
     kind = opt.get("kind")
@@ -1334,10 +1447,21 @@ def prompt_plan(opt, commit):
         for r in rows:
             image_t4_check(gname, int(r["width"] or 0), int(r["height"] or 0), model)
     last = first + len(rows) - 1
+    ref_src = character_reference(opt, model, service) if kind == "image" else None
+    if ref_src:
+        cols = cols + ["refs"]
+        for r in rows:
+            r["refs"] = CHARACTER_REF_NAME
+            r["prompt"] = f"{SAME_PERSON}{r['prompt']}"[:2000]
     if commit:
         d.mkdir(parents=True, exist_ok=True)
         (d / "promptset.json").write_text(json.dumps({"type": "prompts"}))
         append_rows(d / csv_name, cols, rows)
+        if kind == "image" and "reference" in (opt.get("opts") or {}):     # the Characters tab: this run's picture only, so an old one is never uploaded
+            shutil.rmtree(d / "keyframe_refs", ignore_errors=True)
+        if ref_src:
+            (d / "keyframe_refs").mkdir(parents=True, exist_ok=True)
+            save_small_picture(ref_src, d / "keyframe_refs" / CHARACTER_REF_NAME)
     runner = make_runner(service, gpu, user, slug)
     runner_model = model if kind == "video" else f"image_{model}"
     steps = []
@@ -1401,11 +1525,7 @@ def expand_idea(opt):
             parts = [p]
             if global_positives:
                 parts.append(global_positives)
-            # Add the standard negative tail
-            neg_tail = "photorealistic epic period film, cinematic natural lighting, realistic faces and anatomy, no text, no subtitles, no logos, no watermark, no cartoon style"
-            if global_negatives:
-                neg_tail = f"{global_negatives}, {neg_tail}"
-            parts.append(neg_tail)
+            parts.append(NEG_TAIL)      # style-free; negatives are not added: words in the prompt ask the model FOR them
             final_prompts.append(", ".join(parts))
         return final_prompts
     return prompts
@@ -1641,12 +1761,9 @@ def enhance_prompt(opt):
     # Ensure global parameters are included in the updated prompt
     if global_positives and global_positives not in updated_prompt:
         updated_prompt = updated_prompt + ", " + global_positives
-    # Add negative tail if not present
-    neg_tail = "photorealistic epic period film, cinematic natural lighting, realistic faces and anatomy, no text, no subtitles, no logos, no watermark, no cartoon style"
-    if global_negatives:
-        neg_tail = f"{global_negatives}, {neg_tail}"
-    if neg_tail not in updated_prompt:
-        updated_prompt = updated_prompt + ", " + neg_tail
+    # Add the style-free tail if not present; negatives are not added: words in the prompt ask the model FOR them
+    if NEG_TAIL not in updated_prompt:
+        updated_prompt = updated_prompt + ", " + NEG_TAIL
 
     result = {
         "updated_prompt": updated_prompt,
@@ -1867,8 +1984,18 @@ def guess_project(slug):
     return ""
 
 
-def kaggle_runs(limit=10):
-    """Your newest Kaggle notebooks made by this tool, with their status. Read-only."""
+def kaggle_status_of(kaggle, ref):
+    """One notebook's status from Kaggle; UNKNOWN if Kaggle does not say (for example it is limiting how fast we may ask). UNKNOWN is never deleted."""
+    t = subprocess.run([kaggle, "kernels", "status", ref], env=clean_env(), capture_output=True, text=True, timeout=40)
+    m = re.search(r"KernelWorkerStatus\.([A-Za-z]+)", t.stdout + t.stderr)
+    return m.group(1) if m else "UNKNOWN"
+
+
+STATUS_PAUSE = 1.5           # seconds between status questions when there are many: asked all at once, Kaggle answers 429 Too Many Requests
+
+
+def kaggle_runs(limit=10, with_status=True):
+    """Your newest Kaggle notebooks made by this tool, with their status (with_status=False: without asking, status ""). Read-only."""
     kaggle = shutil.which("kaggle", path=ENV_PATH)
     if not kaggle:
         raise PlanError("the kaggle command is not installed (uv tool install kaggle)")
@@ -1882,13 +2009,16 @@ def kaggle_runs(limit=10):
         return []
     rows = [x for x in csv.DictReader(io.StringIO("\n".join(lines[start:]))) if TOOL_SLUG_RE.match(x["ref"].split("/")[-1]) or guess_project(x["ref"].split("/")[-1])]
 
-    def status_of(ref):
-        t = subprocess.run([kaggle, "kernels", "status", ref], env=clean_env(), capture_output=True, text=True, timeout=40)
-        m = re.search(r"KernelWorkerStatus\.([A-Za-z]+)", t.stdout + t.stderr)
-        return m.group(1) if m else "UNKNOWN"
-
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        statuses = list(ex.map(status_of, [x["ref"] for x in rows]))
+    if not with_status:
+        statuses = [""] * len(rows)
+    elif len(rows) <= 12:
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            statuses = list(ex.map(lambda x: kaggle_status_of(kaggle, x["ref"]), rows))
+    else:
+        statuses = []
+        for x in rows:
+            statuses.append(kaggle_status_of(kaggle, x["ref"]))
+            time.sleep(STATUS_PAUSE)
     return [{"ref": x["ref"], "slug": x["ref"].split("/")[-1], "status": st, "last_run": x.get("lastRunTime", "")[:16],
              "project": guess_project(x["ref"].split("/")[-1])} for x, st in zip(rows, statuses)]
 
@@ -2100,16 +2230,16 @@ def film_step(opt):
     if not clips:
         raise PlanError("tick at least one clip")
     sync = opt.get("sync", "stretch")
-    if sync not in ("stretch", "speed", "trim"):
+    if sync not in SYNC_MODES:
         raise PlanError("bad sync mode")
     vols = {k: num(opt.get("vol", {}), k, d, float, 0, 5) for k, d in (("narration", 1.0), ("sfx", 0.5), ("music", 0.25))}
     transition = opt.get("transition", "cut")
-    if transition not in ("cut", "fade"):
+    if transition not in ("cut", "fade", "dissolve"):
         raise PlanError("bad transition")
     fade = num(opt, "fade", 0.5, float, 0.1, 1.5)
     titles = {k: re.sub(r"[\x00-\x1f\x7f]", " ", str(opt.get(k) or "")).strip()[:120] for k in ("title", "end_title")}   # one line of plain text each
     (pdir(slug) / "films").mkdir(exist_ok=True)
-    extra = ["--transition", transition, "--fade", str(fade)] + (["--burn-captions"] if opt.get("burn_captions") else [])
+    extra = ["--transition", transition, "--fade", str(fade)] + (["--burn-captions"] if opt.get("burn_captions") else []) + (["--match-colour"] if opt.get("match_colour") else []) + sound_flags(opt, bool(opt.get("music_bed")) and not vsrc.endswith("_chapters"))   # rows of a per-chapter film are chapters, and each already has its own music
     return slug, {"clips": clips, **titles}, {"label": f"Make film {name}.mp4 from {len(clips)} clip(s)", "env": {},
         "argv": ["uv", "run", "--with", "imageio-ffmpeg", "python", "mix_film.py", "--project", slug, "--selection", "films/_selection.json",
                  "--sync", sync, "--out", f"{name}.mp4", "--vol-narration", str(vols["narration"]), "--vol-sfx", str(vols["sfx"]),
@@ -2420,7 +2550,7 @@ def prompt_suggest(opt):
     chars = "; ".join(f"{c['name']}: {c['token']}" for c in continuity.get("characters", []))[:1800]
     rules = {
         "prompt": ("a text-to-video prompt for ONE continuous shot of about 4 seconds: shot size, camera movement, subject, action, setting, light. "
-                   "No on-screen text, nothing modern. Keep any fixed character descriptions (like NAME: description) and any trailing style/quality "
+                   "No on-screen text, nothing out of place for the book's era and world. Keep any fixed character descriptions (like NAME: description) and any trailing style/quality "
                    "phrases exactly as they are in the current prompt. At most 900 characters.", 900),
         "narration": ("one line the narrator speaks over the shot, at most 14 words, in the same voice as the current line.", 200),
         "sfx": ("a description of ambience and sound effects to hear in the shot, at most 25 words, no speech or music.", 300),
@@ -2466,18 +2596,118 @@ def kaggle_cleanup_delete():
     """Delete the notebooks the scan lists (it is re-run here: the browser never names what to delete)."""
     if JOB.running:
         raise PlanError("a job is running; wait for it to finish first")
+    deleted, failed = delete_kaggle_runs(kaggle_cleanup_scan()["remove"])
+    return {"deleted": deleted, "failed": failed}
+
+
+AUTO_CLEAN_OFF = Path.home() / ".pistachios_studio" / "auto_cleanup_off"     # this file exists = the person turned automatic clean-up off
+AUTO_CLEAN_EVERY = 3600                     # asking Kaggle about every notebook takes a while: at most once an hour
+_AUTO_CLEAN = {"lock": threading.Lock(), "last": 0.0}
+
+
+def run_results_here(slug):
+    """Are all the results of this Kaggle run on this computer? Reads the run's name, <book>-<model>[-chapters|-keyframes]-<first row>-<last row>.
+    True only when every row has its file (a retaken row counts, in takes/). Anything unclear is False: that notebook may hold the only copy."""
+    project = guess_project(slug)
+    d = layout.find_dir(project) if project and SLUG_RE.match(project) else None
+    prefix = (project or "").replace("_", "-") + "-"
+    m = re.fullmatch(r"(.+?)(-chapters|-keyframes)?-(\d+)-(\d+)", slug[len(prefix):]) if d and slug.startswith(prefix) else None
+    if not m:
+        return False
+    model, mode, lo, hi = m.group(1).replace("-", "_"), (m.group(2) or "")[1:], int(m.group(3)), int(m.group(4))
+    suffix = f"_{mode}" if mode else ""
+    if model.startswith("audio_"):
+        folder = d / "audio" / (model[len("audio_"):] + suffix)
+    elif model.startswith("image_"):
+        folder = d / "images" / (model[len("image_"):] + suffix)
+    elif model.startswith("upscale_"):
+        return False                            # its folder is named after the clips it enlarged, which the name does not say
+    else:
+        folder = d / "videos" / (model + suffix)
+    if not folder.is_dir() or hi < lo:
+        return False
+    have = {int(x.group(1)) for p in folder.rglob("*-*") if p.is_file() and (x := re.match(r"[a-z]+-(\d{4})(?:-t\d+)?\.(?:mp4|png|wav)$", p.name))}
+    return all(n in have for n in range(lo, hi + 1))
+
+
+FAILED_RUN_KEEP_DAYS = 7
+
+
+def run_older_than(run, days):
+    """Was this run last started more than this many days ago? A date that cannot be read counts as recent."""
+    try:
+        when = datetime.strptime(run["last_run"][:16], "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        return False
+    return datetime.now(timezone.utc) - when > timedelta(days=days)
+
+
+def auto_cleanup_plan():
+    """What automatic clean-up would delete on Kaggle: finished notebooks outside the newest few whose results are all on this computer, and old failed ones.
+    Read-only. A notebook that finished but whose results are not all here is kept: deleting it would lose them. A failed one waits FAILED_RUN_KEEP_DAYS days. {"remove", "kept_not_downloaded"}"""
+    kaggle = shutil.which("kaggle", path=ENV_PATH)
+    runs = sorted(kaggle_runs(limit=100, with_status=False), key=lambda r: r["last_run"], reverse=True)[KEEP_KAGGLE_NOTEBOOKS:]
+    remove, kept = [], []
+    for r in runs:
+        here, old = run_results_here(r["slug"]), run_older_than(r, FAILED_RUN_KEEP_DAYS)
+        if not here and not old:              # nothing could make it deletable, so Kaggle need not be asked about it
+            kept.append(r)
+            continue
+        r["status"] = kaggle_status_of(kaggle, r["ref"])
+        time.sleep(STATUS_PAUSE)
+        if r["status"] in ACTIVE_STATUSES:
+            continue
+        if r["status"] == "COMPLETE":
+            (remove if here else kept).append(r)
+        else:                                 # a run that failed part way can still hold clips, so it waits a while
+            remove.append(r)
+    return {"remove": remove, "kept_not_downloaded": kept}
+
+
+def delete_kaggle_runs(runs):
+    """Delete these Kaggle notebooks. Returns (deleted refs, failures)."""
     kaggle = shutil.which("kaggle", path=ENV_PATH)
     if not kaggle:
         raise PlanError("the kaggle command is not installed (uv tool install kaggle)")
     deleted, failed = [], []
-    for r in kaggle_cleanup_scan()["remove"]:
+    for r in runs:
         ref = kernel_ref(r["ref"])
         t = subprocess.run([kaggle, "kernels", "delete", "-y", ref], env=clean_env(), capture_output=True, text=True, timeout=60)
         if t.returncode == 0:
             deleted.append(ref)
         else:
             failed.append({"ref": ref, "error": (t.stderr or t.stdout).strip()[-200:]})
-    return {"deleted": deleted, "failed": failed}
+    return deleted, failed
+
+
+def auto_cleanup(force=False):
+    """Delete generated notebooks that are no longer in use, here and on Kaggle, unless turned off. Runs in the background when the Studio starts and after each job."""
+    if AUTO_CLEAN_OFF.exists() or JOB.running or not _AUTO_CLEAN["lock"].acquire(blocking=False):
+        return
+    try:
+        local = delete_notebooks()
+        if local["notebooks"] or local["scripts"]:
+            JOB.log(f"clean-up: deleted {local['notebooks']} old local notebook(s) and {local['scripts']} script(s)")
+        if not force and time.time() - _AUTO_CLEAN["last"] < AUTO_CLEAN_EVERY:
+            return
+        _AUTO_CLEAN["last"] = time.time()
+        if not (Path.home() / ".kaggle").is_dir() or not shutil.which("kaggle", path=ENV_PATH):
+            return
+        plan = auto_cleanup_plan()
+        if JOB.running:                         # a new job started while Kaggle was answering: leave everything for next time
+            return
+        deleted, failed = delete_kaggle_runs(plan["remove"])
+        if deleted or failed or plan["kept_not_downloaded"]:
+            JOB.log(f"clean-up on Kaggle: deleted {len(deleted)} old notebook(s)" + (f", {len(failed)} could not be deleted" if failed else "") +
+                    (f"; kept {len(plan['kept_not_downloaded'])} whose results are not all on this computer" if plan["kept_not_downloaded"] else ""))
+    except (PlanError, OSError, subprocess.SubprocessError) as e:     # never disturbs anything: it tries again next time
+        JOB.log(f"clean-up skipped: {e}")
+    finally:
+        _AUTO_CLEAN["lock"].release()
+
+
+def start_auto_cleanup():
+    threading.Thread(target=auto_cleanup, daemon=True).start()
 
 
 def recreate_notebooks():
@@ -2558,6 +2788,7 @@ class Job:
             self.running = False
             self.current = ""
         self.log("\n===== job finished" + (" (stopped)" if self.stop_flag else ""))
+        start_auto_cleanup()
 
     def stop(self):
         self.stop_flag = True
@@ -2714,6 +2945,9 @@ class Handler(BaseHTTPRequestHandler):
                     project = q.get("project", [""])[0]
                     count = character_tokens.sync_characters_from_project(project)
                     return self._json(200, {"synced": count, "series": series})
+                elif action == "references":
+                    return self._json(200, {"pictures": character_tokens.reference_pictures(q.get("series", [""])[0], q.get("name", [""])[0]),
+                                            "folder": str(character_tokens.get_reference_dir(q.get("series", [""])[0], q.get("name", [""])[0]).relative_to(ROOT))})
                 elif action == "archetypes":
                     # the Characters tab wants {archetype: {...}} (keys fill the dropdown)
                     return self._json(200, {"archetypes": {a.value: {"label": a.value.replace("_", " ").title(), **character_tokens.get_archetype_fields(a)}
@@ -2933,6 +3167,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(200, kaggle_cleanup_delete())
                 except subprocess.TimeoutExpired:
                     return self._json(400, {"error": "Kaggle did not answer in time; try again"})
+            if url.path == "/api/auto_cleanup":
+                if body.get("on"):
+                    AUTO_CLEAN_OFF.unlink(missing_ok=True)
+                else:
+                    AUTO_CLEAN_OFF.parent.mkdir(parents=True, exist_ok=True)
+                    AUTO_CLEAN_OFF.touch()
+                return self._json(200, {"on": not AUTO_CLEAN_OFF.exists()})
             if url.path == "/api/recreate_notebooks":
                 return self._json(200, recreate_notebooks())
             if url.path == "/api/delete_notebooks":
@@ -2958,6 +3199,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"started": 1})
             if url.path == "/api/voice_cast":
                 return self._json(200, voice_cast(body))
+            if url.path == "/api/face_check":
+                JOB.start([face_check_step(body)], body)
+                return self._json(200, {"started": 1})
+            if url.path == "/api/open_reference_folder":
+                return self._json(200, {"folder": open_folder(body.get("series"), body.get("name", ""))})
             if url.path == "/api/make_animatic":
                 JOB.start([animatic_step(body)], body)
                 return self._json(200, {"started": 1})
@@ -2994,8 +3240,11 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     if action == "save":
                         char = body.get("character", {})
+                        char["stages"] = clean_stages(char.get("stages"))
                         path = character_tokens.save_character(char)
                         return self._json(200, {"saved": True, "path": str(path)})
+                    elif action == "use_reference":
+                        return self._json(200, {"updated": character_tokens.use_reference(body.get("series", ""), body.get("name", ""), body.get("path", ""))})
                     elif action == "add_reference":
                         series = body.get("series", "")
                         name = body.get("name", "")
@@ -3222,6 +3471,7 @@ def main():
 
     url = f"http://127.0.0.1:{srv.server_port}/?t={TOKEN}"
     print(f"Pistachio's Studio running. Open: {url}\nCtrl-C to stop.", flush=True)
+    start_auto_cleanup()
     if not a.no_open:
         webbrowser.open(url)
     try:

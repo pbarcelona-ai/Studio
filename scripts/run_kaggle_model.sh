@@ -71,7 +71,7 @@ WORK="$(mktemp -d)"; trap 'rm -rf "$WORK" "$GEN"' EXIT
 
 # 1. Dataset with the prompt CSVs (create once, new version afterwards)
 mkdir -p "$WORK/ds"; for f in all_shots.csv all_chapters.csv audio_shots.csv audio_chapters.csv all_images.csv keyframes.csv; do [ -f "$PD/$f" ] && cp "$PD/$f" "$WORK/ds/"; done
-if [ "$SHOTS_CSV" = keyframes.csv ] && [ -d "$PD/keyframe_refs" ]; then   # character pictures that steer the keyframes (see make_keyframes_csv.py --refs)
+if { [ "$SHOTS_CSV" = keyframes.csv ] || [ "$SHOTS_CSV" = all_images.csv ]; } && [ -d "$PD/keyframe_refs" ]; then   # character pictures that steer the pictures (make_keyframes_csv.py --refs; the Characters tab)
   cp "$PD"/keyframe_refs/ref-*.png "$WORK/ds/" 2>/dev/null || true
 fi
 if [ -n "$UPDIR" ]; then         # this run's clips to upscale, flat beside the CSV
@@ -185,7 +185,7 @@ while true; do
     *ERROR*|*error*|*CANCEL*|*cancel*|*FAIL*|*fail*)
       echo "!! kernel run did not complete successfully (status: $STATUS); fetching whatever output exists"
       break ;;
-    *"NOT FOUND"*|*"not found"*|*404*)
+    *"NOT FOUND"*|*"not found"*|*404*|*"Cannot access kernel"*)
       echo "!! kernel not found on Kaggle (may have been deleted or never created)"
       exit 1 ;;
     *QUEUED*|*queued*)

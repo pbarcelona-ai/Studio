@@ -111,9 +111,9 @@ def check(path=None, home=None, environ=None, local_llm_ready=False, local_gpu="
     v = sys.version_info
     add("python", "Python 3.9 or newer", "required", v >= (3, 9), f"Python {v.major}.{v.minor}.{v.micro}",
         "Install a current Python from python.org (or: brew install python), then run install.sh again.")
-    add("local_gpu", "A GPU in this computer (NVIDIA, Linux or Windows WSL 2)", "optional" if not local_gpu else "recommended", bool(local_gpu),
+    add("local_gpu", "A GPU in this computer (NVIDIA, or AMD with ROCm; Linux or Windows WSL 2)", "optional" if not local_gpu else "recommended", bool(local_gpu),
         local_gpu or gpu_seen or "none found: the models run on Kaggle, Colab or Hugging Face instead",
-        "Only needed to run the models here instead of on a website: an NVIDIA GPU with its driver (nvidia-smi), on Linux or WSL 2.")
+        "Only needed to run the models here instead of on a website: an NVIDIA GPU with its driver (nvidia-smi), or an AMD GPU with ROCm (rocm-smi; experimental), on Linux or WSL 2.")
     if local_gpu:
         add("git", "git (some models fetch their own program)", "recommended", bool(which("git")), "found" if which("git") else "not found",
             "Install git with your package manager (for example: sudo apt install git)")

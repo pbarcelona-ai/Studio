@@ -3,20 +3,38 @@ from pathlib import Path
 import os as _os
 root = Path(_os.environ["STUDIO_GEN_DIR"]) if _os.environ.get("STUDIO_GEN_DIR") else Path(__file__).resolve().parent.parent   # STUDIO_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
 
-NEG = "worst quality, inconsistent motion, blurry, jittery, distorted, text, subtitles, watermark, logo, modern objects"
+NEG = "worst quality, inconsistent motion, blurry, jittery, distorted, text, subtitles, watermark, logo"
+# The Studio's film shape: an "aspect" column turns this model's size into the same number of pixels at that shape, so memory use stays about the same.
+OPT_BASE = '''ASPECTS = {"16:9": 16 / 9, "2.39:1": 2.39, "4:3": 4 / 3, "1:1": 1.0, "9:16": 9 / 16}
+
+
+def shaped(row):
+    """(width, height) for this row's aspect column, in multiples of 32, or None if it has none."""
+    ratio = ASPECTS.get(row.get("aspect") or "")
+    if not ratio:
+        return None
+    w = max(256, round((WIDTH * HEIGHT * ratio) ** 0.5 / 32) * 32)
+    return w, max(256, round(w / ratio / 32) * 32)
+
+
+def opt(row, key, default, cast=int):
+    """Per-row setting from the CSV (blank/missing -> the default above). An explicit width or height wins over the aspect column."""
+    v = row.get(key)
+    if v not in (None, ""):
+        return cast(v)
+    if key in ("width", "height") and shaped(row):
+        return shaped(row)[key == "height"]
+    return default
+
+
+'''
 MODELS = {
 "ltx_video": dict(
   title="LTX-Video", repo="Lightricks/LTX-Video", fps=24,
   note="Fast; fits a free T4. ~4 s clips, 2.4:1 widescreen. Prompt window is set to 256 tokens so the ~800-char prompts are not cut.",
   config='MODEL_ID = "Lightricks/LTX-Video"\nWIDTH, HEIGHT = 768, 320   # divisible by 32, ~2.4:1\nNUM_FRAMES = 97            # 8*k+1, about 4 s at 24 fps\nFPS = 24\nSTEPS = 40\nGUIDANCE = 3.0',
   load='from diffusers import LTXPipeline\n\n# T4 has no native bf16 and fp16 can give black frames with LTX, so bf16 (slower on T4, fast on L4/A100).\npipe = LTXPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()\npipe.vae.enable_tiling()',
-  gen='''def opt(row, key, default, cast=int):
-    """Per-row setting from the CSV (blank/missing -> the default above)."""
-    v = row.get(key)
-    return cast(v) if v not in (None, "") else default
-
-
-def generate(row, seed):
+  gen=OPT_BASE + '''def generate(row, seed):
     return pipe(prompt=row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
                 width=opt(row, "width", WIDTH), height=opt(row, "height", HEIGHT), num_frames=opt(row, "frames", NUM_FRAMES),
                 num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
@@ -26,13 +44,7 @@ def generate(row, seed):
   note="Better motion and prompt-following than LTX but slower. The 1.3B model fits a T4 with CPU offload, but attention memory grows with the square of the video size, so on a T4 the default is small (512x288, 33 frames, about 2 s); the VAE runs in fp32 as the model card advises.",
   config='MODEL_ID = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"\n# T4 limit: bf16 attention is computed the plain way there, so one attention matrix needs 48 x tokens^2 bytes, with\n# tokens = ((frames-1)//4+1) * (height/16) * (width/16). 832x480x81 frames = 32,760 tokens = 48 GiB (this crashed the first Kaggle run);\n# keep tokens under about 6,500 on a T4. 512x288 with 33 frames = 5,184 tokens = 1.3 GiB. Raise these only on an L4/A100.\nWIDTH, HEIGHT = 512, 288\nNUM_FRAMES = 33           # 4*k+1, about 2 s at 16 fps\nFPS = 16\nSTEPS = 30\nGUIDANCE = 5.0',
   load='from diffusers import AutoencoderKLWan, WanPipeline\n\nvae = AutoencoderKLWan.from_pretrained(MODEL_ID, subfolder="vae", torch_dtype=torch.float32)\npipe = WanPipeline.from_pretrained(MODEL_ID, vae=vae, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()',
-  gen='''def opt(row, key, default, cast=int):
-    """Per-row setting from the CSV (blank/missing -> the default above)."""
-    v = row.get(key)
-    return cast(v) if v not in (None, "") else default
-
-
-def generate(row, seed):
+  gen=OPT_BASE + '''def generate(row, seed):
     return pipe(prompt=row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
                 width=opt(row, "width", WIDTH), height=opt(row, "height", HEIGHT), num_frames=opt(row, "frames", NUM_FRAMES),
                 num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
@@ -42,13 +54,7 @@ def generate(row, seed):
   note="Runs in fp16 (works on a T4). 720x480, 6 s at 8 fps, so it looks choppy. Its text encoder reads only 226 tokens, so the tail of long prompts (the style boilerplate) is cut off.",
   config='MODEL_ID = "THUDM/CogVideoX-2b"\nWIDTH, HEIGHT = 720, 480\nNUM_FRAMES = 49           # fixed by the model, 6 s at 8 fps\nFPS = 8\nSTEPS = 50\nGUIDANCE = 6.0',
   load='from diffusers import CogVideoXPipeline\n\npipe = CogVideoXPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.float16)\npipe.enable_model_cpu_offload()\npipe.vae.enable_tiling()\npipe.vae.enable_slicing()',
-  gen='''def opt(row, key, default, cast=int):
-    """Per-row setting from the CSV (blank/missing -> the default above)."""
-    v = row.get(key)
-    return cast(v) if v not in (None, "") else default
-
-
-def generate(row, seed):
+  gen=OPT_BASE + '''def generate(row, seed):
     return pipe(prompt=row["prompt"], negative_prompt=row.get("negative") or None, width=WIDTH, height=HEIGHT,
                 num_frames=NUM_FRAMES,      # size and frames are fixed by this model, so those columns are ignored
                 num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
@@ -60,13 +66,7 @@ def generate(row, seed):
 # NOT run on a GPU yet: names, files and arguments were checked against the repositories and the diffusers source.
 # GGUF = a pre-quantized transformer (diffusers loads it with from_single_file); it keeps a 14B model within a 16 GB GPU.
 # ---------------------------------------------------------------------------------------------------------------------------
-OPT = '''def opt(row, key, default, cast=int):
-    """Per-row setting from the CSV (blank/missing -> the default above)."""
-    v = row.get(key)
-    return cast(v) if v not in (None, "") else default
-
-
-'''
+OPT = OPT_BASE
 PIP_GGUF = "!pip install -q -U diffusers transformers accelerate sentencepiece protobuf imageio imageio-ffmpeg ftfy gguf peft safetensors\n!pip uninstall -y -q torchao      # Kaggle ships torchao 0.10, which the new peft rejects; nothing here needs it"
 PIP_BASE = "!pip install -q -U diffusers imageio imageio-ffmpeg"      # export_to_video only (no generator weights)
 _GGUF_WAN = """from diffusers import AutoencoderKLWan, GGUFQuantizationConfig, WanPipeline, WanTransformer3DModel
@@ -240,15 +240,32 @@ print("VAE tiling:", pipe.vae.use_tiling, "tile (latent):", pipe.vae.tile_latent
 _KEYFRAME = '''from PIL import Image
 
 _KF_ROOT = Path(CSV_PATH).parent if "CSV_PATH" in globals() else Path("/content")
+_LAST = None        # (row number, last frame) of the clip just made, for a shot that continues it
+
+
+def remember(row, frames):
+    """Keep the last frame of a clip for the next shot (chain column). Returns the frames, so a generate() can end with it."""
+    global _LAST
+    f = frames[-1]
+    if not isinstance(f, Image.Image):                      # some pipelines give arrays of 0-1 floats
+        import numpy as np
+        a = np.asarray(f)
+        f = Image.fromarray((a * 255).clip(0, 255).astype("uint8") if a.dtype != "uint8" else a)
+    _LAST = (next(k for k, r in enumerate(shots, 1) if r is row), f.convert("RGB"))
+    return frames
 
 
 def keyframe(row, width, height):
     """This row's keyframe, cropped to the clip's shape (centre) and resized. Stops the shot with a clear message if it is missing."""
     n = next(k for k, r in enumerate(shots, 1) if r is row)
-    hits = sorted(_KF_ROOT.rglob(f"kf-{n:04d}.png"))
-    if not hits:
-        raise FileNotFoundError(f"no keyframe kf-{n:04d}.png for row {n}: make keyframes for these rows first (Movies tab, Storyboard)")
-    img = Image.open(hits[0]).convert("RGB")
+    if row.get("chain") == "1" and _LAST and _LAST[0] == n - 1:     # continue the shot before; a resumed run has no such frame and uses the keyframe
+        print(f"row {n}: continues from the last frame of row {n - 1}", flush=True)
+        img = _LAST[1]
+    else:
+        hits = sorted(_KF_ROOT.rglob(f"kf-{n:04d}.png"))
+        if not hits:
+            raise FileNotFoundError(f"no keyframe kf-{n:04d}.png for row {n}: make keyframes for these rows first (Movies tab, Storyboard)")
+        img = Image.open(hits[0]).convert("RGB")
     want = width / height
     if img.width / img.height > want:                       # too wide: trim the sides
         w = round(img.height * want); x = (img.width - w) // 2
@@ -268,10 +285,22 @@ MODELS["ltx_video_i2v"] = dict(
   load='from diffusers import LTXImageToVideoPipeline\n\npipe = LTXImageToVideoPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()\npipe.vae.enable_tiling()',
   gen=OPT + _KEYFRAME + '''def generate(row, seed):
     w, h = opt(row, "width", WIDTH), opt(row, "height", HEIGHT)
-    return pipe(image=keyframe(row, w, h), prompt=row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
+    return remember(row, pipe(image=keyframe(row, w, h), prompt=row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
                 width=w, height=h, num_frames=opt(row, "frames", NUM_FRAMES),
                 num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
-                max_sequence_length=256, generator=torch.Generator("cuda").manual_seed(seed)).frames[0]''')
+                max_sequence_length=256, generator=torch.Generator("cuda").manual_seed(seed)).frames[0])''')
+
+MODELS["ltx_video_fast_i2v"] = dict(
+  title="LTX-Video 0.9.8 distilled, from keyframes", repo="Lightricks/LTX-Video", fps=24,
+  note="LTX-Video 2B 0.9.8 distilled (Lightricks; LTX-Video open-weights licence) animating each shot's keyframe: 8 steps without guidance instead of 40 with it, so roughly ten times fewer model passes than 'LTX-Video, from keyframes'. 768x320, ~4 s at 24 fps; the first frame is the keyframe. About 6 GB of weights plus the T5 text encoder; fits a T4 with CPU offload. Needs keyframes for the rows first. Kaggle or this computer.",
+  config='MODEL_ID = "Lightricks/LTX-Video"        # text encoder, tokenizer and scheduler\nCHECKPOINT = "https://huggingface.co/Lightricks/LTX-Video/blob/main/ltxv-2b-0.9.8-distilled.safetensors"   # the distilled transformer and VAE\nWIDTH, HEIGHT = 768, 320   # multiples of 32\nNUM_FRAMES = 97            # 8*k+1, about 4 s at 24 fps\nFPS = 24\nTIMESTEPS = [1000, 993, 987, 981, 975, 909, 725, 0.03]   # the schedule Lightricks gives for the distilled model (8 steps)\nGUIDANCE = 1.0             # distilled: no classifier-free guidance',
+  load='from diffusers import LTXConditionPipeline, LTXVideoTransformer3DModel, AutoencoderKLLTXVideo\nfrom diffusers.pipelines.ltx.pipeline_ltx_condition import LTXVideoCondition\n\ntransformer = LTXVideoTransformer3DModel.from_single_file(CHECKPOINT, torch_dtype=torch.bfloat16)\nvae = AutoencoderKLLTXVideo.from_single_file(CHECKPOINT, torch_dtype=torch.bfloat16)\npipe = LTXConditionPipeline.from_pretrained(MODEL_ID, transformer=transformer, vae=vae, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()\npipe.vae.enable_tiling()',
+  gen=OPT + _KEYFRAME + '''def generate(row, seed):
+    w, h = opt(row, "width", WIDTH), opt(row, "height", HEIGHT)
+    return remember(row, pipe(conditions=[LTXVideoCondition(image=keyframe(row, w, h), frame_index=0)], prompt=row["prompt"],
+                negative_prompt=row.get("negative") or NEGATIVE, width=w, height=h, num_frames=opt(row, "frames", NUM_FRAMES),
+                timesteps=TIMESTEPS, guidance_scale=opt(row, "guidance", GUIDANCE, float), decode_timestep=0.05, decode_noise_scale=0.025,
+                image_cond_noise_scale=0.0, max_sequence_length=256, generator=torch.Generator("cuda").manual_seed(seed)).frames[0])''')
 
 MODELS["wan22_ti2v_5b_i2v"] = dict(
   title="Wan 2.2 (TI2V 5B), from keyframes", repo="Wan-AI/Wan2.2-TI2V-5B-Diffusers", fps=24,
@@ -284,10 +313,10 @@ pipe = WanImageToVideoPipeline.from_pretrained(MODEL_ID, vae=vae, torch_dtype=to
 pipe.enable_model_cpu_offload()""",
   gen=OPT + _KEYFRAME + '''def generate(row, seed):
     w, h = opt(row, "width", WIDTH), opt(row, "height", HEIGHT)
-    return pipe(image=keyframe(row, w, h), prompt=PROMPT_PREFIX + row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
+    return remember(row, pipe(image=keyframe(row, w, h), prompt=PROMPT_PREFIX + row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
                 width=w, height=h, num_frames=opt(row, "frames", NUM_FRAMES),
                 num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
-                generator=torch.Generator("cuda").manual_seed(seed)).frames[0]''')
+                generator=torch.Generator("cuda").manual_seed(seed)).frames[0])''')
 
 
 # ---------------------------------------------------------------------------------------------------------------------------

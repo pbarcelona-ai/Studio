@@ -3,8 +3,9 @@
 
 Usage:
   uv run --with imageio-ffmpeg python mix_film.py [--project adam_eve] --model ltx_video [--chapters] [--start 1 --end 40]
-        [--sync stretch|speed|trim] [--out film.mp4]
+        [--sync stretch|gentle|speed|trim] [--out film.mp4]
         [--vol-narration 1.0 --vol-sfx 0.5 --vol-music 0.25] [--transition cut|fade --fade 0.5] [--burn-captions]
+        [--no-duck] [--no-loudnorm] [--music-bed] [--match-colour]
 
 Everything is inside projects/<project>/. Looks for, per CSV row N:  videos/<model>[_chapters]/shot-NNNN.mp4   (required)
                            audio/kokoro[_chapters]/narration-NNNN.wav
@@ -20,12 +21,21 @@ Everything is inside projects/<project>/. Looks for, per CSV row N:  videos/<mod
   all clips have the same size and frame rate. Title cards are 3.5 s of white text on black, the size of the clips.
 
 --transition fade  fades each clip in from and out to black over --fade seconds (sound too); cut (default) joins them directly.
+--transition dissolve  each clip melts into the next over --fade seconds, picture and sound; the film gets shorter by that much at each join.
+--match-colour  nudges each clip's brightness and colour halfway towards the chapter's typical clip, so shots of one chapter sit together; it does not
+                make chapters look alike, and a limit keeps a deliberately dark shot from being lifted far.
 --burn-captions    also draws the narration captions into the picture (the .srt is written either way).
 
 --sync decides what happens when narration is longer than the clip:
   stretch  slow the clip (up to 2x) and hold the last frame so the whole narration plays (default)
+  gentle   the same, but slow the clip by at most 1.25x, so motion still looks natural, and hold the last frame for the rest
   speed    keep the clip length and speed the narration up (up to 3x)
   trim     keep the clip length and cut the audio at the end of the clip
+
+Sound: music dips under the narration (--no-duck turns that off), and the finished film is brought to -16 LUFS, the usual level for online
+video, with peaks kept under -1.5 dB (--no-loudnorm turns that off).
+--music-bed  one continuous score instead of a new piece of music for every shot: each chapter's cue from audio/musicgen_chapters/music-NNNN.wav
+             (NNNN = the chapter's row in audio_chapters.csv) loops with soft joins under all of that chapter's shots. The shots' own music is not used.
 """
 import argparse, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
@@ -36,17 +46,23 @@ ap.add_argument("--model", default="ltx_video")
 ap.add_argument("--chapters", action="store_true", help="use the *_chapters folders (one clip per chapter)")
 ap.add_argument("--start", type=int, default=1)
 ap.add_argument("--end", type=int, default=10**9)
-ap.add_argument("--sync", choices=["stretch", "speed", "trim"], default="stretch")
+ap.add_argument("--sync", choices=["stretch", "gentle", "speed", "trim"], default="stretch")
 ap.add_argument("--out", default=None)
 ap.add_argument("--vol-narration", type=float, default=1.0)
 ap.add_argument("--vol-sfx", type=float, default=0.5)
 ap.add_argument("--vol-music", type=float, default=0.25)
 ap.add_argument("--selection", default=None, help="JSON file listing exactly which clips and audio files to use")
 ap.add_argument("--pad", type=float, default=0.4, help="seconds of silence after narration in stretch mode")
-ap.add_argument("--transition", choices=["cut", "fade"], default="cut")
+ap.add_argument("--transition", choices=["cut", "fade", "dissolve"], default="cut")
+ap.add_argument("--match-colour", action="store_true", help="nudge each clip's brightness and colour towards the chapter's typical clip")
 ap.add_argument("--fade", type=float, default=0.5, help="fade length in seconds with --transition fade (0.1-1.5)")
 ap.add_argument("--burn-captions", action="store_true", help="draw the captions into the picture")
+ap.add_argument("--no-duck", action="store_true", help="leave the music at the same level under narration")
+ap.add_argument("--no-loudnorm", action="store_true", help="leave the film's overall loudness as mixed")
+ap.add_argument("--music-bed", action="store_true", help="one continuous cue per chapter under the shots, instead of each shot's own music")
 args = ap.parse_args()
+if args.music_bed and args.chapters:
+    sys.exit("--music-bed is for films made shot by shot; with --chapters each chapter already has its own music")
 if not 0.1 <= args.fade <= 1.5:
     sys.exit("--fade must be 0.1-1.5 seconds")
 
@@ -86,15 +102,70 @@ def atempo_chain(factor):
     return ",".join(parts)
 
 
+def colour_of(path):
+    """(mean Y, U, V) of a clip on the 0-255 scale, from about two frames a second, or None if it cannot be read."""
+    r = subprocess.run([ffmpeg, "-i", str(path), "-vf", "select='not(mod(n,12))',signalstats,metadata=print:file=-", "-an", "-f", "null", "-"], capture_output=True, text=True)
+    out = []
+    for key in ("YAVG", "UAVG", "VAVG"):
+        vals = [float(x) for x in re.findall(rf"lavfi\.signalstats\.{key}=([\d.]+)", r.stdout)]
+        if not vals:
+            return None
+        out.append(sum(vals) / len(vals))
+    return tuple(out)
+
+
+def colour_nudges(plan):
+    """{row: lutyuv filter} moving each clip halfway towards its chapter's median colour, limited to 15 steps of brightness and 8 of colour."""
+    import csv, statistics
+    try:
+        with open(ROOT / "audio_shots.csv", newline="", encoding="utf-8") as fh:
+            chapter_of = [r.get("chapter", "") for r in csv.DictReader(fh)]
+    except OSError:
+        chapter_of = []
+    groups = {}
+    for n, video, _, _ in plan:
+        c = colour_of(video)
+        if c:
+            groups.setdefault(chapter_of[n - 1] if 0 < n <= len(chapter_of) else "", []).append((n, c))
+    out = {}
+    for rows in groups.values():
+        if len(rows) < 2:
+            continue
+        mid = [statistics.median(c[i] for _, c in rows) for i in range(3)]
+        for n, c in rows:
+            d = [max(-lim, min(lim, (mid[i] - c[i]) / 2)) for i, lim in enumerate((15, 8, 8))]
+            if max(abs(x) for x in d) >= 0.5:
+                out[n] = f"lutyuv=y=clipval+({d[0]:.2f}):u=clipval+({d[1]:.2f}):v=clipval+({d[2]:.2f}),"
+    return out
+
+
+def dissolve_join(parts, lengths, fade, out):
+    """Join segments so each melts into the next. Returns the seconds of overlap used (shortened to suit the shortest clip)."""
+    d = min(fade, min(lengths) / 2.5)
+    w, h, fps = video_shape(parts[0])
+    cmd = [ffmpeg, "-y", "-loglevel", "error"]
+    for p in parts:
+        cmd += ["-i", str(p)]
+    fc = [f"[{i}:v]fps={fps:g},settb=AVTB,format=yuv420p[v{i}];[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{i}]" for i in range(len(parts))]
+    vlast, alast, at = "[v0]", "[a0]", lengths[0]
+    for i in range(1, len(parts)):
+        fc.append(f"{vlast}[v{i}]xfade=transition=fade:duration={d:.3f}:offset={at - d:.3f}[vx{i}]")
+        fc.append(f"{alast}[a{i}]acrossfade=d={d:.3f}[ax{i}]")
+        vlast, alast, at = f"[vx{i}]", f"[ax{i}]", at + lengths[i] - d
+    subprocess.run(cmd + ["-filter_complex", ";".join(fc), "-map", vlast, "-map", alast, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-c:a", "aac", "-b:a", "192k", str(out)],
+                   check=True, capture_output=True)
+    return d
+
+
 def build_segment(i, video, stems, out, trim_start=0.0, trim_end=0.0):
     full = duration(video)
     trim_start = min(max(trim_start, 0.0), max(full - 0.5, 0.0))
     vd = max(full - trim_start - max(trim_end, 0.0), 0.5)               # at least half a second of picture is kept
     nd = next((d for n, _, d in stems if n == "narration"), 0.0)
     video_filter, narr_tempo, total = "null", None, vd
-    if args.sync == "stretch" and nd + args.pad > vd:
+    if args.sync in ("stretch", "gentle") and nd + args.pad > vd:
         total = nd + args.pad
-        slow = min(total / vd, 2.0)
+        slow = min(total / vd, 2.0 if args.sync == "stretch" else 1.25)
         hold = total - vd * slow
         video_filter = f"setpts={slow:.4f}*PTS" + (f",tpad=stop_mode=clone:stop_duration={hold:.3f}" if hold > 0.01 else "")
     elif args.sync == "speed" and nd > vd - 0.2:
@@ -105,9 +176,12 @@ def build_segment(i, video, stems, out, trim_start=0.0, trim_end=0.0):
         cmd += ["-i", str(path)]
     fade = min(args.fade, total / 3) if args.transition == "fade" else 0.0
     vfade = f",fade=t=in:st=0:d={fade:.3f},fade=t=out:st={total - fade:.3f}:d={fade:.3f}" if fade else ""
-    fc = [f"[0:v]trim=start={trim_start:.3f}:duration={vd:.3f},setpts=PTS-STARTPTS,{video_filter},trim=0:{total:.3f},setpts=PTS-STARTPTS{vfade}[v]",
+    fc = [f"[0:v]{NUDGES.get(i, '')}trim=start={trim_start:.3f}:duration={vd:.3f},setpts=PTS-STARTPTS,{video_filter},trim=0:{total:.3f},setpts=PTS-STARTPTS{vfade}[v]",
           "[1:a]aformat=sample_rates=44100:channel_layouts=stereo[a0]"]
     labels = ["[a0]"]
+    duck = not args.no_duck and {"narration", "music"} <= {n for n, _, _ in stems}
+    narr_input = next((k for k, (n, _, _) in enumerate(stems, start=2) if n == "narration"), None)
+    music_input = next((k for k, (n, _, _) in enumerate(stems, start=2) if n == "music"), None)
     for k, (name, path, _) in enumerate(stems, start=2):
         vol = {"narration": args.vol_narration, "sfx": args.vol_sfx, "music": args.vol_music}[name]
         chain = [f"aformat=sample_rates=44100:channel_layouts=stereo", f"volume={vol}"]
@@ -118,12 +192,92 @@ def build_segment(i, video, stems, out, trim_start=0.0, trim_end=0.0):
         chain += ["apad", f"atrim=0:{total:.3f}"]
         fc.append(f"[{k}:a]{','.join(chain)}[a{k}]")
         labels.append(f"[a{k}]")
+    if duck:                    # the narration, split off, pushes the music down while it is speaking
+        at = next(i for i, x in enumerate(fc) if x.endswith(f"[a{narr_input}]"))
+        fc[at] = fc[at].removesuffix(f"[a{narr_input}]") + f",asplit=2[a{narr_input}][key]"
+        fc.append(f"[a{music_input}][key]{DUCK}[ducked]")
+        labels[labels.index(f"[a{music_input}]")] = "[ducked]"
     afade = f",afade=t=in:d={fade:.3f},afade=t=out:st={total - fade:.3f}:d={fade:.3f}" if fade else ""
     fc.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,atrim=0:{total:.3f}{afade}[a]")
     cmd += ["-filter_complex", ";".join(fc), "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-c:a", "aac", "-b:a", "192k", str(out)]
     subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL)
     return total
+
+
+DUCK = "sidechaincompress=threshold=0.015:ratio=6:attack=30:release=500"
+
+
+def looped(cue, seconds, out, overlap=2.0):
+    """A cue repeated with soft joins until it lasts `seconds`, faded at both ends. Returns False if the cue is too short or ffmpeg fails."""
+    length = duration(cue)
+    if length <= overlap * 2:
+        return False
+    copies = 1
+    while length + (copies - 1) * (length - overlap) < seconds:
+        copies += 1
+    cmd = [ffmpeg, "-y", "-loglevel", "error"]
+    for _ in range(copies):
+        cmd += ["-i", str(cue)]
+    chain = [f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[c{i}]" for i in range(copies)]
+    last = "[c0]"
+    for i in range(1, copies):
+        chain.append(f"{last}[c{i}]acrossfade=d={overlap}[x{i}]")
+        last = f"[x{i}]"
+    fade = min(1.5, seconds / 4)
+    chain.append(f"{last}atrim=0:{seconds:.3f},afade=t=in:d={fade:.3f},afade=t=out:st={seconds - fade:.3f}:d={fade:.3f}[out]")
+    r = subprocess.run(cmd + ["-filter_complex", ";".join(chain), "-map", "[out]", str(out)], capture_output=True, text=True)
+    return r.returncode == 0
+
+
+def chapter_spans(timed):
+    """[(chapter row in audio_chapters.csv, start, seconds)] for the film, from its [(row, start, seconds)] in film order: one span per run of shots of a chapter."""
+    import csv
+    try:
+        with open(ROOT / "audio_shots.csv", newline="", encoding="utf-8") as fh:
+            chapter_of = [r.get("chapter", "") for r in csv.DictReader(fh)]
+        with open(ROOT / "audio_chapters.csv", newline="", encoding="utf-8") as fh:
+            cue_row = {r.get("chapter", ""): i for i, r in enumerate(csv.DictReader(fh), 1)}
+    except OSError:
+        return []
+    spans = []
+    for n, start, secs in timed:
+        cue = cue_row.get(chapter_of[n - 1]) if 0 < n <= len(chapter_of) else None
+        if spans and spans[-1][0] == cue:
+            spans[-1][2] += secs
+        else:
+            spans.append([cue, start, secs])
+    return [tuple(s) for s in spans if s[0]]
+
+
+def finish_audio(src, dst, spans):
+    """The film with its music bed laid under the sound, ducked, and its loudness set; the picture is copied. Returns False if ffmpeg fails."""
+    cmd, fc, beds = [ffmpeg, "-y", "-loglevel", "error", "-i", str(src)], [], []
+    k = 1
+    for cue_file, start, secs in spans:
+        cmd += ["-i", str(cue_file)]
+        ms = round(start * 1000)
+        fc.append(f"[{k}:a]volume={args.vol_music},adelay={ms}|{ms}[b{k}]")
+        beds.append(f"[b{k}]")
+        k += 1
+    last = "[0:a]"
+    if beds:
+        fc.append("".join(beds) + (f"amix=inputs={len(beds)}:normalize=0:duration=longest[bed]" if len(beds) > 1 else "anull[bed]"))
+        if args.no_duck:
+            fc.append("[0:a][bed]amix=inputs=2:normalize=0:duration=first[mixed]")
+        else:
+            fc.append("[0:a]asplit=2[main][key]")
+            fc.append(f"[bed][key]{DUCK}[ducked]")
+            fc.append("[main][ducked]amix=inputs=2:normalize=0:duration=first[mixed]")
+        last = "[mixed]"
+    if not args.no_loudnorm:
+        fc.append(f"{last}loudnorm=I=-16:TP=-1.5:LRA=11,aresample=44100[final]")
+        last = "[final]"
+    cmd += ["-filter_complex", ";".join(fc), "-map", "0:v", "-map", last, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", str(dst)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode:
+        print("  sound finishing failed, keeping the plain mix: " + r.stderr.strip()[-300:])
+    return r.returncode == 0
 
 
 FONTS = ["/System/Library/Fonts/Helvetica.ttc", "/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf",
@@ -218,25 +372,31 @@ def narration_lines():
 
 
 tmp = Path(tempfile.mkdtemp(prefix="mix_"))
-segments, total_len, used = [], 0.0, {"narration": 0, "sfx": 0, "music": 0}
+NUDGES = colour_nudges(plan) if args.match_colour else {}
+if args.match_colour:
+    print(f"colour: {len(NUDGES)} clip(s) nudged towards their chapter's typical clip", flush=True)
+segments, seg_lens, used = [], [], {"narration": 0, "sfx": 0, "music": 0}
+timed = []                      # (row, index of its segment, seconds), for the music bed
 captions, lines = [], narration_lines()
 shape = video_shape(plan[0][1]) if any(titles) else None
 if titles[0]:
     card = build_card(titles[0], shape, tmp / "card-open.mp4")
     if card:
-        segments.append(card); total_len += CARD_SECONDS
+        segments.append(card); seg_lens.append(CARD_SECONDS)
 for k, (n, video, files, trims) in enumerate(plan):
     stems = []
     for name, f in files:
+        if name == "music" and args.music_bed:      # the chapter's cue plays instead
+            continue
         stems.append((name, f, duration(f))); used[name] += 1
     seg = tmp / f"seg-{k:04d}-{n:04d}.mp4"
     try:
         seg_len = build_segment(n, video, stems, seg, *trims)
         text = lines[n - 1] if 0 < n <= len(lines) else ""
         if text and any(k == "narration" for k, _, _ in stems):          # a caption only where the narration is actually heard
-            captions.append((total_len, total_len + seg_len - 0.1, text))
-        total_len += seg_len
-        segments.append(seg)
+            captions.append((len(segments), seg_len - 0.1, text))
+        timed.append((n, len(segments), seg_len))
+        segments.append(seg); seg_lens.append(seg_len)
     except subprocess.CalledProcessError:
         print(f"  shot {n}: ffmpeg failed, skipped")
     print(f"  shot {n}: {len(stems)} audio stem(s)", flush=True)
@@ -244,16 +404,48 @@ for k, (n, video, files, trims) in enumerate(plan):
 if titles[1]:
     card = build_card(titles[1], shape, tmp / "card-end.mp4")
     if card:
-        segments.append(card); total_len += CARD_SECONDS
+        segments.append(card); seg_lens.append(CARD_SECONDS)
 listfile = tmp / "list.txt"
 listfile.write_text("".join(f"file '{s}'\n" for s in segments))
 (ROOT / "films").mkdir(exist_ok=True)
 out = (ROOT / "films" / (args.out or ("selected_film.mp4" if args.selection else f"{args.model}{suffix}_mixed.mp4"))).resolve()
+burn = args.burn_captions and bool(captions)
+finishing = args.music_bed or not args.no_loudnorm
+joined = tmp / "joined.mp4" if burn or finishing else out
+overlap = 0.0
+if args.transition == "dissolve" and len(segments) > 1:
+    try:
+        overlap = dissolve_join(segments, seg_lens, args.fade, joined)
+    except subprocess.CalledProcessError as e:        # for example clips of different sizes: join them plainly rather than lose the film
+        print("  dissolve failed, joining with cuts: " + (e.stderr or b"").decode(errors="replace").strip()[-300:])
+if not overlap:
+    subprocess.run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(listfile), "-c", "copy", str(joined)],
+                   check=True, stderr=subprocess.DEVNULL)
+starts, total_len = [], 0.0
+for length in seg_lens:                       # where each segment begins in the film, and how long the film is
+    starts.append(total_len)
+    total_len += length - overlap
+total_len += overlap
+captions = [(starts[s], starts[s] + secs, t) for s, secs, t in captions]
+timed = [(n, starts[s], secs) for n, s, secs in timed]
 srt_text = "".join(f"{i}\n{srt_time(a)} --> {srt_time(b)}\n{t}\n\n" for i, (a, b, t) in enumerate(captions, 1))
-joined = tmp / "joined.mp4" if args.burn_captions and captions else out
-subprocess.run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(listfile), "-c", "copy", str(joined)],
-               check=True, stderr=subprocess.DEVNULL)
-if joined != out:                             # draw the captions into the picture (sound is copied as it is)
+if finishing:
+    beds = []
+    if args.music_bed:
+        for cue, start, secs in chapter_spans(timed):
+            cue_file = ROOT / "audio" / "musicgen_chapters" / f"music-{cue:04d}.wav"
+            bed = tmp / f"bed-{len(beds):03d}.wav"
+            if cue_file.is_file() and looped(cue_file, secs, bed):
+                beds.append((bed, start, secs))
+                used["music"] += 1
+            else:
+                print(f"  no usable music cue for chapter row {cue} ({cue_file.name}): that part has no music")
+    finished = tmp / "finished.mp4"
+    if finish_audio(joined, finished, beds):
+        joined = finished
+    if not burn:
+        shutil.move(str(joined), str(out))
+if burn:                                      # draw the captions into the picture (sound is copied as it is)
     srt_tmp = tmp / "captions.srt"
     srt_tmp.write_text(srt_text, encoding="utf-8")
     try:

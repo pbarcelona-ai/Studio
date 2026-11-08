@@ -23,8 +23,11 @@ VOICE_MAP = {"narrator": "bm_george", "male": "am_michael", "female": "af_bella"
              "deity": "bm_lewis", "child": "af_sky", "villain": "am_adam"}
 WORDS_PER_SECOND = 2.5          # spoken narration
 CLIP_SECONDS = 4.0              # LTX-Video clip (97 frames at 24 fps)
-NEG_TAIL = ("photorealistic epic period film, cinematic natural lighting, realistic faces and anatomy, "
-            "no text, no subtitles, no logos, no watermark, no cartoon style")
+NEG_TAIL = "no text, no subtitles, no logos, no watermark"    # says nothing about style: the film's look comes from Global Parameters and visual_style
+ASPECTS = {"16:9": 16 / 9, "2.39:1": 2.39, "4:3": 4 / 3, "1:1": 1.0, "9:16": 9 / 16}   # "" or a missing one = each model's own shape
+FILM_FORMAT_FILE = "film_format.json"
+VIDEO_NEGATIVE = "worst quality, inconsistent motion, blurry, jittery, distorted, text, subtitles, watermark, logo"   # with the look's own negatives, the negative column of all_shots.csv
+AGING_LOOKS = ("", "live_action")   # stylised looks keep one design for a character for the whole film; only a realistic film ages people
 
 
 def slugify(s):
@@ -299,22 +302,55 @@ def slice_text(text, n):
     return out
 
 
-def compose_prompt(visual, characters, continuity, limit=1000, global_positives="", global_negatives=""):
-    """Visual description + the continuity book's exact character tokens + style + global params, kept under the model's prompt window."""
+def chapter_in(spec, chapter):
+    """Is this chapter number inside a range like "5", "5-12" or "5-" (to the end)? Anything unreadable is False."""
+    m = re.fullmatch(r"\s*(\d+)\s*(?:(-)\s*(\d*)\s*)?", str(spec or ""))
+    if not m or chapter is None:
+        return False
+    lo = int(m.group(1))
+    hi = lo if not m.group(2) else (int(m.group(3)) if m.group(3) else 10**9)
+    return lo <= chapter <= hi
+
+
+def stage_for(character, chapter, look=""):
+    """The life stage of a character in this chapter: {"label", "chapters", "token"}, or None (no stage covers it, or a stylised look)."""
+    if look not in AGING_LOOKS:
+        return None
+    for st in character.get("stages") or []:
+        if isinstance(st, dict) and str(st.get("token") or "").strip() and chapter_in(st.get("chapters"), chapter):
+            return st
+    return None
+
+
+def character_token(character, chapter=None, look=""):
+    """The description of a character to use in this chapter: the token of its life stage if it has one, else its one fixed token."""
+    st = stage_for(character, chapter, look)
+    return str(st["token"]).strip() if st else character.get("token", "")
+
+
+def shot_negative(global_negatives=""):
+    """What a shot must not look like, for the notebooks' negative prompt."""
+    return ", ".join(x for x in (str(global_negatives or "").strip(" ,"), VIDEO_NEGATIVE) if x)
+
+
+def compose_prompt(visual, characters, continuity, limit=1000, global_positives="", global_negatives="", chapter=None, look="", location=""):
+    """Visual description + the continuity book's exact character tokens (for this chapter's life stage) + the location's token + style + global
+    params, kept under the model's prompt window. When it does not fit, the location goes first, then characters from the end."""
     known = {c["name"].lower(): c for c in continuity.get("characters", [])}
     tokens = []
     for n in characters:
         c = known.get(str(n).lower())
         if c:
-            tok = re.sub(rf"^{re.escape(c['name'])}\s*[:,-]\s*", "", c["token"], flags=re.I)   # don't repeat the name
+            tok = re.sub(rf"^{re.escape(c['name'])}\s*[:,-]\s*", "", character_token(c, chapter, look), flags=re.I)   # don't repeat the name
             tokens.append(f"{c['name'].upper()}: {tok}")
+    place = next((p for p in continuity.get("locations", []) if str(p.get("name", "")).lower() == str(location or "").strip().lower()), None)
+    if place and place.get("token"):
+        tokens.append(f"SETTING: {place['token']}")
     base = visual.strip().rstrip(".")
     style = (continuity.get("visual_style") or "").strip().rstrip(".")
 
-    # Build the negative tail with global negatives
+    # global_negatives are not added here: words in this text would ask the model FOR them. They go in the shot's negative column (shot_negative).
     neg_tail = NEG_TAIL
-    if global_negatives:
-        neg_tail = f"{global_negatives}, {NEG_TAIL}"
 
     # Build the positive parts with global positives
     def build_positive_parts(token_list):
@@ -479,6 +515,36 @@ KOKORO_VOICES = ["af_heart", "af_bella", "af_nicole", "af_sarah", "af_sky", "af_
                  "am_michael", "am_adam", "am_eric", "am_liam", "am_onyx", "am_echo", "am_fenrir", "am_puck",
                  "bf_emma", "bf_isabella", "bf_alice", "bf_lily", "bm_george", "bm_lewis", "bm_daniel", "bm_fable"]
 VOICE_CAST_FILE = "voice_cast.json"
+
+
+def read_film_format(pdir):
+    """{"aspect": "16:9" or "", "chain": bool}: the shape of the book's clips and whether shots that continue the action start from the shot before."""
+    d = read_json(Path(pdir) / FILM_FORMAT_FILE, {}) or {}
+    aspect = d.get("aspect") if d.get("aspect") in ASPECTS else ""
+    return {"aspect": aspect, "chain": bool(d.get("chain"))}
+
+
+def apply_film_format(pdir, aspect=None, chain=None):
+    """Save the film format if given, then write it into all_shots.csv and all_chapters.csv as the aspect and chain columns (the video notebooks read
+    them row by row). Kept in its own file and re-applied after each rebuild (book_build.py). Returns the format now in force."""
+    pdir = Path(pdir)
+    fmt = read_film_format(pdir)
+    if aspect is not None:
+        if aspect and aspect not in ASPECTS:
+            raise ValueError(f"unknown aspect {aspect!r}")
+        fmt["aspect"] = aspect
+    if chain is not None:
+        fmt["chain"] = bool(chain)
+    write_json(pdir / FILM_FORMAT_FILE, fmt)
+    for name in ("all_shots.csv", "all_chapters.csv"):
+        rows = read_csv(pdir / name)
+        if not rows:
+            continue
+        for r in rows:
+            r["aspect"] = fmt["aspect"]
+            r["chain"] = "1" if fmt["chain"] and str(r.get("continues") or "") == "1" else ""
+        _write_csv(pdir / name, rows)
+    return fmt
 
 
 def voice_id(word):

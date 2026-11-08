@@ -8,7 +8,7 @@ audio_chapters.csv (same row order, row N of audio = row N of video) and movies.
 minutes; each movie ends at the end of a chapter). Chapters without a script yet are left out.
 """
 import argparse, csv, json, sys
-from bookkit import apply_prompt_edits, apply_voice_cast, continuity_file, build_movies, project_dir, read_json
+from bookkit import apply_film_format, apply_prompt_edits, apply_voice_cast, continuity_file, build_movies, project_dir, read_json
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
@@ -22,8 +22,9 @@ for f in sorted((pdir / "scripts").glob("chapter-*.json")):
     d = read_json(f)
     label = f"{args.project}-{d['chapter']:03d}"
     for s in d["shots"]:
-        prompts.append({"chapter": label, "shot": s["n"], "prompt": s["prompt"],
-                        "characters": "|".join(str(c) for c in s.get("characters", []))})     # who is in the shot (keyframe reference pictures)
+        prompts.append({"chapter": label, "shot": s["n"], "prompt": s["prompt"], "negative": s.get("negative", ""),
+                        "characters": "|".join(str(c) for c in s.get("characters", [])),      # who is in the shot (keyframe reference pictures)
+                        "location": s.get("location", ""), "continues": "1" if s.get("continues") else ""})
         line = [s["speaker"], s["narration"]] + ([s["voice"]] if s.get("voice") else [])
         lines = s["lines"] if "lines" in s else [line]          # dialogue mode: one line per quote, none for a silent shot
         audio.append({"chapter": label, "shot": s["n"], "lines_json": json.dumps(lines, ensure_ascii=False),
@@ -50,16 +51,19 @@ def first_per_chapter(rows):
     return out
 
 
-write("all_shots.csv", ["chapter", "shot", "prompt", "characters"], prompts)
-write("all_chapters.csv", ["chapter", "shot", "prompt"], first_per_chapter(prompts))
+write("all_shots.csv", ["chapter", "shot", "prompt", "negative", "characters", "location", "continues"], prompts)
+write("all_chapters.csv", ["chapter", "shot", "prompt", "negative"], first_per_chapter(prompts))
 write("audio_shots.csv", AUDIO_FIELDS, audio)
-write("audio_chapters.csv", AUDIO_FIELDS, first_per_chapter(audio))
+# One music cue per chapter: the book's theme first, so every chapter's cue belongs to the same score.
+theme = (continuity.get("music_theme") or "").strip().rstrip(".")
+write("audio_chapters.csv", AUDIO_FIELDS, [dict(r, music=f"{theme}; {r['music']}"[:330] if theme else r["music"]) for r in first_per_chapter(audio)])
 kept = apply_prompt_edits(pdir)                          # your saved scene edits survive a rebuild
 if kept:
     print(f"re-applied {kept} saved prompt edit(s)")
 recast = apply_voice_cast(pdir)                          # and so does the voice cast (voice_cast.json)
 if recast:
     print(f"voice cast applied to {len(recast)} row(s)")
+apply_film_format(pdir)                                  # and the film's shape (film_format.json)
 plan = build_movies(pdir, args.minutes)
 chapters = len({r["chapter"] for r in prompts})
 print(f"{args.project}: {len(prompts)} shots in {chapters} chapters")

@@ -1429,6 +1429,7 @@
 
   /* Sentences: one per line (see the splitter script at the end of the page) */
   .card__subtitle br + *, small br + * { margin-top: 0; }
+  #modelGrid.hide-advanced label[data-advanced]:not(:has(input:checked)) { display: none; }
 </style>
 <!-- favicon:start (written by scripts/make_icon.py --favicon) -->
 <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,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">
@@ -1700,7 +1701,9 @@
         <label class="f">Words of the book per shot (blank = auto)</label><input type="number" id="wps" min="5" placeholder="60 / 25" autocomplete="off">
         <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Min shots</label><input type="number" id="minshots" value="1" min="1" autocomplete="off"></div>
         <div style="min-width:70px"><label class="f">Max shots</label><input type="number" id="maxshots" value="12" min="1" autocomplete="off"></div></div>
-        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">AI at once</label><input type="number" id="workers" value="2" min="1" max="6" autocomplete="off"></div></div>
+        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">AI at once</label><input type="number" id="workers" value="2" min="1" max="6" autocomplete="off"></div>
+        <div style="min-width:70px"><label class="f" for="clipsecs" title="How long one clip from your video model lasts. The AI writes each shot and narration line to fit it.">Seconds per clip</label><input type="number" id="clipsecs" value="4" min="1" max="30" step="0.5" autocomplete="off"></div></div>
+        <label class="opt" style="margin-top:8px"><input type="checkbox" id="b_scenes" checked><span>Find the scenes first<small>One more AI call per chapter. No shot straddles two scenes, and each scene keeps its time of day, weather and costumes.</small></span></label>
       </div>
     </div>
     <div class="row" style="align-items:center;margin-top:8px"><button id="bEstimate">Estimate size and cost</button><span class="warn">Needs the PDF read first. No AI calls; shows shots, film length, movies and GPU hours.</span></div>
@@ -1755,6 +1758,7 @@
                 <div class="stack">
                     <div class="row"><button id="bCleanup" type="button">Cleanup</button><button id="bKaggleCleanup" type="button" title="Deletes old notebooks from your Kaggle account">Cleanup notebooks</button></div>
                     <small class="warn">Keeps the 3 newest notebooks (and the scripts that go with them) and moves the older generated notebooks to the Trash. Also removes Python cache folders, leftover temporary files and empty output folders. Notebooks are re-created automatically when a run needs one. Your books, prompts, characters, clips and images are not touched. You see the list and confirm before anything moves.</small>
+                    <label class="opt"><input type="checkbox" id="autoClean" checked><span>Delete notebooks that are no longer used, automatically<small>When the Studio starts and after each job: local generated notebooks, and on Kaggle the finished notebooks outside the 3 newest whose results are all on this computer, plus failed runs over 7 days old. A notebook whose results you have not downloaded is kept. Deleting on Kaggle cannot be undone.</small></span></label>
                     <small class="warn">"Cleanup notebooks" is separate: it deletes the notebooks this tool pushed to your Kaggle account, except the 3 most recently run. That cannot be undone, so a warning with Continue and Cancel comes first. A notebook that is still running is never deleted.</small>
                     <div id="cleanupStatus" class="warn" aria-live="polite"></div>
                     <pre id="cleanupLog" class="fill" data-empty="1" aria-live="polite" style="max-height:340px;overflow:auto">nothing yet</pre>
@@ -1777,7 +1781,7 @@
         <label class="opt svc-opt"><input type="radio" name="svc" value="kaggle" checked><span>Kaggle<small>Free weekly GPU. Needs sign-in and a phone-verified account.</small></span></label>
         <label class="opt svc-opt"><input type="radio" name="svc" value="colab"><span>Colab<small>Free T4 is often unavailable.</small></span></label>
         <label class="opt svc-opt"><input type="radio" name="svc" value="huggingface"><span>Hugging Face<small>Free shared GPUs (daily quota). Only models with a public Space; the Space's own version of the model.</small></span></label>
-        <label class="opt svc-opt"><input type="radio" name="svc" value="computer"><span>This computer<small>This computer's own graphics card. The models need an NVIDIA card (Linux or Windows WSL 2). No website or account; models download once, then work offline.</small></span></label>
+        <label class="opt svc-opt"><input type="radio" name="svc" value="computer"><span>This computer<small>This computer's own graphics card: NVIDIA, or AMD with ROCm (experimental), on Linux or Windows WSL 2. No website or account; models download once, then work offline.</small></span></label>
       </div>
       <div><label class="f" for="gpu">GPU</label><select id="gpu"></select></div>
       <div id="userbox"><label class="f" for="kuser">Kaggle username</label><input type="text" id="kuser" name="kaggle_account_slug" placeholder="the part after kaggle.com/" spellcheck="false" autocapitalize="off" autocomplete="nope" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
@@ -1814,7 +1818,8 @@
             <div class="card__body">
                 <section class="bookonly" id="videomodelssection">
     <p class="warn" style="margin-bottom:12px">Select the AI models for video and audio generation. Video models are used for text-to-video and image-to-video. Image models are used for reference images and thumbnails.</p>
-    <div class="model-grid">
+    <label class="opt" style="margin-bottom:10px"><input type="checkbox" id="showAdvanced"><span>Show experimental and adult models<small>Hidden by default: models not yet proven on a GPU and adult-content variants. A ticked model always stays visible.</small></span></label>
+    <div class="model-grid" id="modelGrid">
       <fieldset class="model-frame">
         <legend>Video Models</legend>
         <div id="vmodels" class="model-list"></div>
@@ -1968,11 +1973,7 @@
       <div><button id="bCharNew" type="button">New Character</button></div>
       <div>
         <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charOverwriteToken"><span>Overwrite visual token</span></label>
-        <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="charOverwriteRefs"><span>Overwrite reference images</span></label>
-      </div>
-      <div class="fill">
-        <label class="f">Generation Log</label>
-        <div id="charGenLog" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;min-height:80px;max-height:200px;overflow:auto;font-size:12px;line-height:1.5;color:var(--fg);font-family:var(--font-mono)"></div>
+        <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="charOverwriteRefs"><span title="Nothing is replaced. The new picture goes at the end of this character's Reference Images list. Unticked, it is still saved in the reference folder and shown below, but not listed.">Add the new picture to the Reference Images list</span></label>
       </div>
     </div>
     <div class="stack" style="margin-top:var(--space-4)">
@@ -1992,6 +1993,10 @@
         <h3 style="margin:1rem 0 0.5rem">Physical Traits</h3>
         <div class="char-trait-row" id="physicalTraitsFields"></div>
 
+        <label class="f" style="margin-top:8px" for="charStages">Life stages (realistic films only; one per line: name | chapters | description)</label>
+        <textarea id="charStages" rows="3" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="young | 1-12 | about 20, lean, olive skin, dark hair to the shoulders, no beard
+old | 13- | about 70, stooped, olive skin, long white hair and beard" autocomplete="off"></textarea>
+        <small class="warn">The shots in those chapters use this description instead of the Visual Token. Pictures in the Reference Images Directory, in a folder named after the stage, steer that stage's keyframes. Stylised looks keep one design throughout. Send to the book, then redo those chapters.</small>
         <label class="f" style="margin-top:8px">Clothing</label>
         <input type="text" id="charClothing" placeholder="simple tunic, earth tones, rough woven fabric" autocomplete="off">
         <label class="f" style="margin-top:8px">Voice (Kokoro voice ID)</label>
@@ -2003,9 +2008,11 @@
         <label class="f" style="margin-top:8px">LoRA Info</label>
         <div class="char-trait-row" id="loraFields"></div>
 
-        <label class="f" style="margin-top:8px">Reference Images (one path per line)</label>
+        <label class="f" style="margin-top:8px" for="charRefImages">Reference Images (one path per line)</label>
         <textarea id="charRefImages" rows="3" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="projects/characters/main/references/adam/ref_01.png
 projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textarea>
+        <small class="warn" id="charRefHelp"><b>What these do:</b> one picture stands for this character's face, marked below. Generate Character starts from it when "Keep this face" is ticked, and the Movies tab's "Steer keyframes with character pictures" uses it for every shot. Both need FLUX.2 klein; other models work from the words alone. To change the face, press "Use this face" under another picture.</small>
+        <div id="charRefThumbs" class="pz-row" style="flex-wrap:wrap;gap:8px;margin-top:8px" aria-live="polite"></div>
         <label class="f" style="margin-top:8px">Consistency Notes</label>
         <textarea id="charConsistency" rows="2" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="Always depict as the first man, noble but human, burdened by knowledge of the fall" autocomplete="off"></textarea>
 
@@ -2016,13 +2023,15 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
           <div>
             <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charGenImages" checked><span>Character Images</span></label>
             <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charGenVoice"><span>Voice</span></label>
-            <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charGenLora"><span>LoRA</span></label>
+            <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charGenLora"><span>LoRA (not built yet)</span></label>
             <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="charGenMovie"><span>Character Movie</span></label>
           </div>
           <div class="fill">
             <label class="f" for="charGenView">View to Generate</label>
             <input type="text" id="charGenView" placeholder="e.g. extreme close-up portrait, face filling frame, detailed eyes" style="width:100%;max-width:none;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" autocomplete="off">
             <small class="warn">Describe the view/angle you want (e.g. "extreme close-up portrait", "full body front view"). This text will be added to the prompt.</small>
+            <label class="opt" style="margin-top:6px"><input type="checkbox" id="charKeepFace" checked><span>Keep this face: start from the picture marked below<small id="charKeepFaceNote"></small></span></label>
+            <label class="opt"><input type="checkbox" id="charSheet"><span>Character sheet: 5 pictures instead of 1<small>Front, side, back, full body and close-up, using the view box only as an extra note. Costs about 5 times the GPU time.</small></span></label>
           </div>
         </div>
         <div class="row" style="gap:8px;margin-top:10px;align-items:center">
@@ -2035,6 +2044,8 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
           <button id="bCharSend" class="btn btn-secondary" disabled title="Copy the ticked characters (their visual token and voice) into the book's own continuity book">Send ticked to the book</button>
           <span id="charStatus" class="warn"></span>
         </div>
+        <label class="f" id="charGenLogLabel" style="margin-top:12px">Generation Log</label>
+        <div id="charGenLog" role="log" aria-labelledby="charGenLogLabel" tabindex="0" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;min-height:80px;max-height:200px;overflow:auto;font-size:12px;line-height:1.5;color:var(--fg);font-family:var(--font-mono)"></div>
       </div>
       <div class="fill">
         <label class="f">All Character Tokens for Prompts (copy to use in prompts)</label>
@@ -2257,6 +2268,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
       <div><label class="f" for="sbKf">Keyframes from</label><select id="sbKf"><option value="">(newest)</option></select></div>
       <button type="button" id="sbLoad">Show storyboard</button>
       <button type="button" id="sbAnimatic" title="Play the stills in order, each as long as its narration, as one video in the films folder">Make animatic</button>
+      <button type="button" id="sbFaces" title="Compare the faces in the keyframes with each character's reference picture, on this computer. For realistic films.">Check faces</button>
       <span id="sbStatus" class="warn" role="status" aria-live="polite"></span>
     </div>
     <div class="pz-grid" id="sbGrid" style="margin-top:12px"></div>
@@ -2294,7 +2306,13 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <label class="f" for="kfseries">Character pictures from</label>
         <select id="kfseries" style="margin-bottom:8px"></select>
         <label class="f">When narration is longer than the clip</label>
-        <select id="sync"><option value="stretch">Stretch video to fit (default)</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select>
+        <select id="sync"><option value="stretch">Stretch video to fit, up to 2x slow motion (default)</option><option value="gentle">Natural motion: at most 1.25x slower, then hold the last frame</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select>
+        <label class="f" for="aspect" style="margin-top:8px">Film shape</label>
+        <select id="aspect"><option value="">Each model's own shape</option><option value="16:9">16:9 widescreen</option><option value="2.39:1">2.39:1 cinema</option><option value="4:3">4:3 classic</option><option value="1:1">1:1 square</option><option value="9:16">9:16 vertical</option></select>
+        <label class="opt" style="margin-top:8px"><input type="checkbox" id="chain"><span>Continue unbroken action from the shot before<small>A "from keyframes" clip marked as continuing starts from the last frame of the previous clip instead of its keyframe. Not yet tested on a GPU. Off by default.</small></span></label>
+        <label class="opt"><input type="checkbox" id="musicBed"><span>One continuous music cue per chapter<small>MusicGen makes one piece per chapter, looped softly under all its shots, instead of new music for every shot.</small></span></label>
+        <label class="opt"><input type="checkbox" id="duck" checked><span>Lower the music under narration</span></label>
+        <label class="opt"><input type="checkbox" id="loudnorm" checked><span>Set the film's loudness for online video (-16 LUFS)</span></label>
         <div class="row" style="gap:8px;margin-top:8px">
           <div class="vol-slider"><label class="f" for="vn">Voice <output id="vnOut" for="vn">1.00</output></label><input type="range" id="vn" min="0" max="2" step="0.05" value="1.0" data-out="vnOut"></div>
           <div class="vol-slider"><label class="f" for="vs">Effects <output id="vsOut" for="vs">0.50</output></label><input type="range" id="vs" min="0" max="2" step="0.05" value="0.5" data-out="vsOut"></div>
@@ -2401,17 +2419,21 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <div><label class="f">Music from</label><select id="fmusic"></select></div>
       </div>
       <div class="stack" style="margin-top:12px">
-        <div><label class="f">When narration is longer than the clip</label><select id="fsync"><option value="stretch">Stretch video to fit</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select></div>
+        <div><label class="f">When narration is longer than the clip</label><select id="fsync"><option value="stretch">Stretch video to fit</option><option value="gentle">Natural motion: at most 1.25x slower, then hold</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select></div>
         <div class="vol-slider"><label class="f" for="fvn">Voice <output id="fvnOut" for="fvn">1.00</output></label><input type="range" id="fvn" min="0" max="2" step="0.05" value="1.0" data-out="fvnOut"></div>
         <div class="vol-slider"><label class="f" for="fvs">Effects <output id="fvsOut" for="fvs">0.50</output></label><input type="range" id="fvs" min="0" max="2" step="0.05" value="0.5" data-out="fvsOut"></div>
         <div class="vol-slider"><label class="f" for="fvm">Music <output id="fvmOut" for="fvm">0.25</output></label><input type="range" id="fvm" min="0" max="2" step="0.05" value="0.25" data-out="fvmOut"></div>
-        <div><label class="f" for="ftrans">Between clips</label><select id="ftrans"><option value="cut">Cut</option><option value="fade">Fade through black</option></select></div>
+        <div><label class="f" for="ftrans">Between clips</label><select id="ftrans"><option value="cut">Cut</option><option value="fade">Fade through black</option><option value="dissolve">Dissolve (each clip melts into the next)</option></select></div>
         <div><label class="f" for="ffade">Fade length (seconds)</label><input type="number" id="ffade" min="0.1" max="1.5" step="0.1" value="0.5"></div>
       </div>
       <div class="stack" style="margin-top:12px">
         <div><label class="f" for="ftitle">Opening title card (optional)</label><input type="text" id="ftitle" maxlength="120" autocomplete="off" placeholder="e.g. The Garden"></div>
         <div><label class="f" for="fendtitle">End card (optional)</label><input type="text" id="fendtitle" maxlength="120" autocomplete="off" placeholder="e.g. The End"></div>
         <label class="opt"><input type="checkbox" id="fburn"><span>Draw captions into the picture<small>The .srt caption file is written either way.</small></span></label>
+        <label class="opt"><input type="checkbox" id="fcolour"><span>Even out colour within each chapter<small>Nudges each clip's brightness and colour halfway towards the chapter's typical clip.</small></span></label>
+        <label class="opt"><input type="checkbox" id="fbed"><span>One continuous music cue per chapter<small>Uses audio/musicgen_chapters instead of the Music column above.</small></span></label>
+        <label class="opt"><input type="checkbox" id="fduck" checked><span>Lower the music under narration</span></label>
+        <label class="opt"><input type="checkbox" id="fln" checked><span>Set the film's loudness for online video (-16 LUFS)</span></label>
         <div><label class="f" for="fname">Film file (saved as films/&lt;file&gt;.mp4)</label><input type="text" id="fname" name="film_file" value="my_film" spellcheck="false" autocapitalize="off" autocomplete="nope" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
       </div>
       <div class="row" style="margin-top:8px;align-items:center">
@@ -2558,6 +2580,16 @@ function setupSuggest(input, getItems) {
   });
 }
 let ST = null, since = 0, building = false, loaded = false;
+const CHAR_SHEET_VIEWS = ["front view, facing the camera, neutral plain background", "side profile view, neutral plain background", "seen from behind, neutral plain background",
+                          "full body, standing, front view, neutral plain background", "extreme close-up portrait, face filling the frame, detailed eyes"];
+let charGenReference = {};   // what Generate Character asks the server to start from
+const charSlug = name => name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "book";   // as character_tokens.slugify on the server
+const FIT_SYNCS = ["stretch", "gentle"];   // sync modes where a shot lasts as long as its narration
+const stagesToText = stages => (stages || []).map(s => `${s.label} | ${s.chapters} | ${s.token}`).join("\n");
+const textToStages = text => text.split("\n").map(l => l.trim()).filter(Boolean).map(l => {
+  const [label = "", chapters = "", ...rest] = l.split("|").map(x => x.trim());
+  return { label, chapters, token: rest.join(" | ") };
+});
 const cur = () => ST ? ST.projects.find(p => p.slug === $("proj").value) : undefined;   // ST is null until the first /api/status answer
 
 function options() {
@@ -2567,7 +2599,8 @@ function options() {
     project: $("proj").value, pdf: $("pdf").value, granularity: radio("gran"),
     video_models: checked("vmodel"), audio: checked("audio"), service: radio("svc"), gpu: $("gpu").value,
     kaggle_user: $("kuser").value, batch: $("batch").value, range_start: $("rs").value, range_end: $("re").value,
-    sync: $("sync").value, keep_going: $("keep").checked, vol: { narration: $("vn").value, sfx: $("vs").value, music: $("vm").value },
+    sync: $("sync").value, aspect: $("aspect").value, chain: $("chain").checked, music_bed: $("musicBed").checked, duck: $("duck").checked, loudnorm: $("loudnorm").checked, clip_seconds: $("clipsecs").value, scenes: $("b_scenes").checked,
+    keep_going: $("keep").checked, vol: { narration: $("vn").value, sfx: $("vs").value, music: $("vm").value },
     narration: $("narration").value, engine: $("engine").value, force_write: $("b_force").checked, claude_model: $("cmodel").value, chapters: $("chs").value, words_per_shot: $("wps").value,
     min_shots: $("minshots").value, max_shots: $("maxshots").value, movie_minutes: $("mmin").value, workers: $("workers").value,
     enoch_chars: $("echars").value, look: radio("look") || "", keyframe_model: $("kfmodel").value, keyframe_refs: $("kfrefs").checked && !$("kfrefs").disabled, keyframe_series: $("kfseries").value,
@@ -2591,6 +2624,7 @@ function fillGpus() {
   if (typeof updatePRunsOn === "function") updatePRunsOn();
   if (typeof fillUpscalers === "function") fillUpscalers();
   if (typeof refreshSuggestions === "function" && ST.looks) refreshSuggestions();
+  $("autoClean").checked = ST.auto_cleanup !== false;
 }
 
 // Models, grouped by family: [[title, [model, ...]], ...]. Models the server did not group go into "Other".
@@ -2615,9 +2649,10 @@ function blurb(note) {
   t = sent[0].length < 24 && sent[1] ? sent[0] + " " + sent[1] : sent[0];
   return (exp ? "experimental · " : "") + t;
 }
+const ADVANCED_NOTE = /experimental|not run on a gpu|adult|uncensored|nsfw/i;   // hidden from the model lists until asked for; a ticked one always shows
 function modelGroupsHtml(name, groups, all) {
   return groupModels(groups, all).map(([title, ms]) => `<div class="model-group"><h3 class="model-group__title">${title}</h3><div class="model-list">` +
-    ms.map(m => `<label class="opt"><input type="checkbox" name="${name}" value="${m}" ${m === all[0] ? "checked" : ""}><span>${m}${MODEL_NOTES[m] ? `<small>${blurb(MODEL_NOTES[m])}</small>` : ""}</span></label>`).join("") +
+    ms.map(m => `<label class="opt"${ADVANCED_NOTE.test(MODEL_NOTES[m] || "") || /_lora$|_uc$|nsfw/.test(m) ? " data-advanced" : ""}><input type="checkbox" name="${name}" value="${m}" ${m === all[0] ? "checked" : ""}><span>${m}${MODEL_NOTES[m] ? `<small>${blurb(MODEL_NOTES[m])}</small>` : ""}</span></label>`).join("") +
     `</div></div>`).join("");
 }
 
@@ -3840,7 +3875,7 @@ function tlRows() {                                   // the ticked clips in fil
     const clip = known || 4;                          // a clip whose length cannot be read is drawn as 4 s
     const narr = r.narration && ns ? ((secs[ns] || {})[String(r.n)] || 0) : 0;
     const shown = Math.max(clip - r.trim_start - r.trim_end, 0.1);
-    const plays = $("fsync").value === "stretch" ? Math.max(shown, narr) : shown;
+    const plays = FIT_SYNCS.includes($("fsync").value) ? Math.max(shown, narr) : shown;
     return { ...r, clip, narr, shown, plays, known: !!known };
   });
 }
@@ -3873,7 +3908,7 @@ function renderTimeline() {
     const w = Math.max(px(r.plays) - 2, 18);
     const lab = `Row ${r.n}: ${r.shown.toFixed(1)} s of ${r.clip.toFixed(1)} s${r.plays > r.shown + 0.05 ? `, stretched to ${r.plays.toFixed(1)} s` : ""}${r.known ? "" : " (length unknown)"}`;
     clips += `<button type="button" class="tl-clip" data-row="${r.n}" style="left:${px(at)}px;width:${w}px" title="${lab}" aria-label="${lab}. Arrow keys move it, Shift and an arrow trims its end."><span class="tl-handle l" data-end="start" aria-hidden="true"></span>${r.n}<small>${r.plays.toFixed(1)} s</small><span class="tl-handle r" data-end="end" aria-hidden="true"></span></button>`;
-    if (r.narr) sound += `<div class="tl-audio${r.narr > r.shown + 0.05 && $("fsync").value !== "stretch" ? " long" : ""}" style="left:${px(at)}px;width:${Math.max(px(Math.min(r.narr, r.plays)) - 2, 4)}px" title="Narration for row ${r.n}: ${r.narr.toFixed(1)} s${r.narr > r.shown + 0.05 && $("fsync").value !== "stretch" ? " (longer than the clip: " + ($("fsync").value === "speed" ? "it is sped up" : "it is cut") + ")" : ""}">${r.narr.toFixed(1)} s</div>`;
+    if (r.narr) sound += `<div class="tl-audio${r.narr > r.shown + 0.05 && !FIT_SYNCS.includes($("fsync").value) ? " long" : ""}" style="left:${px(at)}px;width:${Math.max(px(Math.min(r.narr, r.plays)) - 2, 4)}px" title="Narration for row ${r.n}: ${r.narr.toFixed(1)} s${r.narr > r.shown + 0.05 && !FIT_SYNCS.includes($("fsync").value) ? " (longer than the clip: " + ($("fsync").value === "speed" ? "it is sped up" : "it is cut") + ")" : ""}">${r.narr.toFixed(1)} s</div>`;
     at += r.plays;
   }
   if (endT) clips += `<div class="tl-card" style="left:${px(at)}px;width:${px(TL_CARD) - 2}px" title="End card, ${TL_CARD} s"></div>`;
@@ -4020,6 +4055,7 @@ async function makeFilm() {
                  sources: { narration: $("fnarr").value, sfx: $("fsfx").value, music: $("fmusic").value },
                  rows: rows.map(r => ({ n: r.n, narration: r.narration, sfx: r.sfx, music: r.music, trim_start: r.trim_start, trim_end: r.trim_end })), sync: $("fsync").value,
                  transition: $("ftrans").value, fade: $("ffade").value, title: $("ftitle").value.trim(), end_title: $("fendtitle").value.trim(), burn_captions: $("fburn").checked,
+                 match_colour: $("fcolour").checked, music_bed: $("fbed").checked, duck: $("fduck").checked, loudnorm: $("fln").checked,
                  vol: { narration: $("fvn").value, sfx: $("fvs").value, music: $("fvm").value } };
   $("msg").textContent = ""; $("msg").className = "warn";
   try {
@@ -4815,6 +4851,8 @@ async function loadCharacter(series, name) {
       }
       $("charRefImages").value = (c.reference_images || []).join("\n");
       $("charConsistency").value = c.consistency_notes || "";
+      $("charStages").value = stagesToText(c.stages);
+      loadCharRefs();
       updateRefDir();
     }
     updateCharButtons();
@@ -4828,7 +4866,7 @@ function updateRefDir() {
   const name = $("charName").value;
   if (series && name) {
     // This is the path structure used by character_tokens.py
-    const refDir = `projects/characters/${series}/references/` + name.toLowerCase().replace(/\s+/g, "_") + "/";
+    const refDir = `projects/characters/${series}/references/${charSlug(name)}/`;
     $("charRefDir").textContent = refDir;
     $("bCharOpenRefDir").disabled = false;
   } else {
@@ -4878,7 +4916,8 @@ function getCharFormData() {
     voice: $("charVoice").value.trim(),
     lora: lora,
     reference_images: $("charRefImages").value.split("\n").map(s => s.trim()).filter(s => s),
-    consistency_notes: $("charConsistency").value.trim()
+    consistency_notes: $("charConsistency").value.trim(),
+    stages: textToStages($("charStages").value)
   };
 }
 
@@ -4993,6 +5032,7 @@ async function deleteCharacter() {
     }
     $("charRefImages").value = "";
     $("charConsistency").value = "";
+    $("charStages").value = "";
     charCurrentCharacter = "";
     await loadCharList();
     await loadCharAllTokens();
@@ -5056,6 +5096,7 @@ async function newCharacter() {
   if (trainedEl && trainedEl.type === "checkbox") trainedEl.checked = false;
   $("charRefImages").value = "";
   $("charConsistency").value = "";
+  $("charStages").value = "";
   charCurrentCharacter = name;
   updateRefDir();
   updateCharButtons();
@@ -5193,25 +5234,37 @@ function copyCharacterPrompt() {
   });
 }
 
-function openRefDir() {
-  const dir = $("charRefDir").textContent;
-  if (!dir) return;
+async function openRefDir() {
+  try {
+    await api("/api/open_reference_folder", { series: $("charSeries").value, name: $("charName").value });
+    showCharStatus("Reference folder opened");
+  } catch (e) { showCharStatus(e.message, true); }
+}
 
-  // Check if we're running through the server (has token) or file:// protocol
-  const isServer = location.protocol.startsWith("http") && TOKEN;
+// The pictures of this character, with the one that stands for its face marked.
+async function loadCharRefs() {
+  const box = $("charRefThumbs"), series = $("charSeries").value, name = $("charName").value.trim();
+  const klein = checked("imodel").includes("flux2_klein_4b");
+  $("charKeepFaceNote").textContent = klein ? "Uses FLUX.2 klein, even if other image models are ticked." : `Only FLUX.2 klein can take a picture and it is not ticked on the Models tab, so ${checked("imodel")[0] || "the ticked model"} will work from the words alone.`;
+  if (!series || !name) { box.innerHTML = ""; return; }
+  try {
+    const r = await api(`/api/characters?action=references&series=${encodeURIComponent(series)}&name=${encodeURIComponent(name)}`);
+    const q = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const shown = r.pictures.filter(p => p.file);
+    const lost = r.pictures.filter(p => !p.exists).length;
+    box.innerHTML = shown.map(p => `<figure style="margin:0;width:112px;font-size:11px"><img src="/thumb/${p.file.split("/").map(encodeURIComponent).join("/")}?t=${TOKEN}" alt="Reference picture ${q(p.name)}" loading="lazy" width="112" height="112" style="object-fit:cover;border-radius:6px;${p.used ? "outline:3px solid var(--brand)" : ""}"><figcaption style="word-break:break-all">${q(p.name)}<br>${p.used ? "<b>This is the face</b>" : `<button type="button" class="btn btn-secondary" data-useref="${q(p.path)}" style="padding:2px 6px;font-size:11px">Use this face</button>`}</figcaption></figure>`).join("")
+      + (shown.length ? "" : '<span class="warn">No pictures yet: generate one, or put one in the reference folder.</span>')
+      + (lost ? `<span class="warn" style="width:100%">${lost} listed file(s) no longer exist and are skipped.</span>` : "");
+  } catch (e) { box.innerHTML = `<span class="err">${q0(e.message)}</span>`; }
+}
+const q0 = t => String(t).replace(/</g, "&lt;");
+function faceBadge(c, esc) {
+  const f = c.face;
+  if (!f) return "";
+  const text = { ok: "✓ face matches", different: "⚠ may be someone else: look at this one", no_face: "no face found", skipped: "no reference picture to compare" }[f.status] || f.status;
+  const scores = Object.entries(f.scores || {}).map(([k, v]) => `${k} ${v}`).join(", ");
+  return `<span class="pz-cat" style="${f.status === "different" ? "color:var(--danger)" : ""}" title="${esc(scores)}">${esc(text)}</span>`;
 
-  if (isServer) {
-    // Use server's /file/ endpoint
-    window.open("/file/" + dir + "?t=" + TOKEN, "_blank");
-  } else {
-    // file:// protocol - can't use server endpoint
-    // Show the local path so user can copy it
-    const rootPath = (window.STUDIO_ROOT || "the Studio folder") + "/";
-    const localPath = rootPath + dir;
-    const msg = `Running in file:// mode - server endpoint not available.\n\nLocal path:\n${localPath}\n\nCopy this path and open in Finder/File Explorer:\nCmd+Shift+G (Mac) or paste in address bar (Windows)`;
-    alert(msg);
-    navigator.clipboard.writeText(localPath).catch(() => {});
-  }
 }
 
 // View definitions - shared between generation and preview
@@ -5250,11 +5303,12 @@ async function generateCharacterImage() {
 
   const warnings = [];
   if (overwriteToken) warnings.push("• The visual token will be REPLACED with the generated prompts");
-  if (overwriteRefs) warnings.push("• Reference images will be ADDED (auto-incremented filenames)");
+  if (overwriteRefs) warnings.push("• The new picture will be ADDED at the end of the Reference Images list (nothing is replaced)");
   if (genImages) {
     const viewText = $("charGenView") ? $("charGenView").value.trim() : "";
     const viewLabel = viewText || "custom view";
-    warnings.push(`• Character Images: generates 1 image (text-to-image, view: ${viewLabel})`);
+    warnings.push(`• Character Images: generates ${$("charSheet").checked ? "5 pictures (character sheet)" : "1 picture"} from the words on this page (view: ${viewLabel})${$("charKeepFace").checked ? ", starting from the face marked below if this model can use it" : ", without using any reference picture"}.`);
+    if (!overwriteRefs) warnings.push("• The picture is saved in the reference folder and shown below, but not added to the Reference Images list");
   }
   if (genVoice) warnings.push("• Voice: generates voice samples (placeholder)");
   if (genLora) warnings.push("• LoRA: trains LoRA for character (placeholder)");
@@ -5302,8 +5356,10 @@ async function generateCharacterImage() {
 
   const negative = globalNegatives;
 
-  // Use a single prompt with user's view text
-  const allPrompts = [fullPrompt];
+  // One prompt, or one per view for a character sheet
+  const sheet = $("charSheet").checked;
+  const allPrompts = sheet ? CHAR_SHEET_VIEWS.map(v => `${fullPrompt}, ${v}`) : [fullPrompt];
+  charGenReference = $("charKeepFace").checked ? { series, name } : { };   // the server decides whether this model and service can use a picture
   if (genImages && !fullPrompt.trim()) { logCharGen("Nothing to draw yet: fill in the character fields or the view box", true); return; }
 
   // Get generation parameters from the "Where to run" section
@@ -5322,13 +5378,13 @@ async function generateCharacterImage() {
   logCharGen(`Starting character generation for: ${name} (${series})`);
   if (genImages) {
     const viewLabel = viewText || "custom view";
-    logCharGen(`→ Character Images: 1 image (view: ${viewLabel})`);
+    logCharGen(`→ Character Images: ${allPrompts.length} picture(s) (view: ${viewLabel}). ${$("charKeepFace").checked && checked("imodel").includes("flux2_klein_4b") ? "Starting from the face marked below." : "From the words alone."}`);
   }
   if (genVoice) logCharGen(`→ Voice Generation`);
   if (genLora) logCharGen(`→ LoRA Training`);
   if (genMovie) logCharGen(`→ Character Movie`);
   if (overwriteToken) logCharGen("⚠ Visual token will be overwritten");
-  if (overwriteRefs) logCharGen("⚠ Reference images will be added (auto-incremented)");
+  if (overwriteRefs) logCharGen("New pictures go at the end of the Reference Images list; the marked face stays until you press Use this face.");
   charGenBusy = true; $("bCharGenerate").disabled = true;
 
   try {
@@ -5364,6 +5420,7 @@ async function generateCharacterImage() {
     logCharGen(`✗ Error: ${e.message}`, true);
   }
   charGenBusy = false; $("bCharGenerate").disabled = false;
+  loadCharRefs();
 }
 
 async function generateCharacterImages(setName, allPrompts, series, name, overwriteToken, overwriteRefs, service, gpu, negative) {
@@ -5375,7 +5432,8 @@ async function generateCharacterImages(setName, allPrompts, series, name, overwr
     logCharGen("✗ No image model selected in 'Where to run' section", true);
     return;
   }
-  const imageModel = selectedImageModels[0]; // Use first selected model
+  // Keeping a face needs a model that takes a picture, so it goes first if it is ticked at all
+  const imageModel = charGenReference.name && selectedImageModels.includes("flux2_klein_4b") ? "flux2_klein_4b" : selectedImageModels[0];
   logCharGen(`  Using image model: ${imageModel}`);
   const kind = "image";
 
@@ -5404,6 +5462,7 @@ async function generateCharacterImages(setName, allPrompts, series, name, overwr
         height: height,
         steps: steps,
         guidance: guidance,
+        reference: charGenReference,
         overwrite: true  // Overwrite CSV with single row for character generation
       }
     });
@@ -5437,7 +5496,8 @@ async function generateCharacterImages(setName, allPrompts, series, name, overwr
       height: height,
       steps: steps,
       guidance: guidance,
-      overwrite: true  // Overwrite CSV with single row for character generation
+      reference: charGenReference,
+        overwrite: true  // Overwrite CSV with single row for character generation
     }
   });
 
@@ -5644,6 +5704,7 @@ async function waitForImagesAndSaveRefs(setName, model, allPrompts, series, name
                 height: height,
                 steps: steps,
                 guidance: guidance,
+                reference: charGenReference,
                 overwrite: true
               }
             });
@@ -5733,7 +5794,8 @@ async function fallbackDownloadImages(setName, model, series, name, overwriteTok
   const start = imageStart || 1;
   const end = imageEnd || 10;
   let imageFound = false;
-  for (let imgNum = start; imgNum <= end && !imageFound; imgNum++) {
+  const wantAll = allPrompts.length > 1;      // a character sheet keeps every view
+  for (let imgNum = start; imgNum <= end && (wantAll || !imageFound); imgNum++) {
     const imagePath = `${projectDir}image-${String(imgNum).padStart(4, '0')}.png`;
     logCharGen(`  Checking for image: ${imagePath}...`);
 
@@ -5747,8 +5809,8 @@ async function fallbackDownloadImages(setName, model, series, name, overwriteTok
       // Copy the image to the reference directory (under the book project/series)
       const newIndex = maxIndex + savedRefs.length + 1;
       const paddedIndex = String(newIndex).padStart(2, '0');
-      const refName = `${name.toLowerCase().replace(/\s+/g, "_")}_${paddedIndex}.png`;
-      const refPath = `projects/characters/${series}/references/${name.toLowerCase().replace(/\s+/g, "_")}/${refName}`;
+      const refName = `${charSlug(name)}_${paddedIndex}.png`;
+      const refPath = `projects/characters/${series}/references/${charSlug(name)}/${refName}`;
 
       const copyResult = await api("/api/copy_file", {
         source: `${setName}/${imagePath}`,
@@ -5782,8 +5844,8 @@ async function fallbackDownloadImages(setName, model, series, name, overwriteTok
           if (!imageCheck.ok) continue;
           const newIndex = maxIndex + savedRefs.length + 1;
           const paddedIndex = String(newIndex).padStart(2, '0');
-          const refName = `${name.toLowerCase().replace(/\s+/g, "_")}_${paddedIndex}.png`;
-          const refPath = `projects/characters/${series}/references/${name.toLowerCase().replace(/\s+/g, "_")}/${refName}`;
+          const refName = `${charSlug(name)}_${paddedIndex}.png`;
+          const refPath = `projects/characters/${series}/references/${charSlug(name)}/${refName}`;
           const copyResult = await api("/api/copy_file", {
             source: `${setName}/${imagePath}`,
             dest: refPath
@@ -5843,7 +5905,7 @@ async function fallbackDownloadImages(setName, model, series, name, overwriteTok
   }
 
   logCharGen(`\n✅ Character image generation complete!`);
-  logCharGen(`   Saved ${savedRefs.length} reference image to: projects/characters/${series}/references/${name.toLowerCase().replace(/\s+/g, "_")}/`);
+  logCharGen(`   Saved ${savedRefs.length} reference image to: projects/characters/${series}/references/${charSlug(name)}/`);
   logCharGen(`   Image is in: ${projectDir}`);
 }
 
@@ -6065,7 +6127,8 @@ function getCharFormData() {
     voice: $("charVoice").value.trim(),
     lora: lora,
     reference_images: $("charRefImages").value.split("\n").map(s => s.trim()).filter(s => s),
-    consistency_notes: $("charConsistency").value.trim()
+    consistency_notes: $("charConsistency").value.trim(),
+    stages: textToStages($("charStages").value)
   };
 }
 
@@ -6078,6 +6141,7 @@ function setCharFormData(data) {
   if (data.voice) $("charVoice").value = data.voice;
   if (data.reference_images) $("charRefImages").value = (data.reference_images || []).join("\n");
   if (data.consistency_notes) $("charConsistency").value = data.consistency_notes;
+  if (data.stages) $("charStages").value = stagesToText(data.stages);
 
   // Set archetype if present
   if (data.archetype && charArchetypesData && charArchetypesData[data.archetype]) {
@@ -6295,6 +6359,31 @@ $("charPickAll").onchange = () => { document.querySelectorAll("#charTableBody .c
 $("bCharCopyAll").onclick = copyAllTokens;
 $("bCharRefreshAll").onclick = loadCharAllTokens;
 $("bCharOpenRefDir").onclick = openRefDir;
+$("charRefThumbs").addEventListener("click", async e => {
+  const b = e.target.closest("[data-useref]");
+  if (!b) return;
+  try {
+    await api("/api/characters", { action: "use_reference", series: $("charSeries").value, name: $("charName").value.trim(), path: b.dataset.useref });
+    await loadCharacter($("charSeries").value, $("charName").value.trim());
+    await loadCharRefs();
+    showCharStatus("Face chosen");
+  } catch (err) { showCharStatus(err.message, true); }
+});
+document.addEventListener("change", e => { if (e.target.name === "imodel") loadCharRefs(); });
+$("autoClean").addEventListener("change", async e => {
+  try { await api("/api/auto_cleanup", { on: e.target.checked }); }
+  catch (err) { e.target.checked = !e.target.checked; clnStatus(err.message, "err"); }
+});
+$("showAdvanced").checked = localStorage.getItem("showAdvancedModels") === "1";
+function applyShowAdvanced() { $("modelGrid").classList.toggle("hide-advanced", !$("showAdvanced").checked); }
+$("showAdvanced").addEventListener("change", () => { localStorage.setItem("showAdvancedModels", $("showAdvanced").checked ? "1" : "0"); applyShowAdvanced(); });
+applyShowAdvanced();
+$("sbFaces").addEventListener("click", async () => {
+  const series = $("kfseries").value;
+  $("sbStatus").textContent = "Checking faces; see the log. Press Show storyboard when it ends.";
+  try { await api("/api/face_check", { project: $("proj").value, series, look: radio("look") || "", ...(([s, e]) => s ? { start: s, end: e } : {})(($("sbMovie").value || "").split("-").map(Number)) }); }
+  catch (err) { $("sbStatus").textContent = err.message; }
+});
 $("bCharGenerate").onclick = generateCharacterImage;
 $("bGlobalRead").onclick = loadGlobalParamsFromServer;
 $("bGlobalSave").onclick = saveGlobalParams;
@@ -7418,7 +7507,7 @@ showToast = function(message, type, duration) {
         return `<article class="pz-tile">${still}<div class="pz-body"><span class="pz-cat">${esc(c.chapter)} · shot ${esc(c.shot)}</span>` +
           (c.characters && c.characters.length ? `<span class="pz-cat">${c.characters.map(esc).join(" · ")}</span>` : "") +
           `<span title="${esc(c.prompt)}">${esc(c.prompt.length > 160 ? c.prompt.slice(0, 160) + "…" : c.prompt)}</span>` +
-          (c.narration ? `<em style="color:var(--fg-muted)">“${esc(c.narration)}”</em>` : "") +
+          (c.narration ? `<em style="color:var(--fg-muted)">“${esc(c.narration)}”</em>` : "") + faceBadge(c, esc) +
           (clipBtns ? `<div class="pz-row" style="flex-wrap:wrap;gap:6px">${clipBtns}</div>` : "") + takesHtml(c, kf) + `</div></article>`;
       }).join("");
       $("sbStatus").textContent = `${r.cards.length} shot(s), ${withKf} with a keyframe` + (r.end - r.start + 1 < (end - start + 1) ? ` (first ${r.cards.length} shown)` : "");

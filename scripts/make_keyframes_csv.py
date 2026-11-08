@@ -12,6 +12,11 @@ row's "refs" column lists the ones it uses. Only image models that take referenc
 Which characters are in a shot: the "characters" column of all_shots.csv (written by book_build.py), or, for older CSVs, each
 character's token label (for example "ADAM:") found in the shot's prompt.
 
+Life stages: in a realistic film (--look live_action or none) a character with stages in the continuity book uses the pictures for the stage the
+shot's chapter falls in: references/<character>/<stage label>/ in the series, else the character's usual pictures.
+Locations: a picture at <book>/location_refs/<location name>.png (any picture type, name in lower case with underscores) steers the shots at that
+location, when the character pictures leave room within --max-refs.
+
 --look LOOK: the film's look (model_advisor.LOOKS: live_action, claymation, pixar_3d, pixar_disney). Each keyframe prompt then starts with that
 look's words and its negatives are added, so the stills (and the clips animated from them) take the look even if the book's prompts were
 written for another one. Without it the keyframes use the plain film-still lead below.
@@ -24,6 +29,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bookkit  # noqa: E402  (project-local: life stages and the continuity book)
 import layout  # noqa: E402  (project-local: finds projects/books/<book>)
 import model_advisor  # noqa: E402  (project-local: the looks and their style words)
 
@@ -33,18 +39,6 @@ LEAD = "Film still, the opening frame of this shot, sharp focus, cinematic compo
 NEGATIVE = "blurry, motion blur, text, subtitles, watermark, logo, frame border, collage, split screen, deformed, extra limbs"
 PICTURE = (".png", ".jpg", ".jpeg", ".webp")
 REF_SIDE = 448            # longest side of a reference picture: each one adds about (side/16)^2 tokens, and a T4 has little room to spare
-
-
-def ref_picture(ct, series, name):
-    """The first reference picture that exists for this character: its saved reference list, then its references/ folder."""
-    char = ct.load_character(series, name) or {}
-    for r in char.get("reference_images") or []:
-        p = Path(r) if Path(r).is_absolute() else ROOT / r
-        if p.is_file() and p.suffix.lower() in PICTURE:
-            return p
-    folder = ct.get_reference_dir(series, name)
-    pics = sorted(x for x in folder.iterdir() if x.suffix.lower() in PICTURE) if folder.is_dir() else []
-    return pics[0] if pics else None
 
 
 def save_small(src, dst):
@@ -67,9 +61,25 @@ def shot_characters(row, labels):
     return [name for name, label in labels.items() if re.search(r"(?<![A-Za-z])" + re.escape(label) + r":", prompt)]
 
 
-def build_refs(d, shots, series, max_refs):
+def chapter_number(row):
+    """The chapter number of a row: its chapter column is <book>-NNN. None if it is written some other way."""
+    m = re.search(r"(\d+)$", str(row.get("chapter") or ""))
+    return int(m.group(1)) if m else None
+
+
+def location_picture(d, name):
+    """The picture of a location in <book>/location_refs/, or None."""
+    folder = d / "location_refs"
+    slug = re.sub(r"[^a-z0-9]+", "_", str(name or "").lower()).strip("_")
+    if not slug or not folder.is_dir():
+        return None
+    return next((x for x in sorted(folder.iterdir()) if x.stem.lower() == slug and x.suffix.lower() in PICTURE), None)
+
+
+def build_refs(d, shots, series, max_refs, look=""):
     """Fill each shot's refs and copy the pictures to <book>/keyframe_refs/. Returns (refs per row, characters used, characters without a picture)."""
     import character_tokens as ct            # project-local; only needed with --refs
+    book = {str(c.get("name", "")).lower(): c for c in (bookkit.read_json(bookkit.continuity_file(d), {}) or {}).get("characters", []) if isinstance(c, dict)}
     labels = {}
     for c in ct.list_characters(series):
         name = c.get("name") or ""
@@ -80,22 +90,33 @@ def build_refs(d, shots, series, max_refs):
     if out_dir.is_dir():
         shutil.rmtree(out_dir)                # only this run's pictures, so a renamed or removed character leaves nothing stale
     out_dir.mkdir()
-    picked, missing, per_row = {}, set(), []
+    picked, tried, missing, per_row = {}, set(), set(), []
     for row in shots:
         names = []
         for name in shot_characters(row, labels):
             if len(names) >= max_refs:           # the first characters named are the ones the shot is about
                 break
-            if name not in picked and name not in missing:
-                src = ref_picture(ct, series, name)
+            stage = bookkit.stage_for(book.get(name.lower(), {}), chapter_number(row), look)
+            key = (name, stage["label"]) if stage else (name, "")
+            if key not in tried:
+                tried.add(key)
+                src = ct.first_reference(series, name, stage["label"] if stage else "")
+                aged = bool(src) and bool(stage) and src.parent.name == ct.slugify(str(stage["label"]))
                 if src is None:
                     missing.add(name)
                 else:
-                    fname = f"ref-{ct.slugify(name)}.png"
+                    fname = f"ref-{ct.slugify(name)}" + (f"-{ct.slugify(str(stage['label']))}" if aged else "") + ".png"
                     save_small(src, out_dir / fname)
-                    picked[name] = fname
-            if name in picked and picked[name] not in names:
-                names.append(picked[name])
+                    picked[key] = fname
+            if key in picked and picked[key] not in names:
+                names.append(picked[key])
+        if len(names) < max_refs:                # a place fits only after the people
+            src = location_picture(d, row.get("location"))
+            if src:
+                fname = f"ref-place-{src.stem.lower()}.png"
+                if not (out_dir / fname).exists():
+                    save_small(src, out_dir / fname)
+                names.append(fname)
         per_row.append("|".join(names))
     return per_row, picked, missing
 
@@ -130,8 +151,8 @@ def main(argv=None):
         sys.exit(f"{src} has no rows")
     refs = [""] * len(shots)
     if a.refs:
-        refs, picked, missing = build_refs(d, shots, a.refs, a.max_refs)
-        print(f"reference pictures: {len(picked)} character(s) from series '{a.refs}', used in {sum(1 for r in refs if r)} of {len(shots)} shots")
+        refs, picked, missing = build_refs(d, shots, a.refs, a.max_refs, a.look or "")
+        print(f"reference pictures: {len(picked)} character picture(s) from series '{a.refs}', used in {sum(1 for r in refs if r)} of {len(shots)} shots")
         if missing:
             print("   no picture yet for: " + ", ".join(sorted(missing)) + " (add one on the Characters tab)")
     elif (d / "keyframe_refs").is_dir():

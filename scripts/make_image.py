@@ -261,15 +261,31 @@ MODELS["sd35_large_turbo"] = dict(title="Stable Diffusion 3.5 Large Turbo (GGUF)
 MODELS["flux2_klein_4b"] = dict(title="FLUX.2 klein 4B", repo="black-forest-labs/FLUX.2-klein-4B",
   note="Black Forest Labs' small, fast FLUX.2 model (Apache-2.0, not gated): 4 steps, 1024x1024, about 4B parameters plus a Qwen3 text encoder, so it fits a T4 with CPU offload. No negative prompt. Tested on a Kaggle T4: about 2 minutes per 1536x640 keyframe, with one character reference picture (several are shrunk to the size of one).",
   pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf",
-  config='MODEL_ID = "black-forest-labs/FLUX.2-klein-4B"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 1.0',
-  load='from diffusers import Flux2KleinPipeline\n\npipe = Flux2KleinPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()',
+  config='MODEL_ID = "black-forest-labs/FLUX.2-klein-4B"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 1.0\nFP16_ATTENTION = True   # GPUs older than Ampere (T4): attention in fp16, which has a fast memory-saving kernel there; bf16 does not',
+  load="""# A T4 has no fast bf16 attention kernel, so bf16 attention builds the whole matrix (slow, and it fills memory with reference pictures).
+# Running only the attention in fp16 uses the memory-saving kernel; everything else stays bf16. Newer GPUs are left alone.
+import torch.nn.functional as F
+_sdpa = F.scaled_dot_product_attention
+def _sdpa_fp16(*a, **kw):                       # the caller may pass query/key/value by name or by position
+    q = a[0] if a else kw["query"]
+    if q.dtype == torch.bfloat16 and q.is_cuda and torch.cuda.get_device_capability()[0] < 8:
+        half = lambda t: t.half() if torch.is_tensor(t) and t.is_floating_point() else t
+        return _sdpa(*[half(x) for x in a], **{k: half(v) for k, v in kw.items()}).to(torch.bfloat16)
+    return _sdpa(*a, **kw)
+if FP16_ATTENTION:
+    F.scaled_dot_product_attention = _sdpa_fp16
+
+from diffusers import Flux2KleinPipeline
+
+pipe = Flux2KleinPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)
+pipe.enable_model_cpu_offload()""",
   gen='''from PIL import Image
 
 _REF_ROOT = Path(CSV_PATH).parent if "CSV_PATH" in globals() else Path("/content")
 
 
 def references(row):
-    """Character pictures named in the row's refs column (keyframes only), found next to the CSV. None when there are none."""
+    """Character pictures named in the row's refs column (keyframes and Characters tab pictures), found next to the CSV. None when there are none."""
     pics = []
     for name in [n for n in (row.get("refs") or "").split("|") if n]:
         hits = sorted(_REF_ROOT.rglob(name))
@@ -277,7 +293,7 @@ def references(row):
             pics.append(Image.open(hits[0]).convert("RGB"))
         else:
             print(f"   reference picture {name} not found; continuing without it", flush=True)
-    if len(pics) > 1:     # keep the pictures' total size near one 448 px picture: on a T4 one fits beside a wide keyframe, two full ones do not
+    if pics:              # keep the pictures' total size near one 448 px picture: on a T4 one fits beside a wide keyframe, two full ones do not
         side = int(448 / len(pics) ** 0.5)
         for p in pics:
             p.thumbnail((side, side))

@@ -2,7 +2,7 @@
 """Step 3 of a new book: Claude writes the shots, narration, sound and music for each chapter.
 
   python3 book_write.py <project> [--narration condensed|verbatim|dialogue] [--words-per-shot N] [--min-shots 1]
-        [--max-shots 12] [--chapters 1-10 | all] [--model sonnet] [--workers 2] [--force] [--dry-run]
+        [--max-shots 12] [--chapters 1-10 | all] [--model sonnet] [--workers 2] [--force] [--dry-run] [--scenes]
 
 How many shots a chapter gets: ceil(chapter words / words-per-shot), clamped to min..max, unless
 projects/<project>/overrides.json sets {"5": {"shots": 10}} for that chapter.
@@ -15,10 +15,12 @@ Narration:
              that shot even if it ends in the next.
 One resumable Claude call per chapter; finished chapters (scripts/chapter-NNN.json) are skipped unless --force.
 --dry-run prints the plan and estimates without calling Claude.
+--scenes: one more call per chapter finds where its scenes begin (scripts/outline-NNN.json) and what stays true in each: place, time of day, weather, what
+people wear, injuries. Shots are then shared out scene by scene, so no shot straddles two scenes and a new scene never "continues" the shot before it.
 """
 import argparse, sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from bookkit import (continuity_file, CLIP_SECONDS, COST, cost_note, voice_id, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
+from bookkit import (sentences, character_token, continuity_file, shot_negative, CLIP_SECONDS, COST, cost_note, voice_id, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
                      project_dir, read_json, shot_count, slice_text, strip_verse_numbers, words, write_json)
 import json
 
@@ -39,7 +41,14 @@ ap.add_argument("--weekly-gpu-hours", type=float, default=30.0,
                 help="ASSUMED free GPU hours per week (Kaggle is believed to give about 30; not verified), used for the warning")
 ap.add_argument("--force", action="store_true")
 ap.add_argument("--dry-run", action="store_true")
+ap.add_argument("--look", default="", help="the film's look (model_advisor.LOOKS): characters only change with age in live_action; blank counts as live action")
+ap.add_argument("--scenes", action="store_true", help="find each chapter's scenes first (one more AI call per chapter)")
+ap.add_argument("--clip-seconds", type=float, default=CLIP_SECONDS, help="length of one clip from the chosen video model; the shots are written to fit it")
 args = ap.parse_args()
+if not 1 <= args.clip_seconds <= 30:
+    sys.exit("--clip-seconds must be 1-30")
+CLIP_SECONDS = args.clip_seconds
+NARRATION_WORDS = max(6, round(CLIP_SECONDS * 3))      # about what fits a clip at a natural speaking pace
 
 pdir = project_dir(args.project)
 index = read_json(pdir / "chapters.json")
@@ -64,6 +73,12 @@ if global_params_path.exists():
 else:
     global_positives = ""
     global_negatives = ""
+
+if args.look and not global_positives and not global_negatives:      # no Global Parameters saved: the film's look still decides the style words
+    import model_advisor
+    if args.look in model_advisor.STYLE:
+        global_positives = model_advisor.STYLE[args.look]["positives"]
+        global_negatives = model_advisor.STYLE[args.look]["negatives"]
 
 chapters = index["chapters"]
 if args.chapters != "all":
@@ -110,7 +125,7 @@ def est_shot_seconds(c, n):
         text = strip_verse_numbers((pdir / "chapters" / f"chapter-{c['n']:03d}.txt").read_text())
         spoken = sum(words(q) for qs in quotes_by_slice(slice_text(text, n)) for q in qs)
         return max(CLIP_SECONDS, spoken / n / WORDS_PER_SECOND + 0.4)
-    return max(CLIP_SECONDS, 12 / WORDS_PER_SECOND + 0.4)
+    return max(CLIP_SECONDS, NARRATION_WORDS / WORDS_PER_SECOND + 0.4)
 
 
 # ---------------------------------------------------------------- dry run / estimate
@@ -139,7 +154,7 @@ if args.dry_run:
         print(f"WARNING: each shot would last about {avg:.0f} s but a clip is only {CLIP_SECONDS:.0f} s, so most of every shot "
               f"is a held frame under the narration. To keep shots near 8 s you need about {need:.0f} shots "
               f"(raise --max-shots), or use condensed narration.")
-    print(f"Claude calls: {len(chapters)} (one per chapter) + 1 for the continuity book")
+    print(f"Claude calls: {len(chapters) * (2 if args.scenes else 1)} ({'two' if args.scenes else 'one'} per chapter) + 1 for the continuity book")
     gpu_hours = total_shots * args.min_per_clip / 60
     print(f"GPU time (assumption of {args.min_per_clip:g} min/clip, not measured): about {gpu_hours:.0f} hours "
           f"for video, plus audio")
@@ -162,12 +177,78 @@ char_names = [c["name"] for c in continuity["characters"]]
 book_brief = {k: continuity[k] for k in ("setting", "visual_style", "music_theme") if k in continuity}
 if continuity.get("creative_direction"):        # optional: only present if the director added one
     book_brief["creative_direction"] = continuity["creative_direction"]
-book_brief["characters"] = [{"name": c["name"], "look": c["token"]} for c in continuity["characters"]]
 book_brief["locations"] = [{"name": loc["name"], "look": loc["token"]} for loc in continuity.get("locations", [])]
+location_names = [loc["name"] for loc in continuity.get("locations", [])]
 voice_of = {c["name"].lower(): voice_id(c.get("voice")) for c in continuity["characters"]}   # a voice word (male, elder) or a Kokoro id
 
 
-def build_prompt(c, slices, quotes=None):
+OUTLINE_SYSTEM = "You are a script supervisor breaking a book chapter into scenes. You reply with a single JSON object and nothing else."
+
+
+def outline(c, text):
+    """The chapter's scenes: [{"first": sentence number (from 1), "title", "location", "state"}], in order. Kept in scripts/outline-NNN.json."""
+    path = pdir / "scripts" / f"outline-{c['n']:03d}.json"
+    if path.exists() and not args.force:
+        return read_json(path)["scenes"]
+    sents = sentences(text)
+    shown = "\n".join(f"{i}: {' '.join(s.split()[:14])}" for i, s in enumerate(sents, 1))
+
+    def check(d):
+        scenes = d.get("scenes")
+        if not isinstance(scenes, list) or not scenes:
+            raise ValueError("'scenes' must be a list with at least one scene")
+        firsts = [s.get("first") if isinstance(s, dict) else None for s in scenes]
+        if not all(isinstance(f, int) and 1 <= f <= len(sents) for f in firsts) or firsts != sorted(set(firsts)) or firsts[0] != 1:
+            raise ValueError(f"each 'first' must be a whole sentence number from 1 to {len(sents)}, in rising order, and the first scene must start at 1")
+
+    data = llm_json(f"""CHAPTER {c['n']}: {c['title']}
+The sentences of the chapter, numbered (each is cut to its first words):
+{shown}
+
+A new scene begins when the place or the time changes, or when the story moves to different people. Return ONE JSON object:
+{{"scenes": [{{"first": 1, "title": "a few words", "location": "exact name from this list, or \"\": {location_names}",
+ "state": "at most 30 words of what must stay the same in every shot of the scene: time of day, weather, what people wear and carry, injuries, who is present"}}]}}""",
+                    OUTLINE_SYSTEM, model=args.model, engine=args.engine, validate=check)
+    scenes = [{"first": s["first"], "title": str(s.get("title") or "").strip()[:80], "location": str(s.get("location") or "").strip(), "state": str(s.get("state") or "").strip()[:300]}
+              for s in data["scenes"]]
+    write_json(path, {"chapter": c["n"], "scenes": scenes})
+    return scenes
+
+
+def share_shots(sizes, n):
+    """How many of n shots each scene gets, in proportion to its words, at least one each. When there are more scenes than shots, the caller merges scenes first."""
+    total = sum(sizes) or 1
+    exact = [n * s / total for s in sizes]
+    shares = [max(1, int(x)) for x in exact]
+    while sum(shares) > n:
+        i = max((k for k in range(len(shares)) if shares[k] > 1), key=lambda k: shares[k] - exact[k])
+        shares[i] -= 1
+    while sum(shares) < n:
+        i = max(range(len(shares)), key=lambda k: exact[k] - shares[k])
+        shares[i] += 1
+    return shares
+
+
+def scene_slices(text, n, scenes):
+    """(slices, scene of each slice). The chapter is cut at scene starts first and into roughly equal shots inside each scene."""
+    sents = sentences(text)
+    starts = [s["first"] - 1 for s in scenes]
+    parts = [(" ".join(sents[a:b]), sc) for a, b, sc in zip(starts, starts[1:] + [len(sents)], scenes)]
+    while len(parts) > max(n, 1):                # more scenes than shots: the shortest scene joins the one before it (or after, for the first)
+        i = min(range(len(parts)), key=lambda k: words(parts[k][0]))
+        j = i - 1 if i else 1
+        a, b = min(i, j), max(i, j)
+        parts[a:b + 1] = [(parts[a][0] + " " + parts[b][0], parts[a][1])]
+    slices, owner = [], []
+    for (part, sc), k in zip(parts, share_shots([words(p) for p, _ in parts], n)):
+        cut = slice_text(part, k)
+        slices += cut
+        owner += [sc] * len(cut)
+    return slices, owner
+
+
+def build_prompt(c, slices, quotes=None, owner=None):
+    brief = dict(book_brief, characters=[{"name": x["name"], "look": character_token(x, c["n"], args.look)} for x in continuity["characters"]])   # as they look in this chapter
     condensed = args.narration == "condensed"
     dialogue = args.narration == "dialogue"
     shown = "\n".join(f"[{i}] {' '.join(s.split()[:140])}{' ...' if len(s.split()) > 140 else ''}" for i, s in enumerate(slices, 1))
@@ -183,7 +264,7 @@ def build_prompt(c, slices, quotes=None):
     narr_rule = ("- speakers: one entry per listed quote of that slice, in order: the exact character name from the list above who says it, "
                  "or NARRATOR if it is not one of them. Use [] for a slice with no quotes. The spoken words are added for you; do not write them.\n"
                  if dialogue else '') or (
-        "- narration: at most 12 words, spoken by the narrator in the book's register, summarising or quoting that slice; if the "
+        f"- narration: at most {NARRATION_WORDS} words, spoken by the narrator in the book's register, summarising or quoting that slice; if the "
         "slice is a character speaking, you may give a short quoted line and set speaker to that character's exact name; "
         "otherwise speaker is NARRATOR.\n" if condensed else
         "- The narration is the book's own text and is added for you; do not write it.\n")
@@ -195,20 +276,34 @@ def build_prompt(c, slices, quotes=None):
         if global_positives:
             global_section += f"  Always include: {global_positives}\n"
         if global_negatives:
-            global_section += f"  Always avoid: {global_negatives}\n"
+            global_section += f"  Always avoid (do not write these words in a visual): {global_negatives}\n"
 
-    return f"""CONTINUITY BOOK (fixed for the whole book): {book_brief}
-{global_section}
+    scene_section = ""
+    if owner:
+        spans = []
+        for i, sc in enumerate(owner, 1):
+            if spans and spans[-1][2] is sc:
+                spans[-1][1] = i
+            else:
+                spans.append([i, i, sc])
+        scene_section = "\nSCENES (keep what each says in every shot of that scene):\n" + "\n".join(
+            f"  slices {a}-{b}: {sc['title']}; location: {sc['location'] or 'not named'}; {sc['state']}" for a, b, sc in spans) + "\n"
+
+    return f"""CONTINUITY BOOK (fixed for the whole book): {brief}
+{global_section}{scene_section}
 CHAPTER {c['n']}: {c['title']}
-The chapter is cut into {len(slices)} consecutive slices. Each slice becomes ONE 4-second video clip:
+The chapter is cut into {len(slices)} consecutive slices. Each slice becomes ONE {CLIP_SECONDS:g}-second video clip:
 {shown}
 
-Write one shot for each slice, in order. Return ONE JSON object: {{"shots": [{{{fields}}}, ...]}} with exactly {len(slices)} shots.
+Write one shot for each slice, in order. Return ONE JSON object: {{"shots": [{{{fields}, "location": "...", "continues": false}}, ...]}} with exactly {len(slices)} shots.
 Rules:
 - visual: 30-55 words for a text-to-video model. Give shot size, camera movement, subject, action, setting, light. Describe
-  people by appearance and role, never by name; show something concrete that happens in 4 seconds; no on-screen text; nothing
-  modern. Where the text is silent make a sensible cinematic choice.
+  people by appearance and role, never by name; show something concrete that happens in {CLIP_SECONDS:g} seconds; no on-screen text; nothing
+  out of place for the book's era and world. Where the text is silent make a sensible cinematic choice.
 - characters: exact names from this list who appear in the shot, or []: {char_names}
+- location: exact name from this list if the shot happens there, otherwise "": {location_names}
+- continues: true only if this shot carries on the same action in the same place from the shot before it, as an unbroken moment (a continuous
+  walk, a fall, a fight). A cut to another angle, place or time is false. The first shot of the chapter is false.
 {narr_rule}- sfx: at most 25 words of ambience and sound effects to hear in the shot (no speech, no music).
 - music: at most 25 words describing the score for the shot (instruments, mood, tempo).
 - Keep every shot true to its slice."""
@@ -216,7 +311,11 @@ Rules:
 
 def write_chapter(c):
     text = strip_verse_numbers((pdir / "chapters" / f"chapter-{c['n']:03d}.txt").read_text())
-    slices = slice_text(text, plan_for(c))
+    owner = None
+    if args.scenes:
+        slices, owner = scene_slices(text, plan_for(c), outline(c, text))
+    else:
+        slices = slice_text(text, plan_for(c))
     n = len(slices)
     quotes = quotes_by_slice(slices) if args.narration == "dialogue" else None
 
@@ -229,15 +328,15 @@ def write_chapter(c):
                 raise ValueError("every shot needs a visual description")
             if not isinstance(s.get("characters", []), list):
                 raise ValueError("characters must be a list")
-            if args.narration == "condensed" and (not s.get("narration") or words(s["narration"]) > 40):
-                raise ValueError("every shot needs a narration of at most 12 words")
+            if args.narration == "condensed" and (not s.get("narration") or words(s["narration"]) > max(40, NARRATION_WORDS * 2)):
+                raise ValueError(f"every shot needs a narration of at most {NARRATION_WORDS} words")
             if quotes is not None:
                 sp = s.get("speakers") or []
                 want = len(quotes[idx])
                 if not isinstance(sp, list) or len(sp) != want or not all(isinstance(x, str) for x in sp):
                     raise ValueError(f"shot {idx + 1} has {want} quote(s): 'speakers' must be a list of exactly {want} name(s)")
 
-    data = llm_json(build_prompt(c, slices, quotes), SYSTEM, model=args.model, engine=args.engine, validate=check)
+    data = llm_json(build_prompt(c, slices, quotes, owner), SYSTEM, model=args.model, engine=args.engine, validate=check)
     out = []
     for i, (s, sl) in enumerate(zip(data["shots"], slices), start=1):
         lines = None
@@ -255,7 +354,10 @@ def write_chapter(c):
                     "voice": voice_of.get(speaker.lower(), "") if known else "",
                     "sfx": (s.get("sfx") or "quiet ambient sound").strip()[:300],
                     "music": (s.get("music") or continuity["music_theme"]).strip()[:300],
-                    "prompt": compose_prompt(s["visual"], s.get("characters", []), continuity, global_positives=global_positives, global_negatives=global_negatives), "slice": sl,
+                    "negative": shot_negative(global_negatives), "location": str(s.get("location") or "").strip(), "continues": i > 1 and s.get("continues") is True and not (owner and owner[i - 1] is not owner[i - 2]),
+                    **({"scene": owner[i - 1]["title"]} if owner else {}),
+                    "prompt": compose_prompt(s["visual"], s.get("characters", []), continuity, global_positives=global_positives, global_negatives=global_negatives,
+                                             chapter=c["n"], look=args.look, location=s.get("location") or (owner[i - 1]["location"] if owner else "")), "slice": sl,
                     **({"lines": lines} if lines is not None else {})})
     write_json(pdir / "scripts" / f"chapter-{c['n']:03d}.json",
                {"chapter": c["n"], "title": c["title"], "narration_mode": args.narration, "shots": out})

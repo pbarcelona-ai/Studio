@@ -132,13 +132,13 @@ Path("/tmp/kokoro_worker.py").write_text(WORKER)
 sh(f"{PYENV}/bin/python /tmp/kokoro_worker.py {shlex.quote(str(CSV_PATH))} {START} {END} {shlex.quote(str(OUT))}")
 '''),
 "musicgen": dict(title="MusicGen music", prefix="music", csv_hint="audio_shots.csv",
- note="Background score from the `music` column using Meta's MusicGen (small). 15 s per row by default. Check the model license for how you plan to use the music.",
+ note="Background score from the `music` column using Meta's MusicGen (small). 15 s per row, or 28 s per chapter in chapter mode. Check the model license for how you plan to use the music.",
  body='''
 sh(f"{sys.executable} -m pip install -q -U transformers accelerate scipy")
 import numpy as np, scipy.io.wavfile as wavfile, torch
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
 
-SECONDS = 15           # length of each music clip (about 50 tokens per second)
+SECONDS = 28 if "chapters" in str(CSV_PATH) else 15     # length of each clip (about 50 tokens per second): a chapter's cue is long enough to loop gently
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 processor = AutoProcessor.from_pretrained("facebook/musicgen-small")
 model = MusicgenForConditionalGeneration.from_pretrained("facebook/musicgen-small").to(dev)

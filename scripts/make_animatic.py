@@ -12,6 +12,7 @@ import argparse, csv, re, shutil, subprocess, sys, tempfile, wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bookkit  # noqa: E402
 import layout  # noqa: E402
 
 ap = argparse.ArgumentParser()
@@ -76,6 +77,10 @@ if not shots:
     sys.exit(f"no keyframes for rows {a.start}-{a.end} in {kdir.name}")
 
 W, H = 1280, 544
+_ratio = bookkit.ASPECTS.get(bookkit.read_film_format(root)["aspect"])      # the book's film shape, if it has one: about the same number of pixels, even sides
+if _ratio:
+    W = round((W * H * _ratio) ** 0.5 / 16) * 16
+    H = round(W / _ratio / 16) * 16
 tmp = Path(tempfile.mkdtemp(prefix="animatic_"))
 try:
     parts = []

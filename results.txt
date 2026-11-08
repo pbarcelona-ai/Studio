@@ -343,3 +343,18 @@ Files reviewed: studio.html (AI Prompt Writer model box, noAutofill)
 Errors (blocking): fixed: the model box let the browser / password managers show saved personal details.
 Warnings: browser autofill behaviour cannot be checked in the headless test browser (no saved data).
 Status: PASS
+Update (2026-11-08, film-from-a-book pass): reviewed bookkit.py, book_write.py, book_continuity.py, book_build.py, make_video.py, make_audio.py, make_keyframes_csv.py, make_animatic.py, mix_film.py, character_tokens.py, film_format.py, studio.py, studio.html.
+Errors found and fixed: look negatives pasted into the positive prompt (bookkit.compose_prompt, studio.py two paths); 'photorealistic ... no cartoon style' tail on every prompt, against stylised looks; life-stage folder lookup skipped a later stage once one was missing (make_keyframes_csv); ducking too weak (threshold); --music-bed on a per-chapter film would use the wrong cues (mix_film, studio.make_film).
+Warnings: nothing in this pass was run on a GPU (non-default shapes, chaining, 28 s music cue); stand-in AI only; ducking measured on sine tones. See code_reviews/*_review.txt.
+Checks run: py_compile on all scripts; book pipeline with a stand-in AI; all notebooks generated and compiled; notebook helpers with stand-ins; plan builder including refusals; film mixer on synthetic clips with loudness and ducking measured; page in headless Chrome, 0 JS errors.
+Not run: real Kaggle or local GPU run, real AI writing, Generate / Make video / Save Character pressed in the page.
+Status: PASS
+Update (2026-11-08, Generation Log moved): reviewed studio.html. No blocking findings. Checked in headless Chrome: log below the button, pressing Generate writes to it, 0 JS errors.
+Status: PASS
+Update (2026-11-08, Reference Images wording): reviewed studio.html. Text only. No blocking findings; two MEDIUM open items in code_reviews/studio.html_review.txt.
+Status: PASS
+Update (2026-11-08, reference pictures, scenes, finishing, clean-up): reviewed character_tokens.py, make_keyframes_csv.py, make_image.py, run_local_model.py, book_write.py, mix_film.py, face_check.py, studio.py, studio.html, scripts/run_kaggle_model.sh.
+Errors found and fixed: thumbnail did not refresh after Use this face; FLUX.2 klein ignored when another model was ticked first; picture folder name differed between page and server for names with punctuation; Open Reference Folder gave a 404; Kaggle 429 from about 100 status questions at once; run_kaggle_model.sh polled a deleted notebook forever.
+Checks run: all scripted tests pass; headless Chrome 0 JS errors; REAL Kaggle T4 runs: FLUX.2 klein with a reference picture (faces 0.535 and 0.646 against the reference), keyframes (0.44, 0.61, 0.43), LTX-Video from keyframes at 16:9 with chaining (672x384, row 2 continued from row 1, 38.9 min for 3 clips), Kokoro, MusicGen 28 s cue, film mix 12.5 s at -16.4 LUFS.
+Warnings: clip faces score 0.25-0.38; scene finding not run with a real AI; automatic Kaggle deletion not yet run for real; character sheet not run on a GPU; mix not judged by ear.
+Status: PASS

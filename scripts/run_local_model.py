@@ -16,6 +16,8 @@ What it does, in order:
      does) and keeps the log in <project>/logs/local-<run>.log.
 
 Needs: Linux (or Windows through WSL 2) with an NVIDIA GPU and driver (nvidia-smi), uv (install.sh installs it) and git.
+AMD GPUs (experimental, untested): Linux with ROCm installed (rocm-smi lists the card); the environment then gets PyTorch's ROCm build
+(ROCM_TORCH_INDEX), which answers to the same torch.cuda calls. Models in NVIDIA_ONLY are refused there.
 FlashVSR also needs the CUDA compiler (nvcc). Model weights download from Hugging Face the first time and are kept in its cache
 (~/.cache/huggingface), so later runs work offline (set HF_HUB_OFFLINE=1 to make sure nothing is fetched).
 
@@ -77,6 +79,38 @@ def gpu_info():
     return gpus
 
 
+def rocm_info():
+    """[(name, GB, gfx architecture)] for each AMD GPU that ROCm sees (rocm-smi); [] if ROCm is not installed or lists none."""
+    exe = shutil.which("rocm-smi")
+    if not exe:
+        return []
+    try:
+        data = json.loads(subprocess.run([exe, "--showproductname", "--showmeminfo", "vram", "--json"],
+                                         capture_output=True, text=True, timeout=20).stdout or "{}")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return []
+    gpus = []
+    for card, info in sorted(data.items()):
+        if not (card.startswith("card") and isinstance(info, dict)):
+            continue
+        name = str(info.get("Card Series") or info.get("Card series") or info.get("Card Model") or "AMD GPU").strip()
+        vram = info.get("VRAM Total Memory (B)") or info.get("vram Total Memory (B)")
+        try:
+            gb = round(int(vram) / 2**30, 1)
+        except (TypeError, ValueError):
+            gb = None
+        m = re.search(r"\[([^\]]+)\]", name)                    # "Navi 31 [Radeon RX 7900 XTX]" -> "Radeon RX 7900 XTX"
+        name = m.group(1) if m else name
+        gpus.append((name if name.startswith("AMD") else f"AMD {name}", gb, str(info.get("GFX Version") or "")))
+    return gpus
+
+
+ROCM_TORCH_INDEX = "https://download.pytorch.org/whl/rocm6.4"     # PyTorch's ROCm build for AMD GPUs (override with STUDIO_TORCH_INDEX)
+# Models that need NVIDIA-only parts: refused on an AMD GPU (the others run on ROCm's CUDA-compatible PyTorch, untested so far).
+NVIDIA_ONLY = {"hunyuan_video_15": "it loads its weights in 4-bit with bitsandbytes, which is set up here for NVIDIA only",
+               "upscale_flashvsr": "it builds a CUDA attention kernel with NVIDIA's compiler"}
+
+
 def _mem_gb(text):
     """'1536 MB' / '8 GB' / bytes -> GB (one decimal), or None."""
     m = re.match(r"\s*([\d.]+)\s*(MB|GB|TB)?", str(text or ""), re.I)
@@ -96,9 +130,11 @@ def _run(argv, timeout=20):
 
 def detect_gpus():
     """Every graphics processor this computer has, whatever its maker: [{"name", "vendor", "gb", "shared", "cap", "nvidia_ready"}].
-    nvidia_ready: an NVIDIA GPU whose driver answers (nvidia-smi), the only kind the models run on. The others are listed so the Studio can
-    say what it found and why it cannot use it: macOS (system_profiler), Linux (lspci), Windows (PowerShell)."""
-    found = [{"name": n, "vendor": "NVIDIA", "gb": gb, "shared": False, "cap": cap, "nvidia_ready": True} for n, gb, cap in gpu_info()]
+    nvidia_ready: an NVIDIA GPU whose driver answers (nvidia-smi); rocm_ready: an AMD GPU that ROCm sees (rocm-smi; experimental). The models
+    run on those two kinds. The others are listed so the Studio can say what it found and why it cannot use it: macOS (system_profiler),
+    Linux (lspci), Windows (PowerShell)."""
+    found = [{"name": n, "vendor": "NVIDIA", "gb": gb, "shared": False, "cap": cap, "nvidia_ready": True, "rocm_ready": False} for n, gb, cap in gpu_info()]
+    found += [{"name": n, "vendor": "AMD", "gb": gb, "shared": False, "cap": arch, "nvidia_ready": False, "rocm_ready": True} for n, gb, arch in rocm_info()]
     if found:
         return found
     if sys.platform == "darwin":
@@ -113,33 +149,39 @@ def detect_gpus():
             gb, shared = _mem_gb(vram), bool(c.get("spdisplays_vram_shared")) or not vram
             if gb is None:                                   # Apple silicon: the GPU shares the computer's memory
                 gb = _mem_gb(_run(["sysctl", "-n", "hw.memsize"]).strip())
-            found.append({"name": name, "vendor": vendor.title() if vendor.islower() else vendor, "gb": gb, "shared": shared, "cap": "", "nvidia_ready": False})
+            found.append({"name": name, "vendor": vendor.title() if vendor.islower() else vendor, "gb": gb, "shared": shared, "cap": "", "nvidia_ready": False, "rocm_ready": False})
     elif sys.platform.startswith("linux"):
         for line in _run(["lspci"]).splitlines():
             if re.search(r"VGA compatible|3D controller|Display controller", line):
                 name = line.split(": ", 1)[-1].strip()
                 vendor = "NVIDIA" if "NVIDIA" in name else "AMD" if re.search(r"AMD|ATI|Radeon", name) else "Intel" if "Intel" in name else ""
-                found.append({"name": name, "vendor": vendor, "gb": None, "shared": vendor == "Intel", "cap": "", "nvidia_ready": False})
+                found.append({"name": name, "vendor": vendor, "gb": None, "shared": vendor == "Intel", "cap": "", "nvidia_ready": False, "rocm_ready": False})
     elif sys.platform == "win32":
         out = _run(["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name + '|' + $_.AdapterRAM }"])
         for line in out.splitlines():
             name, _, ram = line.strip().partition("|")
             if name:
                 vendor = "NVIDIA" if "NVIDIA" in name else "AMD" if re.search(r"AMD|Radeon", name) else "Intel" if "Intel" in name else ""
-                found.append({"name": name, "vendor": vendor, "gb": _mem_gb(ram) if ram.isdigit() else None, "shared": vendor == "Intel", "cap": "", "nvidia_ready": False})
+                found.append({"name": name, "vendor": vendor, "gb": _mem_gb(ram) if ram.isdigit() else None, "shared": vendor == "Intel", "cap": "", "nvidia_ready": False, "rocm_ready": False})
     return found
 
 
 def gpu_text(g):
-    """'Intel Iris Plus Graphics 645 (1.5 GB shared)'"""
-    mem = f"{g['gb']:g} GB{' shared' if g['shared'] else ''}" if g.get("gb") else ""
-    return g["name"] + (f" ({mem})" if mem else "")
+    """'Intel Iris Plus Graphics 645 (1.5 GB shared)', 'AMD Radeon RX 7900 XTX (24 GB, ROCm, experimental)'"""
+    bits = [f"{g['gb']:g} GB{' shared' if g['shared'] else ''}" if g.get("gb") else ""] + (["ROCm, experimental"] if g.get("rocm_ready") else [])
+    bits = [b for b in bits if b]
+    return g["name"] + (f" ({', '.join(bits)})" if bits else "")
+
+
+def usable(gpus):
+    """The GPUs the models can run on: NVIDIA (CUDA) and, experimentally, AMD with ROCm."""
+    return [g for g in gpus if g.get("nvidia_ready") or g.get("rocm_ready")]
 
 
 def gpu_problem(gpus, platform=None):
     """Why the models cannot run on this computer's GPU(s), or None when they can."""
     platform = platform or sys.platform
-    ready = [g for g in gpus if g["nvidia_ready"]]
+    ready = usable(gpus)
     if ready and platform.startswith("linux"):
         return None
     if ready:
@@ -148,7 +190,8 @@ def gpu_problem(gpus, platform=None):
         return "no graphics processor found on this computer"
     g = gpus[0]
     why = {"NVIDIA": "its driver is not answering (install the NVIDIA driver so that nvidia-smi works)",
-           "AMD": "the models here are set up for NVIDIA's CUDA; AMD cards would need PyTorch's ROCm build, which the Studio does not set up yet",
+           "AMD": ("ROCm is not installed (install AMD's ROCm so that rocm-smi lists the card; then the Studio can use it, experimentally)"
+                   if platform.startswith("linux") else "AMD cards are used only on Linux with ROCm"),
            "Apple": "the models here are set up for NVIDIA's CUDA, not Apple's Metal",
            "Intel": "it is built-in graphics, with far too little memory for these models and no CUDA"}.get(g["vendor"], "the models here need an NVIDIA graphics card (CUDA)")
     return f"{gpu_text(g)} found, but {why}. Use Kaggle, Colab or Hugging Face on this computer"
@@ -220,7 +263,7 @@ def _studio_apt(cmd):
 
 import torch as _torch
 if not _torch.cuda.is_available():
-    raise SystemExit("PyTorch in this environment cannot see a CUDA GPU (check the NVIDIA driver, or set STUDIO_TORCH_INDEX to a PyTorch build for your CUDA)")
+    raise SystemExit("PyTorch in this environment cannot see the GPU (check the NVIDIA driver or ROCm, or set STUDIO_TORCH_INDEX to the PyTorch build for your CUDA / ROCm version)")
 '''
     return prelude + "\n".join(lines) + "\n", pip
 
@@ -324,10 +367,16 @@ def main(argv=None):
     if have < end:
         die(f"{shots_csv} has {have} rows, the run asks for rows up to {end}")
 
-    gpus = gpu_info()
-    if not gpus:
-        die(gpu_problem(detect_gpus()) or "no NVIDIA GPU found on this computer (nvidia-smi is missing or lists none)")
-    print("== GPU: " + "; ".join(f"{n} ({gb:g} GB)" for n, gb, _ in gpus), flush=True)
+    found = detect_gpus()
+    gpus = usable(found)
+    if not gpus or gpu_problem(found):
+        die(gpu_problem(found) or "no usable GPU found on this computer")
+    amd = not gpus[0]["nvidia_ready"]
+    print("== GPU: " + "; ".join(gpu_text(g) for g in gpus), flush=True)
+    if amd and model in NVIDIA_ONLY:
+        die(f"{model} cannot run on an AMD GPU: {NVIDIA_ONLY[model]}")
+    if amd and not os.environ.get("STUDIO_TORCH_INDEX"):
+        os.environ["STUDIO_TORCH_INDEX"] = ROCM_TORCH_INDEX          # PyTorch's ROCm build; it answers to torch.cuda like CUDA does
 
     base = {"audio": pd / "audio" / model.removeprefix("audio_"), "image": pd / "images" / model.removeprefix("image_")}.get(kind, pd / "videos" / model)
     outdir, mode = base, ""
@@ -382,7 +431,7 @@ def main(argv=None):
         for f in ("all_shots.csv", "all_chapters.csv", "audio_shots.csv", "audio_chapters.csv", "all_images.csv", "keyframes.csv"):
             if (pd / f).is_file():
                 shutil.copyfile(pd / f, inp / f)
-        if shots_csv == "keyframes.csv" and (pd / "keyframe_refs").is_dir():      # character pictures (make_keyframes_csv.py --refs)
+        if shots_csv in ("keyframes.csv", "all_images.csv") and (pd / "keyframe_refs").is_dir():      # character pictures (make_keyframes_csv.py --refs; the Characters tab)
             for p in (pd / "keyframe_refs").glob("ref-*.png"):
                 shutil.copyfile(p, inp / p.name)
         for src_file, name in copies:
