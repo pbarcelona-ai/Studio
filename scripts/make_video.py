@@ -235,7 +235,7 @@ print("VAE tiling:", pipe.vae.use_tiling, "tile (latent):", pipe.vae.tile_latent
 # ---------------------------------------------------------------------------------------------------------------------------
 # Image-to-video: each shot starts from its keyframe (a still made first by an image model and reviewed on the Storyboard), so the
 # look, framing and characters are decided before any GPU time goes into motion. The run script puts the keyframes next to the CSV
-# as kf-NNNN.png (NNNN = row number in all_shots.csv). Kaggle only: the Colab and Hugging Face runners do not upload them.
+# as kf-NNNN.png (NNNN = row number in all_shots.csv). Kaggle or this computer (run_local_model.py): the Colab and Hugging Face runners do not upload them.
 # ---------------------------------------------------------------------------------------------------------------------------
 _KEYFRAME = '''from PIL import Image
 
@@ -298,7 +298,7 @@ pipe.enable_model_cpu_offload()""",
 MODELS["upscale_x2"] = dict(
   title="Upscale clips 2x (Real-ESRGAN)", repo="xinntao/Real-ESRGAN", fps=24,
   pip=PIP_BASE + " spandrel",
-  note="Doubles the width and height of clips you already made (for example 768x320 -> 1536x640) with Real-ESRGAN x2, frame by frame, keeping each clip's frame rate. Tested on a Kaggle T4: about 40 seconds per 4-second 768x320 clip. Kaggle only. The upscaled clips land in videos/<source>_x2.",
+  note="Doubles the width and height of clips you already made (for example 768x320 -> 1536x640) with Real-ESRGAN x2, frame by frame, keeping each clip's frame rate. Tested on a Kaggle T4: about 40 seconds per 4-second 768x320 clip. About 2-4 GB of GPU memory. Kaggle or this computer. The upscaled clips land in videos/<source>_x2.",
   config='WEIGHTS_URL = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth"\nFPS = 24        # replaced by each clip\'s own frame rate\nBATCH = 4       # frames upscaled at once',
   load="""import urllib.request
 from spandrel import ModelLoader
@@ -332,6 +332,138 @@ def generate(row, seed):
             y = model(x).clamp(0, 1).mul(255).round().byte().permute(0, 2, 3, 1).cpu().numpy()
             out += [Image.fromarray(f) for f in y]
     return out''')
+
+
+# The diffusion upscalers below are separate programs with their own command line. Each run installs the program once (into
+# STUDIO_CACHE: /tmp on Kaggle, a lasting folder when run on this computer), runs it on the row's clip and reads the result back,
+# so the loop saves it like any other clip. All of them pick their memory-saving switches from the GPU's memory at run time.
+_UP_IN = OPT + '''import imageio
+import numpy as np
+from PIL import Image
+
+_IN_ROOT = Path(CSV_PATH).parent if "CSV_PATH" in globals() else Path("/content")
+
+
+def source_clip(row):
+    """This row's clip to upscale (in-NNNN.mp4 next to the CSV) and its width and height. Sets FPS to the clip's own rate for saving."""
+    global FPS
+    n = next(k for k, r in enumerate(shots, 1) if r is row)
+    hits = sorted(_IN_ROOT.rglob(f"in-{n:04d}.mp4"))
+    if not hits:
+        raise FileNotFoundError(f"no clip in-{n:04d}.mp4 for row {n}: the run uploads the clips of the chosen video folder")
+    reader = imageio.get_reader(str(hits[0]), "ffmpeg")
+    meta = reader.get_meta_data()
+    reader.close()
+    FPS = meta.get("fps") or 24        # the loop reads FPS after generate() returns
+    w, h = meta.get("size") or (0, 0)
+    if not (w and h):
+        raise RuntimeError(f"cannot read the size of {hits[0].name}")
+    return hits[0], int(w), int(h)
+
+
+def read_frames(path):
+    reader = imageio.get_reader(str(path), "ffmpeg")
+    frames = [Image.fromarray(f) for f in reader]
+    reader.close()
+    if not frames:
+        raise RuntimeError(f"{path.name} has no frames")
+    return frames
+'''
+_UP_TOOL = '''import os, re, subprocess, sys
+_CACHE = Path(os.environ.get("STUDIO_CACHE") or "/tmp")      # outside the output folder, so nothing here is downloaded back with the clips
+GPU_GB = torch.cuda.get_device_properties(0).total_memory / 2**30
+print(f"GPU: {torch.cuda.get_device_name(0)}, {GPU_GB:.0f} GB")
+
+
+def install_tool(folder, repo, version, extra=()):
+    """Clone the program at a fixed version and install what it needs, once per Python environment. torch itself is never replaced
+    (the GPU's own build stays)."""
+    import hashlib
+    marker = folder / (".installed-" + hashlib.sha1(sys.prefix.encode()).hexdigest()[:10])     # the program folder may outlive the environment
+    if marker.exists():
+        return
+    if not (folder / ".git").exists():
+        subprocess.run(["git", "clone", "-q", "--recursive", repo, str(folder)], check=True)
+    subprocess.run(["git", "-C", str(folder), "checkout", "-q", version], check=True)
+    subprocess.run(["git", "-C", str(folder), "submodule", "update", "-q", "--init", "--recursive"], check=True)
+    keep = [l.strip() for l in (folder / "requirements.txt").read_text().splitlines()
+            if l.strip() and not l.strip().startswith("#") and not re.match(r"torch(vision|audio)?\\s*([<>=!~;].*)?$", l.strip())]
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", *keep, *extra], check=True)
+    for step in INSTALL_STEPS:              # model-specific build steps (for example a CUDA kernel), run in the program's folder
+        subprocess.run(step, shell=True, check=True, cwd=str(folder))
+    marker.write_text(version)
+'''
+
+_SEEDVR2 = dict(
+  repo="ByteDance-Seed/SeedVR2-3B", fps=24, pip=PIP_BASE + " omegaconf rotary_embedding_torch",      # its own package set (and so its own environment on this computer)
+  load=_UP_TOOL + '''INSTALL_STEPS = []
+_TOOL = _CACHE / "seedvr2_cli"
+install_tool(_TOOL, TOOL_REPO, TOOL_VERSION)
+CHOICE = next(c for c in MODEL_BY_MEMORY if GPU_GB >= c[0])
+DIT_MODEL, SWAP = CHOICE[1], CHOICE[2]
+print("SeedVR2 model:", DIT_MODEL, "| block swap:", SWAP or "off")''',
+  gen=_UP_IN + '''
+
+def generate(row, seed):
+    """This row's clip upscaled by SeedVR2 (its own command line), read back as frames."""
+    src, w, h = source_clip(row)
+    out = _CACHE / "seedvr2_out.mp4"
+    out.unlink(missing_ok=True)
+    cmd = [sys.executable, "inference_cli.py", str(src), "--output", str(out), "--output_format", "mp4",
+           "--dit_model", DIT_MODEL, "--model_dir", str(_CACHE / "seedvr2_models"), "--resolution", str(min(w, h) * SCALE),
+           "--batch_size", str(BATCH), "--seed", str(seed), "--color_correction", "lab"]
+    if SWAP:          # not enough GPU memory to keep the whole model on it: move blocks to system RAM and tile the VAE (slower)
+        cmd += ["--dit_offload_device", "cpu", "--vae_offload_device", "cpu", "--blocks_to_swap", str(SWAP), "--swap_io_components",
+                "--vae_encode_tiled", "--vae_decode_tiled"]
+    subprocess.run(cmd, check=True, cwd=str(_TOOL))
+    if not out.exists():
+        raise RuntimeError("SeedVR2 wrote no video")
+    return read_frames(out)''')
+_SEEDVR2_CFG = ('TOOL_REPO = "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler"   # SeedVR2\'s stand-alone command line (Apache-2.0)\n'
+                'TOOL_VERSION = "v2.5.23"\nSCALE = 2          # output size: twice the clip\'s width and height\n'
+                'BATCH = 21         # frames upscaled together (4n+1); more is steadier but needs more memory\nFPS = 24           # replaced by each clip\'s own frame rate\n')
+MODELS["upscale_seedvr2_3b"] = dict(_SEEDVR2,
+  title="Upscale clips 2x (SeedVR2 3B)",
+  note="Diffusion upscaler from ByteDance (SeedVR2 3B): sharper, more natural detail than Real-ESRGAN, but much slower. GPU memory: 24 GB runs it at full speed (fp16); 8-16 GB works with block swap and VAE tiling (slower; picked automatically); also wants 32 GB of system RAM when swapping. Not tested yet. Lands in videos/<source>_seedvr2_3b.",
+  config=_SEEDVR2_CFG + '# (GPU memory GB at least, model, transformer blocks moved to system RAM): the first that fits this GPU is used\n'
+         'MODEL_BY_MEMORY = [(22, "seedvr2_ema_3b_fp16.safetensors", 0), (14, "seedvr2_ema_3b_fp16.safetensors", 16), (0, "seedvr2_ema_3b-Q8_0.gguf", 32)]')
+MODELS["upscale_seedvr2_7b"] = dict(_SEEDVR2,
+  title="Upscale clips 2x (SeedVR2 7B)", repo="ByteDance-Seed/SeedVR2-7B",
+  note="The larger SeedVR2 (7B): the best detail of the upscalers here, and the slowest. GPU memory: 40 GB+ at full speed (fp16), 24 GB with the fp8 model, 12-16 GB with a GGUF model and block swap (very slow; picked automatically); also wants 32-64 GB of system RAM when swapping. Not tested yet. Lands in videos/<source>_seedvr2_7b.",
+  config=_SEEDVR2_CFG + '# (GPU memory GB at least, model, transformer blocks moved to system RAM): the first that fits this GPU is used\n'
+         'MODEL_BY_MEMORY = [(38, "seedvr2_ema_7b_fp16.safetensors", 0), (22, "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors", 0),\n'
+         '                   (14, "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors", 36), (0, "seedvr2_ema_7b-Q4_K_M.gguf", 36)]')
+
+MODELS["upscale_flashvsr"] = dict(
+  title="Upscale clips 2x (FlashVSR v1.1)", repo="JunhaoZhuang/FlashVSR-v1.1", fps=24, pip=PIP_BASE + " ffmpeg-python modelscope",   # FlashVSR-Pro pins old packages: keep it apart from the others
+  note="One-step diffusion upscaler built on Wan 2.1 (FlashVSR v1.1, through the FlashVSR-Pro command line): close to SeedVR2's detail, several times faster. GPU memory: 8 GB minimum (tiled), 16 GB+ recommended, about 14 GB for 2 s of 720p untiled. Needs an Ampere or newer NVIDIA GPU (RTX 30/40/50, A100, L4; not a T4) and the CUDA compiler (nvcc): the first run builds its attention kernel, which takes 20-60 minutes and about 32 GB of system RAM. Not tested yet. Lands in videos/<source>_flashvsr.",
+  config='TOOL_REPO = "https://github.com/LujiaJin/FlashVSR-Pro"     # command line for FlashVSR (Apache-2.0)\n'
+         'TOOL_VERSION = "bf31fdd4a21642ba668ef94065aa3986608ceb1f"\nSCALE = 2\nFPS = 24           # replaced by each clip\'s own frame rate\n'
+         'WEIGHTS_REPO = "JunhaoZhuang/FlashVSR-v1.1"\nTILE_BELOW_GB = 20   # GPUs with less memory than this upscale in tiles (slower, much less memory)',
+  load=_UP_TOOL + '''if torch.cuda.get_device_capability(0)[0] < 8:
+    raise SystemExit("FlashVSR needs an Ampere or newer GPU (compute capability 8.0+); this one is " + torch.cuda.get_device_name(0))
+INSTALL_STEPS = [f"{sys.executable} -m pip install -q -e .", f"cd Block-Sparse-Attention && {sys.executable} -m pip install -q packaging ninja && MAX_JOBS=4 {sys.executable} setup.py install"]
+_TOOL = _CACHE / "flashvsr_pro"
+install_tool(_TOOL, TOOL_REPO, TOOL_VERSION)
+from huggingface_hub import snapshot_download
+_WEIGHTS = _TOOL / "models" / "FlashVSR-v1.1"
+snapshot_download(WEIGHTS_REPO, local_dir=str(_WEIGHTS))
+TILED = GPU_GB < TILE_BELOW_GB
+print("FlashVSR tiles:", "on" if TILED else "off")''',
+  gen=_UP_IN + '''
+
+def generate(row, seed):
+    """This row's clip upscaled by FlashVSR (its own command line), read back as frames."""
+    src, w, h = source_clip(row)
+    out = _CACHE / "flashvsr_out.mp4"
+    out.unlink(missing_ok=True)
+    cmd = [sys.executable, "infer.py", "-i", str(src), "-o", str(out), "--mode", "tiny", "--scale", str(SCALE), "--seed", str(seed), "--color-fix"]
+    if TILED:
+        cmd += ["--tile-dit", "--tile-size", "256", "--overlap", "24"]
+    subprocess.run(cmd, check=True, cwd=str(_TOOL), env={**os.environ, "FLASHVSR-Pro_MODEL_PATH": str(_WEIGHTS)})
+    if not out.exists():
+        raise RuntimeError("FlashVSR wrote no video")
+    return read_frames(out)''')
 
 
 def script(name, m):

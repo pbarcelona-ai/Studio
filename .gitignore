@@ -79,3 +79,6 @@ __pycache__/
 
 # old project data (not in git): kept until it is restored or no longer wanted
 /_old_project_data/
+
+# Python environments and tools for running models on this computer (scripts/run_local_model.py)
+.gpu_envs/

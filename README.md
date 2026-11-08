@@ -1,13 +1,15 @@
 # Pistachio's Studio
 
-A local web studio for turning books and ideas into images, video clips and audio. The pictures and clips are made on **free GPUs at Kaggle**
-(your own account), so you need no graphics card of your own. Everything runs from your computer; nothing is hosted for you.
+A local web studio for turning books and ideas into images, video clips and audio. The pictures and clips are made either on **free GPUs at Kaggle**
+(your own account, no graphics card needed) or on **your own NVIDIA GPU** with no website at all (see "Running everything on your own computer").
+The Studio itself always runs on your computer; nothing is hosted for you.
 
 ## What you need
 
 - A Mac (or Linux) with **Python 3.11 or newer** (the Kaggle program needs it). Windows is not supported yet.
-- A free **Kaggle account** (kaggle.com). Verify your phone number in Kaggle's settings; Kaggle only gives GPUs to verified accounts.
+- Either a free **Kaggle account** (kaggle.com): verify your phone number in Kaggle's settings, as Kaggle only gives GPUs to verified accounts.
   Free accounts get roughly 30 GPU hours a week and two GPU sessions at a time.
+- Or an **NVIDIA GPU in this computer** (Linux, or Windows through WSL 2): then no Kaggle account is needed.
 - Optional: Claude Code or Codex (for the AI prompt writer), or a Hugging Face token (see below).
 
 ## Install (about 2 minutes)
@@ -51,6 +53,35 @@ can see them or use your Kaggle hours; your generations run in **your** Kaggle a
 - Generated files, notebooks and your projects stay in this folder and are not part of the code (see `.gitignore`).
 - To update: `git pull`, then run `./install.sh` again if the requirements changed.
 
+## Running everything on your own computer
+
+With an NVIDIA GPU you can make every picture, clip, sound and upscale here instead of on Kaggle:
+
+1. Use Linux (or Windows with WSL 2) and install the NVIDIA driver, so that `nvidia-smi` lists your GPU. Install `git` too.
+2. In the **Models** tab, under "Where to run", choose **This computer**. It shows your GPU and its memory.
+3. Run as usual. The first run of each kind of model makes its own Python environment in `.gpu_envs/` (PyTorch plus that model's packages,
+   a few GB, a few minutes) and downloads the model weights into the Hugging Face cache (`~/.cache/huggingface`). Later runs reuse both,
+   so they work without internet; set `HF_HUB_OFFLINE=1` before starting the Studio to make sure nothing is fetched.
+
+It runs the very same notebooks Kaggle runs (`scripts/run_local_model.py`), so results match. Each model's note in the Models tab says how much
+GPU memory it needs. For the AI prompt writer without any website, choose **local (a language model on this computer)** and run a model server on this computer (for example Ollama).
+
+Settings (environment variables, set before starting the Studio): `STUDIO_TORCH_INDEX` picks the PyTorch build (for example
+`https://download.pytorch.org/whl/cu128` for a new GPU), `STUDIO_GPU_PYTHON` uses a Python you already set up instead, and `STUDIO_GPU_ENVS`
+moves the environments to another disk. `.gpu_envs/` can be deleted at any time; it is made again when needed.
+
+### Upscalers and the GPU memory they need
+
+| Upscaler | GPU memory | Notes |
+|---|---|---|
+| Real-ESRGAN x2 | about 2-4 GB | Any NVIDIA GPU. Tested on a Kaggle T4: about 40 s per clip. |
+| FlashVSR v1.1 | 8 GB minimum (tiled), 16 GB+ recommended | Ampere or newer only (RTX 30/40/50, A100, L4; not a T4). The first run builds a CUDA kernel: 20-60 min, about 32 GB of system RAM, needs `nvcc`. |
+| SeedVR2 3B | 24 GB at full speed; 8-16 GB with block swap (slower) | Wants about 32 GB of system RAM when swapping. |
+| SeedVR2 7B | 40 GB+ at full speed, 24 GB with its fp8 model; 12-16 GB with block swap (very slow) | Best detail, slowest. Wants 32-64 GB of system RAM when swapping. |
+
+The diffusion upscalers pick their memory-saving settings from your GPU's memory by themselves. FlashVSR and both SeedVR2 models have not been
+tested yet; Real-ESRGAN has.
+
 ## Troubleshooting
 
 | Problem | Fix |
@@ -61,5 +92,7 @@ can see them or use your Kaggle hours; your generations run in **your** Kaggle a
 | Page says forbidden | Open the link the Studio printed (it contains a one-time token), or reopen the app |
 | Nothing happens when you press run | Look at the log at the bottom of the page; the first lines say what failed |
 | The Mac app does nothing | See `~/Library/Logs/Pistachios Studio.log` |
+| "This computer" is greyed out | The Studio found no NVIDIA GPU (`nvidia-smi`), or it is running on macOS. Use Kaggle, or move to a Linux/WSL 2 computer with a GPU |
+| A run on this computer fails while installing | Read `projects/<book>/logs/local-*.log`; delete the folder in `.gpu_envs/` it names to start that environment again |
 
 Licence: see `LICENSE`.

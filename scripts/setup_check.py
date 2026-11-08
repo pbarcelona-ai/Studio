@@ -97,8 +97,10 @@ def _has_module(name):
         return False
 
 
-def check(path=None, home=None, environ=None, local_llm_ready=False):
-    """The list shown in the Setup window. Each item: id, title, level (required / recommended / optional), ok, detail, fix."""
+def check(path=None, home=None, environ=None, local_llm_ready=False, local_gpu=""):
+    """The list shown in the Setup window. Each item: id, title, level (required / recommended / optional), ok, detail, fix.
+    local_gpu: this computer's NVIDIA GPU (for example "NVIDIA RTX 4090 (24 GB)"), or "" if it has none. With one, models can run here
+    (scripts/run_local_model.py), so a Kaggle account becomes optional instead of required."""
     env = os.environ if environ is None else environ
     which = lambda t: shutil.which(t, path=path)
     items = []
@@ -109,10 +111,19 @@ def check(path=None, home=None, environ=None, local_llm_ready=False):
     v = sys.version_info
     add("python", "Python 3.9 or newer", "required", v >= (3, 9), f"Python {v.major}.{v.minor}.{v.micro}",
         "Install a current Python from python.org (or: brew install python), then run install.sh again.")
-    add("kaggle_cli", "Kaggle command-line program", "required", bool(which("kaggle")), "found" if which("kaggle") else "not found",
+    add("local_gpu", "A GPU in this computer (NVIDIA, Linux or Windows WSL 2)", "optional" if not local_gpu else "recommended", bool(local_gpu),
+        local_gpu or "none found: the models run on Kaggle, Colab or Hugging Face instead",
+        "Only needed to run the models here instead of on a website: an NVIDIA GPU with its driver (nvidia-smi), on Linux or WSL 2.")
+    if local_gpu:
+        add("git", "git (some models fetch their own program)", "recommended", bool(which("git")), "found" if which("git") else "not found",
+            "Install git with your package manager (for example: sudo apt install git)")
+        add("nvcc", "CUDA compiler nvcc (only for the FlashVSR upscaler)", "optional", bool(which("nvcc")), "found" if which("nvcc") else "not found",
+            "Install the CUDA toolkit that matches your driver (for example: sudo apt install nvidia-cuda-toolkit)")
+    web = "optional" if local_gpu else "required"         # with a GPU here, the websites are a choice, not a need
+    add("kaggle_cli", "Kaggle command-line program", web, bool(which("kaggle")), "found" if which("kaggle") else "not found",
         "Run ./install.sh (it installs it), or: pip install kaggle")
     ks = kaggle_state(home, env)
-    add("kaggle_login", "Kaggle login", "required", ks["found"],
+    add("kaggle_login", "Kaggle login", web, ks["found"],
         (f"found in {ks['how']}" + (f" (account: {ks['username']})" if ks["username"] else "")) if ks["found"] else "no Kaggle key on this computer",
         "Paste your Kaggle API token below (kaggle.com > Settings > API > Create New Token), or run: kaggle auth login")
     add("uv", "uv (runs the PDF reader and the film joiner)", "recommended", bool(which("uv")), "found" if which("uv") else "not found",

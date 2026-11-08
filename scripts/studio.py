@@ -10,7 +10,7 @@ merge_videos.py / mix_film.py (one film per ~10-minute movie).
 Safety: listens on 127.0.0.1 only, every API call needs the random token printed at start-up, and only whitelisted
 scripts with validated arguments can run (no shell, no free-form commands).
 """
-import argparse, csv, hashlib, io, json, mimetypes, os, re, secrets, shutil, signal, subprocess, threading, time, webbrowser
+import argparse, csv, hashlib, io, json, mimetypes, os, re, secrets, shutil, signal, struct, subprocess, sys, threading, time, webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,6 +22,7 @@ import hf_spaces
 import prompt_guides
 import setup_check
 import layout
+import run_local_model
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -50,12 +51,25 @@ VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_
                 "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan",     # tpu_wan = Kaggle TPU experiment
                 "ltx_video_i2v", "wan22_ti2v_5b_i2v"]                     # image-to-video: animate each shot's keyframe
 I2V_MODELS = {"ltx_video_i2v", "wan22_ti2v_5b_i2v"}
-UPSCALE_MODELS = {"upscale_x2"}                              # enlarge clips already made (make_video.py); Kaggle only
+# Upscalers: enlarge clips already made (make_video.py); Kaggle or this computer. name -> (label, GPU memory it needs, least GPU GB, needs Ampere or newer)
+UPSCALE_MODELS = {
+    "upscale_x2": ("Real-ESRGAN x2", "about 2-4 GB of GPU memory, any NVIDIA GPU. Tested on a Kaggle T4: about 40 s per clip", 3, False),
+    "upscale_flashvsr": ("FlashVSR v1.1", "8 GB minimum (it tiles), 16 GB+ recommended. Ampere or newer GPU only (RTX 30/40/50, A100, L4; not a T4); "
+                         "the first run builds a CUDA kernel: 20-60 minutes, about 32 GB of system RAM and the CUDA compiler. Not tested yet", 8, True),
+    "upscale_seedvr2_3b": ("SeedVR2 3B", "24 GB for full speed; 8-16 GB works with block swap (slower) and wants 32 GB of system RAM. Not tested yet", 8, False),
+    "upscale_seedvr2_7b": ("SeedVR2 7B", "40 GB+ for full speed, 24 GB with its fp8 model; 12-16 GB works with block swap (very slow) and wants 32-64 GB "
+                           "of system RAM. Not tested yet", 12, False),
+}
+UPSCALE_SHORT = {"upscale_x2": "2-4 GB, any NVIDIA GPU", "upscale_flashvsr": "8 GB min, 16 GB+ best; RTX 30 or newer",
+                 "upscale_seedvr2_3b": "8-16 GB slow, 24 GB full speed", "upscale_seedvr2_7b": "12-16 GB very slow, 24-40 GB+ full speed"}   # beside each choice on the page
+UPSCALE_SUFFIXES = tuple("_" + m.removeprefix("upscale_") for m in UPSCALE_MODELS)      # videos/<source>_x2, _flashvsr, ...: already upscaled
+KAGGLE_GPU_GB = {"NvidiaTeslaT4": 15, "NvidiaL4": 22, "NvidiaTeslaA100": 40, "NvidiaH100": 80}      # memory per GPU, and which are older than Ampere
+KAGGLE_PRE_AMPERE = {"NvidiaTeslaT4"}
 REF_IMAGE_MODELS = {"flux2_klein_4b"}                                    # keyframe models that take character reference pictures                      # need keyframes (images/<model>_keyframes) for every row they make
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
 VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
                 ("CogVideoX", ["cogvideox", "cogvideox_5b"]), ("Uncensored (adult content)", ["wan22_t2v_a14b_lora", "hunyuan_video_lora"]),
-                ("TPU (Kaggle only)", ["tpu_wan"]), ("From keyframes (image-to-video, Kaggle only)", ["wan22_ti2v_5b_i2v", "ltx_video_i2v"])]
+                ("TPU (Kaggle only)", ["tpu_wan"]), ("From keyframes (image-to-video, Kaggle or this computer)", ["wan22_ti2v_5b_i2v", "ltx_video_i2v"])]
 # Audio models: name -> (role, label, short note). The role decides which sound it makes (narration / sfx / music) and the file prefix it writes.
 AUDIO_MODELS = {
     "kokoro": ("narration", "Kokoro", "fast, light narration voices"),
@@ -140,6 +154,7 @@ GPUS = {  # "paid"/"restricted" are warnings only; Kaggle's own docs say some ac
                ("NvidiaTeslaA100", "A100 (may be restricted)"), ("NvidiaH100", "H100 (may be restricted)"),
                ("TpuV5E8", "TPU v5e-8 (experimental; only for tpu_wan)")],
     "huggingface": [("ZeroGPU", "ZeroGPU: Hugging Face's shared GPUs (free daily quota)")],     # runs a public Space, only for the models in hf_spaces.py
+    "computer": [("local", "This computer's NVIDIA GPU")],       # scripts/run_local_model.py: no website; the label is filled in from nvidia-smi
 }
 MAX_UPLOAD = 300 * 1024 * 1024
 BOOK_EXTS = (".pdf", ".txt", ".md")                   # what can be imported as a book: a PDF, or plain text (a file or pasted text)
@@ -253,12 +268,13 @@ def status():
     slugs = sorted(x for x in slugs if SLUG_RE.match(x))
     return {
         "tools": {**{t: bool(shutil.which(t, path=ENV_PATH)) for t in ("claude", "fcc-claude", "codex", "fcc-codex", "colab", "kaggle", "uv")},
-                  "hf": True, "local": local_llm_status()["ready"]},     # hf needs no program (its token is checked when it is used); local needs a capable computer and a model server
+                  "hf": True, "huggingface": True, "computer": not gpu_blocker("computer", "local"), "local": local_llm_status()["ready"]},     # hf needs no program (its token is checked when it is used); local needs a capable computer and a model server
         "projects": [project_info(s) for s in slugs], "library": library_files(),
         "promptsets": [promptset_info(x) for x in sets], "image_models": IMAGE_MODELS, "model_defaults": MODEL_DEFAULTS,
         "blockers": blockers(),
         "gpu_blockers": {svc: {g: gpu_blocker(svc, g) for g, _ in gl if gpu_blocker(svc, g)} for svc, gl in GPUS.items()},
-        "video_models": VIDEO_MODELS, "video_groups": VIDEO_GROUPS, "image_groups": IMAGE_GROUPS, "audio_kinds": AUDIO_KINDS, "audio_models": {k: {"role": r, "label": l, "note": n} for k, (r, l, n) in AUDIO_MODELS.items()}, "audio_roles": AUDIO_ROLE_TITLES, "gpus": GPUS, "claude_models": CLAUDE_MODELS, "hf_models": HF_MODELS, "hf_vision_models": HF_VISION_MODELS, "hf_token_set": bool(os.environ.get("HF_TOKEN", "").strip()), "local_llm": local_llm_status(),
+        "video_models": VIDEO_MODELS, "video_groups": VIDEO_GROUPS, "image_groups": IMAGE_GROUPS, "audio_kinds": AUDIO_KINDS, "audio_models": {k: {"role": r, "label": l, "note": n} for k, (r, l, n) in AUDIO_MODELS.items()}, "audio_roles": AUDIO_ROLE_TITLES, "gpus": {**GPUS, "computer": [("local", local_gpu_label())]}, "computer_why": gpu_blocker("computer", "local"),
+        "upscale_models": {k: {"label": l, "short": UPSCALE_SHORT[k], "memory": m, "least_gb": g, "ampere": a} for k, (l, m, g, a) in UPSCALE_MODELS.items()}, "claude_models": CLAUDE_MODELS, "hf_models": HF_MODELS, "hf_vision_models": HF_VISION_MODELS, "hf_token_set": bool(os.environ.get("HF_TOKEN", "").strip()), "local_llm": local_llm_status(),
         "codex_models": codex_models(),
     }
 
@@ -288,7 +304,8 @@ def save_global_params(project, positives, negatives):
 # ---------------------------------------------------------------- plan -> validated argv steps
 def setup_status():
     """The Setup window's data: what this computer has and lacks, plus the Kaggle account name found (never any key)."""
-    items = setup_check.check(path=ENV_PATH, local_llm_ready=bool(local_llm_status().get("ready")))
+    items = setup_check.check(path=ENV_PATH, local_llm_ready=bool(local_llm_status().get("ready")),
+                              local_gpu="" if gpu_blocker("computer", "local") else local_gpu_label())
     return {"items": items, **setup_check.summary(items), "kaggle_username": setup_check.kaggle_state()["username"], "root": str(ROOT)}
 
 
@@ -430,8 +447,44 @@ TPU_CLI_NOTE = ("Kaggle did not attach a TPU to notebooks started from the comma
                 "TPUs may also just have been busy). Try the notebook in the Kaggle web page, or retest later")
 
 
+_LOCAL_GPUS = None
+
+
+def local_gpus():
+    """This computer's NVIDIA GPUs [(name, GB, compute capability)], asked once (nvidia-smi); [] if there are none."""
+    global _LOCAL_GPUS
+    if _LOCAL_GPUS is None:
+        _LOCAL_GPUS = run_local_model.gpu_info() if sys.platform.startswith("linux") else []
+    return _LOCAL_GPUS
+
+
+def local_gpu_label():
+    g = local_gpus()
+    return f"{g[0][0]} ({g[0][1]:g} GB)" + (f" + {len(g) - 1} more" if len(g) > 1 else "") if g else "This computer's NVIDIA GPU (none found)"
+
+
 def gpu_blocker(service, gpu):
+    if service == "computer":
+        if not sys.platform.startswith("linux"):
+            return ("models run on this computer only on Linux (or Windows through WSL 2) with an NVIDIA GPU; this one is "
+                    + ("macOS" if sys.platform == "darwin" else sys.platform) + ". Use Kaggle, Colab or Hugging Face here")
+        if not local_gpus():
+            return "no NVIDIA GPU found on this computer (nvidia-smi is missing or lists none)"
+        return None
     return TPU_CLI_NOTE if gpu.startswith("Tpu") and not TPU_CLI_WORKS else None
+
+
+def gpu_memory(service, gpu):
+    """(GB, Ampere or newer) of the chosen GPU, or (None, None) when it is not known."""
+    if service == "computer" and local_gpus():
+        name, gb, cap = local_gpus()[0]
+        try:
+            return gb, float(cap) >= 8.0
+        except ValueError:
+            return gb, None
+    if service == "kaggle" and gpu in KAGGLE_GPU_GB:
+        return KAGGLE_GPU_GB[gpu], gpu not in KAGGLE_PRE_AMPERE
+    return None, None
 
 
 TPU_ONLY = {"tpu_wan", "tpu_mage_flow", "tpu_flux_jax"}      # JAX models that run only on Kaggle's TPU v5e-8
@@ -444,10 +497,17 @@ def model_blocker(name, service, gpu):
     """Why this video/image/audio model cannot run with this service and GPU, or None if it can (it may still be untested)."""
     if service == "huggingface" and name not in I2V_MODELS:
         return None if name in hf_spaces.SPACES else "no public Hugging Face Space is set up for this model (see scripts/hf_spaces.py)"
-    if name in UPSCALE_MODELS and service != "kaggle":
-        return "upscales clips you already made, which only the Kaggle runner uploads (use Kaggle)"
-    if name in I2V_MODELS and service != "kaggle":
-        return "starts from keyframes, which only the Kaggle runner uploads (use Kaggle)"
+    if name in UPSCALE_MODELS:
+        if service not in ("kaggle", "computer"):
+            return "upscales clips you already made, which only the Kaggle and This computer runners hand to the model (use one of them)"
+        label, need, least_gb, ampere = UPSCALE_MODELS[name]
+        gb, is_ampere = gpu_memory(service, gpu)
+        if ampere and is_ampere is False:
+            return f"{label} needs an Ampere or newer GPU (RTX 30/40/50, A100, L4); this one is older"
+        if gb is not None and gb < least_gb:
+            return f"{label} needs at least {least_gb} GB of GPU memory; this GPU has {gb:g} GB"
+    if name in I2V_MODELS and service not in ("kaggle", "computer"):
+        return "starts from keyframes, which only the Kaggle and This computer runners hand to the model (use one of them)"
     on_tpu = gpu.startswith("Tpu")
     if name in TPU_ONLY:
         if service != "kaggle":
@@ -457,6 +517,8 @@ def model_blocker(name, service, gpu):
         return "needs the TPU v5e-8 accelerator"
     if on_tpu:
         return "needs a CUDA GPU, not a TPU"
+    if name == "sd35_medium" and service == "computer":
+        return None if os.environ.get("HF_TOKEN", "").strip() else "gated model: set HF_TOKEN (a Hugging Face token that has accepted its licence) before starting the Studio"
     if name == "sd35_medium":
         return "gated model: needs a Hugging Face token, which the command-line runs cannot pass (run the notebook on the Kaggle page with your token added as a secret)"
     if name in BIG_RAM_MODELS and service == "colab" and gpu == "T4":
@@ -467,7 +529,7 @@ def model_blocker(name, service, gpu):
 def blockers():
     """{model: {service: {gpu: reason}}} for every combination that cannot work (sent to the page so it can grey them out)."""
     out = {}
-    for name in VIDEO_MODELS + IMAGE_MODELS + AUDIO_KINDS:
+    for name in VIDEO_MODELS + IMAGE_MODELS + AUDIO_KINDS + list(UPSCALE_MODELS):
         for service, gpus in GPUS.items():
             for g, _ in gpus:
                 why = model_blocker(name, service, g)
@@ -491,6 +553,8 @@ def make_runner(service, gpu, user, slug):
             return ["scripts/run_colab_model.sh", model, str(s), str(e), gpu], env
         if service == "huggingface":
             return ["scripts/run_hf_space.sh", model, str(s), str(e)], env
+        if service == "computer":
+            return ["python3", "scripts/run_local_model.py", model, str(s), str(e)], env
         env.update({"KAGGLE_USER": user, "KAGGLE_ACCELERATOR": gpu})
         return ["scripts/run_kaggle_model.sh", model, str(s), str(e)], env
     return runner
@@ -500,7 +564,7 @@ def generation_steps(opt, slug):
     """Video/audio/merge/mix steps for the chosen movies. Needs movies.json, so it may run after the book steps."""
     service = opt.get("service")
     if service not in GPUS:
-        raise PlanError("service must be kaggle or colab")
+        raise PlanError("choose where the models run: Kaggle, Colab, Hugging Face or this computer")
     gpu = opt.get("gpu")
     if gpu not in [g for g, _ in GPUS[service]]:
         raise PlanError(f"gpu {gpu!r} is not an option for {service}")
@@ -521,8 +585,8 @@ def generation_steps(opt, slug):
     refs = bool(opt.get("keyframe_refs")) and bool(st.get("keyframes"))
     if refs and kmodel not in REF_IMAGE_MODELS:
         raise PlanError(f"character pictures steer only {', '.join(sorted(REF_IMAGE_MODELS))} keyframes: pick it, or untick 'Steer keyframes with character pictures'")
-    if st.get("keyframes") and service != "kaggle":
-        raise PlanError("keyframes are made on Kaggle (the Colab and Hugging Face runners do not keep them apart from other images): choose Kaggle")
+    if st.get("keyframes") and service not in ("kaggle", "computer"):
+        raise PlanError("keyframes are made on Kaggle or this computer (the Colab and Hugging Face runners do not keep them apart from other images): choose one of those")
     i2v = [m for m in vmodels if m in I2V_MODELS] if st.get("video") else []
     if (st.get("keyframes") or i2v) and chapters_mode:
         raise PlanError("keyframes and the 'from keyframes' video models work per shot: choose 'Every shot'")
@@ -955,17 +1019,20 @@ def animatic_step(body):
 
 
 def upscale_step(body):
-    """Step that upscales the clips of one video folder, rows start..end, on Kaggle (run_kaggle_model.sh upscale_x2): the result is
-    videos/<source>_x2, which Make Film then offers as a video source."""
+    """Step that upscales the clips of one video folder, rows start..end, with one of UPSCALE_MODELS on Kaggle or this computer: the result
+    is videos/<source>_<model> (for example ltx_video_i2v_x2), which Make Film then offers as a video source."""
     slug = str(body.get("project", ""))
     if not SLUG_RE.match(slug) or not pdir(slug).is_dir():
         raise PlanError("pick a book or prompt set first")
+    model = str(body.get("model") or "upscale_x2")
+    if model not in UPSCALE_MODELS:
+        raise PlanError("choose an upscaler")
     inv = media_inventory(slug)
     key = str(body.get("source") or "")                       # as Make Film names it: videos/<folder>
     src = key.split("/", 1)[1] if key.startswith("videos/") else ""
     if key not in inv["videos"] or not re.fullmatch(r"[a-z0-9_]{2,60}", src):
         raise PlanError("choose the video folder to upscale")
-    if src.endswith("_x2"):
+    if src.endswith(UPSCALE_SUFFIXES):
         raise PlanError("these clips are already upscaled")
     start, end = num(body, "start", 1, int, 1, 100000), num(body, "end", 1, int, 1, 100000)
     if end < start:
@@ -974,14 +1041,25 @@ def upscale_step(body):
     missing = [n for n in range(start, end + 1) if n not in have]
     if missing:
         raise PlanError(f"no clip in {src} for row(s) {', '.join(map(str, missing[:10]))}{' ...' if len(missing) > 10 else ''}")
-    gpu = body.get("gpu") or "NvidiaTeslaT4"
-    if gpu not in [g for g, _ in GPUS["kaggle"]] or gpu.startswith("Tpu"):
-        raise PlanError("choose a Kaggle GPU")
+    service = body.get("service") or "kaggle"
+    if service not in ("kaggle", "computer"):
+        raise PlanError("upscaling runs on Kaggle or this computer: choose one of them in the Models tab")
+    gpu = body.get("gpu") or ("local" if service == "computer" else "NvidiaTeslaT4")
+    if gpu not in [g for g, _ in GPUS[service]] or gpu.startswith("Tpu"):
+        raise PlanError("choose a GPU in the Models tab")
+    why = gpu_blocker(service, gpu) or model_blocker(model, service, gpu)
+    if why:
+        raise PlanError(why)
+    label = UPSCALE_MODELS[model][0]
+    env = {"PROJECT": slug, "SHOTS_CSV": "all_shots.csv", "UPSCALE_SOURCE": src}
+    if service == "computer":
+        return {"label": f"Upscale {src} rows {start}-{end} 2x with {label} on this computer", "env": env,
+                "argv": ["python3", "scripts/run_local_model.py", model, str(start), str(end)]}
     user = (body.get("kaggle_user") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{2,40}", user):
         raise PlanError("enter your Kaggle username (letters, digits, - and _), Models tab")
-    return {"label": f"Upscale {src} rows {start}-{end} 2x on Kaggle", "argv": ["scripts/run_kaggle_model.sh", "upscale_x2", str(start), str(end)],
-            "env": {"PROJECT": slug, "SHOTS_CSV": "all_shots.csv", "KAGGLE_USER": user, "KAGGLE_ACCELERATOR": gpu, "UPSCALE_SOURCE": src}}
+    env.update({"KAGGLE_USER": user, "KAGGLE_ACCELERATOR": gpu})
+    return {"label": f"Upscale {src} rows {start}-{end} 2x with {label} on Kaggle", "argv": ["scripts/run_kaggle_model.sh", model, str(start), str(end)], "env": env}
 
 
 def build_plan(opt, commit=False):
@@ -1189,7 +1267,7 @@ def prompt_plan(opt, commit):
         raise PlanError(f"{model} animates a book's keyframes; for single prompts use {model.removesuffix('_i2v')}")
     service = opt.get("service")
     if service not in GPUS:
-        raise PlanError("service must be kaggle or colab")
+        raise PlanError("choose where the models run: Kaggle, Colab, Hugging Face or this computer")
     gpu = opt.get("gpu")
     if gpu not in [g for g, _ in GPUS[service]]:
         raise PlanError(f"gpu {gpu!r} is not an option for {service}")
@@ -1210,12 +1288,13 @@ def prompt_plan(opt, commit):
 
     first = len(read_csv_rows(d / csv_name)) + 1
     rows = prompt_rows(opt, slug, kind, model, first)
+    gname = local_gpu_label() if service == "computer" else gpu      # the T4 limits below also apply to a T4 in this computer
     if model in WAN_HEADS:
         for r in rows:
-            wan_t4_check(gpu, int(r["width"] or 0), int(r["height"] or 0), int(r.get("frames") or 0), model)
+            wan_t4_check(gname, int(r["width"] or 0), int(r["height"] or 0), int(r.get("frames") or 0), model)
     if kind == "image" and model in IMAGE_ATTN:
         for r in rows:
-            image_t4_check(gpu, int(r["width"] or 0), int(r["height"] or 0), model)
+            image_t4_check(gname, int(r["width"] or 0), int(r["height"] or 0), model)
     last = first + len(rows) - 1
     if commit:
         d.mkdir(parents=True, exist_ok=True)
@@ -1859,11 +1938,95 @@ def media_inventory(slug):
                 rows = rows_of(sub, pattern)
                 if rows:
                     inv[kind][f"audio/{sub.name}"] = rows
+    inv["seconds"] = {}                                # length of every clip and sound, for the timeline: {folder: {row: seconds}}
+    for kind in ("videos", "narration", "sfx", "music"):
+        for src, rows in inv[kind].items():
+            pattern = "shot-{:04d}.mp4" if kind == "videos" else AUDIO_KINDS_FILES[kind].replace("*", "{:04d}")
+            inv["seconds"].setdefault(src, {}).update({str(n): media_seconds(d / src / pattern.format(n)) for n in rows})
     for src, rows in inv["videos"].items():
         csv_name = "all_chapters.csv" if src.endswith("_chapters") else "all_shots.csv"
         table = read_csv_rows(d / csv_name)
         inv["texts"][src] = {str(n): (f"{table[n - 1]['chapter']}: {table[n - 1]['prompt']}"[:110] if 0 < n <= len(table) else "") for n in rows}
     return inv
+
+
+_SECONDS = {}      # (path, size, mtime) -> seconds
+
+
+def _mp4_seconds(fh, size):
+    """Duration from the mp4's movie header (moov/mvhd), walking the top-level boxes; None if it has none."""
+    pos = 0
+    while pos + 8 <= size:
+        fh.seek(pos)
+        head = fh.read(16)
+        box, kind = struct.unpack(">I", head[:4])[0], head[4:8]
+        hdr = 8
+        if box == 1:                                   # 64-bit size
+            box, hdr = struct.unpack(">Q", head[8:16])[0], 16
+        elif box == 0:
+            box = size - pos
+        if box < hdr:
+            return None
+        if kind == b"moov":
+            end, p = pos + box, pos + hdr
+            while p + 8 <= end:
+                fh.seek(p)
+                sub, skind = struct.unpack(">I4s", fh.read(8))
+                if sub < 8:
+                    return None
+                if skind == b"mvhd":
+                    version = fh.read(1)[0]
+                    fh.read(3)
+                    if version == 1:
+                        fh.read(16); scale, dur = struct.unpack(">IQ", fh.read(12))
+                    else:
+                        fh.read(8); scale, dur = struct.unpack(">II", fh.read(8))
+                    return dur / scale if scale else None
+                p += sub
+            return None
+        pos += box
+    return None
+
+
+def _wav_seconds(fh):
+    """Duration of a RIFF/WAVE file from its fmt (bytes per second) and data chunk sizes; None if it is not one."""
+    if fh.read(4) != b"RIFF":
+        return None
+    fh.read(4)
+    if fh.read(4) != b"WAVE":
+        return None
+    rate = None
+    while True:
+        head = fh.read(8)
+        if len(head) < 8:
+            return None
+        cid, n = struct.unpack("<4sI", head)
+        if cid == b"fmt ":
+            if n < 12:
+                return None                            # too short to hold the byte rate (and seeking back would never end)
+            rate = struct.unpack("<HHII", fh.read(12))[3]
+            fh.seek(n - 12 + (n & 1), 1)
+        elif cid == b"data":
+            return n / rate if rate else None
+        else:
+            fh.seek(n + (n & 1), 1)
+
+
+def media_seconds(path):
+    """Length in seconds (rounded to 0.01) of an .mp4 or .wav file, or None if it cannot be read. Cached until the file changes."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    key = (str(path), st.st_size, st.st_mtime_ns)
+    if key not in _SECONDS:
+        try:
+            with open(path, "rb") as fh:
+                secs = _mp4_seconds(fh, st.st_size) if path.suffix.lower() == ".mp4" else _wav_seconds(fh)
+        except (OSError, ValueError, IndexError, struct.error):          # a truncated or odd file: no length, the timeline guesses
+            secs = None
+        _SECONDS[key] = round(secs, 2) if secs else None
+    return _SECONDS[key]
 
 
 def film_step(opt):

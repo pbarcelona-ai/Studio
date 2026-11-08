@@ -1338,6 +1338,23 @@
   .svc-opt > span { font-size: 1.35rem; font-weight: 600; line-height: 1.3; }
   .svc-opt input[type=radio] { width: 22px; height: 22px; margin-top: 4px; }
   .svc-opt small { font-size: var(--text-xs); font-weight: 400; }
+  /* Make Film timeline: one row of clips (width = seconds on screen), the narration under it, title cards at the ends */
+  .timeline { position: relative; overflow-x: auto; border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 8px 4px; background: var(--bg-elevated); margin-top: 8px; }
+  .tl-lane { position: relative; height: 52px; margin-bottom: 6px; }
+  .tl-lane.tl-sound { height: 24px; }
+  .tl-ruler { position: relative; height: 16px; font-size: 11px; color: var(--fg-muted); border-bottom: 1px solid var(--border-strong); margin-bottom: 6px; }
+  .tl-ruler span { position: absolute; top: 0; padding-left: 3px; border-left: 1px solid var(--border-strong); height: 16px; }
+  .tl-clip { position: absolute; top: 0; height: 100%; box-sizing: border-box; border: 1px solid var(--accent-hover); border-radius: 6px; background: var(--accent-light); color: var(--fg); font: inherit; font-size: 12px; text-align: left; padding: 3px 12px; overflow: hidden; white-space: nowrap; cursor: grab; touch-action: none; min-width: 0; }
+  .tl-clip small { display: block; color: var(--fg-muted); font-size: 11px; }
+  .tl-clip:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+  .tl-clip.dragging { opacity: .75; z-index: 3; cursor: grabbing; box-shadow: var(--shadow); }
+  .tl-clip.playing { border-width: 3px; }
+  .tl-card { position: absolute; top: 0; height: 100%; box-sizing: border-box; border-radius: 6px; background: #000; color: #fff; border: 1px solid var(--border-strong); font-size: 12px; padding: 3px 8px; overflow: hidden; white-space: nowrap; }
+  .tl-handle { position: absolute; top: 0; width: 9px; height: 100%; cursor: ew-resize; background: var(--accent); opacity: .55; }
+  .tl-handle.l { left: 0; border-radius: 6px 0 0 6px; } .tl-handle.r { right: 0; border-radius: 0 6px 6px 0; }
+  .tl-sound .tl-audio { position: absolute; top: 0; height: 100%; box-sizing: border-box; border-radius: 4px; background: var(--info-bg); border: 1px solid var(--info); font-size: 11px; padding: 2px 6px; overflow: hidden; white-space: nowrap; color: var(--fg); }
+  .tl-sound .tl-audio.long { background: var(--warning-bg); border-color: var(--warning); }
+  .tl-label { font-size: 11px; color: var(--fg-muted); margin: 0 0 2px; }
   #msg { margin: 0 0 var(--space-4); }
   #charDataTable thead th { position: sticky; top: 0; background: var(--bg-elevated); z-index: 1; }
   #charDataTable td { padding-top: 6px; padding-bottom: 6px; }
@@ -1674,9 +1691,9 @@
             </div>
             <div class="card__body">
                 <div class="stack">
-                    <div class="row"><button id="bCleanup" type="button">Cleanup</button><button id="bKaggleCleanup" type="button" title="Deletes old notebooks from your Kaggle account">Clean up Kaggle notebooks</button></div>
+                    <div class="row"><button id="bCleanup" type="button">Cleanup</button><button id="bKaggleCleanup" type="button" title="Deletes old notebooks from your Kaggle account">Cleanup notebooks</button></div>
                     <small class="warn">Keeps the 3 newest notebooks (and the scripts that go with them) and moves the older generated notebooks to the Trash. Also removes Python cache folders, leftover temporary files and empty output folders. Notebooks are re-created automatically when a run needs one. Your books, prompts, characters, clips and images are not touched. You see the list and confirm before anything moves.</small>
-                    <small class="warn">"Clean up Kaggle notebooks" is separate: it deletes the notebooks this tool pushed to your Kaggle account, except the 3 most recently run. That cannot be undone, so a warning with Continue and Cancel comes first. A notebook that is still running is never deleted.</small>
+                    <small class="warn">"Cleanup notebooks" is separate: it deletes the notebooks this tool pushed to your Kaggle account, except the 3 most recently run. That cannot be undone, so a warning with Continue and Cancel comes first. A notebook that is still running is never deleted.</small>
                     <div id="cleanupStatus" class="warn" aria-live="polite"></div>
                     <pre id="cleanupLog" class="fill" data-empty="1" aria-live="polite" style="max-height:340px;overflow:auto">nothing yet</pre>
                 </div>
@@ -1699,6 +1716,7 @@
         <label class="opt svc-opt"><input type="radio" name="svc" value="kaggle" checked><span>Kaggle<small>Free weekly GPU. Needs sign-in and a phone-verified account.</small></span></label>
         <label class="opt svc-opt"><input type="radio" name="svc" value="colab"><span>Colab<small>Free T4 is often unavailable.</small></span></label>
         <label class="opt svc-opt"><input type="radio" name="svc" value="huggingface"><span>Hugging Face<small>Free shared GPUs (daily quota). Only models with a public Space; the Space's own version of the model.</small></span></label>
+        <label class="opt svc-opt"><input type="radio" name="svc" value="computer"><span>This computer<small>Your own NVIDIA GPU (Linux or Windows WSL 2). No website or account; models download once, then work offline. Each model's memory need is in its note.</small></span></label>
       </div>
       <div><label class="f" for="gpu">GPU</label><select id="gpu"></select></div>
       <div id="userbox"><label class="f" for="kuser">Kaggle username</label><input type="text" id="kuser" name="kaggle_account_slug" placeholder="the part after kaggle.com/" spellcheck="false" autocapitalize="off" autocomplete="nope" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
@@ -2324,10 +2342,24 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <button id="bFilmAll">Tick everything available</button>
         <button id="bFilmNone">Untick all</button>
         <button id="bFilmMake" class="primary">Make video</button>
-        <button type="button" id="bUpscale" title="Real-ESRGAN x2 on a Kaggle T4, about 40 seconds per clip. The clips come back as a new video source, <folder>_x2.">Upscale these clips 2x (Kaggle)</button>
         <span id="fsummary" class="warn"></span>
       </div>
+      <div class="row" style="margin-top:8px;align-items:flex-end;flex-wrap:wrap;gap:8px">
+        <div><label class="f" for="fupmodel">Upscaler (GPU memory it needs)</label><select id="fupmodel"></select></div>
+        <button type="button" id="bUpscale">Upscale the ticked clips 2x</button>
+      </div>
+      <p class="warn" id="fupnote" style="margin:4px 0 0"></p>
       <div class="movies" id="ftable" style="margin-top:8px;max-height:380px"></div>
+      <h3 style="margin:16px 0 4px">Timeline</h3>
+      <p class="warn" style="margin:0">The film from left to right, each clip as long as it plays (after trims, and stretched to its narration when "Stretch video to fit" is chosen). Drag a clip to move it, drag its left or right edge to trim it, click it to watch it. With a clip focused, the arrow keys move it, and Shift with an arrow trims its end by 0.1 s. The table above follows every change.</p>
+      <div id="ftimeline" class="timeline" role="group" aria-label="Film timeline"><p class="warn" style="margin:4px">Load the downloaded files to see the timeline.</p></div>
+      <div class="row" style="margin-top:6px;align-items:center;gap:8px">
+        <button type="button" id="bTlPlay">Play the film preview</button>
+        <button type="button" id="bTlStop">Stop</button>
+        <span id="tlinfo" class="warn" role="status"></span>
+      </div>
+      <video id="tlvideo" controls playsinline preload="none" style="display:none;width:100%;max-width:640px;margin-top:6px;background:#000" aria-label="Clip preview"></video>
+      <audio id="tlaudio" preload="none"></audio>
     </div>
   </section>
             </div>
@@ -2474,10 +2506,13 @@ function fillGpus() {
   $("gpu").innerHTML = ST.gpus[svc].map(([v, t]) => `<option value="${v}" ${gb[v] ? "disabled" : ""} title="${(gb[v] || "").replace(/"/g, "&quot;")}">${t}${gb[v] ? " - unavailable" : ""}</option>`).join("");
   const firstOk = [...$("gpu").options].find(o => !o.disabled); if (firstOk) $("gpu").value = firstOk.value;
   $("userbox").style.display = svc === "kaggle" ? "" : "none";
-  $("gpuhint").textContent = svc === "kaggle" ? "Only the T4 is free for everyone; the others may be refused." : svc === "huggingface" ? "Hugging Face picks the GPU (ZeroGPU). Set HF_TOKEN in the environment to use your own account's daily quota." : "Anything above T4 needs a paid Colab plan.";
-  $("batchhint").textContent = svc === "kaggle" ? "Kaggle: 0-60 works; each run waits in Kaggle's queue." : svc === "huggingface" ? "Hugging Face: keep it small (3-5); the free daily GPU quota is a few minutes." : "Colab: keep it small (5-10); the VM can vanish mid-run.";
-  $("batch").value = svc === "kaggle" ? 40 : svc === "huggingface" ? 3 : 5;
+  $("gpuhint").textContent = svc === "kaggle" ? "Only the T4 is free for everyone; the others may be refused." : svc === "huggingface" ? "Hugging Face picks the GPU (ZeroGPU). Set HF_TOKEN in the environment to use your own account's daily quota."
+    : svc === "computer" ? (ST.computer_why ? "Unavailable here: " + ST.computer_why : "Runs on the GPU listed above with scripts/run_local_model.py. The first run of each kind of model sets up its Python environment (a few GB, a few minutes).") : "Anything above T4 needs a paid Colab plan.";
+  $("batchhint").textContent = svc === "kaggle" ? "Kaggle: 0-60 works; each run waits in Kaggle's queue." : svc === "huggingface" ? "Hugging Face: keep it small (3-5); the free daily GPU quota is a few minutes."
+    : svc === "computer" ? "This computer: any size; a smaller batch just means the model loads more often." : "Colab: keep it small (5-10); the VM can vanish mid-run.";
+  $("batch").value = svc === "kaggle" ? 40 : svc === "huggingface" ? 3 : svc === "computer" ? 20 : 5;
   if (typeof updatePRunsOn === "function") updatePRunsOn();
+  if (typeof fillUpscalers === "function") fillUpscalers();
 }
 
 // Models, grouped by family: [[title, [model, ...]], ...]. Models the server did not group go into "Other".
@@ -2852,7 +2887,7 @@ function pStatus(text, cls = "warn") {
 function updatePRunsOn() {
   const svc = radio("svc") || "kaggle";
   const who = svc === "kaggle" ? ` · ${$("kuser").value.trim() || "(enter your Kaggle username in the Models tab)"}` : "";
-  $("pRunsOn").textContent = `Runs on ${svc === "huggingface" ? "Hugging Face" : svc} · ${$("gpu").value || "(pick a GPU)"}${who}. Change this in the Models tab.`;
+  $("pRunsOn").textContent = `Runs on ${svc === "huggingface" ? "Hugging Face" : svc === "computer" ? "this computer" : svc} · ${$("gpu").value || "(pick a GPU)"}${who}. Change this in the Models tab.`;
 }
 
 let pStopped = false;
@@ -3331,7 +3366,7 @@ function applyConstraints() {
   }
   // Service radio buttons: show warning if CLI not installed, but don't disable - let user choose
   document.querySelectorAll("input[name=svc]").forEach(r => {
-    const why = tools[r.value] ? null : `the ${r.value} command is not installed`;
+    const why = tools[r.value] ? null : r.value === "computer" ? (ST.computer_why || "no NVIDIA GPU found") : `the ${r.value} command is not installed`;
     const label = r.closest("label");
     if (label) {
       label.classList.toggle("off", !!why);
@@ -3518,6 +3553,7 @@ function renderFilmTable() {
     if (t.classList.contains("colall")) table.querySelectorAll(`input.cell[data-col="${t.dataset.col}"]:not(:disabled)`).forEach(c => { c.checked = t.checked; });
     updateFilmSummary();
   });
+  table.addEventListener("input", ev => { if (ev.target.classList.contains("ftrim")) renderTimeline(); });
   updateFilmSummary();
 }
 
@@ -3538,7 +3574,188 @@ function updateFilmSummary() {
   const noUv = ST && !ST.tools.uv;
   $("bFilmMake").disabled = !sel.length || jobRunning || noUv;
   $("bFilmMake").title = noUv ? "uv is not installed (needed to run the video tool)" : (jobRunning ? "another job is running" : "");
+  renderTimeline();
 }
+
+// ---------- Make Film timeline: the table drawn to scale. Dragging here edits the table, which stays the one record of the film. ----------
+const TL_CARD = 3.5;                                  // title and end cards last this long (mix_film.py CARD_SECONDS)
+const pad4 = n => String(n).padStart(4, "0");
+const filmFileUrl = rel => `/file/${film.proj}/${rel.split("/").map(encodeURIComponent).join("/")}?t=${TOKEN}`;
+let tlScale = 40;                                     // pixels per second, chosen so the whole film fits the box
+function tlRows() {                                   // the ticked clips in film order, with how long each one plays
+  const vs = $("fvideo").value, ns = $("fnarr").value, secs = (film && film.inv.seconds) || {};
+  return filmSelection().map(r => {
+    const known = (secs[vs] || {})[String(r.n)];
+    const clip = known || 4;                          // a clip whose length cannot be read is drawn as 4 s
+    const narr = r.narration && ns ? ((secs[ns] || {})[String(r.n)] || 0) : 0;
+    const shown = Math.max(clip - r.trim_start - r.trim_end, 0.1);
+    const plays = $("fsync").value === "stretch" ? Math.max(shown, narr) : shown;
+    return { ...r, clip, narr, shown, plays, known: !!known };
+  });
+}
+function tlRow(n) { return document.querySelector(`#ftable tr[data-row="${n}"]`); }
+function tlTrimInput(n, end) { const tr = tlRow(n); return tr ? tr.querySelector(`input.ftrim[data-end="${end}"]`) : null; }
+function tlMoveTo(n, index) {                         // put clip n at position index among the ticked clips (the table rows move)
+  const order = tlRows().map(r => r.n).filter(x => x !== n);
+  index = Math.max(0, Math.min(index, order.length));
+  const tr = tlRow(n), next = order[index], prev = order[index - 1];
+  if (!tr) return;
+  if (next !== undefined) tlRow(next).before(tr); else if (prev !== undefined) tlRow(prev).after(tr);
+  updateFilmSummary();
+}
+function renderTimeline() {
+  const box = $("ftimeline");
+  if (!box || !film) return;
+  const rows = tlRows();
+  if (!rows.length) { box.innerHTML = '<p class="warn" style="margin:4px">No clips ticked.</p>'; $("tlinfo").textContent = ""; return; }
+  const title = $("ftitle").value.trim(), endT = $("fendtitle").value.trim();
+  const total = rows.reduce((a, r) => a + r.plays, 0) + (title ? TL_CARD : 0) + (endT ? TL_CARD : 0);
+  tlScale = Math.max(28, Math.min(90, (box.clientWidth - 24) / Math.max(total, 1)));
+  const px = sec => Math.round(sec * tlScale);
+  const width = px(total) + 4;
+  const step = total > 240 ? 30 : total > 90 ? 10 : 5;
+  let ruler = "";
+  for (let t = 0; t <= total; t += step) ruler += `<span style="left:${px(t)}px">${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, "0")}</span>`;
+  let at = 0, clips = "", sound = "";
+  if (title) { clips += `<div class="tl-card" style="left:0;width:${px(TL_CARD) - 2}px" title="Title card, ${TL_CARD} s"></div>`; at += TL_CARD; }
+  for (const r of rows) {
+    const w = Math.max(px(r.plays) - 2, 18);
+    const lab = `Row ${r.n}: ${r.shown.toFixed(1)} s of ${r.clip.toFixed(1)} s${r.plays > r.shown + 0.05 ? `, stretched to ${r.plays.toFixed(1)} s` : ""}${r.known ? "" : " (length unknown)"}`;
+    clips += `<button type="button" class="tl-clip" data-row="${r.n}" style="left:${px(at)}px;width:${w}px" title="${lab}" aria-label="${lab}. Arrow keys move it, Shift and an arrow trims its end."><span class="tl-handle l" data-end="start" aria-hidden="true"></span>${r.n}<small>${r.plays.toFixed(1)} s</small><span class="tl-handle r" data-end="end" aria-hidden="true"></span></button>`;
+    if (r.narr) sound += `<div class="tl-audio${r.narr > r.shown + 0.05 && $("fsync").value !== "stretch" ? " long" : ""}" style="left:${px(at)}px;width:${Math.max(px(Math.min(r.narr, r.plays)) - 2, 4)}px" title="Narration for row ${r.n}: ${r.narr.toFixed(1)} s${r.narr > r.shown + 0.05 && $("fsync").value !== "stretch" ? " (longer than the clip: " + ($("fsync").value === "speed" ? "it is sped up" : "it is cut") + ")" : ""}">${r.narr.toFixed(1)} s</div>`;
+    at += r.plays;
+  }
+  if (endT) clips += `<div class="tl-card" style="left:${px(at)}px;width:${px(TL_CARD) - 2}px" title="End card, ${TL_CARD} s"></div>`;
+  box.innerHTML = `<div style="width:${width}px"><div class="tl-ruler">${ruler}</div><p class="tl-label">Picture</p><div class="tl-lane" id="tlclips">${clips}</div>`
+    + `<p class="tl-label">Narration${$("fnarr").value ? "" : " (none chosen)"}</p><div class="tl-lane tl-sound">${sound}</div></div>`;
+  const cards = box.querySelectorAll(".tl-card");     // card text is typed by the user: set as text, never as HTML
+  if (title) cards[0].textContent = title;
+  if (endT) cards[cards.length - 1].textContent = endT;
+  $("tlinfo").textContent = `about ${Math.floor(total / 60)} min ${Math.round(total % 60)} s` + ($("ftrans").value === "fade" ? " (fades overlap a little)" : "");
+}
+function tlPreview(n) {                               // watch one clip, from its trimmed start to its trimmed end, with its narration
+  const r = tlRows().find(x => x.n === n); if (!r) return;
+  tlPlay.queue = [r]; tlPlay.i = -1; tlNext();
+}
+const tlPlay = { queue: [], i: -1, vDone: false, aDone: false, end: 0, timer: 0 };
+function tlStop() {
+  clearTimeout(tlPlay.timer); tlPlay.queue = []; tlPlay.i = -1;
+  $("tlvideo").pause(); $("tlaudio").pause();
+  document.querySelectorAll(".tl-clip.playing").forEach(b => b.classList.remove("playing"));
+}
+function tlNext() {
+  document.querySelectorAll(".tl-clip.playing").forEach(b => b.classList.remove("playing"));
+  tlPlay.i++;
+  const item = tlPlay.queue[tlPlay.i];
+  const v = $("tlvideo"), a = $("tlaudio");
+  if (!item) { v.pause(); a.pause(); $("tlinfo").textContent = tlPlay.queue.length > 1 ? "preview finished" : ""; return; }
+  if (item.card) { v.pause(); a.pause(); $("tlinfo").textContent = `card: ${item.card}`; tlPlay.timer = setTimeout(tlNext, TL_CARD * 1000); return; }
+  const btn = document.querySelector(`.tl-clip[data-row="${item.n}"]`); if (btn) btn.classList.add("playing");
+  tlPlay.vDone = false; tlPlay.aDone = !item.narr; tlPlay.end = item.clip - item.trim_end;
+  v.style.display = "";
+  v.preload = "auto";
+  v.onloadedmetadata = () => { v.currentTime = item.trim_start; };
+  v.src = filmFileUrl(`${$("fvideo").value}/shot-${pad4(item.n)}.mp4`);
+  v.play().catch(() => {});                           // straight away, inside the click: the browser only lets a click start sound
+  if (item.narr) { a.src = filmFileUrl(`${$("fnarr").value}/narration-${pad4(item.n)}.wav`); a.currentTime = 0; a.play().catch(() => {}); } else { a.pause(); a.removeAttribute("src"); }
+  $("tlinfo").textContent = `playing row ${item.n}` + (tlPlay.queue.length > 1 ? ` (${tlPlay.i + 1} of ${tlPlay.queue.length})` : "");
+}
+function tlCheckDone() { if (tlPlay.i >= 0 && tlPlay.vDone && tlPlay.aDone) tlNext(); }
+$("tlvideo").addEventListener("timeupdate", () => {
+  const v = $("tlvideo");
+  if (tlPlay.i >= 0 && !tlPlay.vDone && v.currentTime >= tlPlay.end - 0.03) { v.pause(); tlPlay.vDone = true; tlCheckDone(); }
+});
+$("tlvideo").addEventListener("ended", () => { if (tlPlay.i >= 0 && !tlPlay.vDone) { tlPlay.vDone = true; tlCheckDone(); } });
+$("tlaudio").addEventListener("ended", () => { tlPlay.aDone = true; tlCheckDone(); });
+$("bTlPlay").addEventListener("click", () => {
+  if (!film) return;
+  tlStop();
+  const title = $("ftitle").value.trim(), endT = $("fendtitle").value.trim();
+  tlPlay.queue = [...(title ? [{ card: title }] : []), ...tlRows(), ...(endT ? [{ card: endT }] : [])];
+  tlPlay.i = -1; tlNext();
+});
+$("bTlStop").addEventListener("click", () => { tlStop(); $("tlinfo").textContent = "stopped"; });
+(() => {                                              // dragging: move a clip, or trim it by its edges
+  const box = $("ftimeline");
+  let drag = null;
+  box.addEventListener("pointerdown", ev => {
+    const btn = ev.target.closest(".tl-clip"); if (!btn || ev.button !== 0) return;
+    const n = Number(btn.dataset.row), handle = ev.target.closest(".tl-handle");
+    const r = tlRows().find(x => x.n === n); if (!r) return;
+    drag = { btn, n, r, x0: ev.clientX, left0: btn.offsetLeft, w0: btn.offsetWidth, end: handle ? handle.dataset.end : "", moved: false };
+    btn.setPointerCapture(ev.pointerId);
+    ev.preventDefault();                              // no text selection while dragging; this also skips the click's focus, so give it here
+    btn.focus({ preventScroll: true });
+  });
+  box.addEventListener("pointermove", ev => {
+    if (!drag) return;
+    const dx = ev.clientX - drag.x0;
+    if (Math.abs(dx) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    if (drag.end) {                                   // trim: an edge moves, the clip's other end stays
+      const r = drag.r, sec = dx / tlScale, room = r.clip - 0.1;
+      const v = drag.end === "start" ? Math.min(Math.max(r.trim_start + sec, 0), 30, room - r.trim_end) : Math.min(Math.max(r.trim_end - sec, 0), 30, room - r.trim_start);
+      const input = tlTrimInput(drag.n, drag.end); if (input) input.value = (Math.round(v * 10) / 10).toFixed(1);
+      const shown = Math.max(r.clip - (drag.end === "start" ? v : r.trim_start) - (drag.end === "end" ? v : r.trim_end), 0.1);
+      const w = Math.max(Math.round(shown * tlScale) - 2, 18);
+      if (drag.end === "start") drag.btn.style.left = `${drag.left0 + drag.w0 - w}px`;
+      drag.btn.style.width = `${w}px`;
+      drag.btn.querySelector("small").textContent = `${shown.toFixed(1)} s`;
+    } else {
+      drag.btn.classList.add("dragging");
+      drag.btn.style.transform = `translateX(${dx}px)`;
+    }
+  });
+  const finish = ev => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    if (!d.moved) { if (!d.end) tlPreview(d.n); return; }
+    if (d.end) { updateFilmSummary(); return; }
+    const centre = d.left0 + d.w0 / 2 + (ev.clientX - d.x0);
+    const others = [...$("ftimeline").querySelectorAll(".tl-clip")].filter(b => b !== d.btn);
+    tlMoveTo(d.n, others.filter(b => b.offsetLeft + b.offsetWidth / 2 < centre).length);
+    const again = document.querySelector(`.tl-clip[data-row="${d.n}"]`); if (again) again.focus();
+  };
+  box.addEventListener("pointerup", finish);
+  let lastWidth = 0;                                  // drawn to fit the box: draw again when it gets wider or narrower (window, or its tab shown)
+  new ResizeObserver(() => { if (box.clientWidth !== lastWidth) { lastWidth = box.clientWidth; if (film && !drag) renderTimeline(); } }).observe(box);
+  box.addEventListener("pointercancel", () => { drag = null; renderTimeline(); });
+  box.addEventListener("keydown", ev => {             // the same moves without a mouse
+    const btn = ev.target.closest(".tl-clip"); if (!btn || !["ArrowLeft", "ArrowRight"].includes(ev.key)) return;
+    ev.preventDefault();
+    const n = Number(btn.dataset.row), rows = tlRows(), i = rows.findIndex(r => r.n === n), r = rows[i];
+    if (ev.shiftKey) {
+      const input = tlTrimInput(n, "end"); if (!input) return;
+      const v = Math.min(Math.max(r.trim_end + (ev.key === "ArrowLeft" ? 0.1 : -0.1), 0), 30, r.clip - 0.1 - r.trim_start);
+      input.value = (Math.round(v * 10) / 10).toFixed(1);
+      updateFilmSummary();
+    } else {
+      tlMoveTo(n, i + (ev.key === "ArrowLeft" ? -1 : 1));
+    }
+    const again = document.querySelector(`.tl-clip[data-row="${n}"]`); if (again) again.focus();
+  });
+})();
+["ftitle", "fendtitle"].forEach(id => $(id).addEventListener("input", renderTimeline));
+["fsync", "ftrans"].forEach(id => $(id).addEventListener("change", renderTimeline));
+
+// ---------- upscalers: which one, and how much GPU memory it needs ----------
+function upscaleWhy(k) { const svc = radio("svc"), gpu = $("gpu").value; if (svc === "computer" && ST.computer_why) return ST.computer_why; return ((ST.gpu_blockers || {})[svc] || {})[gpu] || (((ST.blockers || {})[k] || {})[svc] || {})[gpu] || ""; }
+function fillUpscalers() {
+  if (!ST || !ST.upscale_models) return;
+  const prev = $("fupmodel").value;
+  $("fupmodel").innerHTML = Object.entries(ST.upscale_models).map(([k, u]) => `<option value="${k}" ${upscaleWhy(k) ? "disabled" : ""}>${u.label} (${u.short})${upscaleWhy(k) ? " - unavailable here" : ""}</option>`).join("");
+  const ok = [...$("fupmodel").options].filter(o => !o.disabled);
+  $("fupmodel").value = ok.some(o => o.value === prev) ? prev : (ok[0] || $("fupmodel").options[0] || {}).value || "";
+  showUpscaleNote();
+}
+function showUpscaleNote() {
+  const k = $("fupmodel").value, u = (ST.upscale_models || {})[k];
+  const why = upscaleWhy(k);
+  $("fupnote").textContent = u ? `${u.label}: ${u.memory}.` + (why ? ` Not with the Models tab's choice: ${why}.` : "") : "";
+  $("fupnote").className = why ? "err" : "warn";
+}
+$("fupmodel").addEventListener("change", showUpscaleNote);
+$("gpu").addEventListener("change", fillUpscalers);
 
 function tickAll(on) {
   document.querySelectorAll("#ftable input.cell:not(:disabled), #ftable input.colall").forEach(c => { c.checked = on; });
@@ -3648,14 +3865,20 @@ $("bCleanup").onclick = runCleanup; $("bKaggleCleanup").onclick = runKaggleClean
 $("bEstimate").onclick = estimate;
 $("bFilmLoad").onclick = () => loadFilm(false); $("bMakeFilm").onclick = () => loadFilm(true); $("bFilmAll").onclick = () => tickAll(true); $("bFilmNone").onclick = () => tickAll(false);
 $("bFilmMake").onclick = makeFilm;
-$("bUpscale").addEventListener("click", async () => {      // the ticked rows' range of the chosen video folder, enlarged on Kaggle
+$("bUpscale").addEventListener("click", async () => {      // the ticked rows' range of the chosen video folder, enlarged on Kaggle or this computer
   const rows = filmSelection().map(r => r.n);
   if (!film || !rows.length) { $("filmmsg").textContent = "load the files and tick the clips to upscale"; $("filmmsg").className = "err"; return; }
+  const svc = radio("svc"), key = $("fupmodel").value, u = (ST.upscale_models || {})[key];
+  if (!u) { $("filmmsg").textContent = "choose an upscaler"; $("filmmsg").className = "err"; return; }
+  if (svc !== "kaggle" && svc !== "computer") { $("filmmsg").textContent = "upscaling runs on Kaggle or This computer: choose one in the Models tab"; $("filmmsg").className = "err"; return; }
+  const why = upscaleWhy(key);
+  if (why) { $("filmmsg").textContent = `${u.label}: ${why}`; $("filmmsg").className = "err"; return; }
   const src = $("fvideo").value, start = Math.min(...rows), end = Math.max(...rows);
-  if (!confirm(`Upscale rows ${start}-${end} of ${src} 2x on Kaggle?\n\nThis uses Kaggle GPU time (about 40 seconds per clip). The bigger clips come back as ${src}_x2, offered under "Video clips from".`)) return;
-  const gpu = [...$("gpu").options].some(o => o.value === $("gpu").value && /^Nvidia/.test(o.value)) ? $("gpu").value : "NvidiaTeslaT4";
+  const out = `${src}_${key.replace(/^upscale_/, "")}`;
+  const where = svc === "computer" ? "this computer" : "Kaggle";
+  if (!confirm(`Upscale rows ${start}-${end} of ${src} 2x with ${u.label} on ${where}?\n\nGPU memory: ${u.memory}.\n\nThe bigger clips come back as ${out}, offered under "Video clips from".`)) return;
   try {
-    await api("/api/upscale", { project: film.proj, source: src, start, end, gpu, kaggle_user: $("kuser").value.trim() });
+    await api("/api/upscale", { project: film.proj, source: src, start, end, model: key, service: svc, gpu: $("gpu").value, kaggle_user: $("kuser").value.trim() });
     $("filmmsg").textContent = "upscaling started: see the log"; $("filmmsg").className = "warn";
     since = 0; $("log").textContent = ""; building = true; poll();
   } catch (e) { $("filmmsg").textContent = e.message; $("filmmsg").className = "err"; }

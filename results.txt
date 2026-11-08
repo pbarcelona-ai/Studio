@@ -259,3 +259,24 @@ Files reviewed: scripts/make_video.py (upscale_x2; ltx_video_i2v note), scripts/
 GPU tests on Kaggle T4 (throwaway book zz_kaggle_test): FLUX.2 klein keyframes with character pictures 3/3; LTX-Video from keyframes 3/3 (~10 min each, first frame = keyframe); Real-ESRGAN x2 3/3 (~40 s each, 768x320 -> 1536x640, 24 fps kept).
 Errors found: none open.
 Status: PASS
+
+==== Review pass 2026-11-08: run on this computer, FlashVSR / SeedVR2 upscalers, timeline ====
+Files reviewed:
+  scripts/run_local_model.py (new)  -> layout.py
+  scripts/studio.py                 -> run_local_model.py, setup_check.py, layout.py, hf_spaces.py, prompt_guides.py, character_tokens.py, bookkit.py (unchanged, reviewed 2026-11-07)
+  scripts/setup_check.py
+  scripts/make_video.py
+  studio.html
+Errors (blocking): none remaining. Fixed during the pass:
+  scripts/make_video.py: FlashVSR and SeedVR2 shared one local environment though FlashVSR-Pro pins conflicting packages -> separate pip recipes
+  scripts/make_video.py: tool install marker outlived a deleted environment -> marker per sys.prefix
+  scripts/studio.py _wav_seconds: fmt chunk shorter than 12 bytes made a backwards seek (endless loop) -> returns None
+  studio.html: preview never loaded (preload=none + play after metadata) -> play() inside the click; dark-mode title card invisible -> black/white;
+    "This computer" radio showed "command not installed" -> server's reason; upscale on an unusable GPU opened a confirm -> refused with reason
+Warnings:
+  scripts/make_video.py: FlashVSR and both SeedVR2 upscalers are untested on a GPU (Ampere+/24 GB+ machine needed); notes say so
+  scripts/run_local_model.py: untested on a real NVIDIA machine (tested with a stand-in GPU and notebook); apt-get lines only warn
+Suggestions:
+  scripts/studio.py: bound the media_seconds cache
+Requirements: no *_prompt.md files exist for these modules.
+Status: PASS
