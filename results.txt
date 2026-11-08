@@ -215,3 +215,8 @@ STATUS: PASS
 [2026-11-07] Old project word removed from the whole Studio (user request): studio.html, 15 scripts, 3 shell scripts, docs, notebooks (Studio_*), character series renamed to main (backup _cleanup_2026-11-07/characters_series_backup.tar.gz), 16 old log files renamed. Checks: py_compile all scripts, bash -n, node --check, 123 regenerated notebooks clean, status/book_steps/characters/guess_project exercised, headless page + /api/status clean. Pre-existing (not introduced, reported): Creative Direction calls /api/creative_direction and /api/continuity, which the server does not have - PASS
 
 [2026-11-07] Character reference pictures steer keyframes (FLUX.2 klein): make_keyframes_csv.py --refs/--max-refs, book_build.py characters column, make_image.py flux2_klein_4b refs with OOM fallback, run_kaggle_model.sh uploads keyframe_refs, studio.py keyframe_refs/keyframe_series + storyboard characters, studio.html options; pointers to deleted guides removed (studio.html, studio.py, make_audio.py, make_video.py, legacy_extract.py). Lower modules: layout, character_tokens, bookkit interfaces checked (earlier review records were deleted on request). Checks: py_compile all, bash -n, node --check, real-series ref tests, stand-in pipe tests, runner upload list, headless Chrome plan/storyboard. Warning: references not yet run on a GPU - PASS
+
+REVIEW RESULTS (takes)
+Files reviewed: scripts/studio.py, studio.html (lower-level: layout.py, bookkit.py unchanged)
+Errors found: none. Tested with a throwaway book (deleted) in Python and headless Chrome.
+Status: PASS

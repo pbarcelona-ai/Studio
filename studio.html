@@ -6722,6 +6722,39 @@ showToast = function(message, type, duration) {
     if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
     $("sbLoad").disabled = !list.length;
   };
+  // Takes: "Retake" keeps the current picture or clip as a take and gives the shot a new seed; run that shot again for a new version.
+  // Each saved take can be previewed, and "Use" swaps it in (the version it replaces is kept as another take).
+  function takesHtml(c, kf) {
+    const kfModel = (Object.entries(c.keyframes).find(([, f]) => f === kf) || [])[0];
+    const btn = (kind, model, label) => `<button type="button" class="pz-chip" data-retake="${kind}" data-model="${esc(model)}" data-n="${c.n}" title="Keep this version as a take and make a new one with a different seed">↻ ${esc(label)}</button>`;
+    let out = (kfModel ? btn("keyframe", kfModel, "Retake keyframe") : "") + Object.keys(c.clips).map(m => btn("clip", m, "Retake " + m)).join("");
+    for (const [key, files] of Object.entries(c.takes || {})) {
+      const [kind, model] = key.split(":");
+      out += files.map(f => {
+        const k = (f.match(/-t(\d+)\.\w+$/) || [])[1];
+        return `<span class="pz-row" style="gap:2px"><button type="button" class="pz-chip" data-take-view="${esc(sbProj + "/" + f)}" data-kind="${kind === "clip" ? "video" : "image"}" data-cap="${esc(model + " take " + k + " of shot " + c.n)}">${kind === "clip" ? "▶" : "🖼"} ${esc(model)} take ${k}</button>` +
+          `<button type="button" class="pz-chip" data-take-use="${k}" data-kind="${kind}" data-model="${esc(model)}" data-n="${c.n}">Use</button></span>`;
+      }).join("");
+    }
+    return out ? `<div class="pz-row" style="flex-wrap:wrap;gap:6px">${out}</div>` : "";
+  }
+  async function takeAction(btn) {
+    const proj = $("proj").value, st = $("sbStatus");
+    const base = { project: proj, kind: btn.dataset.kind || btn.dataset.retake, model: btn.dataset.model, n: Number(btn.dataset.n) };
+    try {
+      if (btn.dataset.retake) {
+        if (!confirm(`Keep this ${base.kind} as a take and clear shot ${base.n} so it can be made again with a new seed?`)) return;
+        const r = await api("/api/retake", base);
+        st.textContent = `Shot ${base.n}: saved as take ${r.saved_as}. Now ${r.next}.`;
+      } else {
+        await api("/api/pick_take", { ...base, take: Number(btn.dataset.takeUse) });
+        st.textContent = `Shot ${base.n}: take ${btn.dataset.takeUse} is now the one in use.`;
+      }
+      const msg = st.textContent;
+      await loadStoryboard();
+      st.textContent = msg;
+    } catch (e) { st.textContent = e.message; }
+  }
   async function loadStoryboard() {
     const proj = $("proj").value, [start, end] = ($("sbMovie").value || "").split("-").map(Number);
     if (!proj || !start) return;
@@ -6742,7 +6775,7 @@ showToast = function(message, type, duration) {
           (c.characters && c.characters.length ? `<span class="pz-cat">${c.characters.map(esc).join(" · ")}</span>` : "") +
           `<span title="${esc(c.prompt)}">${esc(c.prompt.length > 160 ? c.prompt.slice(0, 160) + "…" : c.prompt)}</span>` +
           (c.narration ? `<em style="color:var(--fg-muted)">“${esc(c.narration)}”</em>` : "") +
-          (clipBtns ? `<div class="pz-row" style="flex-wrap:wrap;gap:6px">${clipBtns}</div>` : "") + `</div></article>`;
+          (clipBtns ? `<div class="pz-row" style="flex-wrap:wrap;gap:6px">${clipBtns}</div>` : "") + takesHtml(c, kf) + `</div></article>`;
       }).join("");
       $("sbStatus").textContent = `${r.cards.length} shot(s), ${withKf} with a keyframe` + (r.end - r.start + 1 < (end - start + 1) ? ` (first ${r.cards.length} shown)` : "");
     } catch (e) { $("sbGrid").innerHTML = ""; $("sbStatus").textContent = e.message; }
@@ -6750,6 +6783,14 @@ showToast = function(message, type, duration) {
   $("sbLoad").addEventListener("click", loadStoryboard);
   $("sbKf").addEventListener("change", loadStoryboard);
   $("sbGrid").addEventListener("click", e => {
+    const act = e.target.closest("[data-retake],[data-take-use]");
+    if (act) { takeAction(act); return; }
+    const tv = e.target.closest("[data-take-view]");
+    if (tv) {
+      const one = document.createElement("div");
+      one.innerHTML = `<div class="pz-media" data-file="${esc(tv.dataset.takeView)}" data-kind="${tv.dataset.kind}" data-cap="${esc(tv.dataset.cap)}"></div>`;
+      openLightbox(tv.dataset.takeView, tv.dataset.kind, tv.dataset.cap, one); return;
+    }
     const clip = e.target.closest("[data-clip]");
     if (clip) {                                   // a one-clip gallery, so Previous / Next do not walk another grid
       const one = document.createElement("div");
