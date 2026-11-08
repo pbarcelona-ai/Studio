@@ -16,31 +16,39 @@ from bookkit import project_dir, slugify, words, write_json
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
-ap.add_argument("pdf")
+ap.add_argument("pdf", help="the book: a .pdf, or a .txt / .md text file")
 ap.add_argument("--section-words", type=int, default=2500, help="size of sections when no headings are found")
 args = ap.parse_args()
 
 pdir = project_dir(slugify(args.project))
 src = Path(args.pdf).expanduser()
 if not src.exists():
-    sys.exit(f"PDF not found: {src}")
+    sys.exit(f"PDF not found: {src}")      # (also said for text files; studio.py looks for this text)
 (pdir / "source").mkdir(parents=True, exist_ok=True)
 dest = pdir / "source" / src.name
 if src.resolve() != dest.resolve():
     shutil.copy2(src, dest)
 
-pages = [(p.extract_text() or "") for p in PdfReader(dest).pages]
+is_text = dest.suffix.lower() in (".txt", ".md")
+if is_text:                                                      # plain text: one "page" per form feed, else the whole text
+    raw = dest.read_text(encoding="utf-8-sig", errors="replace")
+    pages = [p for p in raw.split("\f") if p.strip()] or [raw]
+else:
+    pages = [(p.extract_text() or "") for p in PdfReader(dest).pages]
 chars = sum(len(p) for p in pages)
-if chars < 200 * max(len(pages), 1) * 0.2 or chars < 2000:
+if is_text:
+    if len(raw.split()) < 5:
+        sys.exit("That text is too short to use: write or paste at least a few words.")
+elif chars < 200 * max(len(pages), 1) * 0.2 or chars < 2000:
     sys.exit(f"Almost no text was extracted ({chars} characters from {len(pages)} pages). This looks like a scanned "
              "PDF; it needs OCR first (for example with ocrmypdf) before it can be used.")
 
 # running headers/footers: short lines that repeat on many pages
 line_counts = Counter(l.strip() for p in pages for l in set(p.splitlines()) if 0 < len(l.strip()) < 70)
-repeated = {l for l, c in line_counts.items() if c > max(5, len(pages) * 0.25) and not re.search(r"(?i)chapter|psalm|book", l)}
+repeated = set() if is_text else {l for l, c in line_counts.items() if c > max(5, len(pages) * 0.25) and not re.search(r"(?i)chapter|psalm|book", l)}
 clean_pages = []
 for p in pages:
-    lines = [l for l in p.splitlines() if l.strip() not in repeated and not re.fullmatch(r"\s*\d{1,4}\s*", l)]
+    lines = [l for l in p.splitlines() if l.strip() not in repeated and (is_text or not re.fullmatch(r"\s*\d{1,4}\s*", l))]
     clean_pages.append("\n".join(lines))
 text = "\n\n".join(clean_pages)
 text = re.sub(r"[ \t]+", " ", text)

@@ -6,7 +6,8 @@ cd "$(dirname "$0")" || exit 1   # run from the folder this script lives in
 echo "Starting studio.py..."
 
 # Run studio.py and capture its output to extract the URL
-python3 scripts/studio.py > >(tee /tmp/studio_output.txt) &
+PYBIN=python3; [ -x .venv/bin/python ] && PYBIN=.venv/bin/python      # install.sh makes .venv with everything the Studio needs
+"$PYBIN" scripts/studio.py > >(tee /tmp/studio_output.txt) &
 PID=$!
 
 # Give it a moment to start and print the URL

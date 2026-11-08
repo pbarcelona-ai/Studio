@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
-root = Path(__file__).resolve().parent.parent      # the project folder
+import os as _os
+root = Path(_os.environ["BIBLE_GEN_DIR"]) if _os.environ.get("BIBLE_GEN_DIR") else Path(__file__).resolve().parent.parent   # BIBLE_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
 
 NEG = "worst quality, inconsistent motion, blurry, jittery, distorted, text, subtitles, watermark, logo, modern objects"
 MODELS = {
@@ -138,6 +139,16 @@ print("LoRA loaded into both experts")
 pipe.enable_model_cpu_offload()""",
   gen=_WAN14_GEN)
 
+MODELS["wan22_t2v_a14b_lightning"] = dict(
+  title="Wan 2.2 (T2V A14B, GGUF) Lightning 4-step", repo="Wan-AI/Wan2.2-T2V-A14B-Diffusers", fps=16, pip=PIP_GGUF,
+  note="The Wan 2.2 14B GGUF model above with the Lightning speed-up LoRA (lightx2v/Wan2.2-Lightning, Seko V2.0, Apache-2.0) in both experts, so a clip takes 4 steps with no guidance trick: about 7x faster than the 30-step model at similar quality. Same memory needs as the plain 14B model. Default size 448x256, 25 frames.",
+  config=_WAN14_CFG + '\nLORA_REPO = "lightx2v/Wan2.2-Lightning"\nLORA_HIGH = "Wan2.2-T2V-A14B-4steps-lora-rank64-Seko-V2.0/high_noise_model.safetensors"\nLORA_LOW = "Wan2.2-T2V-A14B-4steps-lora-rank64-Seko-V2.0/low_noise_model.safetensors"\nSTEPS = 4\nGUIDANCE = 1.0\nGUIDANCE_2 = 1.0\nPROMPT_PREFIX = ""',
+  load=_GGUF_WAN + """pipe.load_lora_weights(LORA_REPO, weight_name=LORA_HIGH, adapter_name="lightning_high")                              # first expert
+pipe.load_lora_weights(LORA_REPO, weight_name=LORA_LOW, adapter_name="lightning_low", load_into_transformer_2=True)   # second expert
+print("Lightning LoRA loaded into both experts")
+pipe.enable_model_cpu_offload()""",
+  gen=_WAN14_GEN)
+
 _HUN_CFG = ('MODEL_ID = "hunyuanvideo-community/HunyuanVideo"     # supplies the text encoders, VAE and settings\nGGUF_REPO = "city96/HunyuanVideo-gguf"\n'
             'GGUF_FILE = "hunyuan-video-t2v-720p-Q4_K_S.gguf"       # 7.7 GB (the full model is 26 GB)\n'
             '# T4 limit: plain fp32 attention, one matrix = 96 x tokens^2 bytes, tokens = ((frames-1)/4+1) x (H/16) x (W/16); 640x368x61 asked for 20 GiB and crashed\nWIDTH, HEIGHT = 480, 272    # multiples of 16\nNUM_FRAMES = 33            # 4*k+1, 2.2 s at 15 fps\nFPS = 15\nSTEPS = 30\nGUIDANCE = 6.0')
@@ -204,7 +215,7 @@ F.scaled_dot_product_attention = _sdpa_fp16
 MODELS["hunyuan_video_15"] = dict(
   title="HunyuanVideo 1.5 (8.3B, 4-bit)", repo="hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v_distilled", fps=24,
   pip="!pip install -q -U diffusers transformers accelerate sentencepiece imageio imageio-ffmpeg ftfy bitsandbytes protobuf",
-  note="Tencent's newer HunyuanVideo 1.5 (8.3B, 480p distilled text-to-video; Tencent Hunyuan community licence, not available in the EU, UK or South Korea). The transformer and the 7B text encoder are loaded in 4-bit (bitsandbytes) so they fit a T4 and Kaggle's system RAM; the download is about 48 GB. 24 fps. No negative prompt.",
+  note="Tencent's newer HunyuanVideo 1.5 (8.3B, 480p distilled text-to-video; Tencent Hunyuan community licence, not available in the EU, UK or South Korea). The transformer and the 7B text encoder are loaded in 4-bit (bitsandbytes) so they fit a T4 and Kaggle's system RAM; the download is about 48 GB. 24 fps. No negative prompt. EXPERIMENTAL: it runs on a T4, but at 6 to 30 steps the clips come out smeared with a woven texture (4-bit weights and fp16 attention are probably too coarse); not recommended until that is fixed.",
   config='MODEL_ID = "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v_distilled"\nWIDTH, HEIGHT = 640, 368    # multiples of 16\nNUM_FRAMES = 33            # 4*k+1, 1.4 s at 24 fps\nFPS = 24\nSTEPS = 30\nGUIDANCE = 1.0',
   load=_SDPA16 + """from diffusers import HunyuanVideo15Pipeline
 from diffusers.quantizers import PipelineQuantizationConfig

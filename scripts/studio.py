@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Local control page for the Bible film pipeline.
 
-    cd /Users/paulbarcelona/Downloads/Bible && python3 studio.py
+    cd <the Studio folder> && python3 scripts/studio.py        (or double-click the app, or run ./run_studio.sh)
 
 Opens http://127.0.0.1:8765/?t=<token>. Pick a book (project), optionally upload a new PDF, tick what to do, and this
 server runs the project's own scripts one after another: book_ingest.py, book_bible.py, book_write.py, book_build.py
@@ -10,15 +10,17 @@ merge_videos.py / mix_film.py (one film per ~10-minute movie).
 Safety: listens on 127.0.0.1 only, every API call needs the random token printed at start-up, and only whitelisted
 scripts with validated arguments can run (no shell, no free-form commands).
 """
-import argparse, csv, io, json, mimetypes, os, re, secrets, shutil, signal, subprocess, threading, time, webbrowser
+import argparse, csv, hashlib, io, json, mimetypes, os, re, secrets, shutil, signal, subprocess, threading, time, webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from bookkit import EDIT_FIELDS, SLUG_RE, build_movies, llm_json, read_json, set_scene_field, slugify, write_json
+from bookkit import EDIT_FIELDS, bible_file, LOCAL_LLM_URL, SLUG_RE, build_movies, hf_json, llm_json, local_chat, read_json, set_scene_field, slugify, write_json
 import character_tokens
 import hf_spaces
+import prompt_guides
+import setup_check
 import layout
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
@@ -45,9 +47,9 @@ def load_or_create_session():
 TOKEN, SESSION_PORT = load_or_create_session()
 
 VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_video", "cogvideox", "cogvideox_5b",
-                "wan22_t2v_a14b_lora", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan"]     # tpu_wan = Kaggle TPU experiment
+                "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan"]     # tpu_wan = Kaggle TPU experiment
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
-VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
+VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
                 ("CogVideoX", ["cogvideox", "cogvideox_5b"]), ("Uncensored (adult content)", ["wan22_t2v_a14b_lora", "hunyuan_video_lora"]),
                 ("TPU (Kaggle only)", ["tpu_wan"])]
 # Audio models: name -> (role, label, short note). The role decides which sound it makes (narration / sfx / music) and the file prefix it writes.
@@ -78,6 +80,7 @@ MODEL_DEFAULTS = {
     "wan22_ti2v_5b": {"width": 704, "height": 384, "frames": 33, "steps": 30, "guidance": 5.0},
     "wan22_t2v_a14b": {"width": 448, "height": 256, "frames": 25, "steps": 30, "guidance": 4.0},
     "wan22_t2v_a14b_lora": {"width": 448, "height": 256, "frames": 25, "steps": 30, "guidance": 4.0},
+    "wan22_t2v_a14b_lightning": {"width": 448, "height": 256, "frames": 25, "steps": 4, "guidance": 1.0, "locked": ["negative", "steps", "guidance"]},
     "hunyuan_video": {"width": 480, "height": 272, "frames": 33, "steps": 30, "guidance": 6.0, "locked": ["negative"]},
     "hunyuan_video_lora": {"width": 480, "height": 272, "frames": 33, "steps": 30, "guidance": 6.0, "locked": ["negative"]},
     "hunyuan_video_15": {"width": 640, "height": 368, "frames": 33, "steps": 30, "guidance": 1.0, "locked": ["negative", "guidance"]},
@@ -133,11 +136,13 @@ GPUS = {  # "paid"/"restricted" are warnings only; Kaggle's own docs say some ac
     "huggingface": [("ZeroGPU", "ZeroGPU: Hugging Face's shared GPUs (free daily quota)")],     # runs a public Space, only for the models in hf_spaces.py
 }
 MAX_UPLOAD = 300 * 1024 * 1024
+BOOK_EXTS = (".pdf", ".txt", ".md")                   # what can be imported as a book: a PDF, or plain text (a file or pasted text)
 
 # Run jobs in a clean environment: the OSS CAD Suite shell setup sets PYTHONHOME and puts its own Python first
 # on PATH, which breaks uv-managed Pythons. Drop those so `uv run` and `python3` behave normally.
 _PATH = [d for d in os.environ.get("PATH", "").split(":") if d and "oss-cad-suite" not in d]
-ENV_PATH = ":".join([f"{Path.home()}/.local/bin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"] + _PATH)
+_VENV_BIN = [str(ROOT / ".venv" / "bin")] if (ROOT / ".venv" / "bin").is_dir() else []      # install.sh puts kaggle, uv and the Python packages here
+ENV_PATH = ":".join(_VENV_BIN + [f"{Path.home()}/.local/bin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"] + _PATH)
 DROP_ENV = ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "PYTHONSTARTUP", "VIRTUAL_ENV", "__PYVENV_LAUNCHER__")
 
 
@@ -154,7 +159,7 @@ def count_files(folder, pattern):
 
 def library_files():
     LIBRARY.mkdir(exist_ok=True)
-    return sorted(p.name for p in LIBRARY.glob("*.pdf"))
+    return sorted(p.name for p in LIBRARY.iterdir() if p.is_file() and p.suffix.lower() in BOOK_EXTS)
 
 
 def pdf_choices(slug):
@@ -162,7 +167,7 @@ def pdf_choices(slug):
     out = [{"value": f"books/{f}", "label": f"books/{f}"} for f in library_files() if slugify(Path(f).stem) == slug]
     out += [{"value": f"books/{f}", "label": f"books/{f} (other)"} for f in library_files() if slugify(Path(f).stem) != slug]
     src = pdir(slug) / "source"
-    out += [{"value": p.name, "label": f"{layout.rel(slug)}/source/{p.name}"} for p in sorted(src.glob("*.pdf"))] if src.exists() else []
+    out += [{"value": p.name, "label": f"{layout.rel(slug)}/source/{p.name}"} for p in sorted(src.iterdir()) if p.suffix.lower() in BOOK_EXTS] if src.exists() else []
     return out
 
 
@@ -173,16 +178,16 @@ def project_info(slug):
         build_movies(d, 10)
     movies = read_json(d / "movies.json", {})
 
-    # Sync character tokens from bible.json
+    # Sync character tokens from the continuity book file
     series = get_character_series(slug)
     character_tokens.sync_characters_from_project(slug)
     char_list = character_tokens.list_characters(series)
 
     return {
         "slug": slug, "legacy": slug in LEGACY, "not_started": not d.exists(), "pdf_choices": pdf_choices(slug),
-        "pdfs": sorted(p.name for p in (d / "source").glob("*.pdf")) if (d / "source").exists() else [],
+        "pdfs": sorted(p.name for p in (d / "source").iterdir() if p.suffix.lower() in BOOK_EXTS) if (d / "source").exists() else [],
         "chapters": len(chapters.get("chapters", [])), "split_method": chapters.get("method"),
-        "bible": (d / "bible.json").exists(), "scripts": count_files(d / "scripts", "chapter-*.json"),
+        "bible": bible_file(d).exists(), "scripts": count_files(d / "scripts", "chapter-*.json"),
         "built": (d / "all_shots.csv").exists(),
         "character_series": series,
         "characters": char_list,
@@ -233,19 +238,20 @@ def read_csv_rows(path):
 
 
 def status():
-    for base in (layout.BOOKS, layout.CHARACTERS, layout.PROMPTS):
+    for base in (layout.BOOKS, layout.CHARACTERS, layout.PROMPTS, layout.REGRESSION):
         base.mkdir(parents=True, exist_ok=True)
     sets = layout.promptset_slugs()               # Single Prompts sets and character image sets
     slugs = set(layout.book_slugs())              # books
     slugs |= {slugify(Path(f).stem) for f in library_files()}          # books in books/ that have no project yet
     slugs = sorted(x for x in slugs if SLUG_RE.match(x))
     return {
-        "tools": {t: bool(shutil.which(t, path=ENV_PATH)) for t in ("claude", "fcc-claude", "codex", "fcc-codex", "colab", "kaggle", "uv")},
+        "tools": {**{t: bool(shutil.which(t, path=ENV_PATH)) for t in ("claude", "fcc-claude", "codex", "fcc-codex", "colab", "kaggle", "uv")},
+                  "hf": True, "local": local_llm_status()["ready"]},     # hf needs no program (its token is checked when it is used); local needs a capable computer and a model server
         "projects": [project_info(s) for s in slugs], "library": library_files(),
         "promptsets": [promptset_info(x) for x in sets], "image_models": IMAGE_MODELS, "model_defaults": MODEL_DEFAULTS,
         "blockers": blockers(),
         "gpu_blockers": {svc: {g: gpu_blocker(svc, g) for g, _ in gl if gpu_blocker(svc, g)} for svc, gl in GPUS.items()},
-        "video_models": VIDEO_MODELS, "video_groups": VIDEO_GROUPS, "image_groups": IMAGE_GROUPS, "audio_kinds": AUDIO_KINDS, "audio_models": {k: {"role": r, "label": l, "note": n} for k, (r, l, n) in AUDIO_MODELS.items()}, "audio_roles": AUDIO_ROLE_TITLES, "gpus": GPUS, "claude_models": CLAUDE_MODELS,
+        "video_models": VIDEO_MODELS, "video_groups": VIDEO_GROUPS, "image_groups": IMAGE_GROUPS, "audio_kinds": AUDIO_KINDS, "audio_models": {k: {"role": r, "label": l, "note": n} for k, (r, l, n) in AUDIO_MODELS.items()}, "audio_roles": AUDIO_ROLE_TITLES, "gpus": GPUS, "claude_models": CLAUDE_MODELS, "hf_models": HF_MODELS, "hf_vision_models": HF_VISION_MODELS, "hf_token_set": bool(os.environ.get("HF_TOKEN", "").strip()), "local_llm": local_llm_status(),
         "codex_models": codex_models(),
     }
 
@@ -273,6 +279,12 @@ def save_global_params(project, positives, negatives):
 
 
 # ---------------------------------------------------------------- plan -> validated argv steps
+def setup_status():
+    """The Setup window's data: what this computer has and lacks, plus the Kaggle account name found (never any key)."""
+    items = setup_check.check(path=ENV_PATH, local_llm_ready=bool(local_llm_status().get("ready")))
+    return {"items": items, **setup_check.summary(items), "kaggle_username": setup_check.kaggle_state()["username"], "root": str(ROOT)}
+
+
 class PlanError(ValueError):
     pass
 
@@ -316,7 +328,11 @@ def shell_form(step):
     return (env + " " if env else "") + " ".join(script_argv(step["argv"]))
 
 
-ENGINES = ["claude", "fcc-claude", "codex", "fcc-codex"]
+ENGINES = ["claude", "fcc-claude", "codex", "fcc-codex", "hf", "local"]
+# Open models served by Hugging Face Inference Providers (newest first); any other model id the service lists can be typed in the model box.
+HF_MODELS = ["Qwen/Qwen3.8-27B", "zai-org/GLM-5.3-Flash", "deepseek-ai/DeepSeek-V4.1-Flash", "MiniMaxAI/MiniMax-M3.1-Flash",
+             "Qwen/Qwen3.8-2.4T-A95B", "moonshotai/Kimi-K3"]
+HF_VISION_MODELS = ["Qwen/Qwen3.8-27B"]            # models that also read pictures (for "describe a picture" and "review a result")
 
 
 def engine_args(opt):
@@ -333,8 +349,8 @@ def engine_args(opt):
 def book_args(opt):
     """Settings for book_write.py (also used for the estimate)."""
     narration = opt.get("narration", "condensed")
-    if narration not in ("condensed", "verbatim"):
-        raise PlanError("narration must be condensed or verbatim")
+    if narration not in ("condensed", "verbatim", "dialogue"):
+        raise PlanError("narration must be condensed, verbatim or dialogue")
     args = ["--narration", narration, "--min-shots", str(num(opt, "min_shots", 1, int, 1, 60)),
             "--max-shots", str(num(opt, "max_shots", 12, int, 1, 200))] + engine_args(opt) + [
             "--workers", str(num(opt, "workers", 2, int, 1, 6)), "--minutes", str(num(opt, "movie_minutes", 10, float, 1, 120))]
@@ -372,9 +388,9 @@ def book_steps(opt, slug):
         raw = str(opt.get("pdf", ""))
         name = Path(raw).name
         path = f"books/{name}" if raw.startswith("books/") else f"{layout.rel(slug)}/source/{name}"
-        if not name.lower().endswith(".pdf") or not (ROOT / path).exists():
-            raise PlanError("choose a PDF to read (put PDFs in the books folder)")
-        steps.append({"label": f"Read PDF and split chapters ({name})", "env": {},
+        if not name.lower().endswith(BOOK_EXTS) or not (ROOT / path).exists():
+            raise PlanError("choose a book to read: a PDF or a text file (put them in the books folder)")
+        steps.append({"label": f"Read {'text' if not name.lower().endswith('.pdf') else 'PDF'} and split chapters ({name})", "env": {},
                       "argv": ["uv", "run", "--with", "pypdf", "python", "book_ingest.py", slug, path]})
     if st.get("bible"):
         steps.append({"label": "Write the continuity bible", "env": {},
@@ -410,7 +426,7 @@ def gpu_blocker(service, gpu):
 
 
 TPU_ONLY = {"tpu_wan", "tpu_mage_flow", "tpu_flux_jax"}      # JAX models that run only on Kaggle's TPU v5e-8
-BIG_RAM_MODELS = {"wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lora", "hunyuan_video", "hunyuan_video_lora", "hunyuan_video_15", "cogvideox_5b",
+BIG_RAM_MODELS = {"wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video", "hunyuan_video_lora", "hunyuan_video_15", "cogvideox_5b",
                   "sd35_large", "sd35_large_turbo", "flux1_schnell", "flux1_dev", "flux2_klein_4b", "chroma1_hd", "qwen_image_21_lora", "z_image", "ernie_image_turbo", "qwen_image_21_turbo",
                   "qwen_image_21", "qwen_image_21_uc", "moss_image_sft_lora", "moss_image_sft", "moss_image_base"}      # 12-25 GB of weights: more system RAM than Colab's free tier
 
@@ -564,6 +580,42 @@ def build_plan(opt, commit=False):
     return steps
 
 
+def chapter_shots(slug, body=None):
+    """The chapter table (number, title, words, saved shot count) and, with body={"shots": {"5": 10, "7": ""}}, save the per-chapter shot counts.
+    A blank or 0 count removes the override so that chapter goes back to the automatic count. Stored in overrides.json, which book_write.py reads."""
+    if not SLUG_RE.match(slug or "") or slug in LEGACY:
+        raise PlanError("pick a book made from a PDF or text")
+    d = pdir(slug)
+    index = read_json(d / "chapters.json", None)
+    if not index:
+        raise PlanError("read the book first so it is split into chapters")
+    ov = read_json(d / "overrides.json", {})
+    if not isinstance(ov, dict):
+        ov = {}
+    if body is not None:
+        known = {str(c["n"]) for c in index["chapters"]}
+        for k, v in (body.get("shots") or {}).items():
+            if str(k) not in known:
+                raise PlanError(f"chapter {k} does not exist")
+            v = str(v).strip()
+            entry = ov.get(str(k)) if isinstance(ov.get(str(k)), dict) else {}
+            if v in ("", "0"):
+                entry.pop("shots", None)
+            else:
+                if not v.isdigit() or not 1 <= int(v) <= 500:
+                    raise PlanError(f"chapter {k}: shots must be a whole number from 1 to 500 (or blank for automatic)")
+                entry["shots"] = int(v)
+            if entry:
+                ov[str(k)] = entry
+            else:
+                ov.pop(str(k), None)
+        tmp = d / "overrides.json.tmp"
+        write_json(tmp, ov)
+        os.replace(tmp, d / "overrides.json")
+    return {"chapters": [{"n": c["n"], "title": c.get("title", ""), "words": c.get("words", 0),
+                          "shots": (ov.get(str(c["n"])) or {}).get("shots")} for c in index["chapters"]]}
+
+
 def estimate(opt):
     slug = project_slug(opt)
     if slug in LEGACY:
@@ -617,7 +669,7 @@ def prompt_rows(opt, slug, kind, model, first_row):
         if model == "ltx_video":
             w = snap(w, 32, 256, 1280) if w else None; h = snap(h, 32, 256, 1280) if h else None
             frames = snap(frames - 1, 8, 8, 160) + 1 if frames else None          # 8*k+1
-        elif model in ("wan", "wan22_t2v_a14b", "wan22_t2v_a14b_lora"):
+        elif model in ("wan", "wan22_t2v_a14b", "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning"):
             w = snap(w, 16, 256, 1280) if w else None; h = snap(h, 16, 256, 1280) if h else None
             frames = snap(frames - 1, 4, 4, 120) + 1 if frames else None          # 4*k+1
         elif model == "wan22_ti2v_5b":
@@ -662,8 +714,8 @@ def append_rows(path, cols, new_rows):
         w.writerows(old + new_rows)
 
 
-WAN_HEADS = {"wan": 12, "wan22_ti2v_5b": 24, "wan22_t2v_a14b": 40, "wan22_t2v_a14b_lora": 40, "hunyuan_video": 24, "hunyuan_video_lora": 24}      # attention heads per model
-WAN_ATTN_CAP_GIB = {"wan": 2.5, "wan22_ti2v_5b": 2.5, "wan22_t2v_a14b": 1.8, "wan22_t2v_a14b_lora": 1.8, "hunyuan_video": 2.5, "hunyuan_video_lora": 2.5}   # what is left on a 14.5 GiB T4 next to the weights
+WAN_HEADS = {"wan": 12, "wan22_ti2v_5b": 24, "wan22_t2v_a14b": 40, "wan22_t2v_a14b_lora": 40, "wan22_t2v_a14b_lightning": 40, "hunyuan_video": 24, "hunyuan_video_lora": 24}      # attention heads per model
+WAN_ATTN_CAP_GIB = {"wan": 2.5, "wan22_ti2v_5b": 2.5, "wan22_t2v_a14b": 1.8, "wan22_t2v_a14b_lora": 1.8, "wan22_t2v_a14b_lightning": 1.8, "hunyuan_video": 2.5, "hunyuan_video_lora": 2.5}   # what is left on a 14.5 GiB T4 next to the weights
 
 
 def wan_t4_check(gpu, w, h, frames, model="wan"):
@@ -777,10 +829,12 @@ def expand_idea(opt):
         global_positives = global_params.get("positives", "")
         global_negatives = global_params.get("negatives", "")
 
-    what = ("a text-to-video model. Each prompt is one 4-6 second clip: 40-70 words naming the subject, what happens "
-            "over the clip, the camera movement, the setting, the light and the style.") if kind == "video" else (
-            "a text-to-image model. Each prompt is one picture: 30-60 words naming the subject, composition, setting, "
-            "light, style and lens or medium.")
+    target = str(opt.get("target") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,60}", target):
+        target = ""
+    _, words = prompt_guides.guide_for(kind, target)
+    what = (f"a text-to-video model. Each prompt is one 4-6 second clip, {words}.") if kind == "video" else (
+            f"a text-to-image model. Each prompt is one picture, {words}.")
 
     global_section = ""
     if global_positives or global_negatives:
@@ -798,8 +852,7 @@ def expand_idea(opt):
         if not isinstance(ps, list) or len(ps) != count or not all(isinstance(x, str) and len(x) > 20 for x in ps):
             raise ValueError(f"'prompts' must be a list of exactly {count} strings")
 
-    data = llm_json(prompt, f"You write prompts for {kind} generation models. You reply with a single JSON object and nothing else.",
-                    model=model, engine=engine, validate=check)
+    data = llm_json(prompt, prompt_guides.writer_system(kind, target), model=model, engine=engine, validate=check)
 
     # Append global parameters to each generated prompt
     prompts = [x.strip() for x in data["prompts"]]
@@ -817,6 +870,138 @@ def expand_idea(opt):
             final_prompts.append(", ".join(parts))
         return final_prompts
     return prompts
+
+
+_LOCAL_CACHE = {"at": 0.0, "value": None}
+
+
+def local_llm_status(force=False):
+    """Can this computer run the prompt writer on a local language model? {"ready", "reason", "url", "models"}. The checkbox in the Studio is greyed out
+    (with this reason) until the computer qualifies: Apple Silicon or an NVIDIA GPU, 16 GB of memory or more, and a model server answering on
+    LOCAL_LLM_URL (Ollama, LM Studio or llama.cpp). STUDIO_LOCAL_LLM=1 in the environment skips the hardware checks. Cached for 30 seconds."""
+    if not force and _LOCAL_CACHE["value"] is not None and time.time() - _LOCAL_CACHE["at"] < 30:
+        return _LOCAL_CACHE["value"]
+    import platform
+    reasons, models = [], []
+    try:
+        if platform.system() == "Darwin":
+            gb = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=3).stdout.strip() or 0) / 2**30
+        else:
+            gb = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2**30
+    except (OSError, ValueError, subprocess.SubprocessError):
+        gb = 0
+    if os.environ.get("STUDIO_LOCAL_LLM") != "1":
+        if gb and gb < 16:
+            reasons.append(f"this computer has {gb:.0f} GB of memory and a useful language model needs 16 GB or more")
+        if platform.system() == "Darwin" and platform.machine() != "arm64":
+            reasons.append("this is an Intel Mac; local models need Apple Silicon (M-series)")
+        elif platform.system() != "Darwin" and not shutil.which("nvidia-smi"):
+            reasons.append("no NVIDIA GPU was found")
+    if not reasons:                                           # only look for a model server on a computer that could use one
+        try:
+            import urllib.request
+            with urllib.request.urlopen(LOCAL_LLM_URL.rsplit("/chat/completions", 1)[0] + "/models", timeout=1.5) as r:
+                models = [m.get("id") for m in json.loads(r.read()).get("data", []) if m.get("id")]
+            if not models:
+                reasons.append("the local model server has no models yet (for Ollama: ollama pull <model>)")
+        except Exception:
+            reasons.append(f"no local model server answered at {LOCAL_LLM_URL.rsplit('/chat/completions', 1)[0]} (install Ollama or LM Studio and start it)")
+    value = {"ready": not reasons, "reason": "; ".join(reasons), "url": LOCAL_LLM_URL, "models": models, "memory_gb": round(gb)}
+    _LOCAL_CACHE.update(at=time.time(), value=value)
+    return value
+
+
+def result_file(file):
+    """Resolve "<project>/<path under it>" (as the Compare tab names a result) to a real picture or clip inside projects/<project>/."""
+    parts = str(file or "").split("/", 1)
+    if len(parts) != 2 or not SLUG_RE.match(parts[0]):
+        raise PlanError("bad file name")
+    base = pdir(parts[0]).resolve()
+    target = (base / parts[1]).resolve()
+    if base not in target.parents or target.suffix.lower() not in (".png", ".jpg", ".mp4") or not target.is_file():
+        raise PlanError("that file was not found")
+    return target
+
+
+def image_data_url(path, px=1024):
+    """The picture (or one frame of a clip) as a small JPEG data URL, to send to a vision model."""
+    import base64
+    im = load_rgb(path)
+    im.thumbnail((px, px))
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=85)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def vision_model(opt):
+    model = str(opt.get("claude_model") or "").strip()
+    if model and not MODEL_RE.match(model):
+        raise PlanError("model name may only use letters, digits and . _ : / [ ] -")
+    if (opt.get("engine") or "claude") == "hf":
+        return model or HF_VISION_MODELS[0]
+    return model                                              # claude / codex: blank = the tool's own default; local: the local server decides
+
+
+def vision_json(opt, system, text, check):
+    """Show one result picture (or a frame of a clip) to a model and get a JSON reply. Engines: claude / fcc-claude (the Read tool on a private copy),
+    codex / fcc-codex (-i), hf (Hugging Face vision model) and local (a vision model on this computer's model server)."""
+    engine = opt.get("engine") or "claude"
+    if engine not in ENGINES:
+        raise PlanError("unknown engine")
+    path, model = result_file(opt.get("file")), vision_model(opt)
+    if engine in ("hf", "local"):
+        messages = [{"role": "system", "content": system},
+                    {"role": "user", "content": [{"type": "text", "text": text}, {"type": "image_url", "image_url": {"url": image_data_url(path)}}]}]
+        return hf_json(messages, model, check, chat=local_chat if engine == "local" else None)
+    import tempfile
+    fd, jpeg = tempfile.mkstemp(suffix=".jpg")
+    os.close(fd)
+    try:
+        im = load_rgb(path)
+        im.thumbnail((1024, 1024))
+        im.save(jpeg, "JPEG", quality=85)
+        return llm_json(text, system, model or None, engine, check, image=jpeg)
+    finally:
+        Path(jpeg).unlink(missing_ok=True)
+
+
+def describe_image(opt):
+    """Look at a picture and write a prompt for it: kind "video" = a prompt that brings it to life (image-to-video), "image" = a prompt that recreates it."""
+    kind = opt.get("kind") if opt.get("kind") in ("video", "image") else "video"
+    target = str(opt.get("target") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,60}", target):
+        target = ""
+    rules, words = prompt_guides.guide_for(kind, target)
+    extra = str(opt.get("note") or "").strip()[:400]
+    task = ("Write ONE prompt for an image-to-video model that brings this exact picture to life: keep the subject, setting and look you can see, "
+            f"then add natural motion and a camera move. {words}.") if kind == "video" else (
+            f"Write ONE prompt for a text-to-image model that would recreate this picture closely. {words}.")
+    text = f"{task}\n\nRules: {rules}" + (f"\n\nAlso follow this instruction from the user: {extra}" if extra else "") + '\n\nReply with {"prompt": "..."}'
+
+    def check(d):
+        if not isinstance(d.get("prompt"), str) or len(d["prompt"]) < 20:
+            raise ValueError("'prompt' must be a string of at least 20 characters")
+    return {"prompt": vision_json(opt, prompt_guides.writer_system(kind, target), text, check)["prompt"].strip()}
+
+
+def review_result(opt):
+    """Compare a result with the prompt that made it: a score from 1 to 10, a one-line summary and up to three problems."""
+    prompt = " ".join(str(opt.get("prompt") or "").split())[:1500]
+    if not prompt:
+        raise PlanError("no prompt to compare with")
+    text = (f'This picture (or frame of a clip) was made from this prompt:\n"{prompt}"\n\nJudge how well it matches the prompt and how good it looks: '
+            "anatomy and faces, hands, objects, text artefacts, blur, composition, lighting. Score 1-10 (10 = excellent, 5 = usable but flawed, 1 = unusable). "
+            'Reply with {"score": 7, "summary": "one sentence", "problems": ["up to three short items; empty if none"]}')
+
+    def check(d):
+        sc = d.get("score")
+        if isinstance(sc, str) and sc.strip().isdigit():
+            d["score"] = sc = int(sc)
+        if not isinstance(sc, (int, float)) or not 1 <= sc <= 10 or not isinstance(d.get("summary"), str):
+            raise ValueError("need a numeric 'score' from 1 to 10 and a 'summary' string")
+        d["problems"] = [str(x)[:160] for x in (d.get("problems") or [])][:3] if isinstance(d.get("problems"), list) else []
+    d = vision_json(opt, prompt_guides.review_system(), text, check)
+    return {"score": round(float(d["score"])), "summary": d["summary"].strip(), "problems": d["problems"]}
 
 
 def clip_prompt(slug, row):
@@ -861,7 +1046,7 @@ def enhance_prompt(opt):
 
     # Get the bible for context
     bible = {}
-    bible_path = d / "bible.json"
+    bible_path = bible_file(d)
     if bible_path.exists():
         try:
             bible = json.loads(bible_path.read_text())
@@ -970,6 +1155,157 @@ def gallery(slug, limit=60):
                           "path": f.relative_to(d).as_posix(), "mtime": f.stat().st_mtime})
     items.sort(key=lambda x: -x["mtime"])
     return items[:limit]
+
+
+# ---------------------------------------------------------------- Compare wall, showcase art and the prompt library
+REG_LANES = ("regtest_a", "regtest_b", "regtest_i")        # the two lanes of scripts/regress_kaggle.py, and regtest_i: results collected by hand (the regression never writes there)
+RATINGS_FILE = PROJECTS / "regression" / "regtest_ratings.json"
+ZOMBIE_PROMPT = "a young woman running towards the camera, zombies are chasing her down a city street. not blurry, no cartoon."   # the built-in prompt of the first regression
+
+
+THUMB_PX = 480
+
+
+def load_rgb(src):
+    """A picture, or one frame from a clip, as an RGB PIL image."""
+    from PIL import Image
+    if src.suffix.lower() == ".mp4":
+        import cv2
+        cap = cv2.VideoCapture(str(src))
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 1)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, total // 3))
+        ok, frame = cap.read()
+        cap.release()
+        if not ok:
+            raise OSError("cannot read a frame")
+        return Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    return Image.open(src).convert("RGB")
+
+
+def make_thumb(src, dest):
+    """A small JPEG of a picture, or of a frame from a clip, so the grids do not load the full files."""
+    im = load_rgb(src)
+    im.thumbnail((THUMB_PX, THUMB_PX))
+    dest.parent.mkdir(exist_ok=True)
+    tmp = dest.with_suffix(".tmp")
+    im.save(tmp, "JPEG", quality=82)
+    tmp.replace(dest)
+
+
+DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"      # Apache-2.0, about 100 MB; downloaded once on first use
+_DEPTH = {}
+DEPTH_LOCK = threading.Lock()
+
+
+def make_depth(src, dest):
+    """A grey depth map (white = near) for the Studio's 3D view, made on this computer by Depth Anything V2 Small."""
+    import numpy as np
+    from PIL import Image
+    im = load_rgb(src)
+    im.thumbnail((1024, 1024))
+    with DEPTH_LOCK:                                          # one at a time: the model is loaded once and shared
+        if "pipe" not in _DEPTH:
+            from transformers import pipeline
+            _DEPTH["pipe"] = pipeline("depth-estimation", model=DEPTH_MODEL, device="cpu")
+        depth = _DEPTH["pipe"](im)["depth"]
+    arr = np.asarray(depth.resize(im.size), dtype="float32")
+    lo, hi = np.percentile(arr, 1), np.percentile(arr, 99)
+    arr = np.clip((arr - lo) / max(hi - lo, 1e-6), 0, 1)
+    dest.parent.mkdir(exist_ok=True)
+    tmp = dest.with_suffix(".tmp")
+    Image.fromarray((arr * 255).astype("uint8")).save(tmp, "PNG")
+    tmp.replace(dest)
+
+
+def load_ratings():
+    return read_json(RATINGS_FILE, {}) if RATINGS_FILE.exists() else {}
+
+
+def save_rating(key, stars, keep):
+    """Remember your stars (0-5) and Keep tick for one regression result; the key is "<lane>/<path under it>"."""
+    if not re.fullmatch(r"regtest_[abi]/[A-Za-z0-9_./-]+", str(key)) or ".." in str(key):
+        raise PlanError("bad result name")
+    try:
+        stars = max(0, min(5, int(stars)))
+    except (TypeError, ValueError):
+        raise PlanError("stars must be a number from 0 to 5")
+    ratings = load_ratings()
+    ratings[key] = {"stars": stars, "keep": bool(keep)}
+    write_json(RATINGS_FILE, ratings)
+    return ratings[key]
+
+
+def regression_minutes():
+    """{(model, prompt text): minutes} from the regression reports (the zombie report has no prompt field)."""
+    out = {}
+    for name in ("regression_kaggle_report.zombie.json", "regression_kaggle_report.json"):
+        rep = read_json(ROOT / name, {}) if (ROOT / name).exists() else {}
+        for model, v in rep.items():
+            if isinstance(v, dict) and v.get("result") == "PASS":
+                out[(model, " ".join(str(v.get("prompt", ZOMBIE_PROMPT)).split()))] = v.get("minutes")
+    return out
+
+
+def compare_data():
+    """Every regression picture and clip, grouped by the prompt that made it, with your ratings: {"prompts": [{"text", "items": [...]}]}."""
+    ratings, minutes, groups = load_ratings(), regression_minutes(), {}
+    for lane in REG_LANES:
+        d = pdir(lane)
+        if not d.is_dir():
+            continue
+        csvs = {n: read_csv_rows(d / n) for n in ("all_images.csv", "all_shots.csv")}
+        for sub, pattern, kind, csv_name in (("images", "*/image-*.png", "image", "all_images.csv"), ("videos", "*/shot-*.mp4", "video", "all_shots.csv")):
+            for f in (d / sub).glob(pattern) if (d / sub).exists() else []:
+                n = int(re.search(r"(\d+)", f.stem).group(1))
+                rows = csvs[csv_name]
+                text = " ".join((rows[n - 1].get("prompt") or "").split()) if 0 < n <= len(rows) else ""
+                if not text:
+                    continue
+                key = f"{lane}/{f.relative_to(d).as_posix()}"
+                r = ratings.get(key, {})
+                groups.setdefault(text, []).append({"model": f.parent.name, "kind": kind, "file": key, "row": n, "size": f.stat().st_size, "mtime": f.stat().st_mtime,
+                                                    "stars": r.get("stars", 0), "keep": bool(r.get("keep")), "minutes": minutes.get((f.parent.name, text))})
+    out = []
+    for text, items in groups.items():
+        latest = {}
+        for it in sorted(items, key=lambda x: x["mtime"]):         # one result per model: the newest
+            latest[(it["model"], it["kind"])] = it
+        items = sorted(latest.values(), key=lambda x: (x["kind"], x["model"]))
+        out.append({"text": text, "newest": max(i["mtime"] for i in items), "items": items})
+    out.sort(key=lambda g: -g["newest"])
+    return {"prompts": out}
+
+
+def showcase():
+    """Pictures and one clip made by your own models, used as the Studio's own artwork: {"hero": file or None, "art": [files]}.
+    Only results you rated 4 stars or more, plus results of the built-in street-chase prompt, are used: unfiltered models can make
+    unsuitable pictures, and nothing should reach the page header without you choosing it."""
+    items = []
+    for g in compare_data()["prompts"]:
+        for it in g["items"]:
+            if it["stars"] >= 4 or g["text"] == ZOMBIE_PROMPT:
+                items.append(it)
+    vids = sorted((i for i in items if i["kind"] == "video" and i["size"] > 60_000), key=lambda i: (-i["stars"], -i["mtime"]))
+    imgs = sorted((i for i in items if i["kind"] == "image" and i["size"] > 150_000), key=lambda i: (-i["stars"], -i["mtime"]))
+    seen, art = set(), []
+    for i in imgs:                                            # at most one picture per model, so the artwork is varied
+        if i["model"] not in seen:
+            seen.add(i["model"]); art.append(i["file"])
+    return {"hero": vids[0]["file"] if vids else None, "art": art[:12]}
+
+
+def library():
+    """The prompt library, each template with a sample from your results when the same prompt was run."""
+    import templates
+    results = {}
+    for g in compare_data()["prompts"]:
+        results[g["text"]] = sorted(g["items"], key=lambda i: (-i["stars"], i["kind"] != "video", -i["size"]))
+    out = []
+    for t in templates.TEMPLATES:
+        items = results.get(" ".join(t["prompt"].split()), [])
+        want = [i for i in items if i["kind"] == t["kind"]] or items
+        out.append({**t, "sample": ({"file": want[0]["file"], "kind": want[0]["kind"], "model": want[0]["model"]} if want else None)})
+    return {"templates": out}
 
 
 # ---------------------------------------------------------------- Kaggle runs: list them and fetch their results
@@ -1148,9 +1484,9 @@ def film_step(opt):
 # ---------------------------------------------------------------- clean-up: find old generated files, move them to the Trash
 CLEAN_CATEGORIES = [   # id, title, ticked by default, what to know
     ("pycache", "Python cache folders", True, "Made automatically by Python; they come back by themselves."),
-    ("notebooks", "Old generated notebooks and scripts (the 3 newest notebooks are kept)", True,
+    ("notebooks", "Old generated notebooks and scripts (the 3 newest notebooks are kept; TPU notebooks are always removed)", True,
      "Written by the scripts in scripts/. They are re-created automatically when a run needs one, or with the Re-create button. "
-     "The 3 most recently changed notebooks, and the scripts that go with them, are kept."),
+     "The 3 most recently changed notebooks, and the scripts that go with them, are kept. The TPU notebooks (tpu_wan, tpu_mage_flow, tpu_flux_jax) are always listed and do not use up one of the 3."),
     ("temp", "Temporary and leftover files", True, "Partial uploads, old progress markers, the film selection file and stray logs inside video folders."),
     ("empty", "Empty output folders", True, "Folders in videos/, audio/ and images/ with nothing in them."),
     ("logs", "Kaggle run logs", False, "Kept for troubleshooting failed runs; safe to delete once the run no longer matters."),
@@ -1181,8 +1517,10 @@ def cleanup_scan():
             dirnames.remove("__pycache__")
     nb_dirs = [ROOT, ROOT / "notebooks"]
     notebooks = sorted((f for d in nb_dirs if d.is_dir() for f in d.glob("Bible_*.ipynb")), key=lambda f: (f.stat().st_mtime, f.name), reverse=True)
+    tpu = [f for f in notebooks if "tpu_" in f.name]            # the TPU experiments (Bible_Kaggle_tpu_wan, Bible_Kaggle_image_tpu_*) are never kept: they are always listed
+    notebooks = [f for f in notebooks if f not in tpu]
     kept_keys = {m.group(1) for f in notebooks[:KEEP_NOTEBOOKS] if (m := re.match(r"Bible_(?:Colab|Kaggle)_(.+)\.ipynb$", f.name))}
-    for f in notebooks[KEEP_NOTEBOOKS:]:
+    for f in notebooks[KEEP_NOTEBOOKS:] + tpu:
         add("notebooks", f)
     for d in nb_dirs:
         for f in (d.glob("colab_generate_*.py") if d.is_dir() else []):
@@ -1443,7 +1781,7 @@ def prompt_suggest(opt):
         sc = read_json(d / "scripts" / f"chapter-{int(mm.group(1)):03d}.json", {})
         sh = (sc.get("shots") or [])
         source = (sh[shot - 1].get("slice") or "")[:900] if 0 < shot <= len(sh) else ""
-    bible = read_json(d / "bible.json", {})
+    bible = read_json(bible_file(d), {})
     chars = "; ".join(f"{c['name']}: {c['token']}" for c in bible.get("characters", []))[:1800]
     rules = {
         "prompt": ("a text-to-video prompt for ONE continuous shot of about 4 seconds: shot size, camera movement, subject, action, setting, light. "
@@ -1633,12 +1971,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, (ROOT / "studio.html").read_text().replace("__TOKEN__", TOKEN), "text/html; charset=utf-8")
         if url.path.startswith("/file/"):
             return self._file(url)
+        if url.path.startswith("/thumb/"):
+            return self._thumb(url)
+        if url.path.startswith("/depth/"):
+            return self._depth(url)
         if not self._authed():
             return self._json(403, {"error": "forbidden"})
         if url.path == "/api/scenes":
             q = parse_qs(url.query)
             try:
                 return self._json(200, scene_data(q.get("project", [""])[0], q.get("chapter", [""])[0]))
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+        if url.path == "/api/chapter_shots":
+            try:
+                return self._json(200, chapter_shots(parse_qs(url.query).get("project", [""])[0]))
             except PlanError as e:
                 return self._json(400, {"error": str(e)})
         if url.path == "/api/files":
@@ -1674,6 +2021,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": str(e)})
             except subprocess.TimeoutExpired:
                 return self._json(400, {"error": "Kaggle did not answer in time; try again"})
+        if url.path == "/api/setup":
+            return self._json(200, setup_status())
+        if url.path == "/api/local_llm":                     # the page asks again when you open the Models tab, come back to the window, or press Check again
+            return self._json(200, local_llm_status(force=parse_qs(url.query).get("fresh", [""])[0] == "1"))
+        if url.path == "/api/compare":
+            return self._json(200, compare_data())
+        if url.path == "/api/showcase":
+            return self._json(200, showcase())
+        if url.path == "/api/library":
+            return self._json(200, library())
         if url.path == "/api/gallery":
             slug = parse_qs(url.query).get("project", [""])[0]
             return self._json(200, {"items": gallery(slug) if SLUG_RE.match(slug) else []})
@@ -1751,6 +2108,56 @@ class Handler(BaseHTTPRequestHandler):
 
     MEDIA = {".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg", ".wav": "audio/wav"}
 
+    def _thumb(self, url):
+        """Serve a small JPEG of a result: /thumb/<project>/<path under it>?t=<token>. Cached in projects/<project>/.thumbs/."""
+        if not self._host_ok() or not secrets.compare_digest(parse_qs(url.query).get("t", [""])[0], TOKEN):
+            return self._json(403, {"error": "forbidden"})
+        parts = url.path[len("/thumb/"):].split("/", 1)
+        if len(parts) != 2 or not SLUG_RE.match(parts[0]):
+            return self._json(404, {"error": "not found"})
+        base = pdir(parts[0]).resolve()
+        target = (base / parts[1]).resolve()
+        if base not in target.parents or target.suffix.lower() not in (".png", ".jpg", ".mp4") or not target.is_file():
+            return self._json(404, {"error": "not found"})
+        dest = base / ".thumbs" / (hashlib.sha1(target.relative_to(base).as_posix().encode()).hexdigest()[:24] + ".jpg")
+        try:
+            if not dest.exists() or dest.stat().st_mtime < target.stat().st_mtime:
+                make_thumb(target, dest)
+            data = dest.read_bytes()
+        except Exception as e:                      # no PIL / unreadable file: the page falls back to the full file
+            return self._json(404, {"error": f"no thumbnail: {e}"})
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _depth(self, url):
+        """Serve a depth map of a result picture: /depth/<project>/<path under it>?t=<token>. Cached in projects/<project>/.depth/."""
+        if not self._host_ok() or not secrets.compare_digest(parse_qs(url.query).get("t", [""])[0], TOKEN):
+            return self._json(403, {"error": "forbidden"})
+        parts = url.path[len("/depth/"):].split("/", 1)
+        if len(parts) != 2 or not SLUG_RE.match(parts[0]):
+            return self._json(404, {"error": "not found"})
+        base = pdir(parts[0]).resolve()
+        target = (base / parts[1]).resolve()
+        if base not in target.parents or target.suffix.lower() not in (".png", ".jpg") or not target.is_file():
+            return self._json(404, {"error": "not found"})
+        dest = base / ".depth" / (hashlib.sha1(target.relative_to(base).as_posix().encode()).hexdigest()[:24] + ".png")
+        try:
+            if not dest.exists() or dest.stat().st_mtime < target.stat().st_mtime:
+                make_depth(target, dest)
+            data = dest.read_bytes()
+        except Exception as e:                     # no torch / no internet for the first model download / unreadable picture
+            return self._json(500, {"error": f"could not make a depth map: {e}"})
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _file(self, url):
         """Serve a result file: /file/<project>/<path under it>?t=<token>. Only media inside projects/<project>/."""
         if not self._host_ok() or not secrets.compare_digest(parse_qs(url.query).get("t", [""])[0], TOKEN):
@@ -1793,8 +2200,8 @@ class Handler(BaseHTTPRequestHandler):
     def _upload(self, url):
         q = parse_qs(url.query)
         fname = re.sub(r"[^A-Za-z0-9._ -]", "_", Path(q.get("filename", ["book.pdf"])[0]).name).strip()
-        if not fname.lower().endswith(".pdf") or len(fname) < 5:
-            return self._json(400, {"error": "only .pdf files"})
+        if not fname.lower().endswith(BOOK_EXTS) or len(fname) < 5:
+            return self._json(400, {"error": "only .pdf, .txt or .md files"})
         if not SLUG_RE.match(slugify(Path(fname).stem)):
             return self._json(400, {"error": "that file name has no letters or digits to name the book from"})
         size = int(self.headers.get("Content-Length", 0))
@@ -1809,11 +2216,21 @@ class Handler(BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 f.write(chunk); left -= len(chunk)
+        is_pdf = fname.lower().endswith(".pdf")
         with open(tmp, "rb") as f:
-            ok = f.read(5) == b"%PDF-"
+            head = f.read(5)
+        if is_pdf:
+            ok, what = head == b"%PDF-", "a complete PDF file"
+        else:
+            try:                                                     # text: must be readable UTF-8 with real words in it
+                body = tmp.read_bytes().decode("utf-8-sig")
+                ok = "\x00" not in body and len(body.split()) >= 5
+            except (UnicodeDecodeError, OSError):
+                ok = False
+            what = "readable text of at least a few words (UTF-8)"
         if left or not ok:
             tmp.unlink(missing_ok=True)
-            return self._json(400, {"error": "that is not a complete PDF file"})
+            return self._json(400, {"error": f"that is not {what}"})
         tmp.replace(LIBRARY / fname)
         return self._json(200, {"filename": fname, "project": slugify(Path(fname).stem), "bytes": size})
 
@@ -1833,8 +2250,18 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/plan":
                 steps = build_plan(body)
                 return self._json(200, {"steps": [{"label": s["label"], "cmd": shell_form(s)} for s in steps]})
+            if url.path == "/api/chapter_shots":
+                return self._json(200, chapter_shots(body.get("project", ""), body))
             if url.path == "/api/estimate":
                 return self._json(200, {"text": estimate(body)})
+            if url.path == "/api/setup_save":
+                try:
+                    saved = setup_check.save(body)
+                except ValueError as e:
+                    raise PlanError(str(e))
+                return self._json(200, {"saved": saved, **setup_status()})
+            if url.path == "/api/setup_test":
+                return self._json(200, setup_check.test_kaggle(path=ENV_PATH))
             if url.path == "/api/prompt_suggest":
                 return self._json(200, {"suggestions": prompt_suggest(body)})
             if url.path == "/api/prompt_save":
@@ -1871,6 +2298,16 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/fetch":
                 JOB.start([fetch_step(body)], body)
                 return self._json(200, {"started": 1})
+            if url.path == "/api/describe_image":
+                try:
+                    return self._json(200, describe_image(body))
+                except (PlanError, RuntimeError) as e:
+                    return self._json(400, {"error": str(e)})
+            if url.path == "/api/review_result":
+                try:
+                    return self._json(200, review_result(body))
+                except (PlanError, RuntimeError) as e:
+                    return self._json(400, {"error": str(e)})
             if url.path == "/api/expand":
                 return self._json(200, {"prompts": expand_idea(body)})
             if url.path == "/api/enhance_prompt":
@@ -1935,7 +2372,7 @@ class Handler(BaseHTTPRequestHandler):
                         values = character_tokens.get_valid_values(field)
                         return self._json(200, {"field": field, "values": values})
                     elif action == "sync":
-                        # Copy the characters of a project's bible.json into the series chosen on the page. Adds only, unless overwrite is set (dry_run counts without writing).
+                        # Copy the characters of a project's continuity book file into the series chosen on the page. Adds only, unless overwrite is set (dry_run counts without writing).
                         project = str(body.get("project", "")).strip()
                         series = str(body.get("series", "")).strip()
                         if not SLUG_RE.match(project) or not (pdir(project)).is_dir():
@@ -1944,9 +2381,25 @@ class Handler(BaseHTTPRequestHandler):
                             raise PlanError("pick a series first")
                         r = character_tokens.sync_from_bible(project, series, overwrite=bool(body.get("overwrite")), dry_run=bool(body.get("dry_run")))
                         if not r["bible"]:
-                            raise PlanError(f"{project} has no bible.json, so there is nothing to sync. Sync reads the continuity bible that "
-                                            f"\"Write the continuity bible\" creates for a PDF book; imported books such as adam_eve do not have one.")
+                            raise PlanError(f"{project} has no continuity book file ({project}.json), so there is nothing to sync. Sync reads the file that "
+                                            f"\"Write the continuity book\" creates for a PDF or text book; imported books such as adam_eve do not have one.")
                         return self._json(200, {**r, "count": r["added"]})
+                    elif action == "send_to_book":
+                        # Copy the ticked series characters into the book's continuity book file (the reverse of sync). dry_run only counts.
+                        project = str(body.get("project", "")).strip()
+                        series = str(body.get("series", "")).strip()
+                        names = body.get("names")
+                        if not SLUG_RE.match(project) or not (pdir(project)).is_dir():
+                            raise PlanError("unknown project")
+                        if not series or not isinstance(names, list) or not names or len(names) > 300 or not all(isinstance(n, str) and n.strip() for n in names):
+                            raise PlanError("pick a series and tick at least one character")
+                        try:
+                            r = character_tokens.send_to_bible(project, series, [n.strip() for n in names], dry_run=bool(body.get("dry_run")))
+                        except ValueError as e:
+                            raise PlanError(str(e))
+                        if not r["found"]:
+                            raise PlanError(f"{project} has no continuity book file ({project}.json) yet: write it first with \"Write the continuity book\" in Book Processing.")
+                        return self._json(200, r)
                     elif action == "validate":
                         char = body.get("character", {})
                         archetype_str = body.get("archetype", "")
@@ -1974,6 +2427,11 @@ class Handler(BaseHTTPRequestHandler):
                 steps = build_plan(body, commit=True)       # prompt mode writes its rows here, not when previewing
                 JOB.start(steps, body)
                 return self._json(200, {"started": len(steps)})
+            if url.path == "/api/rate":
+                try:
+                    return self._json(200, save_rating(body.get("key", ""), body.get("stars", 0), body.get("keep", False)))
+                except PlanError as e:
+                    return self._json(400, {"error": str(e)})
             if url.path == "/api/stop":
                 JOB.stop()
                 return self._json(200, {"stopping": True})
@@ -2067,6 +2525,7 @@ def main():
     ap.add_argument("--no-open", action="store_true")
     ap.add_argument("--new-session", action="store_true", help="Force new session (don't reuse existing)")
     a = ap.parse_args()
+    setup_check.load_saved_env()                 # keys saved from the Setup window (a variable already in the environment wins)
 
     # If --new-session, remove old session file
     if a.new_session:

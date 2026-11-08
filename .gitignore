@@ -69,3 +69,10 @@ __pycache__/
 .claude/settings.local.json
 .env
 *.env
+
+# The Python environment made by install.sh, and per-person settings
+/.venv/
+*.orig
+
+# Things moved aside by the clean-up (safe to delete)
+/_cleanup_*/

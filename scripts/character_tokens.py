@@ -508,13 +508,13 @@ def get_character_tokens_for_prompt(series: str, characters: List[str]) -> str:
     return "\n\nCHARACTER TOKENS:\n" + "\n".join(tokens) if tokens else ""
 
 
-# bible.json "voice" words (see bookkit.VOICE_MAP) -> Kokoro voice ids, which is what a character token stores
+# <book>.json "voice" words (see bookkit.VOICE_MAP) -> Kokoro voice ids, which is what a character token stores
 BIBLE_VOICES = {"narrator": "bm_george", "male": "am_michael", "female": "af_bella", "elder": "bm_lewis",
                 "deity": "bm_lewis", "child": "af_sky", "villain": "am_adam"}
 
 
 def _character_from_bible_entry(name: str, data: Dict) -> Dict:
-    """One bible.json character -> a character token. Handles both shapes:
+    """One <book>.json character -> a character token. Handles both shapes:
        list form written by book_bible.py : {"name", "token", "voice": "male"}
        older dict form                    : {"visual_token", "physical_traits", "clothing", "voice", "aliases", "notes"}"""
     voice = data.get("voice", "")
@@ -533,7 +533,7 @@ def _character_from_bible_entry(name: str, data: Dict) -> Dict:
 
 
 def extract_characters_from_bible(bible_path: Path) -> List[Dict]:
-    """Extract character definitions from a bible.json file."""
+    """Extract character definitions from a <book>.json file."""
     if not bible_path.exists():
         return []
 
@@ -560,14 +560,14 @@ BIBLE_FIELDS = ("visual_token", "physical_traits", "clothing", "voice", "consist
 
 
 def sync_from_bible(project_slug: str, series: Optional[str] = None, overwrite: bool = False, dry_run: bool = False) -> Dict:
-    """Copy a project's bible.json characters into a series.
+    """Copy a project's <book>.json characters into a series.
     overwrite=False : characters already in the series are left alone (they may have been edited by hand).
     overwrite=True  : an existing character gets the bible's visual token, voice, clothing, traits and notes (each only if the bible
                       has a value), plus any new trigger words. Reference images, LoRA info, created date, other fields and trigger
                       words you added are kept.
     dry_run=True    : count what would happen, write nothing.
-    Returns {"series", "bible" (was there a bible.json), "total", "added", "updated", "skipped", "dry_run"}."""
-    bible_path = PROJECTS / "books" / project_slug / "bible.json"
+    Returns {"series", "bible" (was there a <book>.json), "total", "added", "updated", "skipped", "dry_run"}."""
+    bible_path = PROJECTS / "books" / project_slug / f"{project_slug}.json"
     series = series or project_slug
     report = {"series": series, "bible": bible_path.exists(), "total": 0, "added": 0, "updated": 0, "skipped": 0, "dry_run": dry_run}
     if not report["bible"]:
@@ -595,8 +595,59 @@ def sync_from_bible(project_slug: str, series: Optional[str] = None, overwrite: 
     return report
 
 
+VOICE_WORD_OF = {}           # Kokoro voice id -> the book's voice word; the first word listed for an id wins
+for _w, _v in BIBLE_VOICES.items():
+    VOICE_WORD_OF.setdefault(_v, _w)
+
+
+def send_to_bible(project_slug: str, series: str, names: List[str], dry_run: bool = False) -> Dict:
+    """The other direction of sync_from_bible: copy the chosen series characters INTO the book's continuity book (<book>.json).
+    A character already in the book gets the series' visual token (and its voice, when the series voice maps to one of the book's voice
+    words); a character the book does not have is added. Other fields in the book's file are kept. Chapters that are already written
+    keep the old wording; only chapters written (or rebuilt) afterwards use the new tokens.
+    Returns {"book", "found" (is there a <book>.json), "updated", "added", "unchanged", "missing" (names not in the series), "dry_run"}."""
+    path = PROJECTS / "books" / project_slug / f"{project_slug}.json"
+    report = {"book": project_slug, "found": path.exists(), "updated": 0, "added": 0, "unchanged": 0, "missing": [], "dry_run": dry_run}
+    if not report["found"]:
+        return report
+    bible = json.loads(path.read_text())
+    chars = bible.get("characters")
+    if not isinstance(chars, list):
+        raise ValueError(f"{project_slug}.json keeps its characters in an older layout that cannot be updated from here")
+    by_name = {str(c.get("name", "")).lower(): c for c in chars if isinstance(c, dict)}
+    for name in names:
+        src = load_character(series, name) if get_character_path(series, name).exists() else None
+        if not src or not str(src.get("visual_token", "")).strip():
+            report["missing"].append(name)
+            continue
+        token = str(src["visual_token"]).strip()
+        word = VOICE_WORD_OF.get(str(src.get("voice", "")).strip())
+        cur = by_name.get(name.lower())
+        if cur is None:
+            new = {"name": name, "token": token, "voice": word or "male"}
+            if not dry_run:
+                chars.append(new)
+            report["added"] += 1
+            continue
+        changed = False
+        if str(cur.get("token", "")).strip() != token:
+            changed = True
+            if not dry_run:
+                cur["token"] = token
+        if word and cur.get("voice") != word and BIBLE_VOICES.get(cur.get("voice")) != src.get("voice"):
+            changed = True
+            if not dry_run:
+                cur["voice"] = word
+        report["updated" if changed else "unchanged"] += 1
+    if not dry_run and (report["updated"] or report["added"]):
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(bible, indent=1, ensure_ascii=False))
+        tmp.replace(path)
+    return report
+
+
 def sync_characters_from_project(project_slug: str) -> int:
-    """Add the characters from a project's bible.json to its series (mapped below, else the project slug).
+    """Add the characters from a project's <book>.json to its series (mapped below, else the project slug).
     Never overwrites an existing character. Returns the number of characters added.
     (studio.py calls this each time it lists projects, so it must be safe to repeat.)"""
     series_map = {

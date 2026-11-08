@@ -7,7 +7,8 @@ Output: image-NNNN.png (NNNN = CSV row number).
 """
 import json
 from pathlib import Path
-root = Path(__file__).resolve().parent.parent
+import os as _os
+root = Path(_os.environ["BIBLE_GEN_DIR"]) if _os.environ.get("BIBLE_GEN_DIR") else Path(__file__).resolve().parent.parent   # BIBLE_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
 
 HEADER = '''import csv, os, tarfile, time
 from pathlib import Path

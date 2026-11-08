@@ -1374,14 +1374,102 @@
   /* Sentences: one per line (see the splitter script at the end of the page) */
   .card__subtitle br + *, small br + * { margin-top: 0; }
 </style>
+<!-- favicon:start (written by scripts/make_icon.py --favicon) -->
+<link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,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">
+<link rel="icon" type="image/png" sizes="64x64" href="data:image/png;base64,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">
+<link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,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">
+<!-- favicon:end -->
+<style id="pizazz">
+  /* ---- Pizazz: theme from the app icon (indigo, violet, lime, coral), motion, hero video, library and compare tabs ---- */
+  :root { --pz-ink: #160e40; --pz-violet: #46187a; --pz-lime: #b9f53c; --pz-coral: #ff546e;
+          --accent: #6d28d9; --accent-hover: #5b21b6; --accent-light: #f3e8ff; --accent-fg: #ffffff;
+          --color-focus: #6d28d9; --color-focus-ring: rgba(109, 40, 217, .3); }
+  :root.dark, html.dark { --accent: var(--pz-lime); --accent-hover: #d3ff7a; --accent-light: rgba(185, 245, 60, .12); --accent-fg: #14122e;
+          --color-focus: var(--pz-lime); --color-focus-ring: rgba(185, 245, 60, .35); }
+
+  header.studio-header { position: sticky; min-height: 76px; overflow: hidden; color: #fff;
+    background: linear-gradient(105deg, var(--pz-ink), var(--pz-violet)); border-bottom: 1px solid rgba(255, 255, 255, .14); }
+  header.studio-header > *:not(.hero-video) { position: relative; z-index: 1; }
+  header.studio-header::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background: linear-gradient(90deg, rgba(22, 14, 64, .88) 0%, rgba(22, 14, 64, .35) 55%, rgba(22, 14, 64, .75) 100%); }
+  .hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.4s ease; z-index: 0; pointer-events: none; }
+  .hero-video.on { opacity: .55; }
+  header.studio-header .header-brand h1 { color: #fff; letter-spacing: .01em; }
+  header.studio-header .subtitle { color: rgba(255, 255, 255, .78); }
+  header.studio-header .status-badge, header.studio-header .theme-toggle, #fxToggle { color: #fff; }
+  header.studio-header .theme-toggle:hover, #fxToggle:hover { background: rgba(255, 255, 255, .16); color: #fff; }
+  #fxToggle { background: transparent; border: none; padding: .5rem; border-radius: 6px; cursor: pointer; font-size: 1rem; }
+  #fxToggle[aria-pressed="false"] { opacity: .5; }
+  .logo { width: 40px; height: 40px; border-radius: 9px; box-shadow: 0 2px 12px rgba(0, 0, 0, .45); }
+
+  .tab-art { position: relative; height: 112px; border-radius: 14px; margin: 0 0 var(--space-4); overflow: hidden;
+    background: linear-gradient(120deg, var(--pz-ink), var(--pz-violet) 60%, var(--pz-coral)); background-size: cover; background-position: center; }
+  .tab-art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(22, 14, 64, .85), rgba(22, 14, 64, .1)); }
+  .tab-art span { position: absolute; left: 20px; bottom: 14px; z-index: 1; color: #fff; font-size: 1.4rem; font-weight: 700; text-shadow: 0 2px 10px rgba(0, 0, 0, .55); }
+
+  .tab-panel.active { animation: pzFade .28s ease both; }
+  @keyframes pzFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .card { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .card:hover { transform: translateY(-2px); box-shadow: var(--elev-3); }
+  button:enabled { transition: transform .12s ease, filter .12s ease, box-shadow .12s ease; }
+  button:enabled:hover:not(.tab-btn):not(.theme-toggle) { transform: translateY(-1px); filter: brightness(1.07); }
+  button:enabled:active { transform: scale(.97); }
+  #pGenerate:enabled, #regStart:enabled { animation: pzPulse 2.6s infinite; }
+  @keyframes pzPulse { 0% { box-shadow: 0 0 0 0 rgba(255, 84, 110, .5); } 70% { box-shadow: 0 0 0 12px rgba(255, 84, 110, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 84, 110, 0); } }
+  .status-badge .dot { animation: pzDot 2.2s ease-in-out infinite; }
+  @keyframes pzDot { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.6); } }
+  #pzConfetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9998; }
+  body.fx-off *, body.fx-off *::before, body.fx-off *::after { animation: none !important; transition: none !important; }
+  body.fx-off .hero-video, body.fx-off #pzConfetti { display: none; }
+  @media (prefers-reduced-motion: reduce) { * , *::before, *::after { animation: none !important; transition: none !important; } .hero-video, #pzConfetti { display: none; } }
+
+  .pz-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
+  .pz-chips__title { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-muted); margin-right: 2px; }
+  .pz-chips__row { display: contents; }
+  .opt.is-off { opacity: .55; cursor: not-allowed; }
+  .opt.is-off input { cursor: not-allowed; }
+  #localLlmDialog { max-width: min(640px, 92vw); border: 1px solid var(--border-strong); border-radius: 14px; background: var(--bg-elevated); color: var(--fg); padding: 22px 26px; }
+  #localLlmDialog::backdrop { background: rgba(8, 6, 24, .6); }
+  #localLlmDialog h2 { margin-top: 0; }
+  #localLlmDialog li { margin: 6px 0; }
+  #localLlmDialog .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .pz-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: var(--space-4); }
+  .pz-chip { border: 1px solid var(--border-strong); background: var(--bg-elevated); color: var(--fg); border-radius: 999px; padding: 4px 12px; cursor: pointer; font-size: var(--text-sm); }
+  .pz-chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .pz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+  .pz-tile { background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; transition: transform .18s ease, box-shadow .18s ease; }
+  .pz-tile:hover { transform: translateY(-3px); box-shadow: var(--elev-3); }
+  .pz-tile.kept { outline: 2px solid var(--accent); }
+  .pz-media { position: relative; aspect-ratio: 16 / 10; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 2.2rem; cursor: zoom-in; overflow: hidden;
+    background: linear-gradient(135deg, var(--pz-ink), var(--pz-violet) 60%, var(--pz-coral)); }
+  .pz-media img, .pz-media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pz-badge { position: absolute; top: 8px; left: 8px; background: rgba(0, 0, 0, .62); color: #fff; border-radius: 999px; font-size: .72rem; padding: 2px 9px; }
+  .pz-badge.right { left: auto; right: 8px; }
+  .pz-play { position: absolute; right: 10px; bottom: 8px; color: #fff; background: rgba(0,0,0,.55); border-radius: 999px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: .8rem; pointer-events: none; }
+  .pz-media video { position: absolute; inset: 0; }
+  .pz-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .pz-title { font-weight: 600; }
+  .pz-cat { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--fg-muted); }
+  .pz-prompt { font-size: var(--text-sm); color: var(--fg-muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .pz-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: auto; }
+  .pz-stars button { background: none; border: none; padding: 0 1px; font-size: 1.3rem; cursor: pointer; color: var(--fg-muted); line-height: 1; }
+  .pz-stars button.on { color: #f5b301; }
+  .pz-keep.on { background: var(--accent); color: var(--accent-fg); }
+  #pzLightbox { position: fixed; inset: 0; background: rgba(8, 6, 24, .9); z-index: 9999; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 12px; padding: 24px; }
+  #pzLightbox.open { display: flex; }
+  #pzLightbox img, #pzLightbox video { max-width: 92vw; max-height: 76vh; border-radius: 12px; }
+  .pz-lb-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  #pzCount { color: #fff; font-size: var(--text-sm); min-width: 4em; text-align: center; }
+  #pzLightbox canvas { max-width: 92vw; max-height: 76vh; }
+  #pzLightbox #pzAiOut { min-height: 1.2em; }
+  #pzLightbox p { color: #fff; max-width: 900px; text-align: center; margin: 0; font-size: var(--text-sm); }
+</style>
 </head>
 <body>
 <header class="studio-header">
+    <video class="hero-video" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
     <div class="header-brand">
-      <svg class="logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="40" height="40" rx="8" fill="currentColor"/>
-        <path d="M12 14h16M12 20h16M12 26h10" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-      </svg>
+      <img class="logo" id="brandLogo" alt="" width="40" height="40">
       <div>
         <h1>Pistachio's Studio</h1>
         <p class="subtitle">AI Book to Film Production</p>
@@ -1389,6 +1477,8 @@
     </div>
     <div style="display:flex;align-items:center;gap:1rem">
       <span class="status-badge" id="statusBadge"><span class="dot"></span><span>Connecting…</span></span>
+      <button type="button" id="setupBtn" aria-label="Setup" title="Setup: Kaggle login, keys and what this computer needs">⚙</button>
+      <button type="button" id="fxToggle" aria-pressed="true" aria-label="Visual effects" title="Turn the animated effects on or off">✨</button>
       <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle light/dark mode">☀</button>
     </div>
   </header>
@@ -1420,6 +1510,14 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
             Movies
         </button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-library" data-tab="library">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Library
+        </button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-compare" data-tab="compare">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Compare
+        </button>
         <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-results" data-tab="results">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Results
@@ -1446,25 +1544,82 @@
         
         <div class="card">
             <div class="card__header">
-                <h2 class="card__title">PDF Import</h2>
+                <h2 class="card__title">Import</h2>
+                <p class="card__subtitle">Choose a book (PDF), a text file, or paste text. The AI reads it and writes its prompts. Nothing is sent to Kaggle or Colab.</p>
             </div>
             <div class="card__body">
                 <section id="whatoimplement" class="bookonly">
-    <h2>What to Implement <span class="warn" id="libcount"></span></h2>
-    <p class="warn" style="margin-bottom:12px">Pick the book (PDF) the Characters, Creative and Movies tabs work on. Stand-alone text-to-image and text-to-video prompts have their own tab: Single Prompts.</p>
+    <h3 style="margin:0 0 6px;font-size:var(--text-sm)">Source <span class="warn" id="libcount"></span></h3>
+    <p class="warn" style="margin-bottom:12px">Pick the book the Characters, Creative and Movies tabs work on. Stand-alone text-to-image and text-to-video prompts have their own tab: Single Prompts.</p>
     <input type="radio" name="mode" value="book" checked hidden aria-hidden="true">
     <div class="stack">
       <div><label class="f" for="proj">Book</label><select id="proj"></select></div>
       <div id="chips"></div>
       <div class="upload-block">
-        <label class="f">Add a PDF: drag it onto the box below (or click the box). It is uploaded to the <code>books</code> folder when you press Import. You can also drop PDFs into that folder yourself and reload this page.</label>
-        <input type="file" id="file" accept="application/pdf,.pdf">
+        <label class="f">Add a PDF or a text file (.txt, .md): drag it onto the box below (or click the box). It is uploaded to the <code>books</code> folder when you press Import. You can also drop files into that folder yourself and reload this page.</label>
+        <input type="file" id="file" accept="application/pdf,.pdf,text/plain,.txt,.md,text/markdown">
+      </div>
+      <div class="text-block">
+        <label class="f" for="impTitle">Or paste text (a story, a scene, a few paragraphs: only the part you paste is used)</label>
+        <input type="text" id="impTitle" maxlength="60" placeholder="Name for this text (for example: garden-scene)" spellcheck="false" autocomplete="off" style="margin-bottom:6px">
+        <textarea id="impText" rows="6" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="Paste or type the text you want prompts written from. Select just the passage you want in another document and paste that." autocomplete="off"></textarea>
+        <small class="warn" id="impTextCount" aria-live="polite"></small>
       </div>
     </div>
   </section>
             </div>
         </div>
-        
+
+        <div class="card">
+            <div class="card__header">
+                <h2 class="card__title">Book Processing</h2>
+                <p class="card__subtitle">Set how the book is read and split, then press Import</p>
+            </div>
+            <div class="card__body">
+                <section id="bookpanel" class="bookonly">
+    <div class="row">
+      <div>
+        <label class="opt"><input type="checkbox" id="b_ingest"><span>Read the PDF and split it into chapters</span></label>
+        <div style="margin:0 0 6px 26px"><select id="pdf"></select></div>
+        <label class="opt"><input type="checkbox" id="b_bible"><span>Write the continuity book<small>Characters, look, voices. One AI call. Edit <code id="bookFile">the book's own .json file</code> afterwards if you like.</small></span></label>
+        <label class="opt"><input type="checkbox" id="b_write"><span>Write shots, narration, sound and music<small>One AI call per chapter; finished chapters are skipped.</small></span></label>
+        <label class="opt" style="margin-left:26px"><input type="checkbox" id="b_force"><span>Redo chapters that are already written<small>Use to change narration style, shot counts or the continuity book. Old clips no longer match; see README_NEW_BOOK.md "Redo".</small></span></label>
+        <label class="opt"><input type="checkbox" id="b_build"><span>Build the CSV files and plan the movies</span></label>
+      </div>
+      <div>
+        <label class="f">Narration</label>
+        <select id="narration"><option value="condensed">Condensed: short lines written to fit each clip</option><option value="dialogue">Dialogue: only the words in double quotes are spoken</option><option value="verbatim">Verbatim: the book's own words, split across shots</option></select>
+        <label class="f" style="margin-top:6px">Only chapters (optional, e.g. 1-5)</label><input type="text" id="chs" placeholder="all" autocomplete="off">
+      </div>
+      <div>
+        <label class="f">Words of the book per shot (blank = auto)</label><input type="number" id="wps" min="5" placeholder="60 / 25" autocomplete="off">
+        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Min shots</label><input type="number" id="minshots" value="1" min="1" autocomplete="off"></div>
+        <div style="min-width:70px"><label class="f">Max shots</label><input type="number" id="maxshots" value="12" min="1" autocomplete="off"></div></div>
+        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Movie minutes</label><input type="number" id="mmin" value="10" min="1" autocomplete="off"></div>
+        <div style="min-width:70px"><label class="f">AI at once</label><input type="number" id="workers" value="2" min="1" max="6" autocomplete="off"></div></div>
+      </div>
+    </div>
+    <div class="row" style="align-items:center;margin-top:8px"><button id="bEstimate">Estimate size and cost</button><span class="warn">Needs the PDF read first. No AI calls; shows shots, film length, movies and GPU hours.</span></div>
+    <pre id="estimate" class="hidden"></pre>
+    <details id="chShots" style="margin-top:8px">
+      <summary>Shots for each chapter (optional)</summary>
+      <div class="warn" style="margin:6px 0">The "Auto" column is what the settings above would give. Type a shot count to fix a chapter at that many shots (it ignores words per shot, min and max); leave it blank for Auto.</div>
+      <div id="chShotsBody" style="max-height:320px;overflow:auto"></div>
+      <div class="row" style="align-items:center;margin-top:6px"><button id="bChShotsSave">Save shot counts</button><button id="bChShotsClear">Clear all</button><span class="warn" id="chShotsMsg"></span></div>
+    </details>
+  </section>
+                <div class="stack" style="margin-top:12px">
+                    <div class="row">
+                        <button id="bImport" class="primary" type="button">Import</button>
+                        <button id="bImportStop" type="button" disabled>Stop</button>
+                    </div>
+                    <small class="warn">If you chose a file above, or pasted text, it is saved to the books folder first. Then it is split into chapters, the AI chosen in AI Prompt Writer writes the continuity book and the shots, narration, sound and music for every chapter, and the CSV files are built. This can take a while and uses that AI. Video and audio are made later, on the Movies tab. The log shows each step.</small>
+                    <div id="importStatus" class="warn" aria-live="polite"></div>
+                    <pre id="importLog" class="fill" data-empty="1" aria-live="polite" style="max-height:340px;overflow:auto">nothing running</pre>
+                </div>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card__header">
                 <h2 class="card__title">AI Prompt Writer</h2>
@@ -1474,30 +1629,14 @@
     <h2>Choose the AI to Write Prompts</h2>
     <div class="stack">
       <div><label class="f" for="engine">Who writes the prompts</label>
-        <select id="engine"><option value="claude">claude (Claude Code)</option><option value="fcc-claude">fcc-claude (Claude Code via Free Claude Code proxy)</option><option value="codex">codex (Codex CLI, your ChatGPT login)</option><option value="fcc-codex">fcc-codex (Codex via Free Claude Code proxy)</option></select></div>
+        <select id="engine"><option value="claude">claude (Claude Code)</option><option value="fcc-claude">fcc-claude (Claude Code via Free Claude Code proxy)</option><option value="codex">codex (Codex CLI, your ChatGPT login)</option><option value="fcc-codex">fcc-codex (Codex via Free Claude Code proxy)</option><option value="hf">hf (open models on Hugging Face: Qwen3.8, GLM, DeepSeek...; needs HF_TOKEN)</option><option value="local">local (a language model on this computer)</option></select></div>
       <div><label class="f" for="cmodel">Model (any name that tool accepts; blank = its default)</label>
         <input type="text" id="cmodel" list="models" value="sonnet" spellcheck="false" autocomplete="off"><datalist id="models"></datalist></div>
+      <label class="opt"><input type="checkbox" id="localLlm" aria-disabled="true" aria-describedby="localLlmNote"><span>Run the writer on this computer<small id="localLlmNote" class="warn"></small></span></label>
+      <small id="engineNote" class="warn" role="status" aria-live="polite"></small>
       <small class="warn">Used by "Make the prompts" for a book and by "Expand my idea" for single prompts.</small>
     </div>
   </section>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card__header">
-                <h2 class="card__title">Import</h2>
-                <p class="card__subtitle">The AI reads the book chosen above and writes its prompts. Nothing is sent to Kaggle or Colab.</p>
-            </div>
-            <div class="card__body">
-                <div class="stack">
-                    <div class="row">
-                        <button id="bImport" class="primary" type="button">Import</button>
-                        <button id="bImportStop" type="button" disabled>Stop</button>
-                    </div>
-                    <small class="warn">If you chose a PDF above that is not uploaded yet, it is uploaded first. Then the PDF is split into chapters, the AI chosen in AI Prompt Writer writes the continuity bible and the shots, narration, sound and music for every chapter, and the CSV files are built. This can take a while and uses that AI. Video and audio are made later, on the Movies tab. The log shows each step.</small>
-                    <div id="importStatus" class="warn" aria-live="polite"></div>
-                    <pre id="importLog" class="fill" data-empty="1" aria-live="polite" style="max-height:340px;overflow:auto">nothing running</pre>
-                </div>
             </div>
         </div>
 
@@ -1619,6 +1758,11 @@
     </div>
     <label class="f" for="ptext" style="margin-top:10px">Prompts, one per line (blank lines are ignored)</label>
     <textarea id="ptext" rows="6" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit" placeholder="A fox runs through fresh snow at dawn, low tracking shot, soft golden light" autocomplete="off"></textarea>
+    <div id="pzChips" class="pz-chips" role="group" aria-label="Quick additions to every prompt line">
+      <span class="pz-chips__title">Camera</span><span id="chipCamera" class="pz-chips__row"></span>
+      <span class="pz-chips__title">Look</span><span id="chipLook" class="pz-chips__row"></span>
+      <small class="warn">Click to add to every line above, click again to take it out.</small>
+    </div>
     <div style="margin-top:10px"><label class="f" for="pneg">Negative prompt (things to avoid; blank = the model's default)</label>
       <textarea id="pneg" rows="2" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit" placeholder="blurry, low quality, distorted, text, watermark" autocomplete="off"></textarea></div>
     <div style="margin-top:10px"><label class="f" for="pidea">Or give a short idea and let the AI write detailed prompts</label>
@@ -1691,26 +1835,14 @@
         <label class="f">Character List</label>
         <div class="data-table" style="font-size:var(--text-sm);overflow:auto;max-height:300px">   <!-- scrolls, so a long list does not push the controls below it off the screen -->
           <table class="data-table" id="charDataTable" style="width:100%">
-            <thead><tr><th>Name</th><th>Archetype</th><th>Refs</th><th>LoRA</th><th>Actions</th></tr></thead>
+            <thead><tr><th title="Tick the characters to send to the book"><input type="checkbox" id="charPickAll" aria-label="Tick all characters"></th><th>Name</th><th>Archetype</th><th>Refs</th><th>LoRA</th><th>Actions</th></tr></thead>
             <tbody id="charTableBody">
-              <tr><td colspan="5" style="text-align:center;color:var(--fg-muted);padding:24px">No characters in this series</td></tr>
+              <tr><td colspan="6" style="text-align:center;color:var(--fg-muted);padding:24px">No characters in this series</td></tr>
             </tbody>
           </table>
         </div>
       </div>
       <div><button id="bCharNew" type="button">New Character</button></div>
-      <div><button id="bCharGenerate" class="primary" type="button">Generate</button></div>
-      <div>
-        <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charGenImages" checked><span>Character Images</span></label>
-        <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charGenVoice"><span>Voice</span></label>
-        <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charGenLora"><span>LoRA</span></label>
-        <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="charGenMovie"><span>Character Movie</span></label>
-      </div>
-      <div class="fill">
-        <label class="f" for="charGenView">View to Generate</label>
-        <input type="text" id="charGenView" placeholder="e.g. extreme close-up portrait, face filling frame, detailed eyes" style="width:100%;max-width:none;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" autocomplete="off">
-        <small class="warn">Describe the view/angle you want (e.g. "extreme close-up portrait", "full body front view"). This text will be added to the prompt.</small>
-      </div>
       <div>
         <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charOverwriteToken"><span>Overwrite visual token</span></label>
         <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="charOverwriteRefs"><span>Overwrite reference images</span></label>
@@ -1757,12 +1889,27 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
         <label class="f" style="margin-top:12px">Prompt Preview (what will be sent to the model)</label>
         <div id="charPromptPreview" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;min-height:100px;max-height:300px;overflow:auto;font-size:12px;line-height:1.5;color:var(--fg);font-family:var(--font-mono);white-space:pre-wrap;word-break:break-word"></div>
 
+        <div style="margin-top:12px">
+          <div>
+            <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charGenImages" checked><span>Character Images</span></label>
+            <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charGenVoice"><span>Voice</span></label>
+            <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-right:16px"><input type="checkbox" id="charGenLora"><span>LoRA</span></label>
+            <label class="opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="charGenMovie"><span>Character Movie</span></label>
+          </div>
+          <div class="fill">
+            <label class="f" for="charGenView">View to Generate</label>
+            <input type="text" id="charGenView" placeholder="e.g. extreme close-up portrait, face filling frame, detailed eyes" style="width:100%;max-width:none;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" autocomplete="off">
+            <small class="warn">Describe the view/angle you want (e.g. "extreme close-up portrait", "full body front view"). This text will be added to the prompt.</small>
+          </div>
+        </div>
         <div class="row" style="gap:8px;margin-top:10px;align-items:center">
           <button id="bCharSave" class="btn btn-primary" disabled>Save Character</button>
           <button id="bCharDelete" class="btn btn-danger" disabled>Delete Character</button>
           <button id="bCharGenPrompt" class="btn btn-secondary" disabled>Generate Prompt</button>
+          <button id="bCharGenerate" class="primary" type="button">Generate Character</button>
           <label class="opt" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px" title="Off: characters already in the series are left alone. On: their token, voice, clothing, traits and notes are replaced by the bible's (reference images, LoRA info and extra trigger words are kept). You are asked to confirm first."><input type="checkbox" id="charSyncOverwrite"><span>Overwrite existing</span></label>
-          <button id="bCharSync" class="btn btn-secondary" disabled>Sync from Project Bible</button>
+          <button id="bCharSync" class="btn btn-secondary" disabled title="Copy the book's characters into this series">Get characters from the book</button>
+          <button id="bCharSend" class="btn btn-secondary" disabled title="Copy the ticked characters (their visual token and voice) into the book's own continuity book">Send ticked to the book</button>
           <span id="charStatus" class="warn"></span>
         </div>
       </div>
@@ -1944,40 +2091,6 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
             </div>
         </div>
 
-        <div class="card">
-            <div class="card__header">
-                <h2 class="card__title">Book Processing</h2>
-                <p class="card__subtitle">Ingest PDF, write bible, write scripts, build CSVs</p>
-            </div>
-            <div class="card__body">
-                <section id="bookpanel" class="bookonly">
-    <div class="row">
-      <div>
-        <label class="opt"><input type="checkbox" id="b_ingest"><span>Read the PDF and split it into chapters</span></label>
-        <div style="margin:0 0 6px 26px"><select id="pdf"></select></div>
-        <label class="opt"><input type="checkbox" id="b_bible"><span>Write the continuity bible<small>Characters, look, voices. One Claude call. Edit <code>bible.json</code> afterwards if you like.</small></span></label>
-        <label class="opt"><input type="checkbox" id="b_write"><span>Write shots, narration, sound and music<small>One Claude call per chapter; finished chapters are skipped.</small></span></label>
-        <label class="opt" style="margin-left:26px"><input type="checkbox" id="b_force"><span>Redo chapters that are already written<small>Use to change narration style, shot counts or the bible. Old clips no longer match; see README_NEW_BOOK.md "Redo".</small></span></label>
-        <label class="opt"><input type="checkbox" id="b_build"><span>Build the CSV files and plan the movies</span></label>
-      </div>
-      <div>
-        <label class="f">Narration</label>
-        <select id="narration"><option value="condensed">Condensed: short lines written to fit each clip</option><option value="verbatim">Verbatim: the book's own words, split across shots</option></select>
-        <label class="f" style="margin-top:6px">Only chapters (optional, e.g. 1-5)</label><input type="text" id="chs" placeholder="all" autocomplete="off">
-      </div>
-      <div>
-        <label class="f">Words of the book per shot (blank = auto)</label><input type="number" id="wps" min="5" placeholder="60 / 25" autocomplete="off">
-        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Min shots</label><input type="number" id="minshots" value="1" min="1" autocomplete="off"></div>
-        <div style="min-width:70px"><label class="f">Max shots</label><input type="number" id="maxshots" value="12" min="1" autocomplete="off"></div></div>
-        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Movie minutes</label><input type="number" id="mmin" value="10" min="1" autocomplete="off"></div>
-        <div style="min-width:70px"><label class="f">Claude at once</label><input type="number" id="workers" value="2" min="1" max="6" autocomplete="off"></div></div>
-      </div>
-    </div>
-    <div class="row" style="align-items:center;margin-top:8px"><button id="bEstimate">Estimate size and cost</button><span class="warn">Needs the PDF read first. No Claude calls; shows shots, film length, movies and GPU hours.</span></div>
-    <pre id="estimate" class="hidden"></pre>
-  </section>
-            </div>
-        </div>
         
         <div class="card" id="legacypanel-wrapper">
             <div class="card__header">
@@ -2069,6 +2182,48 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
     </div>
 
     <!-- RESULTS TAB -->
+    <div class="tab-panel" id="panel-library" role="tabpanel" aria-labelledby="tab-library">
+        <div class="card">
+            <div class="card__header"><h2 class="card__title">Prompt library</h2></div>
+            <div class="card__body">
+                <p class="warn" style="margin-top:0">Ready-made prompts. Click <b>Use this</b> to put one into the Single Prompts tab. A picture or clip shows on a template when one of your own runs used exactly that prompt.</p>
+                <div class="pz-bar">
+                    <label for="libSearch" class="f" style="margin:0">Search</label>
+                    <input type="search" id="libSearch" placeholder="street, dragon, portrait..." autocomplete="off" style="min-width:220px">
+                    <span id="libKinds"></span>
+                </div>
+                <div class="pz-bar" id="libChips" role="group" aria-label="Categories"></div>
+                <div class="pz-grid" id="libGrid"></div>
+                <p id="libEmpty" class="warn" hidden>No templates match.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-panel" id="panel-compare" role="tabpanel" aria-labelledby="tab-compare">
+        <div class="card">
+            <div class="card__header"><h2 class="card__title">Compare models</h2></div>
+            <div class="card__body">
+                <p class="warn" style="margin-top:0">Every model's result for the same prompt, side by side. Rate them with stars and tick <b>Keep</b> on the ones worth keeping. Run the Regression test on the Models tab to add a new prompt.</p>
+                <div class="pz-bar">
+                    <label for="cmpPrompt" class="f" style="margin:0">Prompt</label>
+                    <select id="cmpPrompt" style="max-width:min(560px,90vw)"></select>
+                    <label for="cmpSort" class="f" style="margin:0">Sort</label>
+                    <select id="cmpSort"><option value="stars">Stars</option><option value="model">Model name</option><option value="minutes">Fastest</option></select>
+                    <span id="cmpKinds"></span>
+                    <label class="opt" style="margin:0"><input type="checkbox" id="cmpKeepOnly"><span>Only kept</span></label>
+                </div>
+                <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+                    <label for="cmpPromptText" class="f" style="margin:0">Full prompt</label>
+                    <button type="button" id="cmpCopy">Copy prompt</button>
+                </div>
+                <textarea id="cmpPromptText" readonly rows="4" style="width:100%;margin:var(--space-2) 0 var(--space-3)"></textarea>
+                <p id="cmpSummary" class="warn" role="status" aria-live="polite"></p>
+                <div class="pz-grid" id="cmpGrid"></div>
+                <p id="cmpEmpty" class="warn" hidden>No regression results yet. Tick the Regression test on the Models tab and press Start.</p>
+            </div>
+        </div>
+    </div>
+
     <div class="tab-panel" id="panel-results" role="tabpanel" aria-labelledby="tab-results">
         <div class="card">
             <div class="card__header">
@@ -2314,7 +2469,13 @@ function applyDefaults(p) {
   renderMovies();
 }
 
+function showBookFile() {
+  const e = $("bookFile"); if (!e) return;
+  const slug = $("proj").value;
+  e.textContent = slug ? `projects/books/${slug}/${slug}.json` : "the book's own .json file";
+}
 function renderProject(applyDef) {
+  showBookFile();
   const p = cur();
   $("bookpanel").classList.toggle("hidden", !!(p && p.legacy));
   $("legacypanel").classList.toggle("hidden", !(p && p.legacy));
@@ -2351,6 +2512,7 @@ async function loadStatus(applyDef) {
   if (prev && [...$("proj").options].some(o => o.value === prev)) $("proj").value = prev;
   if (!$("models").children.length) {
     fillModels();
+    initLocalLlm(); engineNote();
     $("vmodels").innerHTML = modelGroupsHtml("vmodel", ST.video_groups, ST.video_models);
     $("imodels").innerHTML = modelGroupsHtml("imodel", ST.image_groups, ST.image_models || []);
     renderAudioModels();
@@ -2402,6 +2564,49 @@ async function estimate() {
   const pre = $("estimate"); pre.classList.remove("hidden"); pre.textContent = "working…";
   try { pre.textContent = (await api("/api/estimate", options())).text; } catch (e) { pre.textContent = e.message; }
 }
+
+// ---------- per-chapter shot counts (saved in the book's overrides.json) ----------
+let CHS = [];
+function autoShots(words) {
+  const w = parseInt($("wps").value, 10) || ($("narration").value === "verbatim" ? 25 : 60);
+  const lo = Math.max(1, parseInt($("minshots").value, 10) || 1), hi = Math.max(lo, parseInt($("maxshots").value, 10) || 12);
+  return Math.max(lo, Math.min(hi, Math.ceil(words / Math.max(w, 1))));
+}
+function renderChShots() {
+  const box = $("chShotsBody");
+  if (!CHS.length) { box.textContent = "No chapters yet: read the book first."; return; }
+  const t = document.createElement("table"); t.style.width = "100%";
+  t.innerHTML = "<thead><tr><th style='text-align:left'>Ch</th><th style='text-align:left'>Title</th><th style='text-align:left'>Words</th><th style='text-align:left'>Auto</th><th style='text-align:left'>Shots</th></tr></thead>";
+  const tb = document.createElement("tbody");
+  for (const c of CHS) {
+    const tr = document.createElement("tr"), td = (txt, left) => { const e = document.createElement("td"); e.textContent = txt; if (left) e.style.textAlign = "left"; tr.appendChild(e); return e; };
+    td(c.n, true); td(c.title, true); td(c.words, true); const a = td(autoShots(c.words), true); a.className = "chAuto"; a.dataset.words = c.words;
+    const cell = document.createElement("td"), inp = document.createElement("input");
+    inp.type = "number"; inp.min = 1; inp.max = 500; inp.style.width = "70px"; inp.autocomplete = "off"; inp.dataset.n = c.n; inp.className = "chShotIn";
+    inp.value = c.shots || ""; inp.placeholder = "auto"; cell.appendChild(inp); tr.appendChild(cell); tb.appendChild(tr);
+  }
+  t.querySelectorAll("th").forEach(h => { h.style.position = "sticky"; h.style.top = "0"; h.style.background = "var(--surface, var(--bg))"; h.style.zIndex = "1"; });   // header stays put while the chapters scroll
+  t.appendChild(tb); box.replaceChildren(t);
+}
+function refreshAutoShots() { document.querySelectorAll("#chShotsBody .chAuto").forEach(e => { e.textContent = autoShots(+e.dataset.words); }); }
+async function loadChShots() {
+  const p = $("proj").value; $("chShotsMsg").textContent = "";
+  if (!p || (cur() && (cur().legacy || !cur().chapters))) { CHS = []; renderChShots(); return; }
+  try { CHS = (await api("/api/chapter_shots?project=" + encodeURIComponent(p))).chapters; } catch (e) { CHS = []; $("chShotsMsg").textContent = e.message; }
+  renderChShots();
+}
+async function saveChShots(clear) {
+  const shots = {};
+  for (const c of CHS) shots[c.n] = "";
+  if (!clear) document.querySelectorAll("#chShotsBody .chShotIn").forEach(i => { shots[i.dataset.n] = i.value.trim(); });
+  try { CHS = (await api("/api/chapter_shots", { project: $("proj").value, shots })).chapters; renderChShots(); $("chShotsMsg").textContent = clear ? "Cleared; all chapters are automatic." : "Saved."; }
+  catch (e) { $("chShotsMsg").textContent = e.message; }
+}
+$("chShots").addEventListener("toggle", () => { if ($("chShots").open) loadChShots(); });
+$("proj").addEventListener("change", () => { if ($("chShots").open) loadChShots(); else $("chShotsBody").textContent = ""; });
+for (const id of ["wps", "minshots", "maxshots", "narration"]) $(id).addEventListener("input", refreshAutoShots);
+$("bChShotsSave").onclick = () => saveChShots(false);
+$("bChShotsClear").onclick = () => saveChShots(true);
 
 
 // ---------- single prompts (text to video / text to image) ----------
@@ -2608,6 +2813,8 @@ $("regStart").addEventListener("click", regStart);
 $("regStop").addEventListener("click", regStop);
 
 // ---------- Import tab: upload (if needed), then read the book ----------
+function updTextCount() { const n = $("impText").value.trim().split(/\s+/).filter(Boolean).length; $("impTextCount").textContent = n ? `${n.toLocaleString()} words pasted` : ""; }
+$("impText").addEventListener("input", updTextCount);
 const impLog = (msg, isErr) => appendLog($("importLog"), msg, isErr);
 function impStatus(text, cls = "warn") { $("importStatus").textContent = text; $("importStatus").className = cls; }
 
@@ -2618,28 +2825,34 @@ async function runImport() {
   const fail = msg => { impLog(`✗ ${msg}`, true); impStatus(msg, "err"); btn.disabled = false; };
   try {
     // 1. upload the PDF chosen above, if there is one
-    const f = $("file").files[0];
+    let f = $("file").files[0];
+    const pasted = $("impText").value.trim();
+    if (!f && pasted) {                                           // pasted text becomes a small text book
+      if (pasted.split(/\s+/).length < 5) return fail("Paste at least a few words of text.");
+      const nm = ($("impTitle").value.trim() || pasted.split(/\s+/).slice(0, 4).join(" ")).replace(/[^A-Za-z0-9._ -]/g, " ").replace(/\s+/g, " ").trim().slice(0, 50) || "pasted text";
+      f = new File([pasted], nm + ".txt", { type: "text/plain" });
+    } else if (f && pasted) { impLog("Both a file and pasted text were given; the file is used. Clear it to use the pasted text."); }
     let uploaded = "";
     if (f) {
       impStatus("Uploading...");
       impLog(`Uploading ${f.name} (${(f.size / 1048576).toFixed(1)} MB) to the books folder...`);
-      const r = await fetch(`/api/upload?filename=${encodeURIComponent(f.name)}`, { method: "POST", headers: { ...hdr, "Content-Type": "application/pdf" }, body: f });
+      const r = await fetch(`/api/upload?filename=${encodeURIComponent(f.name)}`, { method: "POST", headers: { ...hdr, "Content-Type": f.type || "application/octet-stream" }, body: f });
       const j = await r.json();
       if (!r.ok) return fail(j.error || "upload failed");
       impLog(`✓ Saved books/${j.filename}; the book is called "${j.project}"`);
       uploaded = j.filename;
-      $("file").value = "";
+      $("file").value = ""; if (pasted && f.type === "text/plain") { $("impText").value = ""; $("impTitle").value = ""; updTextCount(); }
       await loadStatus(); $("proj").value = j.project; renderProject(true);
     }
     // 2. what to do with the chosen book
     const p = cur();
-    if (!p) return fail("Pick a book above, or choose a PDF to upload.");
+    if (!p) return fail("Pick a book above, choose a file to upload, or paste some text.");
     const o = options();
     o.steps = { ingest: !p.legacy, extract: !!p.legacy, bible: !p.legacy, write: !p.legacy, build: !p.legacy, video: false, audio: false, merge: false, mix: false };   // AI steps only: no video/audio, so nothing goes to Kaggle or Colab
     if (!p.legacy) {
       if (uploaded) { const opt = [...$("pdf").options].find(x => x.value.endsWith("/" + uploaded)); if (opt) $("pdf").value = opt.value; }
       o.pdf = $("pdf").value;
-      if (!o.pdf) return fail("No PDF found for this book. Choose one above and press Import again.");
+      if (!o.pdf) return fail("No book file found for this book. Choose one above and press Import again.");
       if (p.chapters && !uploaded && !confirm(`${p.slug} is already imported (${p.chapters} chapters). Importing again re-splits the PDF (hand edits to chapters.json are lost), rewrites the continuity bible and calls the AI again. Continue?`)) {
         impLog("Cancelled: nothing was changed."); impStatus("Cancelled."); btn.disabled = false; return;
       }
@@ -2890,7 +3103,8 @@ async function expandIdea() {
   if (!idea) { status("Write a short idea first.", "err"); $("pidea").focus(); return; }
   status("Asking the AI..."); $("bExpand").disabled = true;
   try {
-    const j = await api("/api/expand", { kind: (promptTargets()[0] || { kind: "video" }).kind, idea, count: $("pcount").value, engine: $("engine").value, claude_model: $("cmodel").value });
+    const first = promptTargets()[0] || { kind: "video", model: "" };                      // the prompts are written in the style of the first ticked model
+    const j = await api("/api/expand", { kind: first.kind, target: first.model, idea, count: $("pcount").value, engine: $("engine").value, claude_model: $("cmodel").value });
     const cur_ = $("ptext").value.trim();
     $("ptext").value = (cur_ ? cur_ + "\n" : "") + j.prompts.join("\n");
     status(`Added ${j.prompts.length} prompt(s) to the box above. Edit them if you like.`);
@@ -2961,7 +3175,7 @@ function applyConstraints() {
   let again = false;                       // some controls below get rebuilt; check them once more afterwards
   const tools = ST.tools, p = cur(), prompts = radio("mode") === "prompts";
   // 1. tools that are not installed
-  for (const o of $("engine").options) { o.disabled = !tools[o.value]; o.title = tools[o.value] ? "" : `${o.value} is not installed`; }
+  for (const o of $("engine").options) { o.disabled = !tools[o.value]; o.title = tools[o.value] ? "" : (o.value === "local" ? "Not available: " + ST.local_llm.reason : `${o.value} is not installed`); }
   if ($("engine").selectedOptions[0] && $("engine").selectedOptions[0].disabled) {
     const ok = [...$("engine").options].find(o => !o.disabled); if (ok) { $("engine").value = ok.value; engineChanged(); again = true; }
   }
@@ -3188,14 +3402,78 @@ document.querySelectorAll("input[name=gran]").forEach(e => e.addEventListener("c
 function fillModels() {
   const e = $("engine").value;       // fcc-claude accepted a catalog name in my test (nemotron-3-ultra), so it gets both lists
   // codex now uses your OpenAI/ChatGPT login directly (no catalog); fcc-codex and fcc-claude can use the proxy catalog
-  const list = e === "claude" ? ST.claude_models : e === "fcc-claude" ? [...ST.claude_models, ...ST.codex_models] : e === "fcc-codex" ? ST.codex_models : [];
+  const list = e === "claude" ? ST.claude_models : e === "fcc-claude" ? [...ST.claude_models, ...ST.codex_models] : e === "fcc-codex" ? ST.codex_models
+    : e === "hf" ? ST.hf_models : e === "local" ? (ST.local_llm.models || []) : [];
   $("models").innerHTML = list.map(m => `<option value="${m}">`).join("");
 }
+function engineNote() {
+  const e = $("engine").value;
+  $("engineNote").textContent = e === "hf" ? (ST.hf_token_set ? "Hugging Face: HF_TOKEN found. The first model is the default; vision features (describe a picture, review a result) use " + ST.hf_vision_models[0] + "."
+      : "Hugging Face: HF_TOKEN is not set. Create a token at huggingface.co/settings/tokens with the permission \"Make calls to Inference Providers\", add  export HF_TOKEN=...  to ~/.zshrc and restart the Studio.")
+    : e === "local" ? "Local model: " + (ST.local_llm.ready ? "answering at " + ST.local_llm.url + ". Nothing leaves this computer." : ST.local_llm.reason) : "";
+}
+function initLocalLlm() {                                     // the box looks greyed out until the computer qualifies (see local_llm_status in studio.py)
+  const L = ST.local_llm, box = $("localLlm"), label = box.closest("label");
+  box.setAttribute("aria-disabled", String(!L.ready));
+  label.classList.toggle("is-off", !L.ready);
+  $("localLlmNote").textContent = L.ready ? `Ready: a model server answers at ${L.url} with ${L.models.length} model(s). Ticking this uses it instead of the engine above.`
+    : `Not available on this computer: ${L.reason}. Click the box to see what is needed.`;
+  box.checked = L.ready && $("engine").value === "local";
+}
+// A real disabled checkbox swallows clicks, so this one only looks disabled: clicking it explains what is needed.
+function showLocalDialog() {
+  let d = $("localLlmDialog");
+  if (!d) { d = document.createElement("dialog"); d.id = "localLlmDialog"; d.setAttribute("aria-labelledby", "localLlmTitle"); document.body.appendChild(d); }
+  const L = ST.local_llm;
+  d.innerHTML = `<h2 id="localLlmTitle">Run the writer on this computer</h2>
+    <p>${L.ready ? "This computer qualifies and a local model server is answering." : "This is not available yet: <b>" + escapeHtml(L.reason || "unknown") + "</b>."}</p>
+    <p>The box switches on by itself when all of these are true:</p>
+    <ul>
+      <li><b>A capable computer:</b> a Mac with Apple Silicon (M1 or newer), or a PC with an NVIDIA GPU.</li>
+      <li><b>Enough memory:</b> 16 GB or more. 16 GB runs models of about 8 to 14 billion parameters; 32 GB or more is needed for 27B-class models such as Qwen3.8-27B. This computer has ${L.memory_gb || "?"} GB.</li>
+      <li><b>A local model server running</b>, any one of:
+        <ul>
+          <li><b>Ollama</b> (ollama.com): install it, then run <code>ollama pull &lt;model&gt;</code>. It answers on port 11434, which the Studio checks by default.</li>
+          <li><b>LM Studio</b> (lmstudio.ai): download a model and turn on the Local Server (port 1234).</li>
+          <li><b>llama.cpp</b>: start <code>llama-server -m &lt;model.gguf&gt;</code> (port 8080).</li>
+        </ul></li>
+      <li><b>The right address:</b> the Studio looks at <code>${escapeHtml(L.url)}</code>. For LM Studio or llama.cpp add, for example, <code>export LOCAL_LLM_URL=http://127.0.0.1:1234/v1/chat/completions</code> to ~/.zshrc and restart the Studio.</li>
+    </ul>
+    <p>Nothing leaves your computer when a local model writes the prompts. The Studio re-checks when you open the Models tab, return to this window, or press Check again.</p>
+    <div class="row"><button type="button" id="localLlmCheck">Check again</button><button type="button" id="localLlmClose">Close</button></div>
+    <p id="localLlmResult" class="warn" role="status" aria-live="polite"></p>`;
+  $("localLlmClose").onclick = () => d.close();
+  $("localLlmCheck").onclick = async () => { await refreshLocalLlm(true); $("localLlmResult").textContent = ST.local_llm.ready ? "Ready: the box is now switched on." : "Still not available: " + ST.local_llm.reason + "."; };
+  if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
+}
+// Ask the server again whether the computer and a model server qualify, and switch the box (and the engine choice) on or off to match.
+async function refreshLocalLlm(force = false) {
+  if (!ST) return;                                            // the page has not loaded its data yet (the saved tab is clicked at start-up)
+  let L;
+  try { L = await api("/api/local_llm" + (force ? "?fresh=1" : "")); } catch (e) { return; }
+  if (!ST) return;
+  const was = ST.local_llm && ST.local_llm.ready;
+  ST.local_llm = L; ST.tools.local = L.ready;
+  initLocalLlm();
+  if (L.ready !== was) { applyConstraints(); engineNote(); if ($("engine").value === "local") fillModels(); }
+}
+$("localLlm").addEventListener("click", e => { if (ST && !ST.local_llm.ready) { e.preventDefault(); showLocalDialog(); } });
+document.querySelector('[data-tab="models"]').addEventListener("click", () => refreshLocalLlm(false));
+window.addEventListener("focus", () => refreshLocalLlm(false));
+setInterval(() => { if (!document.hidden && ST && !ST.local_llm.ready) refreshLocalLlm(false); }, 60000);
 function engineChanged() {
   fillModels();
-  $("cmodel").value = $("engine").value === "claude" ? "sonnet" : "";
+  $("cmodel").value = $("engine").value === "claude" ? "sonnet" : $("engine").value === "hf" ? ST.hf_models[0] : $("engine").value === "local" ? ((ST.local_llm.models || [])[0] || "") : "";
   $("cmodel").placeholder = $("engine").value === "claude" ? "" : "blank = the tool's default";
+  $("localLlm").checked = ST.local_llm.ready && $("engine").value === "local";
+  engineNote();
 }
+let engineBeforeLocal = "claude";
+$("localLlm").addEventListener("change", () => {
+  if ($("localLlm").checked) { engineBeforeLocal = $("engine").value === "local" ? engineBeforeLocal : $("engine").value; $("engine").value = "local"; }
+  else if ($("engine").value === "local") $("engine").value = engineBeforeLocal;
+  engineChanged();
+});
 $("engine").onchange = engineChanged;
 $("proj").onchange = () => { renderProject(true); loadGallery(); resetFilm(); populateNewSceneChapters(); loadGlobalParams($("proj").value); };
 $("newSceneSeries").onchange = populateNewSceneChapters;
@@ -3711,9 +3989,10 @@ async function loadCharList() {
 function populateCharTable(characters, series) {
     const tbody = $('charTableBody');
     if (!tbody) return;
+    if ($('charPickAll')) $('charPickAll').checked = false;
     
     if (!characters || characters.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--fg-muted);padding:24px">No characters in this series</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--fg-muted);padding:24px">No characters in this series</td></tr>';
         return;
     }
     
@@ -3722,6 +4001,7 @@ function populateCharTable(characters, series) {
         const hasLora = c.lora && (c.lora.repo || c.lora.trigger_word);
         return `
             <tr data-name="${escapeHtml(c.name)}" style="cursor:pointer" onclick="selectCharInTable('${escapeHtml(c.name)}')">
+                <td><input type="checkbox" class="charPick" data-name="${escapeHtml(c.name)}" onclick="event.stopPropagation(); updateCharButtons()" aria-label="Send ${escapeHtml(c.name)} to the book"></td>
                 <td><strong>${escapeHtml(c.name)}</strong></td>
                 <td>${escapeHtml(c.archetype || '—')}</td>
                 <td><span class="badge ${refCount > 0 ? 'badge--success' : 'badge--neutral'}">${refCount}</span></td>
@@ -4112,6 +4392,28 @@ async function syncFromProject() {
   updateCharButtons();
 }
 
+async function sendToBook() {
+  const project = $("proj").value, series = $("charSeries").value;
+  const names = [...document.querySelectorAll("#charTableBody .charPick:checked")].map(e => e.dataset.name);
+  if (!project || !series || !names.length) { showCharStatus("Pick a book and a series, and tick at least one character", true); return; }
+  $("bCharSend").disabled = true;
+  try {
+    showCharStatus("Checking what would change…");
+    const plan = await api("/api/characters", { action: "send_to_book", project, series, names, dry_run: true });
+    const miss = plan.missing.length ? ` (${plan.missing.join(", ")} cannot be sent: no visual token)` : "";
+    if (!plan.updated && !plan.added) { showCharStatus(`Nothing to send: ${project}'s continuity book already matches${miss}.`); updateCharButtons(); return; }
+    const what = [plan.updated ? `update ${plan.updated} character(s)` : "", plan.added ? `add ${plan.added} new one(s)` : ""].filter(Boolean).join(" and ");
+    if (!confirm(`In ${project}'s continuity book, ${what} using the ${series} series' visual token and voice.\n\nChapters that are already written keep the old wording; chapters written afterwards use the new one.${miss}\n\nContinue?`)) {
+      showCharStatus("Cancelled; the book was not changed."); updateCharButtons(); return;
+    }
+    const j = await api("/api/characters", { action: "send_to_book", project, series, names });
+    showCharStatus(`Sent to ${project}: ${[j.updated ? `updated ${j.updated}` : "", j.added ? `added ${j.added}` : "", j.unchanged ? `${j.unchanged} already matched` : ""].filter(Boolean).join(", ")}${miss}.`);
+  } catch (e) {
+    showCharStatus(e.message, true);
+  }
+  updateCharButtons();
+}
+
 function copyAllTokens() {
   const text = $("charAllTokens").textContent;
   if (!text) return;
@@ -4197,7 +4499,7 @@ function openRefDir() {
   } else {
     // file:// protocol - can't use server endpoint
     // Show the local path so user can copy it
-    const rootPath = "/Users/paulbarcelona/Downloads/Bible/";
+    const rootPath = (window.STUDIO_ROOT || "the Studio folder") + "/";
     const localPath = rootPath + dir;
     const msg = `Running in file:// mode - server endpoint not available.\n\nLocal path:\n${localPath}\n\nCopy this path and open in Finder/File Explorer:\nCmd+Shift+G (Mac) or paste in address bar (Windows)`;
     alert(msg);
@@ -4529,8 +4831,8 @@ async function waitForImagesAndSaveRefs(setName, model, allPrompts, series, name
         const slugModel = logModel.replace(/_/g, "-");
         notebookSlug = `${slugProject}-image-${slugModel}-${start}-${end}`;
         // Add owner prefix (kaggle username from input or default)
-        const kaggleUser = $("kuser").value || "pbarcelona";
-        notebookSlug = `${kaggleUser}/${notebookSlug}`;
+        const kaggleUser = $("kuser").value;
+        if (kaggleUser) notebookSlug = `${kaggleUser}/${notebookSlug}`;
         logCharGen(`  ✓ Found notebook info from log: ${notebookSlug} (images ${imageStart}-${imageEnd})`);
       }
     } else {
@@ -4871,6 +5173,9 @@ function updateCharButtons() {
   $("bCharDelete").disabled = !hasSelection;
   $("bCharGenPrompt").disabled = false;   // always clickable: with nothing selected it explains what is missing in the Prompt Preview window
   $("bCharSync").disabled = !hasSeries || !$("proj").value;
+  const picked = document.querySelectorAll("#charTableBody .charPick:checked").length;
+  $("bCharSend").disabled = !hasSeries || !$("proj").value || !picked;
+  $("bCharSend").textContent = picked ? `Send ${picked} ticked to the book` : "Send ticked to the book";
   $("bCharCopyAll").disabled = !$("charAllTokens").textContent || $("charAllTokens").textContent.startsWith("No characters");
   $("bCharRefreshAll").disabled = !hasSeries;
   $("bCharOpenRefDir").disabled = !$("charRefDir").textContent;
@@ -5278,6 +5583,8 @@ $("bCharSave").onclick = saveCharacter;
 $("bCharDelete").onclick = deleteCharacter;
 $("bCharGenPrompt").onclick = showCharacterPrompt;
 $("bCharSync").onclick = syncFromProject;
+$("bCharSend").onclick = sendToBook;
+$("charPickAll").onchange = () => { document.querySelectorAll("#charTableBody .charPick").forEach(e => { e.checked = $("charPickAll").checked; }); updateCharButtons(); };
 $("bCharCopyAll").onclick = copyAllTokens;
 $("bCharRefreshAll").onclick = loadCharAllTokens;
 $("bCharOpenRefDir").onclick = openRefDir;
@@ -5755,8 +6062,8 @@ function initDropZone() {
     dropZone.className = 'drop-zone';
     dropZone.innerHTML = `
         <div class="drop-zone__icon">📄</div>
-        <div style="font-weight:500;margin-bottom:4px">Drop PDF here or click to browse</div>
-        <div style="font-size:var(--text-sm);color:var(--fg-muted)">Supports .pdf files</div>
+        <div style="font-weight:500;margin-bottom:4px">Drop a PDF or text file here, or click to browse</div>
+        <div style="font-size:var(--text-sm);color:var(--fg-muted)">Supports .pdf, .txt and .md files</div>
     `;
     
     // Insert before the file input
@@ -5788,7 +6095,7 @@ function initDropZone() {
             dropZone.innerHTML = `
                 <div class="drop-zone__icon">✅</div>
                 <div style="font-weight:500;margin-bottom:4px">${escapeHtml(fileInput.files[0].name)}</div>
-                <div style="font-size:var(--text-sm);color:var(--success)">Ready: press Import at the bottom of this tab</div>
+                <div style="font-size:var(--text-sm);color:var(--success)">Ready: press Import</div>
             `;
             dropZone.style.borderColor = 'var(--success)';
         }
@@ -5896,6 +6203,467 @@ showToast = function(message, type, duration) {
   new MutationObserver(() => { if (!queued) { queued = true; requestAnimationFrame(run); } })
     .observe(document.body, { childList: true, subtree: true, characterData: true });
   run();
+})();
+</script>
+<script>
+// ===== Pizazz: hero video, artwork banners, Library tab, Compare tab, effects switch, confetti =====
+(function () {
+  const fileUrl = f => "/file/" + String(f).split("/").map(encodeURIComponent).join("/") + "?t=" + TOKEN;
+  const esc = s => escapeHtml(String(s == null ? "" : s));
+  const fx = { on: localStorage.getItem("pzFx") !== "off" };
+
+  // ---- effects switch (also off automatically with the OS "reduce motion" setting, through the CSS)
+  function applyFx() {
+    document.body.classList.toggle("fx-off", !fx.on);
+    $("fxToggle").setAttribute("aria-pressed", String(fx.on));
+    const v = document.querySelector(".hero-video");
+    if (v && v.src) { if (fx.on) v.play().catch(() => {}); else v.pause(); }
+  }
+  $("fxToggle").onclick = () => { fx.on = !fx.on; localStorage.setItem("pzFx", fx.on ? "on" : "off"); applyFx(); };
+
+  // ---- the banner logo is the app icon (the same picture as the browser tab icon)
+  const fav = document.querySelector('link[rel="icon"][sizes="64x64"]');
+  if (fav) $("brandLogo").src = fav.href;
+
+  // ---- artwork from your own results: a muted loop behind the header and a picture strip on every tab
+  async function loadShowcase() {
+    let s;
+    try { s = await api("/api/showcase"); } catch (e) { return; }                  // the page works fine without artwork
+    const v = document.querySelector(".hero-video");
+    if (s.hero && v) {
+      v.src = fileUrl(s.hero);
+      v.addEventListener("loadeddata", () => v.classList.add("on"), { once: true });
+      if (fx.on) v.play().catch(() => {});
+    }
+    document.querySelectorAll(".tab-panel").forEach((p, i) => {
+      if (p.querySelector(":scope > .tab-art")) return;
+      const btn = document.querySelector('.tab-btn[data-tab="' + p.id.replace("panel-", "") + '"]');
+      const d = document.createElement("div");
+      d.className = "tab-art"; d.setAttribute("role", "presentation");
+      if (s.art && s.art.length) d.style.backgroundImage = "url('" + fileUrl(s.art[i % s.art.length]).replace(/'/g, "%27") + "')";
+      const t = document.createElement("span");
+      t.textContent = btn ? btn.textContent.trim() : "";
+      d.appendChild(t);
+      p.insertBefore(d, p.firstChild);
+    });
+  }
+
+  // ---- confetti when a run finishes
+  window.pzConfetti = function () {
+    if (!fx.on || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let c = $("pzConfetti");
+    if (!c) { c = document.createElement("canvas"); c.id = "pzConfetti"; c.setAttribute("aria-hidden", "true"); document.body.appendChild(c); }
+    c.width = innerWidth; c.height = innerHeight;
+    const g = c.getContext("2d"), colours = ["#b9f53c", "#ff546e", "#8b5cf6", "#facc15", "#38bdf8"];
+    const ps = Array.from({ length: 110 }, () => ({ x: innerWidth / 2 + (Math.random() - .5) * 200, y: innerHeight * .35, vx: (Math.random() - .5) * 14, vy: -Math.random() * 12 - 3,
+      s: 4 + Math.random() * 5, r: Math.random() * 6, vr: (Math.random() - .5) * .4, col: colours[(Math.random() * colours.length) | 0] }));
+    const t0 = performance.now();
+    (function frame(t) {
+      const age = t - t0;
+      g.clearRect(0, 0, c.width, c.height);
+      ps.forEach(p => { p.vy += .35; p.x += p.vx; p.y += p.vy; p.r += p.vr; g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.col; g.globalAlpha = Math.max(0, 1 - age / 1800); g.fillRect(-p.s / 2, -p.s / 3, p.s, p.s * .6); g.restore(); });
+      if (age < 1800) requestAnimationFrame(frame); else g.clearRect(0, 0, c.width, c.height);
+    })(t0);
+  };
+  const baseStatus = pStatus;
+  pStatus = function (text, cls) { baseStatus(text, cls); if (cls === "chip done") window.pzConfetti(); };
+
+  // ---- lightbox
+  const lb = document.createElement("div");
+  lb.id = "pzLightbox"; lb.setAttribute("role", "dialog"); lb.setAttribute("aria-modal", "true"); lb.setAttribute("aria-label", "Preview");
+  document.body.appendChild(lb);
+  // gallery: the pictures and clips of the grid that was clicked, so Previous / Next (and the arrow keys) walk through them; once 3D view is on it stays on
+  let lbSet = [], lbPos = 0, want3d = false, lbSeq = 0;
+  function gallerySet(scope) {
+    return Array.from(scope.querySelectorAll(".pz-media[data-file]")).map(m => ({ file: m.dataset.file, kind: m.dataset.kind, cap: m.dataset.cap || "" }));
+  }
+  function openLightbox(file, kind, caption, scope) {
+    lbSeq++;
+    if (scope) { lbSet = gallerySet(scope); want3d = false; }
+    lbPos = Math.max(0, lbSet.findIndex(x => x.file === file));
+    const many = lbSet.length > 1;
+    lb.innerHTML = (kind === "video" ? `<video src="${fileUrl(file)}" controls autoplay loop playsinline></video>` : `<img id="pzLbImg" src="${fileUrl(file)}" alt="">`) +
+      `<p id="pzLbCap">${esc(caption)}</p><div class="pz-lb-actions">` + (many ? `<button type="button" id="pzPrev" aria-label="Previous">&#8592; Previous</button><span id="pzCount" aria-live="polite">${lbPos + 1} / ${lbSet.length}</span><button type="button" id="pzNext" aria-label="Next">Next &#8594;</button>` : "") + (kind === "image" ? `<button type="button" id="pz3d">3D view</button><button type="button" id="pzReview" title="Claude (or a local model when this computer has one) looks at the picture and judges it against its prompt">Review with AI</button><button type="button" id="pzDescribe" title="An AI looks at the picture and writes a video prompt that brings it to life">Video prompt from this picture</button>` : "") + `<button type="button" id="pzLbClose">Close</button></div><p id="pzAiOut" role="status" aria-live="polite"></p>`;
+    lb.classList.add("open");
+    $("pzLbClose").focus();
+    $("pzLbClose").onclick = closeLightbox;
+    if (many) { $("pzPrev").onclick = () => lbStep(-1); $("pzNext").onclick = () => lbStep(1); }
+    if (kind === "image") { $("pz3d").onclick = () => toggle3d(file, caption); $("pzReview").onclick = () => aiReview(file, caption); $("pzDescribe").onclick = () => aiDescribe(file); }
+  }
+
+  // ---- AI looks at a picture: judge it against its prompt, or write a video prompt for it.
+  // Claude by default. When this computer qualifies for a local model (the local engine is ready) that is used automatically; if the local model cannot do it, Claude steps in.
+  function visionEngine() {
+    const e = $("engine").value, L = ST.local_llm || {};
+    if (L.ready) return { engine: "local", claude_model: e === "local" ? $("cmodel").value : (L.models || [])[0] || "" };
+    if (e === "hf") return { engine: "hf", claude_model: ST.hf_vision_models.includes($("cmodel").value) ? $("cmodel").value : "" };
+    if (e === "local") return { engine: "claude", claude_model: "sonnet" };         // chosen, but this computer does not qualify yet
+    return { engine: e, claude_model: $("cmodel").value };
+  }
+  const VISION_NAME = { claude: "Claude", "fcc-claude": "Claude", codex: "Codex", "fcc-codex": "Codex", hf: "Hugging Face", local: "the local model" };
+  async function visionCall(path, body) {
+    const v = visionEngine();
+    try { return { r: await api(path, { ...body, ...v }), via: VISION_NAME[v.engine] }; }
+    catch (e) {
+      if (v.engine !== "local") throw e;
+      const r = await api(path, { ...body, engine: "claude", claude_model: "sonnet" });
+      return { r, via: "Claude (the local model could not do it: " + e.message.slice(0, 120) + ")" };
+    }
+  }
+  async function aiReview(file, caption) {
+    const out = $("pzAiOut"), btn = $("pzReview"), prompt = caption.includes(" - ") ? caption.slice(caption.indexOf(" - ") + 3) : caption;
+    btn.disabled = true; out.textContent = "The AI is looking at the picture...";
+    try {
+      const { r, via } = await visionCall("/api/review_result", { file, prompt });
+      out.textContent = `Score ${r.score}/10: ${r.summary}` + (r.problems.length ? ` Problems: ${r.problems.join("; ")}.` : "") + ` (reviewed by ${via})`;
+    } catch (e) { out.textContent = e.message; }
+    btn.disabled = false;
+  }
+  async function aiDescribe(file) {
+    const out = $("pzAiOut"), btn = $("pzDescribe"), first = promptTargets().find(t => t.kind === "video");
+    btn.disabled = true; out.textContent = "The AI is looking at the picture...";
+    try {
+      const { r, via } = await visionCall("/api/describe_image", { file, kind: "video", target: first ? first.model : "" });
+      const box = $("ptext"); box.value = (box.value.trim() ? box.value.trim() + "\n" : "") + r.prompt;
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      out.textContent = "Added to Single Prompts (written by " + via + "): " + r.prompt;
+    } catch (e) { out.textContent = e.message; }
+    btn.disabled = false;
+  }
+
+  // ---- 3D view: the picture is shifted by a depth map (made on this computer by the Studio) as the mouse moves, so near things slide over far things
+  const loadImage = url => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("could not load " + url.split("?")[0])); i.src = url; });
+  async function loadDepth(file) {
+    const r = await fetch(depthUrl(file));
+    if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error || m; } catch (e) {} throw new Error(m); }
+    return loadImage(URL.createObjectURL(await r.blob()));
+  }
+  function startParallax(canvas, colour, depth) {
+    const gl = canvas.getContext("webgl", { antialias: true });
+    if (!gl) throw new Error("3D view needs WebGL, which this browser does not have");
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, "attribute vec2 p; varying vec2 v; void main(){ v = vec2(p.x * .5 + .5, .5 - p.y * .5); gl_Position = vec4(p, 0., 1.); }"));
+    gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `precision mediump float; varying vec2 v; uniform sampler2D c, d; uniform vec2 m;
+      void main() {
+        vec2 u = (v - .5) / 1.07 + .5;                       // zoom in a little so the edges never show
+        float z = texture2D(d, u).r;
+        vec2 u2 = u - m * (z - .5) * .045;                   // first guess: near pixels move further than far ones
+        float z2 = texture2D(d, u2).r;
+        gl_FragColor = texture2D(c, clamp(u - m * (z2 - .5) * .045, 0., 1.));
+      }`));
+    gl.linkProgram(prog); gl.useProgram(prog);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, "p"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    [[colour, 0, "c"], [depth, 1, "d"]].forEach(([img, unit, name]) => {
+      const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.uniform1i(gl.getUniformLocation(prog, name), unit);
+    });
+    const mLoc = gl.getUniformLocation(prog, "m");
+    let tx = 0, ty = 0, cx = 0, cy = 0, last = 0;
+    const move = e => { tx = (e.clientX / innerWidth - .5) * 2; ty = (e.clientY / innerHeight - .5) * 2; last = performance.now(); };
+    lb.addEventListener("pointermove", move);
+    (function frame(t) {
+      if (!canvas.isConnected) { lb.removeEventListener("pointermove", move); return; }
+      if (t - last > 2500) { tx = Math.sin(t / 1700) * .8; ty = Math.cos(t / 2300) * .45; }          // nobody is moving the mouse: sway by itself
+      cx += (tx - cx) * .08; cy += (ty - cy) * .08;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.uniform2f(mLoc, cx, cy);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      requestAnimationFrame(frame);
+    })(0);
+  }
+  async function toggle3d(file, caption) {
+    const btn = $("pz3d"), existing = lb.querySelector("canvas");
+    if (existing) { want3d = false; openLightbox(file, "image", caption); return; }       // back to the flat picture
+    const seq = lbSeq;
+    btn.disabled = true; btn.textContent = "Making depth map...";
+    try {
+      const [colour, depth] = await Promise.all([loadImage(fileUrl(file)), loadDepth(file)]);
+      if (seq !== lbSeq) return;                                                           // moved on to another picture while this one was loading
+      const cv = document.createElement("canvas");
+      const aspect = colour.naturalWidth / colour.naturalHeight, maxW = innerWidth * .92, maxH = innerHeight * .74;
+      const w = Math.min(maxW, maxH * aspect), h = w / aspect, dpr = Math.min(devicePixelRatio || 1, 2);
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.width = w + "px"; cv.style.height = h + "px"; cv.style.borderRadius = "12px";
+      cv.setAttribute("role", "img"); cv.setAttribute("aria-label", "3D view: move the mouse to look around");
+      const flat = $("pzLbImg"); flat.replaceWith(cv);
+      startParallax(cv, colour, depth);
+      btn.textContent = "Flat view"; $("pzLbCap").textContent = "Move the mouse to look around. " + caption;
+      want3d = true;
+      const nx = lbSet.length > 1 ? lbSet[(lbPos + 1) % lbSet.length] : null;            // make the next picture's depth map ahead of time
+      if (nx && nx.kind === "image") fetch(depthUrl(nx.file)).catch(() => {});
+    } catch (e) {
+      if (seq !== lbSeq) return;
+      want3d = false;
+      showToast("3D view: " + e.message, "error");
+      if (lb.querySelector("canvas")) openLightbox(file, "image", caption);            // the empty canvas has replaced the picture: put the flat picture back
+      else { btn.textContent = "3D view"; btn.disabled = false; }
+      return;
+    }
+    btn.disabled = false;
+  }
+  function lbStep(d) {
+    if (lbSet.length < 2) return;
+    const it = lbSet[(lbPos + d + lbSet.length) % lbSet.length];
+    openLightbox(it.file, it.kind, it.cap);
+    if (want3d && it.kind === "image") toggle3d(it.file, it.cap);
+  }
+  function closeLightbox() { lbSeq++; lb.classList.remove("open"); lb.innerHTML = ""; }
+  lb.addEventListener("click", e => { if (e.target === lb) closeLightbox(); });
+  document.addEventListener("keydown", e => {
+    if (!lb.classList.contains("open")) return;
+    if (e.key === "Escape") closeLightbox();
+    else if (e.key === "ArrowRight") { e.preventDefault(); lbStep(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); lbStep(-1); }
+  });
+
+  // if a thumbnail cannot be made (no Pillow, unreadable file) fall back to the full file, once
+  document.addEventListener("error", e => { const i = e.target; if (i && i.tagName === "IMG" && i.dataset && i.dataset.full && !i.dataset.fell) { i.dataset.fell = "1"; i.src = i.dataset.full; } }, true);
+
+  // hover to play a clip tile: the video is created only while the pointer is over it
+  function wireHover(root) {
+    root.querySelectorAll(".pz-media[data-kind='video']").forEach(m => {
+      const tile = m.closest(".pz-tile");
+      tile.addEventListener("mouseenter", () => {
+        if (!fx.on || m.querySelector("video") || !m.dataset.file) return;
+        const v = document.createElement("video");
+        v.src = fileUrl(m.dataset.file); v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true;
+        m.insertBefore(v, m.firstChild); v.play().catch(() => {});
+      });
+      tile.addEventListener("mouseleave", () => { const v = m.querySelector("video"); if (v) { v.pause(); v.remove(); } });
+    });
+  }
+  const depthUrl = f => "/depth/" + String(f).split("/").map(encodeURIComponent).join("/") + "?t=" + TOKEN;
+  const thumbUrl = f => "/thumb/" + String(f).split("/").map(encodeURIComponent).join("/") + "?t=" + TOKEN;
+  // grids show small thumbnails (a clip shows one of its frames); the full file loads only on hover (clips) or click (preview)
+  const mediaHtml = (file, kind, extra) => `<img src="${thumbUrl(file)}" alt="" loading="lazy" decoding="async" data-full="${fileUrl(file)}">` +
+    (kind === "video" ? '<span class="pz-play" aria-hidden="true">&#9654;</span>' : "") + (extra || "");
+
+  // ---- Library tab
+  let lib = [], libCat = "All", libKind = "all";
+  function kindButtons(id, current, onPick) {
+    $(id).innerHTML = [["all", "All"], ["video", "Video"], ["image", "Image"]].map(([v, l]) =>
+      `<button type="button" class="pz-chip" data-kind="${v}" aria-pressed="${current === v}">${l}</button>`).join(" ");
+    $(id).querySelectorAll("button").forEach(b => b.onclick = () => onPick(b.dataset.kind));
+  }
+  function renderLibrary() {
+    const q = $("libSearch").value.trim().toLowerCase();
+    const cats = ["All", ...new Set(lib.map(t => t.category))];
+    $("libChips").innerHTML = cats.map(c => `<button type="button" class="pz-chip" data-cat="${esc(c)}" aria-pressed="${c === libCat}">${esc(c)}</button>`).join("");
+    $("libChips").querySelectorAll("button").forEach(b => b.onclick = () => { libCat = b.dataset.cat; renderLibrary(); });
+    kindButtons("libKinds", libKind, k => { libKind = k; renderLibrary(); });
+    const shown = lib.filter(t => (libCat === "All" || t.category === libCat) && (libKind === "all" || t.kind === libKind) &&
+      (!q || (t.title + " " + t.prompt + " " + t.category).toLowerCase().includes(q)));
+    $("libEmpty").hidden = shown.length > 0;
+    $("libGrid").innerHTML = shown.map(t => `<article class="pz-tile">
+      <div class="pz-media" data-file="${esc(t.sample ? t.sample.file : "")}" data-kind="${esc(t.sample ? t.sample.kind : "")}" data-cap="${esc(t.title + " - " + t.prompt)}">
+        ${t.sample ? mediaHtml(t.sample.file, t.sample.kind) : (t.kind === "video" ? "🎬" : "🖼")}
+        <span class="pz-badge">${esc(t.kind)}</span>${t.sample ? `<span class="pz-badge right">${esc(t.sample.model)}</span>` : ""}
+      </div>
+      <div class="pz-body"><span class="pz-cat">${esc(t.category)}</span><span class="pz-title">${esc(t.title)}</span><span class="pz-prompt">${esc(t.prompt)}</span>
+        <div class="pz-row"><button type="button" data-use="${esc(t.id)}">Use this</button><button type="button" data-copy="${esc(t.id)}">Copy</button></div></div>
+    </article>`).join("");
+    wireHover($("libGrid"));
+  }
+  $("libGrid").addEventListener("click", e => {
+    const use = e.target.closest("[data-use]"), copy = e.target.closest("[data-copy]"), media = e.target.closest(".pz-media");
+    const btn = use || copy, t = lib.find(x => x.id === (btn ? (btn.dataset.use || btn.dataset.copy) : ""));
+    if (use && t) {
+      $("ptext").value = t.prompt;
+      $("ptext").dispatchEvent(new Event("input", { bubbles: true }));
+      document.querySelector('[data-tab="prompts"]').click();
+      showToast(`Prompt "${t.title}" is in Single Prompts. Tick a ${t.kind} model on the Models tab, then Generate.`, "info");
+    } else if (copy && t) {
+      (navigator.clipboard ? navigator.clipboard.writeText(t.prompt) : Promise.reject()).then(() => showToast("Prompt copied", "info"), () => showToast("Could not copy; select the text instead", "error"));
+    } else if (media && media.dataset.file) {
+      openLightbox(media.dataset.file, media.dataset.kind, media.dataset.cap, (media.closest(".pz-tile") || media).parentElement);
+    }
+  });
+  $("libSearch").addEventListener("input", renderLibrary);
+  async function loadLibrary() {
+    try { lib = (await api("/api/library")).templates; } catch (e) { $("libGrid").innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+    renderLibrary();
+  }
+
+  // ---- Compare tab
+  let cmp = [], cmpIdx = 0, cmpKind = "all";
+  const stars = n => [1, 2, 3, 4, 5].map(i => `<button type="button" data-star="${i}" class="${i <= n ? "on" : ""}" aria-label="${i} star${i > 1 ? "s" : ""}">★</button>`).join("");
+  function renderCompare() {
+    const g = cmp[cmpIdx];
+    $("cmpEmpty").hidden = !!g;
+    $("cmpPromptText").value = g ? g.text : "";
+    if (!g) { $("cmpGrid").innerHTML = ""; $("cmpSummary").textContent = ""; $("cmpKinds").innerHTML = ""; return; }
+    kindButtons("cmpKinds", cmpKind, k => { cmpKind = k; renderCompare(); });
+    const sort = $("cmpSort").value, keepOnly = $("cmpKeepOnly").checked;
+    const items = g.items.filter(i => (cmpKind === "all" || i.kind === cmpKind) && (!keepOnly || i.keep))
+      .sort((a, b) => sort === "stars" ? (b.stars - a.stars) || a.model.localeCompare(b.model)
+        : sort === "minutes" ? ((a.minutes == null ? 1e9 : a.minutes) - (b.minutes == null ? 1e9 : b.minutes)) : a.model.localeCompare(b.model));
+    const kept = g.items.filter(i => i.keep);
+    $("cmpSummary").textContent = `${g.items.length} results for this prompt; ${kept.length} kept` + (kept.length ? `: ${kept.map(i => i.model).join(", ")}` : "") + ".";
+    $("cmpGrid").innerHTML = items.map(i => `<article class="pz-tile ${i.keep ? "kept" : ""}" data-file="${esc(i.file)}">
+      <div class="pz-media" data-file="${esc(i.file)}" data-kind="${esc(i.kind)}" data-cap="${esc(i.model + " - " + g.text)}">
+        ${mediaHtml(i.file, i.kind)}<span class="pz-badge">${esc(i.kind)}</span>${i.minutes != null ? `<span class="pz-badge right">${esc(i.minutes)} min</span>` : ""}
+      </div>
+      <div class="pz-body"><span class="pz-title">${esc(i.model)}</span>
+        <div class="pz-row"><span class="pz-stars" role="group" aria-label="Rating for ${esc(i.model)}">${stars(i.stars)}</span>
+          <button type="button" class="pz-keep ${i.keep ? "on" : ""}" data-keep="1" aria-pressed="${i.keep}">${i.keep ? "Kept" : "Keep"}</button></div></div>
+    </article>`).join("");
+    wireHover($("cmpGrid"));
+  }
+  async function rate(file, starsN, keep) {
+    const g = cmp[cmpIdx], it = g.items.find(x => x.file === file);
+    try { await api("/api/rate", { key: file, stars: starsN, keep }); } catch (e) { showToast(e.message, "error"); return; }
+    it.stars = starsN; it.keep = keep; renderCompare();
+  }
+  $("cmpGrid").addEventListener("click", e => {
+    const tile = e.target.closest(".pz-tile"); if (!tile) return;
+    const file = tile.dataset.file, g = cmp[cmpIdx], it = g.items.find(x => x.file === file); if (!it) return;
+    const star = e.target.closest("[data-star]");
+    if (star) { const n = Number(star.dataset.star); rate(file, n === it.stars ? 0 : n, it.keep); return; }
+    if (e.target.closest("[data-keep]")) { rate(file, it.stars, !it.keep); return; }
+    const media = e.target.closest(".pz-media");
+    if (media) openLightbox(media.dataset.file, media.dataset.kind, media.dataset.cap, $("cmpGrid"));
+  });
+  $("cmpCopy").addEventListener("click", () => {
+    const text = $("cmpPromptText").value;
+    if (!text) { showToast("No prompt to copy", "error"); return; }
+    const fallback = () => {                                   // older browsers and non-secure pages: select the box and use the copy command
+      const box = $("cmpPromptText"); box.focus(); box.select();
+      let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+      box.setSelectionRange(0, 0);
+      showToast(ok ? "Prompt copied" : "Could not copy; select the text and press Cmd+C", ok ? "info" : "error");
+    };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => showToast("Prompt copied", "info"), fallback);
+    else fallback();
+  });
+  ["cmpSort", "cmpKeepOnly"].forEach(id => $(id).addEventListener("change", renderCompare));
+  $("cmpPrompt").addEventListener("change", () => { cmpIdx = Number($("cmpPrompt").value) || 0; renderCompare(); });
+  async function loadCompare() {
+    try { cmp = (await api("/api/compare")).prompts; } catch (e) { $("cmpGrid").innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+    cmpIdx = Math.min(cmpIdx, Math.max(cmp.length - 1, 0));
+    $("cmpPrompt").innerHTML = cmp.map((g, i) => `<option value="${i}">${esc(g.items.length + " results: " + g.text.slice(0, 90))}</option>`).join("");
+    $("cmpPrompt").value = String(cmpIdx);
+    renderCompare();
+  }
+
+
+  // ---- Single Prompts: one-click camera moves and looks, added to (or removed from) every prompt line
+  const CAMERA = [["Slow zoom in", "slow zoom in"], ["Zoom out", "slow zoom out"], ["Pan left", "slow pan left"], ["Pan right", "slow pan right"], ["Dolly in", "slow dolly in"],
+    ["Tracking shot", "smooth tracking shot"], ["Orbit", "camera slowly orbits the subject"], ["Handheld", "handheld camera"], ["Aerial drift", "slow aerial drift"],
+    ["Crane up", "crane shot rising up"], ["Low angle", "low angle shot"], ["Static", "locked-off static camera"]];
+  const LOOK = [["Cinematic", "cinematic lighting"], ["Film grain", "35mm film grain"], ["Shallow focus", "shallow depth of field"], ["Golden hour", "golden hour light"],
+    ["Moody", "moody low-key lighting"], ["Hyper-real", "hyper-realistic"], ["Slow motion", "slow motion"], ["Anamorphic", "anamorphic lens"]];
+  const phraseRe = p => new RegExp("(?:,\\s*|^\\s*)" + p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?=\\s*(?:,|\\.|$))", "i");
+  function lineHas(line, p) { return line.toLowerCase().includes(p.toLowerCase()); }
+  function addPhrase(line, p) { const t = line.replace(/\s+$/, ""); return /[.!?]$/.test(t) ? t.slice(0, -1) + ", " + p + t.slice(-1) : t + ", " + p; }
+  function removePhrase(line, p) { return line.replace(phraseRe(p), "").replace(/^\s*,\s*/, "").replace(/\s+$/, ""); }
+  function toggleChip(p) {
+    const box = $("ptext"), lines = box.value.split("\n"), real = lines.filter(l => l.trim());
+    if (!real.length) { showToast("Type a prompt first", "info"); box.focus(); return; }
+    const allHave = real.every(l => lineHas(l, p));
+    box.value = lines.map(l => !l.trim() ? l : (allHave ? removePhrase(l, p) : (lineHas(l, p) ? l : addPhrase(l, p)))).join("\n");
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  function renderChips() {
+    const lines = $("ptext").value.split("\n").filter(l => l.trim());
+    for (const [id, list] of [["chipCamera", CAMERA], ["chipLook", LOOK]]) {
+      $(id).innerHTML = list.map(([label, p]) => `<button type="button" class="pz-chip" data-phrase="${esc(p)}" aria-pressed="${lines.length > 0 && lines.every(l => lineHas(l, p))}" title="Adds: ${esc(p)}">${esc(label)}</button>`).join("");
+    }
+  }
+  $("pzChips").addEventListener("click", e => { const b = e.target.closest("[data-phrase]"); if (b) toggleChip(b.dataset.phrase); });
+  $("ptext").addEventListener("input", renderChips);
+  renderChips();
+
+  document.querySelector('[data-tab="library"]').addEventListener("click", loadLibrary);
+  document.querySelector('[data-tab="compare"]').addEventListener("click", loadCompare);
+  applyFx();
+  loadShowcase();
+})();
+</script>
+<script id="setupScript">
+// Setup window: what this computer needs, and where each person pastes their own keys. Keys go to files on this computer only; the page never gets them back.
+(function () {
+  const css = document.createElement("style");
+  css.textContent = `#setupBtn { background: transparent; border: none; padding: .5rem; border-radius: 6px; cursor: pointer; font-size: 1.05rem; color: #fff; }
+  #setupBtn:hover { background: rgba(255,255,255,.16); }
+  #setupDialog { max-width: min(680px, 94vw); max-height: 90vh; overflow: auto; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--bg-elevated); color: var(--fg); padding: 22px 26px; }
+  #setupDialog::backdrop { background: rgba(8,6,24,.6); }
+  #setupDialog h2 { margin-top: 0; } #setupDialog h3 { margin: 18px 0 6px; font-size: 1rem; }
+  #setupDialog ul.checks { list-style: none; padding: 0; margin: 8px 0; }
+  #setupDialog ul.checks li { margin: 7px 0; display: grid; grid-template-columns: 1.6em 1fr; gap: 2px 6px; }
+  #setupDialog .mark { font-weight: 700; } #setupDialog .good { color: #2e9e5b; } #setupDialog .bad { color: #d6455d; } #setupDialog .meh { color: #9a8f6a; }
+  #setupDialog .detail { opacity: .75; font-size: .9em; } #setupDialog .fix { font-size: .9em; }
+  #setupDialog label { display: block; margin: 8px 0 2px; font-size: .9em; }
+  #setupDialog input[type=password], #setupDialog input[type=text] { width: 100%; box-sizing: border-box; }
+  #setupDialog .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  #setupDialog .msg { min-height: 1.4em; margin: 10px 0 0; }`;
+  document.head.appendChild(css);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const MARK = { true: ["✓", "good"], false_required: ["✗", "bad"], false_other: ["•", "meh"] };
+  let dlg = null;
+
+  function listHtml(S) {
+    const row = i => {
+      const [m, c] = i.ok ? MARK.true : (i.level === "required" ? MARK.false_required : MARK.false_other);
+      return `<li><span class="mark ${c}">${m}</span><span><b>${esc(i.title)}</b> <span class="detail">${esc(i.detail)}${i.level === "optional" ? " (optional)" : ""}</span>${i.fix ? `<br><span class="fix">${esc(i.fix)}</span>` : ""}</span></li>`;
+    };
+    return `<ul class="checks">${S.items.map(row).join("")}</ul>`;
+  }
+  async function render(msg) {
+    const S = await api("/api/setup");
+    window.STUDIO_ROOT = S.root;
+    const u = document.getElementById("kuser");
+    if (u && !u.value && S.kaggle_username) { u.value = S.kaggle_username; try { localStorage.setItem("kaggle_user", S.kaggle_username); } catch (e) {} }
+    if (!dlg) { dlg = document.createElement("dialog"); dlg.id = "setupDialog"; dlg.setAttribute("aria-labelledby", "setupTitle"); document.body.appendChild(dlg); }
+    dlg.innerHTML = `<h2 id="setupTitle">Setup</h2>
+      <p>${S.ready ? "Everything the Studio needs is here." : "The Studio needs a few more things before it can generate. The ✗ lines are required."}</p>
+      ${listHtml(S)}
+      <h3>Your Kaggle account (free GPUs)</h3>
+      <p class="detail">Create a free account at kaggle.com and verify your phone number (needed for GPUs). Then on kaggle.com open Settings &gt; API and press <b>Create New Token</b>. Paste that token here. It is saved only on this computer.</p>
+      <label for="setupKToken">Kaggle API token</label><input type="password" id="setupKToken" autocomplete="off" spellcheck="false" placeholder="paste the token (leave empty if you use the older username + key)">
+      <details><summary>I have an older username + key (kaggle.json)</summary>
+        <label for="setupKUser">Kaggle username</label><input type="text" id="setupKUser" autocomplete="off" spellcheck="false" placeholder="the part after kaggle.com/">
+        <label for="setupKKey">Kaggle key</label><input type="password" id="setupKKey" autocomplete="off" spellcheck="false"></details>
+      <h3>Hugging Face token (optional)</h3>
+      <p class="detail">Only for the Hugging Face prompt writer. Inference Providers needs prepaid credit on your Hugging Face account.</p>
+      <label for="setupHF">Hugging Face token</label><input type="password" id="setupHF" autocomplete="off" spellcheck="false" placeholder="hf_...">
+      <div class="row"><button type="button" id="setupSave">Save</button><button type="button" id="setupTest">Test Kaggle login</button><button type="button" id="setupClose">Close</button></div>
+      <p class="msg" id="setupMsg" role="status" aria-live="polite">${esc(msg || "")}</p>`;
+    const say = (t, bad) => { const m = document.getElementById("setupMsg"); m.textContent = t; m.style.color = bad ? "#d6455d" : ""; };
+    document.getElementById("setupClose").onclick = () => dlg.close();
+    document.getElementById("setupSave").onclick = async () => {
+      const g = id => document.getElementById(id).value.trim();
+      const body = { kaggle_token: g("setupKToken"), kaggle_username: g("setupKUser"), kaggle_key: g("setupKKey"), hf_token: g("setupHF") };
+      if (!Object.values(body).some(Boolean)) return say("Nothing to save yet: paste a token first.", true);
+      try { const r = await api("/api/setup_save", body); await render("Saved: " + r.saved.join(", ").replace(/_/g, " ") + "."); if (ST) ST.hf_token_set = true; }
+      catch (e) { say(e.message, true); }
+    };
+    document.getElementById("setupTest").onclick = async () => {
+      say("Asking Kaggle…");
+      try { const r = await api("/api/setup_test", {}); say(r.message, !r.ok); } catch (e) { say(e.message, true); }
+    };
+    return S;
+  }
+  async function open(msg) {
+    try { await render(msg); } catch (e) { alert("Setup could not load: " + e.message); return; }
+    if (typeof dlg.showModal === "function") { if (!dlg.open) dlg.showModal(); } else dlg.setAttribute("open", "");
+  }
+  document.getElementById("setupBtn").addEventListener("click", () => open());
+  // First run: if something required is missing, open the window once per browser session; otherwise just fill in the Kaggle name.
+  (async () => {
+    try {
+      const S = await api("/api/setup");
+      window.STUDIO_ROOT = S.root;
+      const u = document.getElementById("kuser");
+      if (u && !u.value && S.kaggle_username) { u.value = S.kaggle_username; try { localStorage.setItem("kaggle_user", S.kaggle_username); } catch (e) {} }
+      if (!S.ready && !sessionStorage.getItem("setupShown")) { sessionStorage.setItem("setupShown", "1"); open(); }
+    } catch (e) { /* the page still works without it */ }
+  })();
 })();
 </script>
 </body>

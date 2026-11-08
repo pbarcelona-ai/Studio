@@ -6,18 +6,18 @@
   python3 scripts/regress_kaggle.py --user YOURNAME --dry-run     show the plan, push nothing
   python3 scripts/regress_kaggle.py --user YOURNAME --again       also re-run the models that already passed
   python3 scripts/regress_kaggle.py --user YOURNAME --keep-going  do not stop at a failure; test everything and list the failures at the end
-  python3 scripts/regress_kaggle.py --steps-cap 30 --only MODEL --again   run one model at up to 30 steps (quality check)
+  python3 scripts/regress_kaggle.py --steps-cap 6 --only MODEL --again   run one model with at most 6 steps (quick smoke test)
   python3 scripts/regress_kaggle.py --list                        list the models that would be tested
 
 The prompt: the text in regression_prompt.txt (repository root) is sent to every model; edit it to compare the models on a new prompt. A pass only counts for the
 prompt it was run with, so changing the file re-runs everything. Without the file the built-in zombie prompt is used.
 How it works: for each model it asks studio.prompt_plan() for the same steps the page would run (so the CSV row, dataset, notebook and push are the
 real ones), runs run_kaggle_model.sh, waits for the kernel, then looks for a new, non-trivial output file. Sizes are the model's defaults (that is
-where out-of-memory bugs show up); only the number of steps is cut to keep each run short. TPU models are skipped.
+where out-of-memory bugs show up); steps are NOT cut unless --steps-cap is given. TPU models are skipped.
 Fix-first workflow: by default the run stops at the first model that fails and prints the end of the Kaggle log. Fix the cause, run the same command
 again: models that already passed are skipped, so it carries on with the model you just fixed. --lanes 2 runs two models at once (Kaggle allows two GPU
-sessions); each lane has its own prompt set so the dataset versions do not race: projects/prompts/regtest_a and regtest_b. The kernels stay on your Kaggle account: remove them with the Cleanup button on the Import tab.
-Results: regression_kaggle_report.json / .md in the repository root (re-running skips models that passed), full logs in projects/prompts/regtest_*/logs/.
+sessions); each lane has its own prompt set so the dataset versions do not race: projects/regression/regtest_a and regtest_b. The kernels stay on your Kaggle account: remove them with the Cleanup button on the Import tab.
+Results: regression_kaggle_report.json / .md in the repository root (re-running skips models that passed), full logs in projects/regression/regtest_*/logs/.
 """
 import argparse
 import json
@@ -52,7 +52,7 @@ def read_prompt():
 TEST_PROMPT = read_prompt()                     # the same prompt for every model
 PROMPT = {"video": TEST_PROMPT, "image": TEST_PROMPT}
 AUDIO = {f"audio_{k}": k for k in S.AUDIO_MODELS}
-STEPS_CAP = 6
+STEPS_CAP = 0                       # 0 = no limit: every model runs at its real default steps (a true comparison)
 lock = threading.Lock()
 stop = threading.Event()               # set at the first failure unless --keep-going
 
@@ -81,7 +81,7 @@ def save_report(rep):
 
 
 def lane_dir(lane):
-    return ROOT / "projects" / "prompts" / f"regtest_{lane}"
+    return ROOT / "projects" / "regression" / f"regtest_{lane}"
 
 
 def make_opt(kind, model, lane, user, gpu):
@@ -89,7 +89,7 @@ def make_opt(kind, model, lane, user, gpu):
     steps = d.get("steps")
     o = {"variations": 1}
     if steps and "steps" not in d.get("locked", []):
-        o["steps"] = str(min(int(steps), STEPS_CAP))
+        o["steps"] = str(min(int(steps), STEPS_CAP) if STEPS_CAP else int(steps))
     return {"mode": "prompts", "set": f"regtest_{lane}", "kind": kind, "model": model, "prompts": PROMPT[kind], "opts": o,
             "service": "kaggle", "gpu": gpu, "kaggle_user": user, "batch": "0"}
 
@@ -169,11 +169,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--user", help="your Kaggle username (the part after kaggle.com/)")
     ap.add_argument("--only", default="", help="comma-separated model names")
+    ap.add_argument("--kinds", default="", help="comma-separated kinds to test: image, video, audio (default: all of them)")
     ap.add_argument("--lanes", type=int, default=1, help="how many runs at the same time, 1 or 2 (Kaggle allows 2 GPU sessions). Default 1")
     ap.add_argument("--keep-going", action="store_true", help="do not stop at the first failure")
     ap.add_argument("--list", action="store_true", help="list the models and exit")
     ap.add_argument("--timeout", type=int, default=90, help="minutes to wait for one model")
-    ap.add_argument("--steps-cap", type=int, default=6, help="most steps any model is run with (default 6, to keep runs short; use a big number to test quality at the real step counts)")
+    ap.add_argument("--steps-cap", type=int, default=0, help="most steps any model is run with. Default 0 = no limit, every model runs at its real default steps; use a small number (for example 6) for a quick smoke test")
     ap.add_argument("--gpu", default="NvidiaTeslaT4")
     ap.add_argument("--again", action="store_true", help="re-run models that passed before")
     ap.add_argument("--dry-run", action="store_true")
@@ -188,6 +189,11 @@ def main():
         ap.error("--user is required (your Kaggle username)")
 
     todo = all_models()
+    if a.kinds:
+        kinds = {x.strip() for x in a.kinds.split(",") if x.strip()}
+        if not kinds <= {"image", "video", "audio"}:
+            sys.exit("--kinds takes image, video and/or audio")
+        todo = [t for t in todo if t[0] in kinds]
     if a.only:
         want = {x.strip() for x in a.only.split(",") if x.strip()}
         todo = [t for t in todo if t[1] in want]

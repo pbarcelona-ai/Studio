@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Draw the Pistachio's Studio app icon: a bright P and S on a dark rounded square, placed so the top-left of the S touches the bottom-right of the P's curve.
 
-  python3 scripts/make_icon.py [OUT_DIR]       writes icon_1024.png and icon.icns into OUT_DIR (default: a temp folder, printed)
+  python3 scripts/make_icon.py [OUT_DIR]            writes icon_1024.png and icon.icns into OUT_DIR (default: a temp folder, printed)
+  python3 scripts/make_icon.py --favicon studio.html  also (re)writes the favicon <link> tags between the favicon markers in that page
 
 create_app_bundle.sh runs this and copies icon.icns into the app. Needs Pillow and macOS (iconutil) for the .icns step.
 """
+import base64
+import io
+import re
 import subprocess
 import sys
 import tempfile
@@ -107,7 +111,48 @@ def make(out_dir):
     return png, out / "icon.icns"
 
 
+def data_uri(img, px):
+    buf = io.BytesIO()
+    img.resize((px, px), Image.LANCZOS).save(buf, "PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def favicon_block(png):
+    """<link> tags with the icon embedded (no extra file to serve). The 40 px margin of the app icon is cropped so the letters stay big at 16-32 px."""
+    full = Image.open(png).convert("RGBA")
+    tight = full.crop((40, 40, SIZE - 40, SIZE - 40))
+    apple = Image.new("RGBA", tight.size, BG_TOP + (255,))     # iOS wants a filled square and rounds the corners itself
+    ad = ImageDraw.Draw(apple)
+    for y in range(apple.height):                              # same gradient as the icon, so the cropped-off corners are filled with it
+        t = y / (apple.height - 1)
+        ad.line([(0, y), (apple.width, y)], fill=tuple(int(BG_TOP[i] + (BG_BOTTOM[i] - BG_TOP[i]) * t) for i in range(3)) + (255,))
+    apple.alpha_composite(tight)
+    return ("<!-- favicon:start (written by scripts/make_icon.py --favicon) -->\n"
+            f'<link rel="icon" type="image/png" sizes="32x32" href="{data_uri(tight, 32)}">\n'
+            f'<link rel="icon" type="image/png" sizes="64x64" href="{data_uri(tight, 64)}">\n'
+            f'<link rel="apple-touch-icon" sizes="180x180" href="{data_uri(apple, 180)}">\n'
+            "<!-- favicon:end -->")
+
+
+def write_favicon(page, png):
+    path = Path(page)
+    html = path.read_text(encoding="utf-8")
+    block = favicon_block(png)
+    pat = re.compile(r"<!-- favicon:start.*?<!-- favicon:end -->", re.S)
+    if pat.search(html):
+        html = pat.sub(lambda m: block, html, count=1)
+    else:
+        html = html.replace("</head>", block + "\n</head>", 1)     # first run: add the block just before </head>
+    path.write_text(html, encoding="utf-8")
+
+
 if __name__ == "__main__":
-    folder = sys.argv[1] if len(sys.argv) > 1 else tempfile.mkdtemp(prefix="studio_icon_")
+    args = sys.argv[1:]
+    page = args[args.index("--favicon") + 1] if "--favicon" in args else None
+    rest = [a for i, a in enumerate(args) if a != "--favicon" and (i == 0 or args[i - 1] != "--favicon")]
+    folder = rest[0] if rest else tempfile.mkdtemp(prefix="studio_icon_")
     png, icns = make(folder)
     print(f"wrote {png}\nwrote {icns}")
+    if page:
+        write_favicon(page, png)
+        print(f"wrote favicon tags into {page}")

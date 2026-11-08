@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
-root = Path(__file__).resolve().parent.parent      # the project folder
+import os as _os
+root = Path(_os.environ["BIBLE_GEN_DIR"]) if _os.environ.get("BIBLE_GEN_DIR") else Path(__file__).resolve().parent.parent   # BIBLE_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
 
 HEADER = '''import csv, os, subprocess, sys, tarfile, time
 from pathlib import Path
@@ -176,8 +177,13 @@ for i in range(START, END + 1):
     try:
         for old in TMP.glob("*"):
             old.unlink()
+        # demo.py names its output file after the prompt text, and a file name longer than 255 characters cannot be written (a long scene
+        # description made "avio_open failed"). Sound-effect prompts are short anyway, so cut at a word boundary well under that limit.
+        prompt = " ".join(rows[i - 1]["sfx"].split())
+        if len(prompt) > 150:
+            prompt = prompt[:150].rsplit(" ", 1)[0]
         sh(f'cd MMAudio && {sys.executable} demo.py --duration={SECONDS} --output ../{TMP} '
-           f'--seed {i} --prompt {json_q(rows[i - 1]["sfx"])} --negative_prompt "music, speech, voice"')
+           f'--seed {i} --prompt {json_q(prompt)} --negative_prompt "music, speech, voice"')
         made = sorted(TMP.glob("*.flac")) + sorted(TMP.glob("*.wav"))
         if not made:
             raise RuntimeError("MMAudio wrote no audio file (check its README for current flags)")

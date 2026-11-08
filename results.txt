@@ -130,3 +130,78 @@ STATUS: PASS
 [2026-11-06] make_video.py + studio.py: hunyuan_video_15 added - PASS (static review; Kaggle regression pending)
 
 [2026-11-06] scripts/make_icon.py (new) + create_app_bundle.sh icon step - PASS (py_compile OK; icon checked visually; installed in the app)
+
+[2026-11-06] studio.html favicon + scripts/make_icon.py --favicon - PASS (headless suite17 PASS)
+
+[2026-11-06] create_app_bundle.sh rewritten: osacompile AppleScript app (opens Terminal and runs run_studio.sh), icon applet.icns, ad-hoc signed. Launched with `open -a`: server started (studio.py running). Hand-built bundle (bash executable) was not started by macOS; backup create_app_bundle.sh.pre_applescript.
+
+[2026-11-06] create_app_bundle.sh: stay-open AppleScript app, no Terminal (server in background, log in ~/Library/Logs/Pistachios Studio.log, Quit stops it) - tested: launch starts server + log URL, quit stops it. Backup create_app_bundle.sh.pre_applescript holds the hand-built version.
+
+[2026-11-06] hunyuan_video_15: Kaggle regression PASS (6 steps and 30 steps produce a file) but quality is poor (smeared, woven texture); marked EXPERIMENTAL in its note.
+
+[2026-11-06] make_video.py + studio.py: wan22_t2v_a14b_lightning added - PASS (static review; Kaggle regression pending)
+
+[2026-11-06] wan22_t2v_a14b_lightning: Kaggle regression PASS (8 min, 25 frames 448x256); frames show the woman running toward the camera down a city street with masked pursuers - good quality. Kaggle regression: 38 of 38 PASS.
+
+[2026-11-06] studio.html + studio.py + scripts/templates.py: pizazz (hero video, art banners, Library tab, Compare tab, effects switch, confetti, icon theme) - PASS (headless suites 14-18 PASS)
+
+[2026-11-06] studio.py + studio.html: /thumb route and thumbnail grids for Compare/Library - PASS (headless suites 14,17,18 PASS; CDP check on real data PASS)
+
+[2026-11-06] studio.html + Compare tab: read-only "Full prompt" text box under the prompt dropdown (updates with the selection) - PASS (suite18 PASS)
+
+[2026-11-06] studio.html + Compare tab: read-only "Full prompt" text box under the prompt dropdown (updates with the selection) - PASS (suite18 PASS)
+
+[2026-11-06] studio.html Compare tab: Copy prompt button (clipboard API with a select+execCommand fallback, toast feedback) - PASS (suite18 PASS)
+
+[2026-11-06] studio.html: camera/look chips on Single Prompts (add/remove a phrase on every prompt line, pressed state follows the text) - PASS (headless suite20 PASS, suite18 PASS, screenshot checked)
+
+[2026-11-06] studio.py + studio.html: depth maps (/depth) and WebGL 3D view in the picture preview - PASS (headless suites 18, 20 PASS; CDP check with WebGL PASS)
+
+[2026-11-06] bookkit.py (scripts/), studio.py, prompt_guides.py (new), studio.html: AI prompt writer upgrade (model-aware guides, Hugging Face engine, local engine behind a greyed checkbox with auto-enable, AI picture review and picture-to-video-prompt) - PASS (23 server checks, headless suites 14-18, 20, 21 PASS)
+
+[2026-11-06] setup_check.py (new), studio.py, studio.html, install.sh (new), requirements*.txt (new), run_studio.sh, create_app_bundle.sh, README.md: distribution to friends (Setup window, private key storage, installer, README) - PASS (27 unit checks, headless suite 22, live server round trip under a fake HOME, clean-folder install, fresh-copy start-up)
+
+[2026-11-06] bookkit.py (scripts/), studio.py, studio.html: AI picture review and picture-to-prompt now use Claude (Read tool on a private copy), Codex or Hugging Face, and the local model automatically when the computer qualifies - PASS (12 fake-CLI checks, live Claude run on a real result, headless suites 21 and 23)
+
+[2026-11-07] Regression with the space-ship prompt: 38 of 38 models passed after fixes - make_audio.py (MMAudio long-prompt filename) and run_kaggle_model.sh (wait for Kaggle's CSV to have the requested row) - PASS (Kaggle re-runs of audio_mmaudio, wan22_t2v_a14b_lora, and moss_image_base at 30 steps; fake-Kaggle test of the row check)
+
+[2026-11-07] 3D gallery in the preview (studio.html) - PASS (suite24, 5 headless checks; successful 3D inside the gallery untested for lack of WebGL in headless Chrome). Also fixed a blank preview when 3D fails.
+
+[2026-11-07] regress_kaggle.py / run_regression.sh: no step limit by default (real default steps for a true comparison) - PASS (compile, dry run). A no-cap run of the 27 models that the 6-step cap had changed was started.
+
+[2026-11-07] studio.py: Compare tab can show hand-collected results (lane regtest_i): 2 Paro clips (Adam and Eve, Captain Awesome) and 5 Hugging Face zombie pictures (3 qwen_aio, 2 webp converted to png) - PASS (suite26, all 7 files served).
+
+[2026-11-07] Import tab: one Import card (book picker, PDF/.txt/.md file box, pasted text, Import/Stop/log) above the AI Prompt Writer; studio.py and book_ingest.py accept text books - PASS (book_ingest run on a text file and a too-short file; suite27, 4 checks). Old UI suites 1 and 6 not usable as a regression check (lost helper file).
+
+[2026-11-07] run_regression.sh -v (video only) and -i (image only), none = all; regress_kaggle.py --kinds - PASS (dry runs gave 11, 22, 38 and 33 models; bash -n and py_compile clean). The running regression was not disturbed.
+
+[2026-11-07] run_regression.sh: -a = audio only, "again" moved from -a to -r - PASS (dry runs; bash -n clean).
+
+[2026-11-07] Generated notebooks no longer come back after Cleanup: run_kaggle_model.sh / run_colab_model.sh re-create a missing one in a throw-away folder (BIBLE_GEN_DIR in make_video/audio/image/tpu.py) - PASS (copy test: 79 notebooks + 38 scripts byte-identical, none in the project folder; Kaggle and Colab live runs not repeated).
+
+[2026-11-07] Per-chapter shot counts (table in Book Processing, GET/POST /api/chapter_shots, saved to overrides.json) - PASS (direct tests of save/clear/bad input; headless UI test: 90-chapter book, Auto column follows the settings, save, reload, Estimate uses the saved counts, Clear all).
+[2026-11-07] Book Processing card moved from Movies to Import (under the Import card); Import/Stop/status/log moved into Book Processing - PASS (page structure unchanged; Import-tab UI suite 4/4, no page errors).
+
+[2026-11-07] Narration "Dialogue" mode (book_write.py, book_build.py, bookkit.sentences fix, studio.py, studio.html) - PASS (stand-in AI test: quotes found exactly, speaker count validated, unknown speaker -> narrator, quote-less shot silent with lines []; dry-run estimate; py_compile clean). Not yet run with a real AI.
+
+[2026-11-07] book_write.py system prompt extended with the hollywood filmmaker / storyboard artist wording - PASS (py_compile clean; text change only, JSON-only instruction kept). Applies to chapters written from now on.
+
+[2026-11-07] Book Processing card wording (continuity book, AI instead of Claude, Edit line follows the selected book) - PASS (headless UI test: line follows the book, no 'Claude' left in the card, Import-tab suite 4/4).
+[2026-11-07] Moved the 5 ltx_video clips of the adam_eve book into the Compare tab lane regtest_i (videos/ltx_video/shot-0003..0007.mp4, prompts appended to regtest_i/all_shots.csv rows 3-7) - PASS (compare_data lists all five under their prompts; the book's ltx_video folder is now empty; the merged film films/ltx_video_merged.mp4 was not touched).
+[2026-11-07] Moved books/adam_eve/films/ltx_video_merged.mp4 to prompts/regtest_i/films/ - PASS (file moved, size unchanged).
+[2026-11-07] Deleted the 7 original hand-collected files from ~/Downloads after verifying the copies in regtest_i (5 byte-identical; the 2 webp are stored as PNG).
+[2026-11-07] Started the books over: moved projects/books/{adam_eve,book_of_jasher,enoch,genesis_adam_eve} to ~/.Trash/studio-books-2026-11-07 (recoverable until the Trash is emptied). Source files in books/ and projects/characters/ kept.
+
+[2026-11-07] Continuity book file is now named after the book (<book>.json, old bible.json still read): bookkit.bible_file used by book_bible/book_write/book_build/studio/character_tokens; the card's Edit line matches - PASS (throw-away book: written as zz_bk.json, second run refuses to overwrite, project_info and book_write find it, renamed to bible.json still found; UI test of the line passes).
+
+[2026-11-07] Removed the old bible.json fallback everywhere (no bible.json exists; books start over) - PASS (py_compile clean; no 'bible.json' left in code except none; UI test of the card line passes).
+
+[2026-11-07] Characters tab: tick box per character + 'Send ticked to the book' (character_tokens.send_to_bible, POST /api/characters send_to_book); old sync button relabelled - PASS (direct test of update/add/unchanged/missing/no book; headless UI test incl. cancel and confirm).
+
+[2026-11-07] Cleanup now always lists the TPU notebooks (they used up the 'keep 3 newest' slots, so they were never offered) - PASS (cleanup_scan on the real folder lists all 3; nothing deleted yet - the Cleanup button does that).
+
+[2026-11-07] Regression results moved from projects/prompts to projects/regression (regtest_a, regtest_b, regtest_i, regtest_ratings.json); layout.py, regress_kaggle.py, studio.py, run_regression.sh and the report logs' paths updated - PASS (py_compile/bash -n clean; Compare still finds 8 prompts / 111 results and 59 ratings; layout CLI resolves regtest_a; regression dry run works; headless test: files served, rating saved, lanes not listed as prompt sets). The no-step-limit regression finished: 38 passed, 0 failed.
+
+[2026-11-07] Characters tab: Generate button moved next to Generate Prompt and renamed Generate Character - PASS (headless check: adjacent, no page errors).
+
+[2026-11-07] Characters tab: generation options moved next to the Generate Character button - PASS (headless order/adjacency check, no page errors).

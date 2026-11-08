@@ -8,7 +8,7 @@ audio_chapters.csv (same row order, row N of audio = row N of video) and movies.
 minutes; each movie ends at the end of a chapter). Chapters without a script yet are left out.
 """
 import argparse, csv, json, sys
-from bookkit import apply_prompt_edits, build_movies, project_dir, read_json
+from bookkit import apply_prompt_edits, bible_file, build_movies, project_dir, read_json
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
@@ -16,7 +16,7 @@ ap.add_argument("--minutes", type=float, default=10.0)
 args = ap.parse_args()
 
 pdir = project_dir(args.project)
-bible = read_json(pdir / "bible.json", {})
+bible = read_json(bible_file(pdir), {})
 prompts, audio = [], []
 for f in sorted((pdir / "scripts").glob("chapter-*.json")):
     d = read_json(f)
@@ -24,7 +24,8 @@ for f in sorted((pdir / "scripts").glob("chapter-*.json")):
     for s in d["shots"]:
         prompts.append({"chapter": label, "shot": s["n"], "prompt": s["prompt"]})
         line = [s["speaker"], s["narration"]] + ([s["voice"]] if s.get("voice") else [])
-        audio.append({"chapter": label, "shot": s["n"], "lines_json": json.dumps([line], ensure_ascii=False),
+        lines = s["lines"] if "lines" in s else [line]          # dialogue mode: one line per quote, none for a silent shot
+        audio.append({"chapter": label, "shot": s["n"], "lines_json": json.dumps(lines, ensure_ascii=False),
                       "narration": s["narration"], "sfx": s["sfx"],
                       "music": f"cinematic score, {s['music'].rstrip('. ')}"[:330]})
 if not prompts:

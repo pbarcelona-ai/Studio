@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Step 2 of a new book: Claude reads samples of the book and writes the continuity bible (bible.json).
+"""Step 2 of a new book: Claude reads samples of the book and writes the continuity bible (<book name>.json).
 
   python3 book_bible.py <project_name> [--model sonnet] [--force]
 
-bible.json holds the visual style, the recurring characters (each with one exact visual description that is pasted
+<book name>.json holds the visual style, the recurring characters (each with one exact visual description that is pasted
 into every shot prompt, plus a narration voice) and key locations. You can edit it by hand; later steps reuse it.
 """
 import argparse, sys
-from bookkit import COST, VOICE_MAP, cost_note, llm_json, project_dir, read_json, write_json
+from bookkit import COST, VOICE_MAP, bible_file, cost_note, llm_json, project_dir, read_json, write_json
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
@@ -21,8 +21,9 @@ pdir = project_dir(args.project)
 index = read_json(pdir / "chapters.json")
 if not index:
     sys.exit("run book_ingest.py first (no chapters.json)")
-if (pdir / "bible.json").exists() and not args.force:
-    sys.exit("bible.json already exists (use --force to rewrite it, or edit it by hand)")
+BIBLE = bible_file(pdir)
+if BIBLE.exists() and not args.force:
+    sys.exit(f"{BIBLE.name} already exists (use --force to rewrite it, or edit it by hand)")
 
 chapters = index["chapters"]
 pick = sorted({round(i * (len(chapters) - 1) / 9) for i in range(10)}) if len(chapters) > 10 else range(len(chapters))
@@ -78,8 +79,8 @@ def check(d):
 
 bible = llm_json(PROMPT, SYSTEM, model=args.model, engine=args.engine, validate=check)
 bible.setdefault("locations", [])
-write_json(pdir / "bible.json", bible)
-print(f"bible.json written: {len(bible['characters'])} characters, {len(bible['locations'])} locations "
+write_json(BIBLE, bible)
+print(f"{BIBLE.name} written: {len(bible['characters'])} characters, {len(bible['locations'])} locations "
       f"({COST['calls']} call via {args.engine}{cost_note()})")
 for c in bible["characters"]:
     print(f"  {c['name']} [{c['voice']}]: {c['token'][:90]}")

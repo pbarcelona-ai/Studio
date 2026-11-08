@@ -14,12 +14,17 @@ case "$MODEL" in tpu_*|image_tpu_*) echo "$MODEL is Kaggle-only (TPU): use run_k
 SCRIPT="colab_generate_${MODEL}.py"
 case "$MODEL" in audio_*) OUTDIR="$PD/audio/${MODEL#audio_}" ;; image_*) OUTDIR="$PD/images/${MODEL#image_}" ;; *) OUTDIR="$PD/videos/$MODEL" ;; esac
 case "$SHOTS_CSV" in *chapters*) OUTDIR="${OUTDIR}_chapters" ;; esac
-[ -f "$SCRIPT" ] || python3 scripts/make_all.py >/dev/null 2>&1 || true      # generated files can be deleted by the clean-up; re-create them
+GEN=""
+if [ ! -f "$SCRIPT" ]; then      # generated files can be deleted by the clean-up: re-create them in a throw-away folder, so the project folder stays clean
+  GEN=$(mktemp -d)
+  BIBLE_GEN_DIR="$GEN" python3 scripts/make_all.py >/dev/null 2>&1 || true
+  SCRIPT="$GEN/$SCRIPT"
+fi
 [ -f "$SCRIPT" ] || { echo "no such model: $MODEL (missing $SCRIPT)"; exit 1; }
 S="${PROJECT//_/-}-$MODEL-$START-$END"      # the Colab session name
 
 colab new -s "$S" --gpu "$GPU"
-trap 'colab stop -s "$S" || true' EXIT   # always release the VM
+trap 'colab stop -s "$S" || true; [ -z "$GEN" ] || rm -rf "$GEN"' EXIT   # always release the VM
 
 colab upload -s "$S" "$PD/$SHOTS_CSV" /content/all_shots.csv
 case "$MODEL" in audio_*) ;; *) colab install -s "$S" diffusers transformers accelerate sentencepiece protobuf imageio imageio-ffmpeg ftfy gguf peft safetensors ;; esac   # audio scripts install their own packages

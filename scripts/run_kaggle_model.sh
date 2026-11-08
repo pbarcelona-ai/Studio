@@ -23,7 +23,12 @@ case "$MODEL:$ACCEL" in
   *:Tpu*) echo "only tpu_* models run on a TPU (got $MODEL on $ACCEL)"; exit 1 ;;
 esac
 NB="Bible_Kaggle_${MODEL}.ipynb"
-[ -f "$NB" ] || python3 scripts/make_all.py >/dev/null 2>&1 || true        # generated files can be deleted by the clean-up; re-create them
+GEN=""
+if [ ! -f "$NB" ]; then        # generated files can be deleted by the clean-up: re-create them in a throw-away folder, so the project folder stays clean
+  GEN=$(mktemp -d); trap 'rm -rf "$GEN"' EXIT
+  BIBLE_GEN_DIR="$GEN" python3 scripts/make_all.py >/dev/null 2>&1 || true
+  NB="$GEN/$NB"
+fi
 [ -f "$NB" ] || { echo "no such model: $MODEL (missing $NB)"; exit 1; }
 command -v kaggle >/dev/null || { echo "kaggle CLI not found: uv tool install kaggle"; exit 1; }
 
@@ -33,7 +38,7 @@ case "$SHOTS_CSV" in *chapters*) OUTDIR="${BASEDIR}_chapters"; MODE="-chapters" 
 KPREFIX=${KAGGLE_PREFIX:-}                                   # no prefix unless you set KAGGLE_PREFIX (for example KAGGLE_PREFIX=mine-)
 DS="${KPREFIX}${PROJECT//_/-}-prompts"                      # one Kaggle dataset per project (Kaggle wants 3+ characters in the name and 6+ in the title, so a short set name like xv gets "-prompts")
 SLUG="${KPREFIX}${PROJECT//_/-}-${MODEL//_/-}${MODE}-${START}-${END}"        # slug must equal the lower-cased, dashed title
-WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+WORK="$(mktemp -d)"; trap 'rm -rf "$WORK" "$GEN"' EXIT
 
 # 1. Dataset with the prompt CSVs (create once, new version afterwards)
 mkdir -p "$WORK/ds"; for f in all_shots.csv all_chapters.csv audio_shots.csv audio_chapters.csv all_images.csv; do [ -f "$PD/$f" ] && cp "$PD/$f" "$WORK/ds/"; done
@@ -52,6 +57,23 @@ for _ in $(seq 1 30); do
   kaggle datasets status "$USER_SLUG/$DS" 2>&1 | grep -qi ready && break
   sleep 10
 done
+# "ready" can describe the PREVIOUS version while the new one is still being created, and a notebook that starts then sees the old CSV and does nothing
+# (a run for row 11 found only 10 rows and reported success with no output). So wait until Kaggle's copy of the CSV has at least the rows this run needs.
+NEED_ROWS=$(python3 -c "import csv,sys; print(len(list(csv.DictReader(open(sys.argv[1], newline='', encoding='utf-8')))))" "$PD/$SHOTS_CSV" 2>/dev/null || echo 0)
+if [ "${NEED_ROWS:-0}" -ge "$END" ]; then
+  echo "== checking that Kaggle's copy of $SHOTS_CSV has row $END"
+  OK=0
+  for _ in $(seq 1 30); do
+    rm -rf "$WORK/chk"; mkdir -p "$WORK/chk"
+    if kaggle datasets download "$USER_SLUG/$DS" -f "$SHOTS_CSV" -p "$WORK/chk" --unzip -q >/dev/null 2>&1 && [ -f "$WORK/chk/$SHOTS_CSV" ]; then
+      HAVE=$(python3 -c "import csv,sys; print(len(list(csv.DictReader(open(sys.argv[1], newline='', encoding='utf-8')))))" "$WORK/chk/$SHOTS_CSV" 2>/dev/null || echo 0)
+      [ "${HAVE:-0}" -ge "$END" ] && { OK=1; break; }
+      echo "   Kaggle has ${HAVE:-0} rows, need $END; waiting 10 s"
+    fi
+    sleep 10
+  done
+  [ "$OK" = 1 ] || echo "!! Kaggle's copy never showed row $END; continuing anyway (the notebook may find too few rows)"
+fi
 
 # 2. Notebook copy with this run's range and CSV filled in
 mkdir -p "$WORK/nb"

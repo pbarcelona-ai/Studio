@@ -8,7 +8,8 @@ Wan-AI/Wan2.1-T2V-14B-Diffusers, there is no 1.3B config), prompt_file = one pro
 """
 import json
 from pathlib import Path
-root = Path(__file__).resolve().parent.parent
+import os as _os
+root = Path(_os.environ["BIBLE_GEN_DIR"]) if _os.environ.get("BIBLE_GEN_DIR") else Path(__file__).resolve().parent.parent   # BIBLE_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
 
 
 def md(t): return {"cell_type": "markdown", "metadata": {}, "source": t.strip().splitlines(True)}

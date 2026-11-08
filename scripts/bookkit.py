@@ -4,7 +4,7 @@ Everything for a book lives in projects/<slug>/ :
   source/<name>.pdf      the uploaded PDF
   source_text.txt        extracted text
   chapters/chapter-NNN.txt, chapters.json
-  bible.json             style, characters (visual tokens + voice), locations
+  <book name>.json       style, characters (visual tokens + voice), locations
   overrides.json         optional {"5": {"shots": 10}}  per-chapter shot counts
   scripts/chapter-NNN.json   what Claude wrote for each chapter
   all_shots.csv, all_chapters.csv, audio_shots.csv, audio_chapters.csv, movies.json   (built from the above)
@@ -37,6 +37,12 @@ def project_dir(slug):
     return layout.project_dir(slug, "book")
 
 
+def bible_file(pdir):
+    """The continuity-book file of a book: <book name>.json inside the book's folder."""
+    pdir = Path(pdir)
+    return pdir / f"{pdir.name}.json"
+
+
 def words(text):
     return len(text.split())
 
@@ -48,7 +54,9 @@ def strip_verse_numbers(text):
 
 
 def sentences(text):
-    parts = re.split(r"(?<=[.!?])[\"'”’)]*\s+", text.strip())
+    # split after . ! ? and after any closing quote or bracket that follows it, but keep those closing marks in the sentence
+    # (dropping them loses where a spoken quote ends)
+    parts = re.split(r"(?<=[.!?])\s+|(?<=[.!?][\"'”’)])\s+|(?<=[.!?][\"'”’)][\"'”’)])\s+", text.strip())
     return [p.strip() for p in parts if p.strip()]
 
 
@@ -102,10 +110,59 @@ def extract_json(text):
 # engine name -> (command, family). `claude` and `fcc-claude` are the same CLI (fcc- routes it through the Free Claude
 # Code proxy); `codex` and `fcc-codex` are the Codex CLI the same way.
 ENGINES = {"claude": ("claude", "claude"), "fcc-claude": ("fcc-claude", "claude"),
-           "codex": ("codex", "codex"), "fcc-codex": ("fcc-codex", "codex")}
+           "codex": ("codex", "codex"), "fcc-codex": ("fcc-codex", "codex"),
+           "hf": ("", "hf"),                     # hf = open models through Hugging Face Inference Providers (HF_TOKEN in the environment)
+           "local": ("", "local")}               # local = a model server on this computer (Ollama, LM Studio, llama.cpp: any OpenAI-style endpoint)
+
+HF_ROUTER_URL = os.environ.get("HF_ROUTER_URL", "https://router.huggingface.co/v1/chat/completions")
+HF_DEFAULT_MODEL = "Qwen/Qwen3.8-27B"
 
 
-def llm_json(prompt, system, model=None, engine="claude", validate=None, retries=2):
+def _chat(url, headers, messages, model, max_tokens, temperature, timeout, who):
+    """One OpenAI-style chat call. Returns the reply text with any <think>...</think> reasoning removed."""
+    import urllib.error
+    import urllib.request
+    body = json.dumps({"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}).encode()
+    req = urllib.request.Request(url, data=body, method="POST", headers={"Content-Type": "application/json", **headers})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:300]
+        hint = {401: "the token was refused (check HF_TOKEN)", 402: "no Inference Providers credit left on this account",
+                403: "the token lacks the 'Make calls to Inference Providers' permission", 404: "that model is not served",
+                429: "rate limit: wait a moment and try again"}.get(e.code, "") if who == "Hugging Face" else ""
+        raise RuntimeError(f"{who} answered {e.code}" + (f" ({hint})" if hint else "") + f": {detail}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise RuntimeError(f"could not reach {who}: {getattr(e, 'reason', e)}")
+    try:
+        text = data["choices"][0]["message"]["content"] or ""
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(f"unexpected answer from {who}: {str(data)[:200]}")
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+
+
+def hf_chat(messages, model=None, max_tokens=1500, temperature=0.8, timeout=180):
+    """One chat call to Hugging Face Inference Providers. The token is read from HF_TOKEN in the environment only and is never printed or
+    written anywhere. `messages` may contain images ({"type": "image_url", ...} parts) for vision models."""
+    token = (os.environ.get("HF_TOKEN") or "").strip()
+    if not token:
+        raise RuntimeError("HF_TOKEN is not set. Create a token at huggingface.co/settings/tokens with the permission "
+                           "'Make calls to Inference Providers', add  export HF_TOKEN=...  to ~/.zshrc, and restart the Studio.")
+    return _chat(HF_ROUTER_URL, {"Authorization": "Bearer " + token}, messages, model or HF_DEFAULT_MODEL, max_tokens, temperature, timeout, "Hugging Face")
+
+
+LOCAL_LLM_URL = os.environ.get("LOCAL_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions")     # Ollama's default; LM Studio is :1234, llama-server :8080
+
+
+def local_chat(messages, model=None, max_tokens=1500, temperature=0.8, timeout=600):
+    """One chat call to a model server running on THIS computer (any OpenAI-style endpoint, set with LOCAL_LLM_URL). No token, nothing leaves the machine."""
+    if not (model or "").strip():
+        raise RuntimeError("choose a local model name (the model box lists the ones your local server has)")
+    return _chat(LOCAL_LLM_URL, {}, messages, model.strip(), max_tokens, temperature, timeout, "the local model server")
+
+
+def llm_json(prompt, system, model=None, engine="claude", validate=None, retries=2, image=None):
     """One non-interactive call to a coding-agent CLI that must return a JSON object.
 
     claude / fcc-claude: `claude -p` with a tiny custom system prompt, no tools, no MCP servers and no settings files,
@@ -114,25 +171,36 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
     --output-last-message file.
     `model` blank/None/"default" means the tool's own default (for `claude` itself that is sonnet).
     `validate(data)` may raise ValueError; the error text is sent back for a corrected reply.
+    `image` is the path of a picture for the model to look at (claude: it may use only the Read tool, on a copy in a private temp folder;
+    codex: passed with -i). hf and local take pictures through hf_json messages instead, not through this argument.
     """
     if engine not in ENGINES:
         raise RuntimeError(f"unknown engine {engine!r}; use one of {sorted(ENGINES)}")
     cmd_name, family = ENGINES[engine]
-    exe = shutil.which(cmd_name, path=_env()["PATH"])
-    if not exe:
+    exe = shutil.which(cmd_name, path=_env()["PATH"]) if family not in ("hf", "local") else None
+    if not exe and family not in ("hf", "local"):
         raise RuntimeError(f"the `{cmd_name}` command was not found")
     model = (model or "").strip()
     if model.lower() == "default":
         model = ""
     if engine == "claude" and not model:
         model = "sonnet"
+    if image and family in ("hf", "local"):
+        raise RuntimeError("pictures go to the hf and local engines through hf_json, not llm_json")
     feedback, last = "", None
+    img_dir = tempfile.TemporaryDirectory() if image else None
+    img_name = None
+    if image:
+        img_name = "picture" + (Path(image).suffix.lower() or ".jpg")
+        shutil.copyfile(image, Path(img_dir.name) / img_name)
+        if family == "claude":
+            prompt = f"First use the Read tool to look at the picture file {img_name} in the current folder. Then do this:\n\n{prompt}"
     for _ in range(retries + 1):
         if family == "claude":
             cmd = [exe, "-p"] + (["--model", model] if model else []) + [
-                "--tools", "", "--no-session-persistence", "--output-format", "json", "--system-prompt", system,
+                "--tools", "Read" if image else "", "--no-session-persistence"] + (["--allowedTools", "Read"] if image else []) + [ "--output-format", "json", "--system-prompt", system,
                 "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", "", "--disable-slash-commands"]
-            r = subprocess.run(cmd, input=prompt + feedback, text=True, capture_output=True, env=_env(), timeout=900)
+            r = subprocess.run(cmd, input=prompt + feedback, text=True, capture_output=True, env=_env(), timeout=900, cwd=img_dir.name if image else None)
             if r.returncode != 0:
                 last = RuntimeError(f"{cmd_name} exited {r.returncode}: {(r.stderr or r.stdout)[:300]}")
                 feedback = ""
@@ -143,11 +211,22 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
                 last = RuntimeError(f"{cmd_name} error: {str(outer.get('result'))[:300]}")
                 continue
             text = outer.get("result", "")
+        elif family in ("hf", "local"):
+            chat = hf_chat if family == "hf" else local_chat
+            try:
+                text = chat([{"role": "system", "content": system}, {"role": "user", "content": prompt + feedback}], model or (HF_DEFAULT_MODEL if family == "hf" else ""))
+            except RuntimeError as e:
+                if "HF_TOKEN is not set" in str(e) or "choose a local model" in str(e) or "could not reach" in str(e) or "refused" in str(e):
+                    raise                                    # retrying cannot fix a missing token, a missing model name or a server that is not there
+                last = e
+                feedback = ""
+                continue
+            COST["calls"] += 1
         else:
             with tempfile.TemporaryDirectory() as tmp:
                 out = Path(tmp) / "last.txt"
                 cmd = [exe, "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-o", str(out)] + \
-                      (["-m", model] if model else []) + ["-"]
+                      (["-m", model] if model else []) + (["-i", str(Path(img_dir.name) / img_name)] if image else []) + ["-"]
                 r = subprocess.run(cmd, input=f"{system}\n\n{prompt}{feedback}", text=True, capture_output=True,
                                    env=_env(), cwd=tmp, timeout=900)
                 text = out.read_text() if out.exists() else ""
@@ -160,11 +239,32 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
             data = extract_json(text)
             if validate:
                 validate(data)
+            if img_dir:
+                img_dir.cleanup()
             return data
         except (ValueError, json.JSONDecodeError) as e:
             last = e
             feedback = f"\n\nYour previous reply was rejected: {e}. Reply again with ONLY the corrected JSON object."
+    if img_dir:
+        img_dir.cleanup()
     raise RuntimeError(f"{engine} did not return usable JSON after {retries + 1} tries: {last}")
+
+
+def hf_json(messages, model=None, validate=None, retries=1, chat=None):
+    """A chat call (Hugging Face by default, or `chat=local_chat`) that must return a JSON object (retries once with the error text if it does not)."""
+    last, msgs = None, list(messages)
+    for _ in range(retries + 1):
+        text = (chat or hf_chat)(msgs, model)
+        try:
+            data = extract_json(text)
+            if validate:
+                validate(data)
+            return data
+        except (ValueError, json.JSONDecodeError) as e:
+            last = e
+            msgs = list(messages) + [{"role": "assistant", "content": text},
+                                     {"role": "user", "content": f"That reply was rejected: {e}. Reply again with ONLY the corrected JSON object."}]
+    raise RuntimeError(f"the model did not return usable JSON after {retries + 1} tries: {last}")
 
 
 claude_json = llm_json          # old name, kept for any script that still imports it

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Step 3 of a new book: Claude writes the shots, narration, sound and music for each chapter.
 
-  python3 book_write.py <project> [--narration condensed|verbatim] [--words-per-shot N] [--min-shots 1]
+  python3 book_write.py <project> [--narration condensed|verbatim|dialogue] [--words-per-shot N] [--min-shots 1]
         [--max-shots 12] [--chapters 1-10 | all] [--model sonnet] [--workers 2] [--force] [--dry-run]
 
 How many shots a chapter gets: ceil(chapter words / words-per-shot), clamped to min..max, unless
@@ -10,18 +10,21 @@ Narration:
   condensed  Claude writes a short (<= 12 words) narration line per shot that summarises that part of the chapter.
   verbatim   the book's own words, split into consecutive slices at sentence ends (exact text, written by this script,
              not by Claude); Claude only writes the pictures, sound and music for each slice.
+  dialogue   only the words inside double quotes are spoken (exact text, found by this script). Claude only says WHICH
+             character speaks each quote. A shot with no quote is silent. A quote that starts in one slice belongs to
+             that shot even if it ends in the next.
 One resumable Claude call per chapter; finished chapters (scripts/chapter-NNN.json) are skipped unless --force.
 --dry-run prints the plan and estimates without calling Claude.
 """
 import argparse, sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from bookkit import (CLIP_SECONDS, COST, cost_note, VOICE_MAP, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
+from bookkit import (bible_file, CLIP_SECONDS, COST, cost_note, VOICE_MAP, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
                      project_dir, read_json, shot_count, slice_text, strip_verse_numbers, words, write_json)
 import json
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
-ap.add_argument("--narration", choices=["condensed", "verbatim"], default="condensed")
+ap.add_argument("--narration", choices=["condensed", "verbatim", "dialogue"], default="condensed")
 ap.add_argument("--words-per-shot", type=int, default=None, help="default 60 (condensed) or 25 (verbatim)")
 ap.add_argument("--min-shots", type=int, default=1)
 ap.add_argument("--max-shots", type=int, default=12)
@@ -42,11 +45,11 @@ pdir = project_dir(args.project)
 index = read_json(pdir / "chapters.json")
 if not index:
     sys.exit("run book_ingest.py first (no chapters.json)")
-bible = read_json(pdir / "bible.json")
+bible = read_json(bible_file(pdir))
 if not bible and not args.dry_run:
-    sys.exit("run book_bible.py first (no bible.json)")
+    sys.exit(f"run book_bible.py first (no {pdir.name}.json)")
 overrides = read_json(pdir / "overrides.json", {})
-wps = args.words_per_shot or (60 if args.narration == "condensed" else 25)
+wps = args.words_per_shot or (25 if args.narration == "verbatim" else 60)
 
 # Load global parameters for the project
 global_params_path = pdir / "global_params.json"
@@ -73,9 +76,40 @@ def plan_for(c):
     return shot_count(c["words"], wps, args.min_shots, args.max_shots, (overrides.get(str(c["n"])) or {}).get("shots"))
 
 
+QUOTE_OPEN, QUOTE_CLOSE, QUOTE_MAX_WORDS = "\u201c", "\u201d", 400
+
+
+def quotes_by_slice(slices):
+    """The words inside double quotes (straight "..." or curly), exactly as written, for each slice. A quote belongs to the slice where it
+    starts, even if it ends in a later one. A quote that never closes within QUOTE_MAX_WORDS is dropped (it was a stray mark, not speech)."""
+    out = [[] for _ in slices]
+    cur, start, is_open = [], 0, False
+    for i, sl in enumerate(slices):
+        for ch in sl:
+            if not is_open:
+                if ch in ('"', QUOTE_OPEN):
+                    is_open, cur, start = True, [], i
+            elif ch in ('"', QUOTE_CLOSE):
+                text = " ".join("".join(cur).split())
+                if words(text) >= 1:
+                    out[start].append(text)
+                is_open = False
+            else:
+                cur.append(ch)
+                if len(cur) > QUOTE_MAX_WORDS * 8:
+                    is_open = False
+        if is_open:
+            cur.append(" ")
+    return out
+
+
 def est_shot_seconds(c, n):
     if args.narration == "verbatim":
         return max(CLIP_SECONDS, c["words"] / n / WORDS_PER_SECOND + 0.4)
+    if args.narration == "dialogue":
+        text = strip_verse_numbers((pdir / "chapters" / f"chapter-{c['n']:03d}.txt").read_text())
+        spoken = sum(words(q) for qs in quotes_by_slice(slice_text(text, n)) for q in qs)
+        return max(CLIP_SECONDS, spoken / n / WORDS_PER_SECOND + 0.4)
     return max(CLIP_SECONDS, 12 / WORDS_PER_SECOND + 0.4)
 
 
@@ -118,7 +152,10 @@ if args.dry_run:
     sys.exit(0)
 
 # ---------------------------------------------------------------- real run
-SYSTEM = ("You are a film director and sound designer adapting a book into short AI-video shots. "
+SYSTEM = ("You are an expert hollywood filmmaker, storyboard artist, and technical prompt engineer. "
+          "Translate the following book excerpt into a structured, shot-by-shot video production plan. "
+          "Convert interior thoughts, feelings, and abstract descriptions into visible behavior, physical action, and environmental cues. "
+          "You are also a sound designer: you adapt the book into short AI-video shots. "
           "You reply with a single JSON object and nothing else.")
 (pdir / "scripts").mkdir(exist_ok=True)
 char_names = [c["name"] for c in bible["characters"]]
@@ -130,13 +167,22 @@ bible_brief["locations"] = [{"name": loc["name"], "look": loc["token"]} for loc 
 voice_of = {c["name"].lower(): VOICE_MAP.get(c.get("voice"), "") for c in bible["characters"]}
 
 
-def build_prompt(c, slices):
+def build_prompt(c, slices, quotes=None):
     condensed = args.narration == "condensed"
+    dialogue = args.narration == "dialogue"
     shown = "\n".join(f"[{i}] {' '.join(s.split()[:140])}{' ...' if len(s.split()) > 140 else ''}" for i, s in enumerate(slices, 1))
+    if dialogue:
+        shown = "\n".join(
+            f"[{i}] {' '.join(s.split()[:140])}{' ...' if len(s.split()) > 140 else ''}" +
+            "".join(f"\n    quote {i}.{k}: \"{' '.join(q.split()[:60])}\"" for k, q in enumerate(quotes[i - 1], 1))
+            for i, s in enumerate(slices, 1))
     fields = ('"n": 1, "visual": "...", "characters": ["Name", ...], ' +
               ('"narration": "...", "speaker": "NARRATOR", ' if condensed else '') +
+              ('"speakers": ["Name", ...], ' if dialogue else '') +
               '"sfx": "...", "music": "..."')
-    narr_rule = (
+    narr_rule = ("- speakers: one entry per listed quote of that slice, in order: the exact character name from the list above who says it, "
+                 "or NARRATOR if it is not one of them. Use [] for a slice with no quotes. The spoken words are added for you; do not write them.\n"
+                 if dialogue else '') or (
         "- narration: at most 12 words, spoken by the narrator in the book's register, summarising or quoting that slice; if the "
         "slice is a character speaking, you may give a short quoted line and set speaker to that character's exact name; "
         "otherwise speaker is NARRATOR.\n" if condensed else
@@ -172,23 +218,36 @@ def write_chapter(c):
     text = strip_verse_numbers((pdir / "chapters" / f"chapter-{c['n']:03d}.txt").read_text())
     slices = slice_text(text, plan_for(c))
     n = len(slices)
+    quotes = quotes_by_slice(slices) if args.narration == "dialogue" else None
 
     def check(d):
         shots = d.get("shots")
         if not isinstance(shots, list) or len(shots) != n:
             raise ValueError(f"'shots' must be a list of exactly {n} items (you gave {len(shots) if isinstance(shots, list) else 'none'})")
-        for s in shots:
+        for idx, s in enumerate(shots):
             if not isinstance(s.get("visual"), str) or len(s["visual"]) < 20:
                 raise ValueError("every shot needs a visual description")
             if not isinstance(s.get("characters", []), list):
                 raise ValueError("characters must be a list")
             if args.narration == "condensed" and (not s.get("narration") or words(s["narration"]) > 40):
                 raise ValueError("every shot needs a narration of at most 12 words")
+            if quotes is not None:
+                sp = s.get("speakers") or []
+                want = len(quotes[idx])
+                if not isinstance(sp, list) or len(sp) != want or not all(isinstance(x, str) for x in sp):
+                    raise ValueError(f"shot {idx + 1} has {want} quote(s): 'speakers' must be a list of exactly {want} name(s)")
 
-    data = llm_json(build_prompt(c, slices), SYSTEM, model=args.model, engine=args.engine, validate=check)
+    data = llm_json(build_prompt(c, slices, quotes), SYSTEM, model=args.model, engine=args.engine, validate=check)
     out = []
     for i, (s, sl) in enumerate(zip(data["shots"], slices), start=1):
-        narration = s["narration"].strip() if args.narration == "condensed" else sl
+        lines = None
+        if quotes is not None:
+            who = [(x.strip() if x.strip().lower() in voice_of else "NARRATOR") for x in (s.get("speakers") or [])]
+            lines = [[w, q] + ([voice_of[w.lower()]] if w.lower() in voice_of and voice_of[w.lower()] else []) for w, q in zip(who, quotes[i - 1])]
+            narration = " ".join(quotes[i - 1])
+            s = dict(s, speaker=who[0] if who else "NARRATOR")
+        else:
+            narration = s["narration"].strip() if args.narration == "condensed" else sl
         speaker = (s.get("speaker") or "NARRATOR").strip()
         known = speaker.lower() in voice_of
         out.append({"n": i, "visual": s["visual"].strip(), "characters": [x for x in s.get("characters", []) if isinstance(x, str)],
@@ -196,7 +255,8 @@ def write_chapter(c):
                     "voice": voice_of.get(speaker.lower(), "") if known else "",
                     "sfx": (s.get("sfx") or "quiet ambient sound").strip()[:300],
                     "music": (s.get("music") or bible["music_theme"]).strip()[:300],
-                    "prompt": compose_prompt(s["visual"], s.get("characters", []), bible, global_positives=global_positives, global_negatives=global_negatives), "slice": sl})
+                    "prompt": compose_prompt(s["visual"], s.get("characters", []), bible, global_positives=global_positives, global_negatives=global_negatives), "slice": sl,
+                    **({"lines": lines} if lines is not None else {})})
     write_json(pdir / "scripts" / f"chapter-{c['n']:03d}.json",
                {"chapter": c["n"], "title": c["title"], "narration_mode": args.narration, "shots": out})
     return c["n"], n
