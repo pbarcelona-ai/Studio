@@ -363,3 +363,8 @@ Errors found and fixed: chumpy would not build; notebook MPLBACKEND broke MuseTa
 Checks run: real Kaggle T4: lip-sync on 2 clips (exit 0, 8.4 min with install), Real-ESRGAN on 3 clips (4.3 min, 1344x768). Notebook tests pass.
 Warnings: at 672x384 faces in wide shots are garbled by the video model (person's own viewing, confirmed in zoomed frames). Lip-sync quality unjudged.
 Status: PASS
+Update (2026-11-08, faces and the fast model): reviewed make_video.py, model_advisor.py, book_write.py, studio.py.
+Errors found and fixed: ltx_video_fast_i2v could not run (`mu` must be passed).
+Checks run: real Kaggle T4: 3 clips, 10.5 min with loading, 106-120 s each. Faces in shots 2-3 clean by eye; shot 1 (about 24 px) garbled. Scores 0.18-0.49: the score marked clean bowed faces low, so it is a screen, not a verdict.
+Warnings: one comparison only; framing rule not yet tried end to end.
+Status: PASS

@@ -2556,7 +2556,7 @@ def prompt_suggest(opt):
     chars = "; ".join(f"{c['name']}: {c['token']}" for c in continuity.get("characters", []))[:1800]
     rules = {
         "prompt": ("a text-to-video prompt for ONE continuous shot of about 4 seconds: shot size, camera movement, subject, action, setting, light. "
-                   "No on-screen text, nothing out of place for the book's era and world. Keep any fixed character descriptions (like NAME: description) and any trailing style/quality "
+                   "No on-screen text, nothing out of place for the book's era and world. When a face shows, frame the person from a medium shot to a close-up, because video models garble small faces. Keep any fixed character descriptions (like NAME: description) and any trailing style/quality "
                    "phrases exactly as they are in the current prompt. At most 900 characters.", 900),
         "narration": ("one line the narrator speaks over the shot, at most 14 words, in the same voice as the current line.", 200),
         "sfx": ("a description of ambience and sound effects to hear in the shot, at most 25 words, no speech or music.", 300),

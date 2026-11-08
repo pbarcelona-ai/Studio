@@ -300,6 +300,8 @@ Rules:
 - visual: 30-55 words for a text-to-video model. Give shot size, camera movement, subject, action, setting, light. Describe
   people by appearance and role, never by name; show something concrete that happens in {CLIP_SECONDS:g} seconds; no on-screen text; nothing
   out of place for the book's era and world. Where the text is silent make a sensible cinematic choice.
+  Video models garble small faces: when a face shows, frame the person from a medium shot to a close-up, so the head is at least a fifth of the picture's
+  height. In a wide shot show people from behind, in silhouette or too far away to see a face, or show the place alone. Keep movement of the head and hands slow.
 - characters: exact names from this list who appear in the shot, or []: {char_names}
 - location: exact name from this list if the shot happens there, otherwise "": {location_names}
 - continues: true only if this shot carries on the same action in the same place from the shot before it, as an unbroken moment (a continuous

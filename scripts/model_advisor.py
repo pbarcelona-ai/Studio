@@ -70,7 +70,8 @@ _SDXL = ("sdxl", "older but light: runs anywhere, Colab's free T4 included (test
 _KEYFRAMES = [("flux2_klein_4b", "the only keyframe model here that takes each character's picture, so faces and costumes stay the same; tested on a T4", None),
               ("z_image_turbo", "good detail in few steps, no character pictures (tested on a T4, about 16 minutes)", None),
               ("flux1_schnell", "fast FLUX, no character pictures (tested on a T4)", None)]
-_I2V = [("wan22_ti2v_5b_i2v", "better motion than LTX from the same keyframe; slow on a T4 and not yet run on a GPU", 22),
+_I2V = [("ltx_video_fast_i2v", "tested on a T4: about 2 minutes a clip at 672x384, with cleaner faces than the 40-step LTX in our one comparison", None),
+        ("wan22_ti2v_5b_i2v", "better motion than LTX from the same keyframe; slow on a T4 and not yet run on a GPU", 22),
         ("ltx_video_i2v", "tested on a T4: about 10 minutes a clip, opens exactly on its keyframe", None)]
 _STYLISED_T2V = [("wan22_t2v_a14b_lightning", "Wan 2.2 14B in 4 steps: the best Wan quality at about 8 minutes (tested on a T4)", None),
                  ("wan22_ti2v_5b", "Wan 2.2 5B at 24 fps (tested on a T4, about 20 minutes)", None),
