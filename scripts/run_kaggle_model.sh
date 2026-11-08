@@ -76,6 +76,9 @@ if { [ "$SHOTS_CSV" = keyframes.csv ] || [ "$SHOTS_CSV" = all_images.csv ]; } &&
 fi
 if [ -n "$UPDIR" ]; then         # this run's clips to upscale, flat beside the CSV
   for N in $(seq "$START" "$END"); do cp "$UPDIR/$(printf 'shot-%04d.mp4' "$N")" "$WORK/ds/$(printf 'in-%04d.mp4' "$N")"; done
+  if [ "$MODEL" = upscale_lipsync ]; then       # the words each clip's mouth should follow
+    for N in $(seq "$START" "$END"); do F="$PD/audio/kokoro/$(printf 'narration-%04d.wav' "$N")"; [ -f "$F" ] && cp "$F" "$WORK/ds/$(printf 'a-%04d.wav' "$N")"; done
+  fi
 fi
 if [ -n "$KFDIR" ]; then         # this run's keyframes, flat beside the CSV (a dataset upload skips sub-folders)
   for N in $(seq "$START" "$END"); do cp "$KFDIR/$(printf 'image-%04d.png' "$N")" "$WORK/ds/$(printf 'kf-%04d.png' "$N")"; done
@@ -183,6 +186,7 @@ while true; do
       echo "== kernel completed"
       break ;;
     *ERROR*|*error*|*CANCEL*|*cancel*|*FAIL*|*fail*)
+      KERNEL_FAILED=1
       echo "!! kernel run did not complete successfully (status: $STATUS); fetching whatever output exists"
       break ;;
     *"NOT FOUND"*|*"not found"*|*404*|*"Cannot access kernel"*)
@@ -216,6 +220,8 @@ except OSError:
     print("(no log was downloaded)")
 PY
 esac
+GOT=$(find "$WORK/out" \( -name 'shot-*.mp4' -o -name '*.wav' -o -name 'image-*.png' \) | wc -l | tr -d ' ')
 find "$WORK/out" \( -name 'shot-*.mp4' -o -name '*.wav' -o -name 'image-*.png' \) -exec mv {} "$OUTDIR/" \;
 echo "✅ $(ls "$OUTDIR"/*.mp4 "$OUTDIR"/*.wav "$OUTDIR"/*.png 2>/dev/null | wc -l | tr -d ' ') files now in $(pwd)/$OUTDIR"
 echo "   Log and page: https://www.kaggle.com/code/$USER_SLUG/$SLUG   (log saved in $PD/logs/)"
+if [ "${KERNEL_FAILED:-0}" = 1 ] && [ "$GOT" = 0 ]; then echo "!! the run failed and made nothing"; exit 1; fi    # later steps must not carry on as if it had worked

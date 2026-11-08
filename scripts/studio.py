@@ -93,6 +93,7 @@ IMAGE_GROUPS = [("Stable Diffusion", ["sdxl_turbo", "sdxl", "sd35_large", "sd35_
                 ("Uncensored (adult content)", ["qwen_image_21_uc", "qwen_image_21_lora", "moss_image_sft_lora", "chroma1_hd", "noobai_xl", "realvisxl_v5", "illustrious_xl"]),
                 ("TPU (Kaggle only)", ["tpu_mage_flow", "tpu_flux_jax"])]
 # Defaults baked into each generator script; shown as placeholders on the page. "locked" = fields the model ignores (greyed out).
+LIPSYNC_MODEL = "upscale_lipsync"      # goes the upscalers' road (clips in, clips back), but is not one of them
 SYNC_MODES = ("stretch", "gentle", "speed", "trim")     # mix_film.py --sync
 MODEL_DEFAULTS = {
     "ltx_video": {"width": 768, "height": 320, "frames": 97, "steps": 40, "guidance": 3.0},
@@ -1113,14 +1114,17 @@ def upscale_step(body):
     if not SLUG_RE.match(slug) or not pdir(slug).is_dir():
         raise PlanError("pick a book or prompt set first")
     model = str(body.get("model") or "upscale_x2")
-    if model not in UPSCALE_MODELS:
+    lipsync = model == LIPSYNC_MODEL
+    if model not in UPSCALE_MODELS and not lipsync:
         raise PlanError("choose an upscaler")
     inv = media_inventory(slug)
     key = str(body.get("source") or "")                       # as Make Film names it: videos/<folder>
     src = key.split("/", 1)[1] if key.startswith("videos/") else ""
     if key not in inv["videos"] or not re.fullmatch(r"[a-z0-9_]{2,60}", src):
         raise PlanError("choose the video folder to upscale")
-    if src.endswith(UPSCALE_SUFFIXES):
+    if lipsync and src.endswith("_lipsync"):
+        raise PlanError("these clips are already lip-synced")
+    if not lipsync and src.endswith(UPSCALE_SUFFIXES):
         raise PlanError("these clips are already upscaled")
     start, end = num(body, "start", 1, int, 1, 100000), num(body, "end", 1, int, 1, 100000)
     if end < start:
@@ -1129,6 +1133,8 @@ def upscale_step(body):
     missing = [n for n in range(start, end + 1) if n not in have]
     if missing:
         raise PlanError(f"no clip in {src} for row(s) {', '.join(map(str, missing[:10]))}{' ...' if len(missing) > 10 else ''}")
+    if lipsync and not any((pdir(slug) / "audio" / "kokoro" / f"narration-{n:04d}.wav").is_file() for n in range(start, end + 1)):
+        raise PlanError("lip-sync follows the Kokoro narration, and these rows have none yet")
     service = body.get("service") or "kaggle"
     if service not in ("kaggle", "computer"):
         raise PlanError("upscaling runs on Kaggle or this computer: choose one of them in the Models tab")
@@ -1138,16 +1144,16 @@ def upscale_step(body):
     why = gpu_blocker(service, gpu) or model_blocker(model, service, gpu)
     if why:
         raise PlanError(why)
-    label = UPSCALE_MODELS[model][0]
+    what = f"Lip-sync {src} rows {start}-{end}" if lipsync else f"Upscale {src} rows {start}-{end} 2x with {UPSCALE_MODELS[model][0]}"
     env = {"PROJECT": slug, "SHOTS_CSV": "all_shots.csv", "UPSCALE_SOURCE": src}
     if service == "computer":
-        return {"label": f"Upscale {src} rows {start}-{end} 2x with {label} on this computer", "env": env,
+        return {"label": f"{what} on this computer", "env": env,
                 "argv": ["python3", "scripts/run_local_model.py", model, str(start), str(end)]}
     user = (body.get("kaggle_user") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{2,40}", user):
         raise PlanError("enter your Kaggle username (letters, digits, - and _), Models tab")
     env.update({"KAGGLE_USER": user, "KAGGLE_ACCELERATOR": gpu})
-    return {"label": f"Upscale {src} rows {start}-{end} 2x with {label} on Kaggle", "argv": ["scripts/run_kaggle_model.sh", model, str(start), str(end)], "env": env}
+    return {"label": f"{what} on Kaggle", "argv": ["scripts/run_kaggle_model.sh", model, str(start), str(end)], "env": env}
 
 
 def build_plan(opt, commit=False):

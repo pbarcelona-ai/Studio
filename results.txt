@@ -358,3 +358,8 @@ Errors found and fixed: thumbnail did not refresh after Use this face; FLUX.2 kl
 Checks run: all scripted tests pass; headless Chrome 0 JS errors; REAL Kaggle T4 runs: FLUX.2 klein with a reference picture (faces 0.535 and 0.646 against the reference), keyframes (0.44, 0.61, 0.43), LTX-Video from keyframes at 16:9 with chaining (672x384, row 2 continued from row 1, 38.9 min for 3 clips), Kokoro, MusicGen 28 s cue, film mix 12.5 s at -16.4 LUFS.
 Warnings: clip faces score 0.25-0.38; scene finding not run with a real AI; automatic Kaggle deletion not yet run for real; character sheet not run on a GPU; mix not judged by ear.
 Status: PASS
+Update (2026-11-08, lip-sync and failed runs): reviewed make_video.py, run_local_model.py, studio.py, studio.html, scripts/run_kaggle_model.sh.
+Errors found and fixed: chumpy would not build; notebook MPLBACKEND broke MuseTalk's Python; a failed run with no output reported success; polling a deleted notebook never ended.
+Checks run: real Kaggle T4: lip-sync on 2 clips (exit 0, 8.4 min with install), Real-ESRGAN on 3 clips (4.3 min, 1344x768). Notebook tests pass.
+Warnings: at 672x384 faces in wide shots are garbled by the video model (person's own viewing, confirmed in zoomed frames). Lip-sync quality unjudged.
+Status: PASS

@@ -2445,6 +2445,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
       <div class="row" style="margin-top:8px;align-items:flex-end;flex-wrap:wrap;gap:8px">
         <div><label class="f" for="fupmodel">Upscaler (GPU memory it needs)</label><select id="fupmodel"></select></div>
         <button type="button" id="bUpscale">Upscale the ticked clips 2x</button>
+        <button type="button" id="bLipsync" title="Moves the mouth in each ticked clip to its Kokoro narration with MuseTalk. For close-ups of someone speaking. Upscale first if the face is small.">Lip-sync the ticked clips</button>
       </div>
       <p class="warn" id="fupnote" style="margin:4px 0 0"></p>
       <p class="sugg-hint warn" id="upSuggest"></p>
@@ -4168,6 +4169,18 @@ $("bUpscale").addEventListener("click", async () => {      // the ticked rows' r
   try {
     await api("/api/upscale", { project: film.proj, source: src, start, end, model: key, service: svc, gpu: $("gpu").value, kaggle_user: $("kuser").value.trim() });
     $("filmmsg").textContent = "upscaling started: see the log"; $("filmmsg").className = "warn";
+    since = 0; $("log").textContent = ""; building = true; poll();
+  } catch (e) { $("filmmsg").textContent = e.message; $("filmmsg").className = "err"; }
+});
+$("bLipsync").addEventListener("click", async () => {      // comes back as a new video folder, like the upscalers
+  const rows = filmSelection().map(r => r.n), svc = radio("svc");
+  if (!film || !rows.length) { $("filmmsg").textContent = "load the files and tick the clips to lip-sync"; $("filmmsg").className = "err"; return; }
+  if (svc !== "kaggle" && svc !== "computer") { $("filmmsg").textContent = "lip-sync runs on Kaggle or This computer: choose one in the Models tab"; $("filmmsg").className = "err"; return; }
+  const src = $("fvideo").value, start = Math.min(...rows), end = Math.max(...rows);
+  if (!confirm(`Lip-sync rows ${start}-${end} of ${src} to their Kokoro narration on ${svc === "computer" ? "this computer" : "Kaggle"}?\n\nThe first run downloads about 5 GB and takes longer. Best on close-ups: a small face has little mouth to redraw.\n\nThe clips come back as ${src}_lipsync, offered under Video source.`)) return;
+  try {
+    await api("/api/upscale", { project: film.proj, source: src, start, end, model: "upscale_lipsync", service: svc, gpu: $("gpu").value, kaggle_user: $("kuser").value.trim() });
+    $("filmmsg").textContent = "lip-sync started: see the log"; $("filmmsg").className = "warn";
     since = 0; $("log").textContent = ""; building = true; poll();
   } catch (e) { $("filmmsg").textContent = e.message; $("filmmsg").className = "err"; }
 });

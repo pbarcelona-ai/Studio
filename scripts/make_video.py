@@ -463,6 +463,74 @@ MODELS["upscale_seedvr2_7b"] = dict(_SEEDVR2,
          'MODEL_BY_MEMORY = [(38, "seedvr2_ema_7b_fp16.safetensors", 0), (22, "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors", 0),\n'
          '                   (14, "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors", 36), (0, "seedvr2_ema_7b-Q4_K_M.gguf", 36)]')
 
+# Lip-sync: travels the upscalers' road (clips go up as in-NNNN.mp4, come back as videos/<source>_lipsync), with each row's narration as a-NNNN.wav.
+MODELS["upscale_lipsync"] = dict(
+  title="Lip-sync clips (MuseTalk 1.5)", repo="TMElyralab/MuseTalk", fps=24, pip=PIP_BASE,
+  note="Moves a clip's mouth to its narration with MuseTalk 1.5 (MIT licence; its authors report about 4 GB of GPU memory in fp16). It finds one face per frame and redraws the mouth area, so use it on close-ups of someone speaking: on a small face there is little to redraw. The clip comes back as long as the narration. It runs in its own Python 3.10 environment, about 5 GB of downloads the first time. Kaggle or this computer.",
+  config='TOOL_REPO = "https://github.com/TMElyralab/MuseTalk"\nTOOL_VERSION = "0a89dec45a01"   # a fixed version: its requirements are old and exact\nFPS = 24                 # replaced by each clip\'s own frame rate',
+  load=_UP_TOOL + '''import shutil
+import imageio_ffmpeg
+
+_TOOL = _CACHE / "musetalk"
+_PY = _CACHE / "musetalk_py310" / "bin" / "python"
+_FF = _CACHE / "musetalk_ffmpeg"
+_DONE = _CACHE / "musetalk_ready"
+if not _DONE.exists():
+    def _sh(*cmd, cwd=None):
+        print("$", " ".join(map(str, cmd)), flush=True)
+        subprocess.run(list(map(str, cmd)), check=True, cwd=cwd)
+    if not (_TOOL / ".git").exists():
+        _sh("git", "clone", "-q", TOOL_REPO, _TOOL)
+    _sh("git", "-C", _TOOL, "checkout", "-q", TOOL_VERSION)
+    _sh(sys.executable, "-m", "pip", "install", "-q", "uv")
+    _sh(sys.executable, "-m", "uv", "venv", "--python", "3.10", "--seed", _PY.parent.parent)
+    _sh(_PY, "-m", "pip", "install", "-q", "setuptools<70", "wheel")
+    _sh(_PY, "-m", "pip", "install", "-q", "torch==2.0.1", "torchvision==0.15.2", "torchaudio==2.0.2", "--index-url", "https://download.pytorch.org/whl/cu118")
+    _sh(_PY, "-m", "pip", "install", "-q", "diffusers==0.30.2", "accelerate==0.28.0", "numpy==1.23.5", "opencv-python==4.9.0.80", "soundfile==0.12.1", "transformers==4.39.2",
+        "huggingface_hub==0.30.2", "librosa==0.11.0", "einops==0.8.1", "omegaconf", "ffmpeg-python", "moviepy<2", "requests", "imageio[ffmpeg]")
+    # mmpose lists chumpy, which no longer builds and is only for its 3D body models: mmpose goes in without its dependencies, and the ones used go in by name.
+    _sh(_PY, "-m", "pip", "install", "-q", "mmengine", "mmcv==2.0.1", "-f", "https://download.openmmlab.com/mmcv/dist/cu118/torch2.0/index.html")
+    _sh(_PY, "-m", "pip", "install", "-q", "mmdet==3.1.0", "json-tricks", "munkres", "xtcocotools==1.14.3", "numpy==1.23.5")
+    _sh(_PY, "-m", "pip", "install", "-q", "--no-deps", "mmpose==1.1.0")
+    _GET = """
+import sys
+from huggingface_hub import hf_hub_download as get
+root = sys.argv[1]
+for repo, folder, names in [("TMElyralab/MuseTalk", "", ["musetalkV15/musetalk.json", "musetalkV15/unet.pth"]),
+                            ("stabilityai/sd-vae-ft-mse", "sd-vae", ["config.json", "diffusion_pytorch_model.bin"]),
+                            ("openai/whisper-tiny", "whisper", ["config.json", "pytorch_model.bin", "preprocessor_config.json"]),
+                            ("yzd-v/DWPose", "dwpose", ["dw-ll_ucoco_384.pth"]),
+                            ("ManyOtherFunctions/face-parse-bisent", "face-parse-bisent", ["79999_iter.pth", "resnet18-5c106cde.pth"])]:
+    for name in names:
+        print(get(repo, name, local_dir=root + "/" + folder if folder else root), flush=True)
+"""
+    _sh(_PY, "-c", _GET, _TOOL / "models")
+    _DONE.write_text("ok")
+_FF.mkdir(exist_ok=True)
+(_FF / "ffmpeg").unlink(missing_ok=True)
+(_FF / "ffmpeg").symlink_to(imageio_ffmpeg.get_ffmpeg_exe())''',
+  gen=_UP_IN + '''
+
+def generate(row, seed):
+    """This row's clip with its mouth moved to the narration (MuseTalk's own command line, in its own environment), read back as frames."""
+    src, w, h = source_clip(row)
+    n = next(k for k, r in enumerate(shots, 1) if r is row)
+    audio = sorted(_IN_ROOT.rglob(f"a-{n:04d}.wav"))
+    if not audio:
+        print(f"row {n}: no narration, so the clip stays as it is", flush=True)
+        return read_frames(src)
+    work = _CACHE / "musetalk_run"
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir()
+    (work / "task.yaml").write_text(f'task_0:\\n video_path: "{src}"\\n audio_path: "{audio[0]}"\\n')
+    subprocess.run([str(_PY), "-m", "scripts.inference", "--inference_config", str(work / "task.yaml"), "--result_dir", str(work), "--unet_model_path", "models/musetalkV15/unet.pth",
+                    "--unet_config", "models/musetalkV15/musetalk.json", "--version", "v15", "--use_float16", "--ffmpeg_path", str(_FF), "--output_vid_name", "out.mp4"],
+                   check=True, cwd=str(_TOOL), env={**{k: v for k, v in os.environ.items() if k != "PYTHONPATH"}, "MPLBACKEND": "Agg", "PATH": f"{_FF}:{os.environ['PATH']}"})   # not the notebook's own plotting backend
+    out = work / "v15" / "out.mp4"
+    if not out.exists():
+        raise RuntimeError("MuseTalk wrote no video")
+    return read_frames(out)''')
+
 MODELS["upscale_flashvsr"] = dict(
   title="Upscale clips 2x (FlashVSR v1.1)", repo="JunhaoZhuang/FlashVSR-v1.1", fps=24, pip=PIP_BASE + " ffmpeg-python modelscope",   # FlashVSR-Pro pins old packages: keep it apart from the others
   note="One-step diffusion upscaler built on Wan 2.1 (FlashVSR v1.1, through the FlashVSR-Pro command line): close to SeedVR2's detail, several times faster. GPU memory: 8 GB minimum (tiled), 16 GB+ recommended, about 14 GB for 2 s of 720p untiled. Needs an Ampere or newer NVIDIA GPU (RTX 30/40/50, A100, L4; not a T4) and the CUDA compiler (nvcc): the first run builds its attention kernel, which takes 20-60 minutes and about 32 GB of system RAM. Not tested yet. Lands in videos/<source>_flashvsr.",

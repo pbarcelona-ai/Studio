@@ -108,7 +108,8 @@ def rocm_info():
 ROCM_TORCH_INDEX = "https://download.pytorch.org/whl/rocm6.4"     # PyTorch's ROCm build for AMD GPUs (override with STUDIO_TORCH_INDEX)
 # Models that need NVIDIA-only parts: refused on an AMD GPU (the others run on ROCm's CUDA-compatible PyTorch, untested so far).
 NVIDIA_ONLY = {"hunyuan_video_15": "it loads its weights in 4-bit with bitsandbytes, which is set up here for NVIDIA only",
-               "upscale_flashvsr": "it builds a CUDA attention kernel with NVIDIA's compiler"}
+               "upscale_flashvsr": "it builds a CUDA attention kernel with NVIDIA's compiler",
+               "upscale_lipsync": "it installs PyTorch 2.0.1 for CUDA 11.8"}
 
 
 def _mem_gb(text):
@@ -417,6 +418,8 @@ def main(argv=None):
         if missing:
             die(f"no clip in {updir} for row(s): {' '.join(map(str, missing))}")
         copies += [(updir / f"shot-{n:04d}.mp4", f"in-{n:04d}.mp4") for n in rows]
+        if model == "upscale_lipsync":                 # the words each clip's mouth should follow
+            copies += [(pd / "audio" / "kokoro" / f"narration-{n:04d}.wav", f"a-{n:04d}.wav") for n in rows if (pd / "audio" / "kokoro" / f"narration-{n:04d}.wav").is_file()]
         outdir = pd / "videos" / f"{src}_{model.removeprefix('upscale_')}"
         print(f"== upscaling clips from {updir} into {outdir}", flush=True)
 
