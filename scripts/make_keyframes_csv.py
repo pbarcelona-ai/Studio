@@ -1,6 +1,6 @@
 """Write keyframes.csv for a book: one still-image prompt per shot, the first frame of each clip.
 
-Usage: python3 scripts/make_keyframes_csv.py BOOK --width 1600 --height 640 [--refs SERIES] [--max-refs 2]
+Usage: python3 scripts/make_keyframes_csv.py BOOK --width 1600 --height 640 [--refs SERIES] [--max-refs 2] [--look claymation]
 
 Rows match all_shots.csv one for one (row N here is row N there), so the image run's image-NNNN.png is the keyframe for shot row N.
 The size is chosen by the Studio from the video model's shape (for example 2.4:1 for LTX-Video) and the image model's usual pixel
@@ -11,6 +11,10 @@ tab). The pictures are shrunk and copied to <book>/keyframe_refs/ref-<character>
 row's "refs" column lists the ones it uses. Only image models that take reference pictures use them (FLUX.2 klein); others ignore them.
 Which characters are in a shot: the "characters" column of all_shots.csv (written by book_build.py), or, for older CSVs, each
 character's token label (for example "ADAM:") found in the shot's prompt.
+
+--look LOOK: the film's look (model_advisor.LOOKS: live_action, claymation, pixar_3d, pixar_disney). Each keyframe prompt then starts with that
+look's words and its negatives are added, so the stills (and the clips animated from them) take the look even if the book's prompts were
+written for another one. Without it the keyframes use the plain film-still lead below.
 """
 import argparse
 import csv
@@ -21,6 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import layout  # noqa: E402  (project-local: finds projects/books/<book>)
+import model_advisor  # noqa: E402  (project-local: the looks and their style words)
 
 ROOT = Path(__file__).resolve().parent.parent
 # A video prompt describes motion; a keyframe is one still. This lead-in steers the image model to a single, sharp frame.
@@ -102,6 +107,7 @@ def main(argv=None):
     ap.add_argument("--height", type=int, required=True)
     ap.add_argument("--refs", metavar="SERIES", help="character series whose pictures steer the keyframes")
     ap.add_argument("--max-refs", type=int, default=2, help="pictures per shot (1-3; each one costs GPU memory)")
+    ap.add_argument("--look", choices=sorted(model_advisor.LOOKS), help="the film's look: its words lead every keyframe prompt")
     a = ap.parse_args(argv)
     if not (256 <= a.width <= 2048 and 256 <= a.height <= 2048):
         sys.exit("width and height must be 256-2048")
@@ -130,8 +136,13 @@ def main(argv=None):
             print("   no picture yet for: " + ", ".join(sorted(missing)) + " (add one on the Characters tab)")
     elif (d / "keyframe_refs").is_dir():
         shutil.rmtree(d / "keyframe_refs")   # refs switched off: do not upload old pictures
-    rows = [{"chapter": r.get("chapter", ""), "shot": r.get("shot", ""), "prompt": LEAD + (r.get("prompt") or "").strip(),
-             "negative": NEGATIVE, "width": a.width, "height": a.height, "seed": r.get("seed", ""), "refs": ref}
+    lead, negative = LEAD, NEGATIVE
+    if a.look:
+        lead = f"{model_advisor.lead(a.look)}, the opening frame of this shot, sharp focus, cinematic composition: "
+        negative = f"{model_advisor.STYLE[a.look]['negatives']}, {NEGATIVE}"
+        print(f"look: {model_advisor.LOOKS[a.look][0]}")
+    rows = [{"chapter": r.get("chapter", ""), "shot": r.get("shot", ""), "prompt": lead + (r.get("prompt") or "").strip(),
+             "negative": negative, "width": a.width, "height": a.height, "seed": r.get("seed", ""), "refs": ref}
             for r, ref in zip(shots, refs)]
     out = d / "keyframes.csv"
     tmp = out.with_suffix(".csv.tmp")

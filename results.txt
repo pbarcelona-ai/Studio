@@ -280,3 +280,22 @@ Suggestions:
   scripts/studio.py: bound the media_seconds cache
 Requirements: no *_prompt.md files exist for these modules.
 Status: PASS
+
+==== Review pass 2026-11-08 (2): looks and suggested models ====
+Files reviewed:
+  scripts/model_advisor.py (new)
+  scripts/studio.py          -> model_advisor.py, run_local_model.py, setup_check.py, layout.py, hf_spaces.py, prompt_guides.py, character_tokens.py, bookkit.py (unchanged since their reviews)
+  scripts/make_keyframes_csv.py -> layout.py, model_advisor.py, character_tokens.py
+  scripts/make_video.py (notes only: image-to-video now "Kaggle or this computer")
+  studio.html
+Errors (blocking): none remaining. Fixed during the pass:
+  studio.html: choosing a look saved Global Parameters for a book not started yet, creating its folder -> server save only for existing books
+  studio.html: early calls could hit let/const before their line ran -> var / function declarations
+  scripts/model_advisor.py: no picture suggestion on Colab's T4 for the animated looks -> SDXL fallback
+  scripts/studio.py: keyframe suggestion offered on Colab / Hugging Face, where keyframes cannot be made -> moved to "other choices" with a note
+Warnings:
+  scripts/model_advisor.py: the suggestions rest on speed, memory and features measured here, not on comparing each model's results per look
+  scripts/model_advisor.py: wan22_ti2v_5b_i2v is suggested for 22 GB+ GPUs but has not run on a GPU yet (the reason says so)
+Suggestions: none
+Requirements: no *_prompt.md files exist for these modules.
+Status: PASS

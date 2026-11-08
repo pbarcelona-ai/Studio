@@ -22,6 +22,7 @@ import hf_spaces
 import prompt_guides
 import setup_check
 import layout
+import model_advisor
 import run_local_model
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
@@ -65,6 +66,7 @@ UPSCALE_SHORT = {"upscale_x2": "2-4 GB, any NVIDIA GPU", "upscale_flashvsr": "8 
 UPSCALE_SUFFIXES = tuple("_" + m.removeprefix("upscale_") for m in UPSCALE_MODELS)      # videos/<source>_x2, _flashvsr, ...: already upscaled
 KAGGLE_GPU_GB = {"NvidiaTeslaT4": 15, "NvidiaL4": 22, "NvidiaTeslaA100": 40, "NvidiaH100": 80}      # memory per GPU, and which are older than Ampere
 KAGGLE_PRE_AMPERE = {"NvidiaTeslaT4"}
+COLAB_GPU_GB = {"T4": 15, "L4": 22, "A100": 40, "H100": 80}
 REF_IMAGE_MODELS = {"flux2_klein_4b"}                                    # keyframe models that take character reference pictures                      # need keyframes (images/<model>_keyframes) for every row they make
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
 VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
@@ -276,6 +278,7 @@ def status():
         "video_models": VIDEO_MODELS, "video_groups": VIDEO_GROUPS, "image_groups": IMAGE_GROUPS, "audio_kinds": AUDIO_KINDS, "audio_models": {k: {"role": r, "label": l, "note": n} for k, (r, l, n) in AUDIO_MODELS.items()}, "audio_roles": AUDIO_ROLE_TITLES, "gpus": {**GPUS, "computer": [("local", local_gpu_label())]}, "computer_why": gpu_blocker("computer", "local"),
         "upscale_models": {k: {"label": l, "short": UPSCALE_SHORT[k], "memory": m, "least_gb": g, "ampere": a} for k, (l, m, g, a) in UPSCALE_MODELS.items()}, "claude_models": CLAUDE_MODELS, "hf_models": HF_MODELS, "hf_vision_models": HF_VISION_MODELS, "hf_token_set": bool(os.environ.get("HF_TOKEN", "").strip()), "local_llm": local_llm_status(),
         "codex_models": codex_models(),
+        "looks": [{"id": k, "label": l, "about": a, **model_advisor.STYLE[k]} for k, (l, a) in model_advisor.LOOKS.items()],
     }
 
 
@@ -484,7 +487,27 @@ def gpu_memory(service, gpu):
             return gb, None
     if service == "kaggle" and gpu in KAGGLE_GPU_GB:
         return KAGGLE_GPU_GB[gpu], gpu not in KAGGLE_PRE_AMPERE
+    if service == "colab" and gpu in COLAB_GPU_GB:
+        return COLAB_GPU_GB[gpu], gpu != "T4"
     return None, None
+
+
+def suggestions(look, service, gpu):
+    """The models the Studio suggests for every step of this look, for this service and GPU (model_advisor.suggest)."""
+    if look not in model_advisor.LOOKS:
+        raise PlanError("choose a look")
+    if service not in GPUS or gpu not in [g for g, _ in GPUS[service]]:
+        raise PlanError("choose where to run (Models tab)")
+    gpu_why = gpu_blocker(service, gpu)
+    out = model_advisor.suggest(look, blocker=lambda m: gpu_why or model_blocker(m, service, gpu), gpu_gb=gpu_memory(service, gpu)[0])
+    if service not in ("kaggle", "computer"):            # keyframes are only made (and handed to the video model) by these two runners
+        out["keyframe"]["alternatives"] = ([dict(out["keyframe"]["pick"], blocked="")] if out["keyframe"]["pick"] else []) + out["keyframe"]["alternatives"]
+        out["keyframe"]["pick"] = None
+        out["keyframe"]["note"] = "keyframes are made on Kaggle or this computer: choose one of them in the Models tab to use them"
+        for step, what in (("video_i2v", "animating keyframes"), ("upscale", "upscaling")):
+            if not out[step]["pick"]:
+                out[step]["note"] = f"{what} runs on Kaggle or this computer: choose one of them in the Models tab"
+    return {"look": look, "service": service, "gpu": gpu, "gpu_problem": gpu_why or "", "steps": out}
 
 
 TPU_ONLY = {"tpu_wan", "tpu_mage_flow", "tpu_flux_jax"}      # JAX models that run only on Kaggle's TPU v5e-8
@@ -583,6 +606,9 @@ def generation_steps(opt, slug):
     if kmodel and kmodel not in IMAGE_MODELS:
         raise PlanError("unknown keyframe image model")
     refs = bool(opt.get("keyframe_refs")) and bool(st.get("keyframes"))
+    look = str(opt.get("look") or "")
+    if look and look not in model_advisor.LOOKS:
+        raise PlanError("unknown look")
     if refs and kmodel not in REF_IMAGE_MODELS:
         raise PlanError(f"character pictures steer only {', '.join(sorted(REF_IMAGE_MODELS))} keyframes: pick it, or untick 'Steer keyframes with character pictures'")
     if st.get("keyframes") and service not in ("kaggle", "computer"):
@@ -626,7 +652,8 @@ def generation_steps(opt, slug):
         if refs and series not in character_tokens.list_series():
             raise PlanError(f"no character series named {series!r}: choose one on the Characters tab")
         steps.append({"label": f"Write keyframes.csv ({kw}x{kh}" + (f", character pictures from '{series}')" if refs else ")"), "env": {},
-                      "argv": ["python3", "make_keyframes_csv.py", slug, "--width", str(kw), "--height", str(kh)] + (["--refs", series] if refs else [])})
+                      "argv": ["python3", "make_keyframes_csv.py", slug, "--width", str(kw), "--height", str(kh)] + (["--refs", series] if refs else [])
+                              + (["--look", look] if look else [])})
 
     done = set()
     for mv in chosen:
@@ -1288,6 +1315,14 @@ def prompt_plan(opt, commit):
 
     first = len(read_csv_rows(d / csv_name)) + 1
     rows = prompt_rows(opt, slug, kind, model, first)
+    look = str(opt.get("look") or "")
+    if look:
+        if look not in model_advisor.LOOKS:
+            raise PlanError("unknown look")
+        takes_neg = "negative" not in (MODEL_DEFAULTS.get(model, {}).get("locked") or []) and model not in ("hunyuan_video", "hunyuan_video_lora", "tpu_mage_flow", "tpu_flux_jax")
+        for r in rows:
+            r["prompt"], r["negative"] = model_advisor.apply_look(r["prompt"], r["negative"], look, takes_neg)
+            r["prompt"] = r["prompt"][:2000]; r["negative"] = r["negative"][:700]
     gname = local_gpu_label() if service == "computer" else gpu      # the T4 limits below also apply to a T4 in this computer
     if model in WAN_HEADS:
         for r in rows:
@@ -2597,6 +2632,12 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 return self._json(200, storyboard(q.get("project", [""])[0], num({"s": q.get("start", ["1"])[0]}, "s", 1, int, 1),
                                                   num({"e": q.get("end", ["24"])[0]}, "e", 24, int, 1)))
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+        if url.path == "/api/suggest":
+            q = parse_qs(url.query)
+            try:
+                return self._json(200, suggestions(q.get("look", [""])[0], q.get("service", [""])[0], q.get("gpu", [""])[0]))
             except PlanError as e:
                 return self._json(400, {"error": str(e)})
         if url.path == "/api/media":

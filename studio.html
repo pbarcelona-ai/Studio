@@ -1338,6 +1338,21 @@
   .svc-opt > span { font-size: 1.35rem; font-weight: 600; line-height: 1.3; }
   .svc-opt input[type=radio] { width: 22px; height: 22px; margin-top: 4px; }
   .svc-opt small { font-size: var(--text-xs); font-weight: 400; }
+  /* "What are you making?": the film's look, one at a time, shown under the tabs on every page */
+  .lookbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-elevated); }
+  .lookbar__title { font-size: var(--text-sm, 0.95rem); margin: 0; font-weight: 600; }
+  .lookbar__opts { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; }
+  .look-opt { position: relative; display: inline-flex; }
+  .look-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .look-opt span { display: inline-block; min-height: 44px; box-sizing: border-box; padding: 8px 14px; border: 1px solid var(--border-strong); border-radius: 999px; cursor: pointer; background: var(--bg); color: var(--fg); font-weight: 600; line-height: 1.2; }
+  .look-opt input:checked + span { background: var(--accent); color: var(--accent-fg); border-color: var(--accent-hover); }
+  .look-opt input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .look-about { font-size: 12px; color: var(--fg-muted); flex-basis: 100%; margin: 0; }
+  .sugg-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 600; background: var(--success-bg); color: var(--success); border: 1px solid var(--success); }
+  .sugg-hint { font-size: 12px; margin: 2px 0 8px; }
+  .sugg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .sugg-table th, .sugg-table td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--border-strong); }
+  .sugg-table td small, .sugg-table th small { display: block; color: var(--fg-muted); font-weight: 400; }
   /* Make Film timeline: one row of clips (width = seconds on screen), the narration under it, title cards at the ends */
   .timeline { position: relative; overflow-x: auto; border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px 8px 4px; background: var(--bg-elevated); margin-top: 8px; }
   .tl-lane { position: relative; height: 52px; margin-bottom: 6px; }
@@ -1556,6 +1571,13 @@
         </button>
     </nav>
 
+    <section class="lookbar" id="lookbar" aria-labelledby="lookTitle">
+      <h2 class="lookbar__title" id="lookTitle">What are you making?</h2>
+      <div class="lookbar__opts" id="lookOpts" role="radiogroup" aria-labelledby="lookTitle"></div>
+      <button type="button" id="bLookSuggest" title="Show the models suggested for every step (Models tab)">Suggested models</button>
+      <p class="look-about" id="lookAbout" role="status"></p>
+    </section>
+
     <div id="msg" class="warn" role="status" aria-live="polite"></div>
 
     <!-- Book-to-film rail: where the selected book is, shown on every tab. Each step opens the tab where it is done. -->
@@ -1730,6 +1752,22 @@
             </div>
         </div>
 
+        <div class="card" id="suggestCard">
+            <div class="card__header">
+                <h2 class="card__title">Suggested Models</h2>
+                <p class="card__subtitle" id="suggestFor"></p>
+            </div>
+            <div class="card__body">
+                <p class="warn" style="margin-top:0">For the look chosen under the tabs and the GPU chosen above, the model to use at each step. Suggestions are starting points: they come from what has been tested here (speed on a T4, character pictures, memory), not from judging each model's art. Models marked <span class="sugg-tag">suggested</span> in the lists below are these.</p>
+                <div id="suggestBody" style="overflow-x:auto"></div>
+                <div class="row" style="margin-top:8px;align-items:center;gap:8px">
+                    <button type="button" id="bUseSuggest" class="primary">Use these suggestions</button>
+                    <span id="suggestStatus" class="warn" role="status"></span>
+                </div>
+                <small class="warn">Ticks the suggested picture, video and audio models (and unticks the other picture and video models), sets the keyframe model, turns keyframes on when it suggests animating them, and picks the upscaler. Sound effects are left as they are.</small>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card__header">
                 <h2 class="card__title">Video & Audio Models</h2>
@@ -1842,6 +1880,7 @@
             </div>
             <div class="card__body">
                 <div class="row" style="align-items:center;gap:12px">
+                    <label class="opt" style="margin:0"><input type="checkbox" id="pLook" checked><span id="pLookText">Add the look's style words to my prompts</span></label>
                     <button id="pGenerate" class="primary" type="button">Generate</button>
                     <button id="pStop" type="button" disabled>Stop</button>
                     <span id="pStatus" class="warn" role="status" aria-live="polite"></span>
@@ -2214,6 +2253,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
       <div>
         <label class="f" for="kfmodel">Keyframe image model</label>
         <select id="kfmodel" style="margin-bottom:4px"></select>
+        <p class="sugg-hint warn" id="kfSuggest"></p>
         <label class="opt" style="margin-bottom:8px"><input type="checkbox" id="kfrefs" checked><span>Steer keyframes with character pictures<small id="kfrefsNote">Each character's reference picture (Characters tab) keeps their face and costume the same in every still. FLUX.2 klein only.</small></span></label>
         <label class="f" for="kfseries">Character pictures from</label>
         <select id="kfseries" style="margin-bottom:8px"></select>
@@ -2349,6 +2389,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <button type="button" id="bUpscale">Upscale the ticked clips 2x</button>
       </div>
       <p class="warn" id="fupnote" style="margin:4px 0 0"></p>
+      <p class="sugg-hint warn" id="upSuggest"></p>
       <div class="movies" id="ftable" style="margin-top:8px;max-height:380px"></div>
       <h3 style="margin:16px 0 4px">Timeline</h3>
       <p class="warn" style="margin:0">The film from left to right, each clip as long as it plays (after trims, and stretched to its narration when "Stretch video to fit" is chosen). Drag a clip to move it, drag its left or right edge to trim it, click it to watch it. With a clip focused, the arrow keys move it, and Shift with an arrow trims its end by 0.1 s. The table above follows every change.</p>
@@ -2493,7 +2534,7 @@ function options() {
     sync: $("sync").value, keep_going: $("keep").checked, vol: { narration: $("vn").value, sfx: $("vs").value, music: $("vm").value },
     narration: $("narration").value, engine: $("engine").value, force_write: $("b_force").checked, claude_model: $("cmodel").value, chapters: $("chs").value, words_per_shot: $("wps").value,
     min_shots: $("minshots").value, max_shots: $("maxshots").value, movie_minutes: $("mmin").value, workers: $("workers").value,
-    enoch_chars: $("echars").value, keyframe_model: $("kfmodel").value, keyframe_refs: $("kfrefs").checked && !$("kfrefs").disabled, keyframe_series: $("kfseries").value,
+    enoch_chars: $("echars").value, look: radio("look") || "", keyframe_model: $("kfmodel").value, keyframe_refs: $("kfrefs").checked && !$("kfrefs").disabled, keyframe_series: $("kfseries").value,
     movies: sel === "ids" ? { mode: "ids", ids: checked("movie") } : sel === "first" ? { mode: "first", n: $("mfirst").value } : { mode: "all" },
     steps: { ingest: $("b_ingest").checked, continuity: $("b_continuity").checked, write: $("b_write").checked, build: $("b_build").checked,
              extract: $("s_extract").checked, keyframes: $("s_keyframes").checked, video: $("s_video").checked, audio: $("s_audio").checked, merge: $("s_merge").checked, mix: $("s_mix").checked },
@@ -2513,6 +2554,7 @@ function fillGpus() {
   $("batch").value = svc === "kaggle" ? 40 : svc === "huggingface" ? 3 : svc === "computer" ? 20 : 5;
   if (typeof updatePRunsOn === "function") updatePRunsOn();
   if (typeof fillUpscalers === "function") fillUpscalers();
+  if (typeof refreshSuggestions === "function" && ST.looks) refreshSuggestions();
 }
 
 // Models, grouped by family: [[title, [model, ...]], ...]. Models the server did not group go into "Other".
@@ -2550,6 +2592,7 @@ function fillKeyframeModels() {
   const order = [...first, ...all.filter(m => !first.includes(m) && !/^tpu_/.test(m))];     // TPU image models cannot share a run with a GPU video model
   $("kfmodel").innerHTML = order.map(m => `<option value="${m}">${m}</option>`).join("");
   syncKeyframeRefs();
+  if (typeof markSuggested === "function" && SUGG) markSuggested();
 }
 // Only some image models take reference pictures; for the others the option is greyed out and not sent.
 const REF_IMAGE_MODELS = ["flux2_klein_4b"];
@@ -2647,6 +2690,7 @@ async function loadStatus(applyDef) {
     fillKeyframeSeries();
     updatePromptModels();
     fillGpus();
+    initLooks();
   }
   renderProject(applyDef || !loaded);
   loaded = true;
@@ -2750,6 +2794,7 @@ function promptOptions(t = promptTargets()[0] || { kind: "video", model: "" }) {
     mode: "prompts", set: $("pset").value.trim().toLowerCase(), kind: t.kind, model: t.model, prompts: $("ptext").value,
     opts: { width: num("pw"), height: num("ph"), frames: num("pframes"), steps: num("psteps"), guidance: num("pguid"), seed: num("pseed"),
             variations: num("pvar") || 1, negative: $("pneg").value },
+    look: $("pLook").checked ? (radio("look") || "") : "",
     service: radio("svc"), gpu: $("gpu").value, kaggle_user: $("kuser").value, batch: $("batch").value,
     engine: $("engine").value, claude_model: $("cmodel").value, keep_going: false,
   };
@@ -3577,6 +3622,126 @@ function updateFilmSummary() {
   renderTimeline();
 }
 
+// ---------- the film's look and the suggested models for every step ----------
+var SUGG = null, suggSeq = 0;              // var: loadStatus may call in before this line has run
+var LOOK_KEY = "studio_look";
+function lookOf(id) { return (ST.looks || []).find(l => l.id === id); }
+function initLooks() {
+  if (!ST.looks || $("lookOpts").children.length) return;
+  $("lookOpts").innerHTML = ST.looks.map(l => `<label class="look-opt" title="${escapeHtml(l.about)}"><input type="radio" name="look" value="${l.id}"><span>${escapeHtml(l.label)}</span></label>`).join("");
+  let saved = "";
+  try { saved = localStorage.getItem(LOOK_KEY) || ""; } catch (e) {}
+  const start = lookOf(saved) ? saved : ST.looks[0].id;
+  document.querySelector(`input[name=look][value="${start}"]`).checked = true;
+  document.querySelectorAll("input[name=look]").forEach(r => r.addEventListener("change", () => lookChanged(true)));
+  lookChanged(false);
+}
+// Style words of every look are kept apart from the person's own words in the Global Parameters: switching looks swaps only the look's words.
+function swapLookWords(text, field, look) {
+  const mine = new Set((ST.looks || []).flatMap(l => l[field].split(",").map(w => w.trim().toLowerCase())));
+  const kept = text.split(",").map(w => w.trim()).filter(w => w && !mine.has(w.toLowerCase()));
+  return [...(look ? look[field].split(",").map(w => w.trim()) : []), ...kept].join(", ");
+}
+async function lookChanged(byPerson) {
+  const id = radio("look"), l = lookOf(id);
+  if (!l) return;
+  try { localStorage.setItem(LOOK_KEY, id); } catch (e) {}
+  $("lookAbout").textContent = l.about + " Suggested models and the style words in every prompt follow this choice.";
+  $("pLookText").textContent = `Add the ${l.label} style words to my prompts`;
+  if (byPerson && $("globalPositives") && $("globalNegatives")) {      // the look's words go into the Global Parameters (book prompts, character pictures)
+    $("globalPositives").value = swapLookWords($("globalPositives").value, "positives", l);
+    $("globalNegatives").value = swapLookWords($("globalNegatives").value, "negatives", l);
+    const p = typeof cur === "function" ? cur() : null;
+    if (p && !p.not_started) await saveGlobalParams();          // a book that exists keeps them; otherwise they wait in this browser until one does
+    else { try { localStorage.setItem("globalPositives", $("globalPositives").value); localStorage.setItem("globalNegatives", $("globalNegatives").value); } catch (e) {} }
+    $("msg").textContent = `Look: ${l.label}. Its style words are now in the Global Parameters (Movies tab). Prompts already written for a book keep their words until the book's shots are written again; keyframes made from now on take the new look.`;
+    $("msg").className = "warn";
+  }
+  refreshSuggestions();
+}
+async function refreshSuggestions() {
+  const look = radio("look"), svc = radio("svc"), gpu = $("gpu").value;
+  if (!look || !svc) return;
+  const seq = ++suggSeq;
+  try {
+    const r = await api(`/api/suggest?look=${encodeURIComponent(look)}&service=${encodeURIComponent(svc)}&gpu=${encodeURIComponent(gpu || "")}`);
+    if (seq !== suggSeq) return;                      // a newer choice was made while this one loaded
+    SUGG = r; renderSuggestions();
+  } catch (e) {
+    if (seq !== suggSeq) return;
+    SUGG = null; $("suggestBody").textContent = e.message; markSuggested();
+  }
+}
+function modelLabel(m) { return (ST.upscale_models && ST.upscale_models[m] && ST.upscale_models[m].label) || (ST.audio_models && ST.audio_models[m] && ST.audio_models[m].label) || m; }
+function renderSuggestions() {
+  const l = lookOf(SUGG.look);
+  const gpuText = $("gpu").selectedOptions[0] ? $("gpu").selectedOptions[0].textContent : SUGG.gpu;
+  $("suggestFor").textContent = `${l ? l.label : SUGG.look} · ${SUGG.service === "computer" ? "this computer" : SUGG.service} · ${gpuText}`;
+  const rows = Object.values(SUGG.steps).map(st => {
+    const pick = st.pick ? `<b>${escapeHtml(modelLabel(st.pick.model))}</b><small>${escapeHtml(st.pick.why)}</small>` : `<span class="err">${escapeHtml(st.note || "nothing here can run with this choice of where to run")}</span>`;
+    const alts = st.alternatives.map(a => `${escapeHtml(modelLabel(a.model))}<small>${escapeHtml(a.blocked ? "not now: " + a.blocked : a.why)}</small>`).join("") || "<small>none</small>";
+    return `<tr><th scope="row">${escapeHtml(st.title)}<small>${escapeHtml(st.where)}</small></th><td>${pick}</td><td>${alts}</td></tr>`;
+  }).join("");
+  $("suggestBody").innerHTML = (SUGG.gpu_problem ? `<p class="err">${escapeHtml(SUGG.gpu_problem)}</p>` : "")
+    + `<table class="sugg-table"><thead><tr><th scope="col">Step</th><th scope="col">Suggested</th><th scope="col">Other choices</th></tr></thead><tbody>${rows}</tbody></table>`;
+  markSuggested();
+}
+function pickOf(step) { return SUGG && SUGG.steps[step] && SUGG.steps[step].pick ? SUGG.steps[step].pick.model : ""; }
+function markSuggested() {                            // the "suggested" tag beside each suggested model, wherever models are chosen
+  document.querySelectorAll(".sugg-tag[data-auto]").forEach(t => t.remove());
+  const picks = new Set(SUGG ? Object.values(SUGG.steps).filter(s => s.pick).map(s => s.pick.model) : []);
+  document.querySelectorAll("input[name=vmodel], input[name=imodel], input[name=audio]").forEach(i => {
+    if (!picks.has(i.value)) return;
+    const span = i.closest("label") && i.closest("label").querySelector("span");
+    if (span) span.insertAdjacentHTML("beforeend", '<span class="sugg-tag" data-auto>suggested</span>');
+  });
+  for (const [sel, step] of [["kfmodel", "keyframe"], ["fupmodel", "upscale"]]) {
+    for (const o of $(sel).options) { o.textContent = o.textContent.replace(/^★ /, ""); if (o.value === pickOf(step)) o.textContent = "★ " + o.textContent; }
+  }
+  const hint = (el, step, current, apply) => {
+    const st = SUGG && SUGG.steps[step], p = st && st.pick;
+    if (!p) { el.textContent = st && st.note ? st.note : ""; return; }
+    if (p.model === current) { el.textContent = `★ Suggested for this look: ${modelLabel(p.model)}.`; return; }
+    el.innerHTML = `Suggested for this look: <b>${escapeHtml(modelLabel(p.model))}</b> (${escapeHtml(p.why)}). <button type="button" class="sugg-use">Use it</button>`;
+    el.querySelector("button").onclick = apply;
+  };
+  hint($("kfSuggest"), "keyframe", $("kfmodel").value, () => { $("kfmodel").value = pickOf("keyframe"); $("kfmodel").dispatchEvent(new Event("change")); markSuggested(); });
+  hint($("upSuggest"), "upscale", $("fupmodel").value, () => { $("fupmodel").value = pickOf("upscale"); showUpscaleNote(); markSuggested(); });
+}
+function tickOnly(name, models) {                     // tick exactly these (when they can run); returns the ones ticked
+  const done = [];
+  document.querySelectorAll(`input[name=${name}]`).forEach(i => { i.checked = models.includes(i.value) && !i.disabled; if (i.checked) done.push(i.value); });
+  return done;
+}
+function useSuggestions() {
+  if (!SUGG) { $("suggestStatus").textContent = "no suggestions yet: choose a look and where to run"; $("suggestStatus").className = "err"; return; }
+  const done = [];
+  const img = pickOf("image"); if (img) done.push(...tickOnly("imodel", [img]));
+  const kf = pickOf("keyframe"), i2v = pickOf("video_i2v"), t2v = pickOf("video_t2v");
+  if (kf && i2v) {
+    $("kfmodel").value = kf; $("kfmodel").dispatchEvent(new Event("change"));
+    $("s_keyframes").checked = true; $("s_keyframes").dispatchEvent(new Event("change"));
+    done.push(...tickOnly("vmodel", [i2v]), `keyframes ${kf}`);
+  } else if (t2v) {
+    $("s_keyframes").checked = false; $("s_keyframes").dispatchEvent(new Event("change"));
+    done.push(...tickOnly("vmodel", [t2v]));
+  }
+  const keepSfx = [...document.querySelectorAll("input[name=audio]:checked")].map(i => i.value).filter(k => ST.audio_models[k] && ST.audio_models[k].role === "sfx");
+  done.push(...tickOnly("audio", [pickOf("narration"), pickOf("music"), ...keepSfx].filter(Boolean)));
+  const up = pickOf("upscale"); if (up && [...$("fupmodel").options].some(o => o.value === up && !o.disabled)) { $("fupmodel").value = up; showUpscaleNote(); done.push(`upscaler ${modelLabel(up)}`); }
+  document.querySelectorAll("input[name=vmodel], input[name=imodel], input[name=audio]").forEach(i => i.dispatchEvent(new Event("change", { bubbles: true })));
+  if (typeof applyConstraints === "function") applyConstraints();
+  if (typeof updatePromptModels === "function") updatePromptModels();
+  markSuggested();
+  $("suggestStatus").textContent = done.length ? "Now using: " + done.map(modelLabel).join(", ") : "nothing could be selected here";
+  $("suggestStatus").className = done.length ? "warn" : "err";
+}
+$("bUseSuggest").addEventListener("click", useSuggestions);
+$("bLookSuggest").addEventListener("click", () => { document.querySelector('[data-tab="models"]').click(); $("suggestCard").scrollIntoView({ behavior: "smooth", block: "start" }); });
+$("kfmodel").addEventListener("change", markSuggested);
+$("fupmodel").addEventListener("change", markSuggested);
+$("gpu").addEventListener("change", refreshSuggestions);      // a new service refreshes them from fillGpus, once its GPU list is filled
+
 // ---------- Make Film timeline: the table drawn to scale. Dragging here edits the table, which stays the one record of the film. ----------
 const TL_CARD = 3.5;                                  // title and end cards last this long (mix_film.py CARD_SECONDS)
 const pad4 = n => String(n).padStart(4, "0");
@@ -3747,6 +3912,7 @@ function fillUpscalers() {
   const ok = [...$("fupmodel").options].filter(o => !o.disabled);
   $("fupmodel").value = ok.some(o => o.value === prev) ? prev : (ok[0] || $("fupmodel").options[0] || {}).value || "";
   showUpscaleNote();
+  if (typeof markSuggested === "function") markSuggested();
 }
 function showUpscaleNote() {
   const k = $("fupmodel").value, u = (ST.upscale_models || {})[k];

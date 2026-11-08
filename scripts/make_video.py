@@ -263,7 +263,7 @@ def keyframe(row, width, height):
 
 MODELS["ltx_video_i2v"] = dict(
   title="LTX-Video, from keyframes", repo="Lightricks/LTX-Video", fps=24,
-  note="LTX-Video animating each shot's keyframe (image-to-video), so every clip starts from the still you approved on the Storyboard. 768x320, ~4 s at 24 fps. Tested on a Kaggle T4: about 10 minutes per clip at 40 steps; the clip opens exactly on its keyframe. Needs keyframes for the rows first. Kaggle only.",
+  note="LTX-Video animating each shot's keyframe (image-to-video), so every clip starts from the still you approved on the Storyboard. 768x320, ~4 s at 24 fps. Tested on a Kaggle T4: about 10 minutes per clip at 40 steps; the clip opens exactly on its keyframe. Needs keyframes for the rows first. Kaggle or this computer.",
   config=MODELS["ltx_video"]["config"],
   load='from diffusers import LTXImageToVideoPipeline\n\npipe = LTXImageToVideoPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()\npipe.vae.enable_tiling()',
   gen=OPT + _KEYFRAME + '''def generate(row, seed):
@@ -275,7 +275,7 @@ MODELS["ltx_video_i2v"] = dict(
 
 MODELS["wan22_ti2v_5b_i2v"] = dict(
   title="Wan 2.2 (TI2V 5B), from keyframes", repo="Wan-AI/Wan2.2-TI2V-5B-Diffusers", fps=24,
-  note="Wan 2.2's 5B model in its image-to-video mode (Apache-2.0): each shot starts from its keyframe, which keeps faces, costumes and sets the same from clip to clip. Better motion than LTX. Default 704x384, 33 frames at 24 fps (sizes are multiples of 32); slow on a T4. Needs keyframes for the rows first. Kaggle only. EXPERIMENTAL: not run on a GPU yet.",
+  note="Wan 2.2's 5B model in its image-to-video mode (Apache-2.0): each shot starts from its keyframe, which keeps faces, costumes and sets the same from clip to clip. Better motion than LTX. Default 704x384, 33 frames at 24 fps (sizes are multiples of 32); slow on a T4. Needs keyframes for the rows first. Kaggle or this computer. EXPERIMENTAL: not run on a GPU yet.",
   config=MODELS["wan22_ti2v_5b"]["config"],
   load="""from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
 
