@@ -1627,8 +1627,8 @@
     <div class="stack">
       <div><label class="f" for="engine">Who writes the prompts</label>
         <select id="engine"><option value="claude">claude (Claude Code)</option><option value="fcc-claude">fcc-claude (Claude Code via Free Claude Code proxy)</option><option value="codex">codex (Codex CLI, your ChatGPT login)</option><option value="fcc-codex">fcc-codex (Codex via Free Claude Code proxy)</option><option value="hf">hf (open models on Hugging Face: Qwen3.8, GLM, DeepSeek...; needs HF_TOKEN)</option><option value="local">local (a language model on this computer)</option></select></div>
-      <div><label class="f" for="cmodel">Model (any name that tool accepts; blank = its default)</label>
-        <input type="text" id="cmodel" list="models" value="sonnet" spellcheck="false" autocomplete="off"><datalist id="models"></datalist></div>
+      <div><label class="f" for="cmodel">Writer model (pick from the list or type one that tool accepts; blank = its default)</label>
+        <input type="text" id="cmodel" name="ai_writer_model" list="models" value="sonnet" spellcheck="false" autocapitalize="off" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"><datalist id="models"></datalist></div>
       <label class="opt"><input type="checkbox" id="localLlm" aria-disabled="true" aria-describedby="localLlmNote"><span>Run the writer on this computer<small id="localLlmNote" class="warn"></small></span></label>
       <small id="engineNote" class="warn" role="status" aria-live="polite"></small>
       <small class="warn">Used by "Make the prompts" for a book and by "Expand my idea" for single prompts.</small>
@@ -6379,6 +6379,20 @@ function initTabs() {
     const savedBtn = document.querySelector('.tab-btn[data-tab="' + savedTab + '"]');
     if (savedBtn) savedBtn.click();
 }
+
+// ===== no autofill anywhere =====
+// The Studio never asks for personal details, but browsers and password managers offer saved names, e-mail addresses and logins (synced
+// from their servers) in any box they guess at, even with autocomplete="off". Every typing box, including ones added later, is marked so
+// that none of them do. Boxes that already say what they hold are left alone.
+const NO_FILL = { autocomplete: "off", "data-lpignore": "true", "data-1p-ignore": "true", "data-bwignore": "true", "data-form-type": "other" };
+const TYPING = 'input:not([type]), input[type=text], input[type=search], input[type=number], input[type=url], input[type=email], input[type=password], textarea';
+function noAutofill(root) {                          // root: the document or one element (it and everything inside it)
+    const els = [...(root.matches && root.matches(TYPING) ? [root] : []), ...root.querySelectorAll(TYPING)];
+    for (const el of els)
+        for (const [k, v] of Object.entries(NO_FILL)) if (!el.getAttribute(k)) el.setAttribute(k, el.type === "password" && k === "autocomplete" ? "new-password" : v);
+}
+noAutofill(document);
+new MutationObserver(list => { for (const m of list) for (const n of m.addedNodes) if (n.nodeType === 1) noAutofill(n); }).observe(document.body, { childList: true, subtree: true });
 
 // ===== STEPPER (book-to-film rail above the tabs) =====
 // Each step is done when its files exist (from /api/status), not when a checkbox is ticked. "cast" is optional and never the current step.

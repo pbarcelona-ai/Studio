@@ -337,3 +337,9 @@ Status: PASS
 Files reviewed: studio.html (addStepNav, .step-nav__col CSS)
 Errors (blocking): none. Warnings: none. Suggestions: none.
 Status: PASS
+
+==== Review pass 2026-11-08 (9): no saved personal details offered in typing boxes ====
+Files reviewed: studio.html (AI Prompt Writer model box, noAutofill)
+Errors (blocking): fixed: the model box let the browser / password managers show saved personal details.
+Warnings: browser autofill behaviour cannot be checked in the headless test browser (no saved data).
+Status: PASS
