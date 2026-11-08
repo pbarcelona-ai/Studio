@@ -344,6 +344,7 @@
   /* Volume sliders show their value next to the label */
   .vol-slider { min-width: 140px; }
   .vol-slider input[type="range"] { width: 100%; accent-color: var(--accent); }
+  #sbGrid .pz-media { aspect-ratio: 21 / 9; }          /* storyboard stills are widescreen film frames */
   .vol-slider output { font-family: "JetBrains Mono", monospace; font-size: var(--text-xs); color: var(--fg-muted); margin-left: 4px; }
 
   /* === CARD COMPONENT === */
@@ -821,7 +822,7 @@
   }
 
 
-  /* ===== Restored from the ~/Downloads/Bible copy of the page: rules the HTML uses (.row, .f, .chip, .btn, .cell, .err, ...) that this copy lacked ===== */
+  /* ===== Restored from the older copy of the page: rules the HTML uses (.row, .f, .chip, .btn, .cell, .err, ...) that this copy lacked ===== */
   :root {
     --brand: #8b6b2f;
     --brand-light: #d4a843;
@@ -1318,7 +1319,7 @@
   .dark .theme-toggle { color: #facc15; text-shadow: 0 0 10px rgba(250, 204, 21, 0.55); }
   .dark .theme-toggle:hover { color: #fde047; background: rgba(250, 204, 21, 0.12); }
 
-  /* ===== Layout: full-width page, left-justified single-column forms (reference: the ~/Downloads/Bible copy) ===== */
+  /* ===== Layout: full-width page, left-justified single-column forms (reference: the older copy of the page) ===== */
   main { max-width: none; padding-left: var(--space-4); padding-right: var(--space-4); }
   .stack { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); text-align: left; }
   .stack > * { min-width: 0 !important; flex: none !important; max-width: 100%; }
@@ -1543,13 +1544,14 @@
     <!-- Book-to-film rail: where the selected book is, shown on every tab. Each step opens the tab where it is done. -->
     <nav class="stepper" id="pipelineStepper" aria-label="Book to film progress">
       <button type="button" class="stepper__step" data-step="ingest" data-go="project" data-target="bookpanel"><span class="stepper__circle">1</span><span class="stepper__label">Read book</span></button>
-      <button type="button" class="stepper__step" data-step="bible" data-go="project" data-target="bookpanel"><span class="stepper__circle">2</span><span class="stepper__label">Continuity bible</span></button>
+      <button type="button" class="stepper__step" data-step="continuity" data-go="project" data-target="bookpanel"><span class="stepper__circle">2</span><span class="stepper__label">Continuity book</span></button>
       <button type="button" class="stepper__step optional" data-step="cast" data-go="characters"><span class="stepper__circle">3</span><span class="stepper__label">Cast (optional)</span></button>
       <button type="button" class="stepper__step" data-step="write" data-go="project" data-target="bookpanel"><span class="stepper__circle">4</span><span class="stepper__label">Write shots</span></button>
       <button type="button" class="stepper__step" data-step="build" data-go="project" data-target="bookpanel"><span class="stepper__circle">5</span><span class="stepper__label">Build CSVs</span></button>
-      <button type="button" class="stepper__step" data-step="video" data-go="movies" data-target="movieRunCard"><span class="stepper__circle">6</span><span class="stepper__label">Video</span></button>
-      <button type="button" class="stepper__step" data-step="audio" data-go="movies" data-target="movieRunCard"><span class="stepper__circle">7</span><span class="stepper__label">Audio</span></button>
-      <button type="button" class="stepper__step" data-step="film" data-go="results" data-target="filmpanel"><span class="stepper__circle">8</span><span class="stepper__label">Final film</span></button>
+      <button type="button" class="stepper__step optional" data-step="board" data-go="movies" data-target="storyboardCard"><span class="stepper__circle">6</span><span class="stepper__label">Storyboard (optional)</span></button>
+      <button type="button" class="stepper__step" data-step="video" data-go="movies" data-target="movieRunCard"><span class="stepper__circle">7</span><span class="stepper__label">Video</span></button>
+      <button type="button" class="stepper__step" data-step="audio" data-go="movies" data-target="movieRunCard"><span class="stepper__circle">8</span><span class="stepper__label">Audio</span></button>
+      <button type="button" class="stepper__step" data-step="film" data-go="results" data-target="filmpanel"><span class="stepper__circle">9</span><span class="stepper__label">Final film</span></button>
     </nav>
     <p id="stepperHint" class="warn" aria-live="polite"></p>
 
@@ -1606,7 +1608,7 @@
       <div>
         <label class="opt"><input type="checkbox" id="b_ingest"><span>Read the PDF and split it into chapters</span></label>
         <div style="margin:0 0 6px 26px"><select id="pdf"></select></div>
-        <label class="opt"><input type="checkbox" id="b_bible"><span>Write the continuity book<small>Characters, look, voices. One AI call. Edit <code id="bookFile">the book's own .json file</code> afterwards if you like.</small></span></label>
+        <label class="opt"><input type="checkbox" id="b_continuity"><span>Write the continuity book<small>Characters, look, voices. One AI call. Edit <code id="bookFile">the book's own .json file</code> afterwards if you like.</small></span></label>
         <label class="opt"><input type="checkbox" id="b_write"><span>Write shots, narration, sound and music<small>One AI call per chapter; finished chapters are skipped.</small></span></label>
         <label class="opt" style="margin-left:26px"><input type="checkbox" id="b_force"><span>Redo chapters that are already written<small>Use to change narration style, shot counts or the continuity book. Old clips no longer match; see README_NEW_BOOK.md "Redo".</small></span></label>
         <label class="opt"><input type="checkbox" id="b_build"><span>Build the CSV files and plan the movies</span></label>
@@ -1906,8 +1908,8 @@
         <div class="char-trait-row" id="loraFields"></div>
 
         <label class="f" style="margin-top:8px">Reference Images (one path per line)</label>
-        <textarea id="charRefImages" rows="3" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="projects/characters/bible/references/adam/ref_01.png
-projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></textarea>
+        <textarea id="charRefImages" rows="3" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="projects/characters/main/references/adam/ref_01.png
+projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textarea>
         <label class="f" style="margin-top:8px">Consistency Notes</label>
         <textarea id="charConsistency" rows="2" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="Always depict as the first man, noble but human, burdened by knowledge of the fall" autocomplete="off"></textarea>
 
@@ -1932,7 +1934,7 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
           <button id="bCharDelete" class="btn btn-danger" disabled>Delete Character</button>
           <button id="bCharGenPrompt" class="btn btn-secondary" disabled>Generate Prompt</button>
           <button id="bCharGenerate" class="primary" type="button">Generate Character</button>
-          <label class="opt" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px" title="Off: characters already in the series are left alone. On: their token, voice, clothing, traits and notes are replaced by the bible's (reference images, LoRA info and extra trigger words are kept). You are asked to confirm first."><input type="checkbox" id="charSyncOverwrite"><span>Overwrite existing</span></label>
+          <label class="opt" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px" title="Off: characters already in the series are left alone. On: their token, voice, clothing, traits and notes are replaced by the continuity book's (reference images, LoRA info and extra trigger words are kept). You are asked to confirm first."><input type="checkbox" id="charSyncOverwrite"><span>Overwrite existing</span></label>
           <button id="bCharSync" class="btn btn-secondary" disabled title="Copy the book's characters into this series">Get characters from the book</button>
           <button id="bCharSend" class="btn btn-secondary" disabled title="Copy the ticked characters (their visual token and voice) into the book's own continuity book">Send ticked to the book</button>
           <span id="charStatus" class="warn"></span>
@@ -1998,7 +2000,7 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
             <div class="card__body">
                 <section class="bookonly" id="directionpanel">
     <h2>Creative Direction <span class="warn">(adds to every prompt)</span></h2>
-    <p class="warn" style="margin-bottom:8px">Describe your creative intent for this book — visual style, tone, specific directorial choices, things the bible doesn't cover. The AI will analyze it, ask clarifying questions, and incorporate it into every shot prompt.</p>
+    <p class="warn" style="margin-bottom:8px">Describe your creative intent for this book — visual style, tone, specific directorial choices, things the continuity book doesn't cover. The AI will analyze it, ask clarifying questions, and incorporate it into every shot prompt.</p>
     <div class="row" style="gap:8px;align-items:flex-start">
       <div style="flex:1;min-width:300px">
         <label class="f">Your Direction</label>
@@ -2094,7 +2096,7 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
             <div class="card__body">
                 <section id="legacypanel" class="hidden bookonly">
     <h2>8. Imported book</h2>
-    <label class="opt"><input type="checkbox" id="s_extract"><span>Rebuild the prompt CSVs from the production bible<small>Only needed after editing the markdown.</small></span></label>
+    <label class="opt"><input type="checkbox" id="s_extract"><span>Rebuild the prompt CSVs from the production notes<small>Only needed after editing the markdown.</small></span></label>
     <div id="enochbox" class="hidden" style="margin-left:26px"><label class="f">Enoch verse text per clip (characters, 0 = whole chapter)</label><input type="number" id="echars" min="0" value="300" style="width:110px" autocomplete="off"></div>
   </section>
             </div>
@@ -2125,6 +2127,25 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
             </div>
         </div>
         
+        <div class="card" id="storyboardCard">
+            <div class="card__header">
+                <h2 class="card__title">Storyboard</h2>
+                <p class="card__subtitle">One card per shot: its keyframe still, the words spoken over it, and the clips made from it</p>
+            </div>
+            <div class="card__body">
+                <section class="bookonly">
+    <p class="warn" style="margin-bottom:8px">Make keyframes first (tick "Make keyframe stills first" below), check them here, then animate them with a "From keyframes" video model on the Models tab. Click a picture or clip to see it full size.</p>
+    <div class="row" style="align-items:flex-end;gap:8px">
+      <div><label class="f" for="sbMovie">Movie</label><select id="sbMovie"></select></div>
+      <div><label class="f" for="sbKf">Keyframes from</label><select id="sbKf"><option value="">(newest)</option></select></div>
+      <button type="button" id="sbLoad">Show storyboard</button>
+      <span id="sbStatus" class="warn" role="status" aria-live="polite"></span>
+    </div>
+    <div class="pz-grid" id="sbGrid" style="margin-top:12px"></div>
+  </section>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card__header">
                 <h2 class="card__title">Steps to Run</h2>
@@ -2141,6 +2162,7 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
     <p id="presetNote" class="warn" aria-live="polite" style="margin-bottom:8px">A preset ticks the video and audio models on the Models tab. You can still change them there.</p>
     <div class="row">
       <div>
+        <label class="opt"><input type="checkbox" id="s_keyframes"><span>Make keyframe stills first<small>One picture per shot, checked on the Storyboard; the "From keyframes" video models animate them.</small></span></label>
         <label class="opt"><input type="checkbox" id="s_video" checked><span>Generate video</span></label>
         <label class="opt"><input type="checkbox" id="s_audio" checked><span>Generate audio</span></label>
         <label class="opt"><input type="checkbox" id="s_merge"><span>Join each movie's clips into a silent film</span></label>
@@ -2148,6 +2170,8 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
         <label class="opt"><input type="checkbox" id="keep"><span>Keep going if a step fails</span></label>
       </div>
       <div>
+        <label class="f" for="kfmodel">Keyframe image model</label>
+        <select id="kfmodel" style="margin-bottom:8px"></select>
         <label class="f">When narration is longer than the clip</label>
         <select id="sync"><option value="stretch">Stretch video to fit (default)</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select>
         <div class="row" style="gap:8px;margin-top:8px">
@@ -2167,7 +2191,7 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
                 <p class="card__subtitle" id="mSummary"></p>
             </div>
             <div class="card__body">
-                <p class="warn" style="margin-bottom:10px">Runs the steps ticked above for the movies you picked. Prepare the book first: read the PDF, bible, scripts and CSVs.</p>
+                <p class="warn" style="margin-bottom:10px">Runs the steps ticked above for the movies you picked. Prepare the book first: read the PDF, continuity book, scripts and CSVs.</p>
                 <div class="row" style="align-items:center;gap:12px">
                     <button id="bPreview" type="button">Preview commands</button>
                     <button id="bRun" class="primary" type="button">Generate movie</button>
@@ -2402,10 +2426,10 @@ function options() {
     sync: $("sync").value, keep_going: $("keep").checked, vol: { narration: $("vn").value, sfx: $("vs").value, music: $("vm").value },
     narration: $("narration").value, engine: $("engine").value, force_write: $("b_force").checked, claude_model: $("cmodel").value, chapters: $("chs").value, words_per_shot: $("wps").value,
     min_shots: $("minshots").value, max_shots: $("maxshots").value, movie_minutes: $("mmin").value, workers: $("workers").value,
-    enoch_chars: $("echars").value,
+    enoch_chars: $("echars").value, keyframe_model: $("kfmodel").value,
     movies: sel === "ids" ? { mode: "ids", ids: checked("movie") } : sel === "first" ? { mode: "first", n: $("mfirst").value } : { mode: "all" },
-    steps: { ingest: $("b_ingest").checked, bible: $("b_bible").checked, write: $("b_write").checked, build: $("b_build").checked,
-             extract: $("s_extract").checked, video: $("s_video").checked, audio: $("s_audio").checked, merge: $("s_merge").checked, mix: $("s_mix").checked },
+    steps: { ingest: $("b_ingest").checked, continuity: $("b_continuity").checked, write: $("b_write").checked, build: $("b_build").checked,
+             extract: $("s_extract").checked, keyframes: $("s_keyframes").checked, video: $("s_video").checked, audio: $("s_audio").checked, merge: $("s_merge").checked, mix: $("s_mix").checked },
   };
 }
 
@@ -2449,6 +2473,14 @@ function modelGroupsHtml(name, groups, all) {
     `</div></div>`).join("");
 }
 
+// Keyframe image models: every image model, newest proven ones first (FLUX.2 klein passed the Kaggle T4 regression in 6 minutes).
+const KEYFRAME_FIRST = ["flux2_klein_4b", "flux1_schnell", "z_image_turbo", "sdxl"];
+function fillKeyframeModels() {
+  const all = ST.image_models || [], first = KEYFRAME_FIRST.filter(m => all.includes(m));
+  const order = [...first, ...all.filter(m => !first.includes(m) && !/^tpu_/.test(m))];     // TPU image models cannot share a run with a GPU video model
+  $("kfmodel").innerHTML = order.map(m => `<option value="${m}">${m}</option>`).join("");
+}
+
 // Tick what the selected book needs next. Runs when you pick a book, after an upload and when a job ends.
 function applyDefaults(p) {
   if (building || !p) return;
@@ -2462,10 +2494,10 @@ function applyDefaults(p) {
   } else {
     document.querySelector('input[name=gran][value=shots]').checked = true;     // new books: shots are allotted by chapter length
     const needIngest = p.not_started || !p.chapters;
-    const needBible = needIngest || !p.bible;
-    const needWrite = needBible || p.scripts < p.chapters;
+    const needContinuity = needIngest || !p.continuity;
+    const needWrite = needContinuity || p.scripts < p.chapters;
     const needBuild = needWrite || !p.built;
-    set("b_ingest", needIngest); set("b_bible", needBible); set("b_write", needWrite); set("b_build", needBuild);
+    set("b_ingest", needIngest); set("b_continuity", needContinuity); set("b_write", needWrite); set("b_build", needBuild);
     set("s_video", !needBuild); set("s_audio", !needBuild);                      // generate only once the prompts exist
   }
   renderMovies();
@@ -2488,7 +2520,7 @@ function renderProject(applyDef) {
   const chip = (t, d) => `<span class="chip ${d ? "done" : ""}">${d ? "✓ " : ""}${t}</span>`;
   $("chips").innerHTML = p.legacy ? chip("imported book", true) + chip(`${p.movies.shots.length} movies planned`, p.movies.shots.length) :
     (p.not_started ? chip("not started: tick 'Read the PDF…' below", false) : chip("PDF read", p.pdfs.length)) + chip(p.chapters ? `${p.chapters} chapters (split by ${p.split_method})` : "not split", p.chapters) +
-    chip("bible", p.bible) + chip(`${p.scripts} chapters scripted`, p.scripts) + chip("CSVs built", p.built);
+    chip("continuity book", p.continuity) + chip(`${p.scripts} chapters scripted`, p.scripts) + chip("CSVs built", p.built);
   $("pdf").innerHTML = p.pdf_choices.map(c => `<option value="${c.value}">${c.label}</option>`).join("") || "<option value=''>(put a PDF in the books folder)</option>";
   if (applyDef) applyDefaults(p);
   renderMovies();
@@ -2502,6 +2534,7 @@ function renderMovies() {
   const kept = new Set(checked("movie"));
   $("movies").innerHTML = list.length ? list.map(m => `<label class="opt"><input type="checkbox" name="movie" value="${m.id}" ${kept.has(String(m.id)) ? "checked" : ""}><span>Movie ${m.id}: ${m.first_chapter} to ${m.last_chapter}<small>rows ${m.rows[0]}-${m.rows[1]} · ${m.clips} clips · about ${(m.est_seconds / 60).toFixed(1)} min</small></span></label>`).join("") :
     `<span class="warn">No movies planned yet for this mode. Run "Build the CSV files and plan the movies", with "the first N" selected above.</span>`;
+  if (window.sbFillMovies) window.sbFillMovies();
 }
 
 async function loadStatus(applyDef) {
@@ -2518,6 +2551,7 @@ async function loadStatus(applyDef) {
     $("vmodels").innerHTML = modelGroupsHtml("vmodel", ST.video_groups, ST.video_models);
     $("imodels").innerHTML = modelGroupsHtml("imodel", ST.image_groups, ST.image_models || []);
     renderAudioModels();
+    fillKeyframeModels();
     updatePromptModels();
     fillGpus();
   }
@@ -2616,7 +2650,7 @@ const num = id => $(id).value.trim();
 // What a Single Prompts run makes comes from the Models tab: every ticked video model makes videos, every ticked image model makes images.
 function promptTargets() {
   const on = n => [...document.querySelectorAll(`input[name=${n}]:checked`)].filter(e => !e.disabled).map(e => e.value);
-  return [...on("vmodel").map(model => ({ kind: "video", model })), ...on("imodel").map(model => ({ kind: "image", model }))];
+  return [...on("vmodel").filter(m => !/_i2v$/.test(m)).map(model => ({ kind: "video", model })), ...on("imodel").map(model => ({ kind: "image", model }))];
 }
 function promptOptions(t = promptTargets()[0] || { kind: "video", model: "" }) {
   return {
@@ -2680,8 +2714,8 @@ async function fetchIntoProject(ref, project, log) {
 function updateMSummary() {
   if (!ST) return;
   const p = cur();
-  const steps = ["s_video", "s_audio", "s_merge", "s_mix"].filter(id => $(id) && $(id).checked)
-    .map(id => $(id).closest("label").innerText.trim().replace(/\s+/g, " "));
+  const steps = ["s_keyframes", "s_video", "s_audio", "s_merge", "s_mix"].filter(id => $(id) && $(id).checked)
+    .map(id => { const sp = $(id).closest("label").querySelector("span"); return (sp.firstChild ? sp.firstChild.textContent : sp.textContent).trim().replace(/\s+/g, " "); });   // the label without its <small> help line
   const picked = selectedMovies(p);
   const clips = picked.reduce((a, m) => a + (m.clips || 0), 0), secs = picked.reduce((a, m) => a + (m.est_seconds || 0), 0);
   const planned = p && p.movies ? (p.movies[radio("gran")] || []).length : 0;
@@ -2906,12 +2940,12 @@ async function runImport() {
     const p = cur();
     if (!p) return fail("Pick a book above, choose a file to upload, or paste some text.");
     const o = options();
-    o.steps = { ingest: !p.legacy, extract: !!p.legacy, bible: !p.legacy, write: !p.legacy, build: !p.legacy, video: false, audio: false, merge: false, mix: false };   // AI steps only: no video/audio, so nothing goes to Kaggle or Colab
+    o.steps = { ingest: !p.legacy, extract: !!p.legacy, continuity: !p.legacy, write: !p.legacy, build: !p.legacy, video: false, audio: false, merge: false, mix: false };   // AI steps only: no video/audio, so nothing goes to Kaggle or Colab
     if (!p.legacy) {
       if (uploaded) { const opt = [...$("pdf").options].find(x => x.value.endsWith("/" + uploaded)); if (opt) $("pdf").value = opt.value; }
       o.pdf = $("pdf").value;
       if (!o.pdf) return fail("No book file found for this book. Choose one above and press Import again.");
-      if (p.chapters && !uploaded && !confirm(`${p.slug} is already imported (${p.chapters} chapters). Importing again re-splits the PDF (hand edits to chapters.json are lost), rewrites the continuity bible and calls the AI again. Continue?`)) {
+      if (p.chapters && !uploaded && !confirm(`${p.slug} is already imported (${p.chapters} chapters). Importing again re-splits the PDF (hand edits to chapters.json are lost), rewrites the continuity book and calls the AI again. Continue?`)) {
         impLog("Cancelled: nothing was changed."); impStatus("Cancelled."); btn.disabled = false; return;
       }
     }
@@ -2928,7 +2962,7 @@ async function runImport() {
     const q = cur();
     const bad = lines.some(l => /Traceback|Error:|PDF not found/.test(l));
     if (bad) impLog("✗ A step failed. The work that finished is kept; fix the problem shown above and press Import again.", true);
-    else if (q && !q.legacy && q.chapters) impLog(`✓ ${q.slug}: ${q.chapters} chapters (split by ${q.split_method}), bible ${q.bible ? "written" : "missing"}, ${q.scripts} chapters scripted, CSVs ${q.built ? "built" : "not built"}.`);
+    else if (q && !q.legacy && q.chapters) impLog(`✓ ${q.slug}: ${q.chapters} chapters (split by ${q.split_method}), continuity book ${q.continuity ? "written" : "missing"}, ${q.scripts} chapters scripted, CSVs ${q.built ? "built" : "not built"}.`);
     else if (q && q.legacy) impLog(`✓ ${q.slug}: prompt CSVs rebuilt, ${q.movies.shots.length} movies planned.`);
     impStatus(bad ? "Finished with errors. See the log." : "Done.", bad ? "err" : "chip done");
   } catch (e) {
@@ -3271,8 +3305,8 @@ function applyConstraints() {
   if (p && !p.legacy && !prompts) {
     const hasCh = p.chapters > 0;
     setOff($("b_ingest"), !tools.uv ? "uv is not installed (needed to read PDFs)" : (!p.pdf_choices.length ? "no PDF in the books folder" : null));
-    setOff($("b_bible"), (hasCh || $("b_ingest").checked) ? null : "read the PDF first (tick the step above)");
-    setOff($("b_write"), (p.bible || $("b_bible").checked) ? null : "needs the continuity bible first");
+    setOff($("b_continuity"), (hasCh || $("b_ingest").checked) ? null : "read the PDF first (tick the step above)");
+    setOff($("b_write"), (p.continuity || $("b_continuity").checked) ? null : "needs the continuity book first");
     setOff($("b_force"), $("b_write").checked ? null : "only applies when writing chapters");
     setOff($("b_build"), (p.scripts > 0 || $("b_write").checked) ? null : "needs written chapters first");
     const ready = p.built || $("b_build").checked;
@@ -3538,7 +3572,7 @@ $("newSceneSeries").onchange = populateNewSceneChapters;
 document.querySelectorAll("input[name=mode]").forEach(e => e.addEventListener("change", setMode));
 ["vmodels", "imodels"].forEach(id => $(id).addEventListener("change", updatePromptModels));
 setupSuggest($("pset"), () => (typeof ST !== "undefined" && ST ? ST.promptsets : []).map(x => x.slug));
-$("bCleanup").onclick = runCleanup; $("bKaggleCleanup").onclick = runKaggleCleanup; $("bImport").onclick = runImport; $("bImportStop").onclick = importStop; ["s_video", "s_audio", "s_merge", "s_mix", "proj"].forEach(id => $(id).addEventListener("change", updateMSummary)); updateMSummary(); $("pGenerate").onclick = pGenerate; $("pStop").onclick = pStop; $("bPGallery").onclick = loadPGallery; ["svc", "gpu", "kuser"].forEach(n => document.querySelectorAll(`[name=${n}], #${n}`).forEach(e => e.addEventListener("change", updatePRunsOn))); updatePRunsOn(); $("bExpand").onclick = expandIdea; $("bGallery").onclick = loadGallery; $("pset").addEventListener("change", () => { loadGallery(); resetFilm(); }); $("bPreview").onclick = preview; $("bRun").onclick = run;
+$("bCleanup").onclick = runCleanup; $("bKaggleCleanup").onclick = runKaggleCleanup; $("bImport").onclick = runImport; $("bImportStop").onclick = importStop; ["s_keyframes", "s_video", "s_audio", "s_merge", "s_mix", "proj"].forEach(id => $(id).addEventListener("change", updateMSummary)); updateMSummary(); $("pGenerate").onclick = pGenerate; $("pStop").onclick = pStop; $("bPGallery").onclick = loadPGallery; ["svc", "gpu", "kuser"].forEach(n => document.querySelectorAll(`[name=${n}], #${n}`).forEach(e => e.addEventListener("change", updatePRunsOn))); updatePRunsOn(); $("bExpand").onclick = expandIdea; $("bGallery").onclick = loadGallery; $("pset").addEventListener("change", () => { loadGallery(); resetFilm(); }); $("bPreview").onclick = preview; $("bRun").onclick = run;
 $("bEstimate").onclick = estimate;
 $("bFilmLoad").onclick = () => loadFilm(false); $("bMakeFilm").onclick = () => loadFilm(true); $("bFilmAll").onclick = () => tickAll(true); $("bFilmNone").onclick = () => tickAll(false);
 $("bFilmMake").onclick = makeFilm;
@@ -3575,7 +3609,7 @@ async function dirSend() {
     const j = await api("/api/creative_direction", {
       project: proj,
       messages: [...dirConv, {role: "user", content: notes}],
-      bible: proj ? await (await fetch(`/api/bible?project=${encodeURIComponent(proj)}`)).json().catch(() => ({})) : {}
+      continuity: proj ? await (await fetch(`/api/continuity?project=${encodeURIComponent(proj)}`)).json().catch(() => ({})) : {}
     });
     dirConv = j.messages;
     renderDirResponse();
@@ -3603,7 +3637,7 @@ async function dirFollowup() {
     const j = await api("/api/creative_direction", {
       project: proj,
       messages: [...dirConv, {role: "user", content: txt}],
-      bible: proj ? await (await fetch(`/api/bible?project=${encodeURIComponent(proj)}`)).json().catch(() => ({})) : {}
+      continuity: proj ? await (await fetch(`/api/continuity?project=${encodeURIComponent(proj)}`)).json().catch(() => ({})) : {}
     });
     dirConv = j.messages;
     renderDirResponse();
@@ -4427,21 +4461,21 @@ async function syncFromProject() {
       showCharStatus("Checking what would change…");
       const plan = await api("/api/characters", { action: "sync", project, series, overwrite: true, dry_run: true });
       if (!plan.updated) {
-        showCharStatus(plan.added ? `Nothing to overwrite; ${plan.added} new character(s) will be added.` : `Nothing to sync: the bible's ${plan.total} character(s) are not in "${series}" yet or have no changes.`);
+        showCharStatus(plan.added ? `Nothing to overwrite; ${plan.added} new character(s) will be added.` : `Nothing to sync: the continuity book's ${plan.total} character(s) are not in "${series}" yet or have no changes.`);
         if (!plan.added) { updateCharButtons(); return; }
-      } else if (!confirm(`Update ${plan.updated} existing character(s) in "${series}" from ${project}'s bible` + (plan.added ? ` and add ${plan.added} new one(s)` : "") + `?\n\nThe bible's visual token, voice, clothing, traits and notes replace yours (only where the bible has a value). Reference images, LoRA info and trigger words you added are kept.\n\nThis cannot be undone.`)) {
+      } else if (!confirm(`Update ${plan.updated} existing character(s) in "${series}" from ${project}'s continuity book` + (plan.added ? ` and add ${plan.added} new one(s)` : "") + `?\n\nThe continuity book's visual token, voice, clothing, traits and notes replace yours (only where the continuity has a value). Reference images, LoRA info and trigger words you added are kept.\n\nThis cannot be undone.`)) {
         showCharStatus("Sync cancelled; nothing was changed.");
         updateCharButtons();
         return;
       }
     }
-    showCharStatus("Syncing from project bible…");
+    showCharStatus("Syncing from continuity book…");
     const j = await api("/api/characters", { action: "sync", project, series, overwrite });
     const parts = [];
     if (j.added) parts.push(`added ${j.added}`);
     if (j.updated) parts.push(`updated ${j.updated}`);
     if (j.skipped) parts.push(`${j.skipped} already in the series, left unchanged`);
-    showCharStatus(parts.length ? `From ${project}'s bible: ${parts.join(", ")}.` : `Nothing to sync: ${project}'s bible has no characters.`);
+    showCharStatus(parts.length ? `From ${project}'s continuity book: ${parts.join(", ")}.` : `Nothing to sync: ${project}'s continuity book has no characters.`);
     await loadCharList();
     await loadCharAllTokens();
   } catch (e) {
@@ -4908,9 +4942,9 @@ async function waitForImagesAndSaveRefs(setName, model, allPrompts, series, name
       }
 
       // Try another alternative - look for the notebook slug format directly in the log
-      // Format: <project>-image-<model>-<start>-<end> (with or without an owner prefix; older runs also had a bible- prefix)
+      // Format: <project>-image-<model>-<start>-<end> (with or without an owner prefix)
       if (!notebookSlug) {
-        const slugMatch = fullLog.match(/(?:[a-zA-Z0-9_-]+\/)?(?:bible-)?([a-z0-9-]+?)-image-([a-z0-9-]+)-(\d+)-(\d+)/i);
+        const slugMatch = fullLog.match(/(?:[a-zA-Z0-9_-]+\/)?([a-z0-9-]+?)-image-([a-z0-9-]+)-(\d+)-(\d+)/i);
         if (slugMatch) {
           const fullSlug = slugMatch[0]; // includes owner prefix if present
           const projectFromSlug = slugMatch[1].replace(/-/g, "_");
@@ -5735,10 +5769,10 @@ function initTabs() {
 // Each step is done when its files exist (from /api/status), not when a checkbox is ticked. "cast" is optional and never the current step.
 const STEP_NEXT = {
     ingest: 'Next: on the Import tab, tick "Read the PDF" and run it.',
-    bible: 'Next: on the Import tab, write the continuity bible.',
+    continuity: 'Next: on the Import tab, write the continuity book.',
     write: 'Next: on the Import tab, write the shots, narration, sound and music.',
     build: 'Next: on the Import tab, build the CSV files and plan the movies.',
-    video: 'Next: on the Movies tab, pick a quality preset and generate the video.',
+    video: 'Next: on the Movies tab, pick a quality preset and generate the video (or make keyframes first and check them on the Storyboard).',
     audio: 'Next: on the Movies tab, generate the narration, effects and music.',
     film: 'Next: on the Results tab, use Make film to join the clips and sound.',
 };
@@ -5748,8 +5782,9 @@ function stepDone(p) {
     const old = !!p.legacy;                                           // imported books arrive with the book steps already done
     return {
         ingest: old || (!p.not_started && !!p.chapters),
-        bible: old || !!p.bible,
+        continuity: old || !!p.continuity,
         cast: Array.isArray(p.characters) && p.characters.length > 0,
+        board: sum('keyframes/') > 0,
         write: old || (p.chapters > 0 && p.scripts >= p.chapters),
         build: old || !!p.built,
         video: sum('videos/') > 0,
@@ -5764,7 +5799,7 @@ function updateStepper(project) {
     els.forEach(el => { el.classList.remove('active', 'complete'); el.removeAttribute('aria-current'); });
     if (!project) { if (hint) hint.textContent = 'Choose a book on the Import tab, or import a new one.'; return; }
     const done = stepDone(project);
-    const current = [...els].find(el => el.dataset.step !== 'cast' && !done[el.dataset.step]);
+    const current = [...els].find(el => !el.classList.contains('optional') && !done[el.dataset.step]);
     els.forEach(el => {
         const label = el.querySelector('.stepper__label').textContent;
         if (done[el.dataset.step]) el.classList.add('complete');
@@ -6649,6 +6684,59 @@ showToast = function(message, type, duration) {
 
   document.querySelector('[data-tab="library"]').addEventListener("click", loadLibrary);
   document.querySelector('[data-tab="compare"]').addEventListener("click", loadCompare);
+
+  // ---- Storyboard (Movies tab): one card per shot of a movie, with its keyframe, narration and the clips made from it
+  let sbProj = null;
+  window.sbFillMovies = function () {
+    const p = cur(), sel = $("sbMovie"), keep = sel.value;
+    if (sbProj !== (p ? p.slug : null)) { sbProj = p ? p.slug : null; $("sbGrid").innerHTML = ""; $("sbStatus").textContent = ""; }   // another book: old cards would mislead
+    const list = (p && p.movies && p.movies.shots) || [];
+    sel.innerHTML = list.length ? list.map(m => `<option value="${m.rows[0]}-${m.rows[1]}">Movie ${m.id}: rows ${m.rows[0]}-${m.rows[1]}</option>`).join("")
+                                : '<option value="">no per-shot movies planned yet</option>';
+    if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+    $("sbLoad").disabled = !list.length;
+  };
+  async function loadStoryboard() {
+    const proj = $("proj").value, [start, end] = ($("sbMovie").value || "").split("-").map(Number);
+    if (!proj || !start) return;
+    $("sbStatus").textContent = "loading…";
+    try {
+      const r = await api(`/api/storyboard?project=${encodeURIComponent(proj)}&start=${start}&end=${end}`);
+      const kfSel = $("sbKf"), keep = kfSel.value;
+      kfSel.innerHTML = '<option value="">(newest)</option>' + r.keyframe_models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
+      if (r.keyframe_models.includes(keep)) kfSel.value = keep;
+      const pick = c => c.keyframes[kfSel.value] || Object.values(c.keyframes).pop();
+      const withKf = r.cards.filter(pick).length;
+      $("sbGrid").innerHTML = r.cards.map(c => {
+        const kf = pick(c), clips = Object.entries(c.clips), cap = `Shot ${c.n} (${c.chapter}) - ${c.prompt}`;
+        const still = kf ? `<div class="pz-media" tabindex="0" role="button" aria-label="Open the keyframe of shot ${c.n}" data-file="${esc(proj + "/" + kf)}" data-kind="image" data-cap="${esc(cap)}">${mediaHtml(proj + "/" + kf, "image")}<span class="pz-badge">${c.n}</span></div>`
+                         : `<div class="pz-media" aria-label="No keyframe yet for shot ${c.n}"><span class="pz-badge">${c.n}</span><span style="font-size:var(--text-sm)">no keyframe yet</span></div>`;
+        const clipBtns = clips.map(([m, f]) => `<button type="button" class="pz-chip" data-clip="${esc(proj + "/" + f)}" data-cap="${esc(m + " - " + cap)}">▶ ${esc(m)}</button>`).join("");
+        return `<article class="pz-tile">${still}<div class="pz-body"><span class="pz-cat">${esc(c.chapter)} · shot ${esc(c.shot)}</span>` +
+          `<span title="${esc(c.prompt)}">${esc(c.prompt.length > 160 ? c.prompt.slice(0, 160) + "…" : c.prompt)}</span>` +
+          (c.narration ? `<em style="color:var(--fg-muted)">“${esc(c.narration)}”</em>` : "") +
+          (clipBtns ? `<div class="pz-row" style="flex-wrap:wrap;gap:6px">${clipBtns}</div>` : "") + `</div></article>`;
+      }).join("");
+      $("sbStatus").textContent = `${r.cards.length} shot(s), ${withKf} with a keyframe` + (r.end - r.start + 1 < (end - start + 1) ? ` (first ${r.cards.length} shown)` : "");
+    } catch (e) { $("sbGrid").innerHTML = ""; $("sbStatus").textContent = e.message; }
+  }
+  $("sbLoad").addEventListener("click", loadStoryboard);
+  $("sbKf").addEventListener("change", loadStoryboard);
+  $("sbGrid").addEventListener("click", e => {
+    const clip = e.target.closest("[data-clip]");
+    if (clip) {                                   // a one-clip gallery, so Previous / Next do not walk another grid
+      const one = document.createElement("div");
+      one.innerHTML = `<div class="pz-media" data-file="${esc(clip.dataset.clip)}" data-kind="video" data-cap="${esc(clip.dataset.cap)}"></div>`;
+      openLightbox(clip.dataset.clip, "video", clip.dataset.cap, one); return;
+    }
+    const media = e.target.closest(".pz-media[data-file]");
+    if (media) openLightbox(media.dataset.file, media.dataset.kind, media.dataset.cap, $("sbGrid"));
+  });
+  $("sbGrid").addEventListener("keydown", e => {         // the stills are focusable: Enter or Space opens them like a click
+    if ((e.key === "Enter" || e.key === " ") && e.target.matches(".pz-media[data-file]")) { e.preventDefault(); e.target.click(); }
+  });
+  window.sbFillMovies();
+
   applyFx();
   loadShowcase();
 })();

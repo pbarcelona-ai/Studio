@@ -1,4 +1,4 @@
-"""Shared helpers for the new-book pipeline (book_ingest.py, book_bible.py, book_write.py, book_build.py).
+"""Shared helpers for the new-book pipeline (book_ingest.py, book_continuity.py, book_write.py, book_build.py).
 
 Everything for a book lives in projects/<slug>/ :
   source/<name>.pdf      the uploaded PDF
@@ -37,7 +37,7 @@ def project_dir(slug):
     return layout.project_dir(slug, "book")
 
 
-def bible_file(pdir):
+def continuity_file(pdir):
     """The continuity-book file of a book: <book name>.json inside the book's folder."""
     pdir = Path(pdir)
     return pdir / f"{pdir.name}.json"
@@ -299,9 +299,9 @@ def slice_text(text, n):
     return out
 
 
-def compose_prompt(visual, characters, bible, limit=1000, global_positives="", global_negatives=""):
-    """Visual description + the bible's exact character tokens + style + global params, kept under the model's prompt window."""
-    known = {c["name"].lower(): c for c in bible.get("characters", [])}
+def compose_prompt(visual, characters, continuity, limit=1000, global_positives="", global_negatives=""):
+    """Visual description + the continuity book's exact character tokens + style + global params, kept under the model's prompt window."""
+    known = {c["name"].lower(): c for c in continuity.get("characters", [])}
     tokens = []
     for n in characters:
         c = known.get(str(n).lower())
@@ -309,7 +309,7 @@ def compose_prompt(visual, characters, bible, limit=1000, global_positives="", g
             tok = re.sub(rf"^{re.escape(c['name'])}\s*[:,-]\s*", "", c["token"], flags=re.I)   # don't repeat the name
             tokens.append(f"{c['name'].upper()}: {tok}")
     base = visual.strip().rstrip(".")
-    style = (bible.get("visual_style") or "").strip().rstrip(".")
+    style = (continuity.get("visual_style") or "").strip().rstrip(".")
 
     # Build the negative tail with global negatives
     neg_tail = NEG_TAIL

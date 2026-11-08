@@ -1,7 +1,7 @@
 # Studio Design System — Biblical/Cinematic Pipeline Dashboard
 
 ## Overview
-A production dashboard for the Bible Film Pipeline. 6 tabs manage the end-to-end workflow: Import → Models → Single Prompts → Characters → Movies → Results (Movies also holds the former Generate tab).
+A production dashboard for the Pistachio's Studio. 6 tabs manage the end-to-end workflow: Import → Models → Single Prompts → Characters → Movies → Results (Movies also holds the former Generate tab).
 
 **Visual Identity**: Aged parchment, deep ochre, slate — evoking ancient manuscripts and cinematic production.
 

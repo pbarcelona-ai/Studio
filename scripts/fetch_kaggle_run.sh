@@ -2,7 +2,7 @@
 # Pick up a Kaggle run whose local waiter is gone (laptop slept, page closed, terminal closed) and put its results in the project.
 #
 # Usage: ./fetch_kaggle_run.sh KERNEL_SLUG [--wait] [--project NAME] [--dest DIR]
-#   KERNEL_SLUG  the notebook name, e.g. adam-eve-wan-1-40 (also accepted: pbarcelona/adam-eve-wan-1-40; older runs were named bible-adam-eve-wan-1-40)
+#   KERNEL_SLUG  the notebook name, e.g. adam-eve-wan-1-40 (also accepted: pbarcelona/adam-eve-wan-1-40; very old runs had one extra word in front)
 #   --wait       if the run is still going, check every 60 s until it ends, then download
 #   --project    the book / character set / prompt set name (guessed from the slug if omitted); it lives under projects/books, projects/characters or projects/prompts
 #   --dest DIR   copy into DIR instead of the project's folder (for testing)
@@ -31,14 +31,17 @@ case "$SLUG" in
      [ -n "$REF" ] || { echo "no notebook named $SLUG on your Kaggle account (try: kaggle kernels list -m)"; exit 1; } ;;
 esac
 
-# which project: the longest book / character set / prompt set whose name (underscores -> dashes) starts the slug (an old "bible-" prefix is ignored)
+# which project: the longest book / character set / prompt set whose name (underscores -> dashes) starts the slug (if none does, one extra word in front of it is skipped: very old runs had one)
 if [ -z "$PROJECT" ]; then
   best=""
-  for d in projects/books/*/ projects/characters/*/ projects/prompts/*/; do
-    [ -d "$d" ] || continue
-    case "$d" in projects/characters/*) [ -f "${d}promptset.json" ] || continue ;; esac     # a character SERIES (tokens) is not a run target
-    n=$(basename "$d"); k="${n//_/-}-"
-    case "$SLUG" in "$k"*|"bible-$k"*) [ ${#n} -gt ${#best} ] && best="$n" ;; esac
+  for NAME in "$SLUG" "${SLUG#*-}"; do
+    for d in projects/books/*/ projects/characters/*/ projects/prompts/*/; do
+      [ -d "$d" ] || continue
+      case "$d" in projects/characters/*) [ -f "${d}promptset.json" ] || continue ;; esac     # a character SERIES (tokens) is not a run target
+      n=$(basename "$d"); k="${n//_/-}-"
+      case "$NAME" in "$k"*) [ ${#n} -gt ${#best} ] && best="$n" ;; esac
+    done
+    [ -n "$best" ] && break
   done
   PROJECT="$best"
 fi

@@ -6,7 +6,7 @@
   projects/char_adam, char_eve, ...         projects/characters/char_<name>/        (generated character image sets)
   projects/xv, <any other prompt set>       projects/prompts/<set>/
   characters/<series>/  (token files)       projects/characters/<series>/
-  projects/adam_eve/references/<character>  projects/characters/bible/references/<character>   (references belong to the characters)
+  projects/adam_eve/references/<character>  projects/characters/main/references/<character>   (references belong to the characters)
   scripts/projects/<name>/...               merged into that project's folder (output of runs started from the wrong folder)
 
 and it rewrites the "projects/..." paths stored inside the character token files.
@@ -26,7 +26,7 @@ import shutil
 import sys
 from pathlib import Path
 
-BOOK_REFERENCE_SERIES = {"adam_eve": "bible"}       # which character series a book's old references/ folder belongs to
+BOOK_REFERENCE_SERIES = {"adam_eve": "main"}       # which character series a book's old references/ folder belongs to
 KNOWN_BOOKS = {"adam_eve", "enoch"}                   # imported books (they have no chapters.json)
 SLUG_RE = re.compile(r"^[a-z0-9_]{2,40}$")
 
@@ -75,7 +75,7 @@ def classify(d: Path) -> str:
     """'book', 'character-set', 'prompts' or '?' for an old-style folder directly under projects/."""
     if (d / "promptset.json").exists():
         return "character-set" if d.name.startswith("char_") else "prompts"
-    if (d / "chapters.json").exists() or (d / "production_bible").is_dir() or d.name in KNOWN_BOOKS:
+    if (d / "chapters.json").exists() or (d / "production_notes").is_dir() or d.name in KNOWN_BOOKS:
         return "book"
     return "?"
 

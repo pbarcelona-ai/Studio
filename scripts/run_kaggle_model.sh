@@ -4,11 +4,13 @@
 # e.g.   KAGGLE_USER=yourname ./run_kaggle_model.sh ltx_video 1 3
 #        SHOTS_CSV=audio_shots.csv KAGGLE_USER=yourname ./run_kaggle_model.sh audio_kokoro 1 50   # audio uses audio_*.csv
 #        SHOTS_CSV=all_chapters.csv KAGGLE_USER=yourname ./run_kaggle_model.sh wan 1 5   # one prompt per chapter
+#        SHOTS_CSV=keyframes.csv KAGGLE_USER=yourname ./run_kaggle_model.sh image_sdxl 1 20   # keyframes -> images/sdxl_keyframes
+#        KEYFRAME_MODEL=sdxl KAGGLE_USER=yourname ./run_kaggle_model.sh ltx_video_i2v 1 20   # animate those keyframes
 # Uploads the prompt CSVs as a private dataset, runs the Kaggle notebook on a GPU, waits, and
 # downloads the clips into ./videos/MODEL (or ./videos/MODEL_chapters in chapter mode).
 set -euo pipefail
 command -v kaggle >/dev/null || export PATH="$HOME/.local/bin:$PATH"       # only add uv's tool folder if kaggle is not already found (lets tests substitute a stand-in)
-cd "$(dirname "$0")/.."          # the repository root: the notebooks (Bible_*.ipynb) and projects/ are relative to it
+cd "$(dirname "$0")/.."          # the repository root: the notebooks (Studio_*.ipynb) and projects/ are relative to it
 PROJECT=${PROJECT:-adam_eve}; PD="$(python3 scripts/layout.py "$PROJECT")"      # projects/books/<book>, projects/characters/<set> or projects/prompts/<set> (see layout.py)
 [ -d "$PD" ] || { echo "no such project: $PD"; exit 1; }
 
@@ -22,11 +24,11 @@ case "$MODEL:$ACCEL" in
   tpu_*:*|image_tpu_*:*) echo "$MODEL needs a TPU: set KAGGLE_ACCELERATOR=TpuV5E8"; exit 1 ;;
   *:Tpu*) echo "only tpu_* models run on a TPU (got $MODEL on $ACCEL)"; exit 1 ;;
 esac
-NB="Bible_Kaggle_${MODEL}.ipynb"
+NB="Studio_Kaggle_${MODEL}.ipynb"
 GEN=""
 if [ ! -f "$NB" ]; then        # generated files can be deleted by the clean-up: re-create them in a throw-away folder, so the project folder stays clean
   GEN=$(mktemp -d); trap 'rm -rf "$GEN"' EXIT
-  BIBLE_GEN_DIR="$GEN" python3 scripts/make_all.py >/dev/null 2>&1 || true
+  STUDIO_GEN_DIR="$GEN" python3 scripts/make_all.py >/dev/null 2>&1 || true
   NB="$GEN/$NB"
 fi
 [ -f "$NB" ] || { echo "no such model: $MODEL (missing $NB)"; exit 1; }
@@ -34,14 +36,29 @@ command -v kaggle >/dev/null || { echo "kaggle CLI not found: uv tool install ka
 
 case "$MODEL" in audio_*) BASEDIR="$PD/audio/${MODEL#audio_}" ;; image_*) BASEDIR="$PD/images/${MODEL#image_}" ;; *) BASEDIR="$PD/videos/$MODEL" ;; esac
 OUTDIR="$BASEDIR"; MODE=""
-case "$SHOTS_CSV" in *chapters*) OUTDIR="${BASEDIR}_chapters"; MODE="-chapters" ;; esac
+case "$SHOTS_CSV" in *chapters*) OUTDIR="${BASEDIR}_chapters"; MODE="-chapters" ;; keyframes*) OUTDIR="${BASEDIR}_keyframes"; MODE="-keyframes" ;; esac
+# Image-to-video models (*_i2v) start each clip from its keyframe: images/<KEYFRAME_MODEL>_keyframes/image-NNNN.png, uploaded as kf-NNNN.png.
+KFDIR=""
+case "$MODEL" in *_i2v)
+  case "$SHOTS_CSV" in all_shots.csv) ;; *) echo "$MODEL works per shot (all_shots.csv), not with $SHOTS_CSV"; exit 1 ;; esac
+  if [ -n "${KEYFRAME_MODEL:-}" ]; then KFDIR="$PD/images/${KEYFRAME_MODEL}_keyframes"
+  else KFDIR=$(ls -dt "$PD"/images/*_keyframes 2>/dev/null | head -1 || true); fi      # newest keyframe set if none was named
+  [ -n "$KFDIR" ] && [ -d "$KFDIR" ] || { echo "!! $MODEL needs keyframes: make them first (no images/<model>_keyframes folder in $PD)"; exit 1; }
+  MISSING=""
+  for N in $(seq "$START" "$END"); do [ -f "$KFDIR/$(printf 'image-%04d.png' "$N")" ] || MISSING="$MISSING $N"; done
+  [ -z "$MISSING" ] || { echo "!! no keyframe in $KFDIR for row(s):$MISSING - make keyframes for these rows first"; exit 1; }
+  echo "== keyframes from $KFDIR" ;;
+esac
 KPREFIX=${KAGGLE_PREFIX:-}                                   # no prefix unless you set KAGGLE_PREFIX (for example KAGGLE_PREFIX=mine-)
 DS="${KPREFIX}${PROJECT//_/-}-prompts"                      # one Kaggle dataset per project (Kaggle wants 3+ characters in the name and 6+ in the title, so a short set name like xv gets "-prompts")
 SLUG="${KPREFIX}${PROJECT//_/-}-${MODEL//_/-}${MODE}-${START}-${END}"        # slug must equal the lower-cased, dashed title
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK" "$GEN"' EXIT
 
 # 1. Dataset with the prompt CSVs (create once, new version afterwards)
-mkdir -p "$WORK/ds"; for f in all_shots.csv all_chapters.csv audio_shots.csv audio_chapters.csv all_images.csv; do [ -f "$PD/$f" ] && cp "$PD/$f" "$WORK/ds/"; done
+mkdir -p "$WORK/ds"; for f in all_shots.csv all_chapters.csv audio_shots.csv audio_chapters.csv all_images.csv keyframes.csv; do [ -f "$PD/$f" ] && cp "$PD/$f" "$WORK/ds/"; done
+if [ -n "$KFDIR" ]; then         # this run's keyframes, flat beside the CSV (a dataset upload skips sub-folders)
+  for N in $(seq "$START" "$END"); do cp "$KFDIR/$(printf 'image-%04d.png' "$N")" "$WORK/ds/$(printf 'kf-%04d.png' "$N")"; done
+fi
 cat > "$WORK/ds/dataset-metadata.json" <<JSON
 {"title": "${DS//-/ }", "id": "$USER_SLUG/$DS", "licenses": [{"name": "CC0-1.0"}]}
 JSON

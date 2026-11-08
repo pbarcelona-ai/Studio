@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 import os as _os
-root = Path(_os.environ["BIBLE_GEN_DIR"]) if _os.environ.get("BIBLE_GEN_DIR") else Path(__file__).resolve().parent.parent   # BIBLE_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
+root = Path(_os.environ["STUDIO_GEN_DIR"]) if _os.environ.get("STUDIO_GEN_DIR") else Path(__file__).resolve().parent.parent   # STUDIO_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
 
 HEADER = '''import csv, os, subprocess, sys, tarfile, time
 from pathlib import Path
@@ -250,12 +250,12 @@ def code(t): return {"cell_type": "code", "metadata": {}, "execution_count": Non
 def notebook(k, m, platform):
     SUF = "SUFFIX = '_chapters' if 'chapters' in CSV_NAME else ''"
     if platform == "colab":
-        intro = f"# Bible film audio: {m['title']} on Colab\n\n{m['note']}\n\nSee README_AUDIO.md. Put `audio_shots.csv` / `audio_chapters.csv` in `MyDrive/Bible/`."
+        intro = f"# Pistachio's Studio audio: {m['title']} on Colab\n\n{m['note']}\n\nSee README_AUDIO.md. Put `audio_shots.csv` / `audio_chapters.csv` in `MyDrive/PistachioStudio/`."
         setup = [code("from google.colab import drive\ndrive.mount('/content/drive')")]
-        paths = ("from pathlib import Path\nBASE = Path('/content/drive/MyDrive/Bible')\nCSV_NAME = 'audio_shots.csv'   # or 'audio_chapters.csv'\n"
+        paths = ("from pathlib import Path\nBASE = Path('/content/drive/MyDrive/PistachioStudio')\nCSV_NAME = 'audio_shots.csv'   # or 'audio_chapters.csv'\n"
                  "CSV_PATH = BASE / CSV_NAME\n" + SUF + f"\nOUT = BASE / 'audio' / ('{k}' + SUFFIX)")
     else:
-        intro = (f"# Bible film audio: {m['title']} on Kaggle\n\n{m['note']}\n\nSee README_AUDIO.md. Accelerator = GPU T4 x2, Internet = On, "
+        intro = (f"# Pistachio's Studio audio: {m['title']} on Kaggle\n\n{m['note']}\n\nSee README_AUDIO.md. Accelerator = GPU T4 x2, Internet = On, "
                  "dataset with the CSVs attached. Files go to `/kaggle/working/audio/`.")
         setup = []
         paths = ("from pathlib import Path\nCSV_NAME = 'audio_shots.csv'   # or 'audio_chapters.csv'\n"
@@ -267,5 +267,5 @@ def notebook(k, m, platform):
 
 for k, m in KINDS.items():
     (root / f"colab_generate_audio_{k}.py").write_text(script(k, m))
-    json.dump(notebook(k, m, "colab"), open(root / f"Bible_Colab_audio_{k}.ipynb", "w"), indent=1)
-    json.dump(notebook(k, m, "kaggle"), open(root / f"Bible_Kaggle_audio_{k}.ipynb", "w"), indent=1)
+    json.dump(notebook(k, m, "colab"), open(root / f"Studio_Colab_audio_{k}.ipynb", "w"), indent=1)
+    json.dump(notebook(k, m, "kaggle"), open(root / f"Studio_Kaggle_audio_{k}.ipynb", "w"), indent=1)

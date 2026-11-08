@@ -1,4 +1,4 @@
-"""Build the four CSVs for an imported production-bible project (adam_eve or enoch).
+"""Build the four CSVs for an imported production-notes project (adam_eve or enoch).
 
   python3 legacy_extract.py adam_eve
   python3 legacy_extract.py enoch [--enoch-chars 300]   # 0 = narrate the whole chapter

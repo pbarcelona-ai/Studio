@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 import os as _os
-root = Path(_os.environ["BIBLE_GEN_DIR"]) if _os.environ.get("BIBLE_GEN_DIR") else Path(__file__).resolve().parent.parent   # BIBLE_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
+root = Path(_os.environ["STUDIO_GEN_DIR"]) if _os.environ.get("STUDIO_GEN_DIR") else Path(__file__).resolve().parent.parent   # STUDIO_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
 
 NEG = "worst quality, inconsistent motion, blurry, jittery, distorted, text, subtitles, watermark, logo, modern objects"
 MODELS = {
@@ -231,6 +231,64 @@ print("VAE tiling:", pipe.vae.use_tiling, "tile (latent):", pipe.vae.tile_latent
                 num_inference_steps=opt(row, "steps", STEPS), generator=torch.Generator("cuda").manual_seed(seed)).frames[0]''')
 
 
+# ---------------------------------------------------------------------------------------------------------------------------
+# Image-to-video: each shot starts from its keyframe (a still made first by an image model and reviewed on the Storyboard), so the
+# look, framing and characters are decided before any GPU time goes into motion. The run script puts the keyframes next to the CSV
+# as kf-NNNN.png (NNNN = row number in all_shots.csv). Kaggle only: the Colab and Hugging Face runners do not upload them.
+# ---------------------------------------------------------------------------------------------------------------------------
+_KEYFRAME = '''from PIL import Image
+
+_KF_ROOT = Path(CSV_PATH).parent if "CSV_PATH" in globals() else Path("/content")
+
+
+def keyframe(row, width, height):
+    """This row's keyframe, cropped to the clip's shape (centre) and resized. Stops the shot with a clear message if it is missing."""
+    n = next(k for k, r in enumerate(shots, 1) if r is row)
+    hits = sorted(_KF_ROOT.rglob(f"kf-{n:04d}.png"))
+    if not hits:
+        raise FileNotFoundError(f"no keyframe kf-{n:04d}.png for row {n}: make keyframes for these rows first (Movies tab, Storyboard)")
+    img = Image.open(hits[0]).convert("RGB")
+    want = width / height
+    if img.width / img.height > want:                       # too wide: trim the sides
+        w = round(img.height * want); x = (img.width - w) // 2
+        img = img.crop((x, 0, x + w, img.height))
+    else:                                                   # too tall: trim top and bottom
+        h = round(img.width / want); y = (img.height - h) // 2
+        img = img.crop((0, y, img.width, y + h))
+    return img.resize((width, height), Image.LANCZOS)
+
+
+'''
+
+MODELS["ltx_video_i2v"] = dict(
+  title="LTX-Video, from keyframes", repo="Lightricks/LTX-Video", fps=24,
+  note="LTX-Video animating each shot's keyframe (image-to-video), so every clip starts from the still you approved on the Storyboard. Same speed and size as LTX-Video (768x320, ~4 s); fits a free T4. Needs keyframes for the rows first. Kaggle only. EXPERIMENTAL: not run on a GPU yet.",
+  config=MODELS["ltx_video"]["config"],
+  load='from diffusers import LTXImageToVideoPipeline\n\npipe = LTXImageToVideoPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()\npipe.vae.enable_tiling()',
+  gen=OPT + _KEYFRAME + '''def generate(row, seed):
+    w, h = opt(row, "width", WIDTH), opt(row, "height", HEIGHT)
+    return pipe(image=keyframe(row, w, h), prompt=row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
+                width=w, height=h, num_frames=opt(row, "frames", NUM_FRAMES),
+                num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
+                max_sequence_length=256, generator=torch.Generator("cuda").manual_seed(seed)).frames[0]''')
+
+MODELS["wan22_ti2v_5b_i2v"] = dict(
+  title="Wan 2.2 (TI2V 5B), from keyframes", repo="Wan-AI/Wan2.2-TI2V-5B-Diffusers", fps=24,
+  note="Wan 2.2's 5B model in its image-to-video mode (Apache-2.0): each shot starts from its keyframe, which keeps faces, costumes and sets the same from clip to clip. Better motion than LTX. Default 704x384, 33 frames at 24 fps (sizes are multiples of 32); slow on a T4. Needs keyframes for the rows first. Kaggle only. EXPERIMENTAL: not run on a GPU yet.",
+  config=MODELS["wan22_ti2v_5b"]["config"],
+  load="""from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
+
+vae = AutoencoderKLWan.from_pretrained(MODEL_ID, subfolder="vae", torch_dtype=torch.float32)     # a float32 VAE decodes cleanly
+pipe = WanImageToVideoPipeline.from_pretrained(MODEL_ID, vae=vae, torch_dtype=torch.bfloat16)  # the 5B model needs no CLIP image encoder (expand_timesteps)
+pipe.enable_model_cpu_offload()""",
+  gen=OPT + _KEYFRAME + '''def generate(row, seed):
+    w, h = opt(row, "width", WIDTH), opt(row, "height", HEIGHT)
+    return pipe(image=keyframe(row, w, h), prompt=PROMPT_PREFIX + row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
+                width=w, height=h, num_frames=opt(row, "frames", NUM_FRAMES),
+                num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
+                generator=torch.Generator("cuda").manual_seed(seed)).frames[0]''')
+
+
 def script(name, m):
     return f'''"""{m["title"]} generator. Runs ON the Colab VM (via `colab exec`). {m["note"]}
 
@@ -301,13 +359,13 @@ if failed and len(failed) == last - START + 1:
 
 def notebook(name, m, platform):
     if platform == "colab":
-        intro = (f"# Bible film: {m['title']} on Colab\n\n{m['note']}\n\nSee README_COLAB_GUI_{name.upper()}.md. "
-                 "Runtime → Change runtime type → **T4 GPU**. Put `all_shots.csv` / `all_chapters.csv` in `MyDrive/Bible/`.")
+        intro = (f"# Pistachio's Studio: {m['title']} on Colab\n\n{m['note']}\n\nSee README_COLAB_GUI_{name.upper()}.md. "
+                 "Runtime → Change runtime type → **T4 GPU**. Put `all_shots.csv` / `all_chapters.csv` in `MyDrive/PistachioStudio/`.")
         setup = [code("from google.colab import drive\ndrive.mount('/content/drive')")]
-        paths = ("from pathlib import Path\nBASE = Path('/content/drive/MyDrive/Bible')\n" + CSV_LINE +
+        paths = ("from pathlib import Path\nBASE = Path('/content/drive/MyDrive/PistachioStudio')\n" + CSV_LINE +
                  "\nCSV_PATH = BASE / CSV_NAME\n" + SUFFIX + f"\nOUT = BASE / 'videos' / ('{name}' + SUFFIX)")
     else:
-        intro = (f"# Bible film: {m['title']} on Kaggle\n\n{m['note']}\n\nSee README_KAGGLE_GUI_{name.upper()}.md. "
+        intro = (f"# Pistachio's Studio: {m['title']} on Kaggle\n\n{m['note']}\n\nSee README_KAGGLE_GUI_{name.upper()}.md. "
                  "Right panel: **Accelerator = GPU T4 x2**, **Internet = On**, add your dataset containing `all_shots.csv` / `all_chapters.csv`. "
                  "Clips are written to `/kaggle/working/videos/` and show up in the Output tab.")
         setup = []
@@ -333,5 +391,5 @@ def notebook(name, m, platform):
 
 for name, m in MODELS.items():
     (root / f"colab_generate_{name}.py").write_text(script(name, m))
-    json.dump(notebook(name, m, "colab"), open(root / f"Bible_Colab_{name}.ipynb", "w"), indent=1)
-    json.dump(notebook(name, m, "kaggle"), open(root / f"Bible_Kaggle_{name}.ipynb", "w"), indent=1)
+    json.dump(notebook(name, m, "colab"), open(root / f"Studio_Colab_{name}.ipynb", "w"), indent=1)
+    json.dump(notebook(name, m, "kaggle"), open(root / f"Studio_Kaggle_{name}.ipynb", "w"), indent=1)

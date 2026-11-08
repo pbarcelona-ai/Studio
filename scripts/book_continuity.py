@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Step 2 of a new book: Claude reads samples of the book and writes the continuity bible (<book name>.json).
+"""Step 2 of a new book: Claude reads samples of the book and writes the continuity book (<book name>.json).
 
-  python3 book_bible.py <project_name> [--model sonnet] [--force]
+  python3 book_continuity.py <project_name> [--model sonnet] [--force]
 
 <book name>.json holds the visual style, the recurring characters (each with one exact visual description that is pasted
 into every shot prompt, plus a narration voice) and key locations. You can edit it by hand; later steps reuse it.
 """
 import argparse, sys
-from bookkit import COST, VOICE_MAP, bible_file, cost_note, llm_json, project_dir, read_json, write_json
+from bookkit import COST, VOICE_MAP, continuity_file, cost_note, llm_json, project_dir, read_json, write_json
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
@@ -21,9 +21,9 @@ pdir = project_dir(args.project)
 index = read_json(pdir / "chapters.json")
 if not index:
     sys.exit("run book_ingest.py first (no chapters.json)")
-BIBLE = bible_file(pdir)
-if BIBLE.exists() and not args.force:
-    sys.exit(f"{BIBLE.name} already exists (use --force to rewrite it, or edit it by hand)")
+BOOK_FILE = continuity_file(pdir)
+if BOOK_FILE.exists() and not args.force:
+    sys.exit(f"{BOOK_FILE.name} already exists (use --force to rewrite it, or edit it by hand)")
 
 chapters = index["chapters"]
 pick = sorted({round(i * (len(chapters) - 1) / 9) for i in range(10)}) if len(chapters) > 10 else range(len(chapters))
@@ -35,7 +35,7 @@ titles = "; ".join(f"{c['n']}: {c['title']}" for c in chapters[:200])
 
 SYSTEM = "You are a film production designer. You reply with a single JSON object and nothing else."
 PROMPT = f"""We are adapting the book "{index.get('pdf', args.project)}" into a series of short AI-generated video clips with
-narration and music. Read these excerpts and the chapter list, then write the continuity bible.
+narration and music. Read these excerpts and the chapter list, then write the continuity book.
 
 CHAPTER LIST: {titles}
 
@@ -77,10 +77,10 @@ def check(d):
             raise ValueError(f"voice for {c['name']} must be one of {sorted(VOICE_MAP)}")
 
 
-bible = llm_json(PROMPT, SYSTEM, model=args.model, engine=args.engine, validate=check)
-bible.setdefault("locations", [])
-write_json(BIBLE, bible)
-print(f"{BIBLE.name} written: {len(bible['characters'])} characters, {len(bible['locations'])} locations "
+continuity = llm_json(PROMPT, SYSTEM, model=args.model, engine=args.engine, validate=check)
+continuity.setdefault("locations", [])
+write_json(BOOK_FILE, continuity)
+print(f"{BOOK_FILE.name} written: {len(continuity['characters'])} characters, {len(continuity['locations'])} locations "
       f"({COST['calls']} call via {args.engine}{cost_note()})")
-for c in bible["characters"]:
+for c in continuity["characters"]:
     print(f"  {c['name']} [{c['voice']}]: {c['token'][:90]}")

@@ -17,7 +17,7 @@ case "$SHOTS_CSV" in *chapters*) OUTDIR="${OUTDIR}_chapters" ;; esac
 GEN=""
 if [ ! -f "$SCRIPT" ]; then      # generated files can be deleted by the clean-up: re-create them in a throw-away folder, so the project folder stays clean
   GEN=$(mktemp -d)
-  BIBLE_GEN_DIR="$GEN" python3 scripts/make_all.py >/dev/null 2>&1 || true
+  STUDIO_GEN_DIR="$GEN" python3 scripts/make_all.py >/dev/null 2>&1 || true
   SCRIPT="$GEN/$SCRIPT"
 fi
 [ -f "$SCRIPT" ] || { echo "no such model: $MODEL (missing $SCRIPT)"; exit 1; }

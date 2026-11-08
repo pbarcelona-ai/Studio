@@ -12,12 +12,12 @@ Not run: real Kaggle end-to-end, Characters flow, Make the Movie run.
 Update (UI): header/tab overlap fixed; model frames; one sentence per line; 151 missing CSS rule blocks restored. Checked in headless Chrome (dark theme only).
 Update (theme): yellow sun in dark theme; dark palette now follows the button (.dark) instead of the OS setting.
 Update (layout pass): Character List bug fixed (stray populateCharTable call); Generate tab merged into Movies; layout per reference. Browser-tested (7 tabs, messages, no JS errors). Not run: Preview/Generate movie POSTs, real Kaggle run.
-Update (Sync): POST sync route added; real bible.json list format supported; add-only, uses selected series. 13/13 handler tests pass.
+Update (Sync): POST sync route added; real continuity book.json list format supported; add-only, uses selected series. 13/13 handler tests pass.
 Update (Sync overwrite option): dry run + confirm + merge-style overwrite; 23/23 handler tests pass.
 Update (restructure): projects/books, projects/characters, projects/prompts via scripts/layout.py + migrate_layout.py (applied). 0 files lost; baseline-equal; 33/33 checks. Also fixed: bare script names in job steps, run_*_model.sh working directory, copy_file source resolution.
 Not run: real Kaggle/Colab, book steps, browser check of reference-image copy.
-Update (functional testing): 4 tiers run on a copy of the data: UI 32/32, local film making OK, AI chain OK (expand + bible + sync), real Kaggle run OK (Characters flow, no prefix).
-Fixed: archetype GET endpoints, Save message overwritten, notebookSlug scope, Kaggle names without bible- prefix. Real tree changes: studio.html, scripts/*, docs.
+Update (functional testing): 4 tiers run on a copy of the data: UI 32/32, local film making OK, AI chain OK (expand + continuity book + sync), real Kaggle run OK (Characters flow, no prefix).
+Fixed: archetype GET endpoints, Save message overwritten, notebookSlug scope, Kaggle names without  prefix. Real tree changes: studio.html, scripts/*, docs.
 STATUS: PASS
 
 autofill pass: studio.html autocomplete="off" on 40 fields. STATUS: PASS
@@ -49,12 +49,12 @@ STATUS: PASS
 
 
 == Import button ==
-studio.html: new Import card at the end of the Import tab (button, Stop, status, log). Uploads the chosen PDF, then runs the AI book steps (ingest, bible, write, build) via /api/plan + /api/run; no video/audio, nothing goes to Kaggle/Colab. Legacy books rebuild CSVs. Confirm before re-importing. book_write.py: creative_direction now optional (KeyError on fresh bible found by test). Tests: suite6 8/8 incl. real Claude run on a 3-chapter PDF in a throwaway copy. Backups: studio.html.pre_importbtn, book_write.py.pre_optional.
+studio.html: new Import card at the end of the Import tab (button, Stop, status, log). Uploads the chosen PDF, then runs the AI book steps (ingest, continuity book, write, build) via /api/plan + /api/run; no video/audio, nothing goes to Kaggle/Colab. Legacy books rebuild CSVs. Confirm before re-importing. book_write.py: creative_direction now optional (KeyError on fresh continuity book found by test). Tests: suite6 8/8 incl. real Claude run on a 3-chapter PDF in a throwaway copy. Backups: studio.html.pre_importbtn, book_write.py.pre_optional.
 STATUS: PASS
 
 
 == Cleanup button + Upload PDF removed ==
-studio.html: Cleanup card (button, status, log) after the Import card: /api/cleanup_scan -> list -> confirm -> /api/cleanup_delete (Trash). Upload PDF button and upload() removed; drop zone says "press Import"; Import uploads the dropped file. studio.py: cleanup keeps the 3 newest Bible_*.ipynb (mtime) plus the scripts of kept notebooks (KEEP_NOTEBOOKS); older ones and notebooks/ copies go to the Trash. Tests: suite1 32/32, suite6 incl. cleanup. Backups: studio.html.pre_cleanupbtn, studio.py.pre_cleanup.
+studio.html: Cleanup card (button, status, log) after the Import card: /api/cleanup_scan -> list -> confirm -> /api/cleanup_delete (Trash). Upload PDF button and upload() removed; drop zone says "press Import"; Import uploads the dropped file. studio.py: cleanup keeps the 3 newest Studio_*.ipynb (mtime) plus the scripts of kept notebooks (KEEP_NOTEBOOKS); older ones and notebooks/ copies go to the Trash. Tests: suite1 32/32, suite6 incl. cleanup. Backups: studio.html.pre_cleanupbtn, studio.py.pre_cleanup.
 STATUS: PASS
 
 
@@ -177,7 +177,7 @@ STATUS: PASS
 
 [2026-11-07] run_regression.sh: -a = audio only, "again" moved from -a to -r - PASS (dry runs; bash -n clean).
 
-[2026-11-07] Generated notebooks no longer come back after Cleanup: run_kaggle_model.sh / run_colab_model.sh re-create a missing one in a throw-away folder (BIBLE_GEN_DIR in make_video/audio/image/tpu.py) - PASS (copy test: 79 notebooks + 38 scripts byte-identical, none in the project folder; Kaggle and Colab live runs not repeated).
+[2026-11-07] Generated notebooks no longer come back after Cleanup: run_kaggle_model.sh / run_colab_model.sh re-create a missing one in a throw-away folder (STUDIO_GEN_DIR in make_video/audio/image/tpu.py) - PASS (copy test: 79 notebooks + 38 scripts byte-identical, none in the project folder; Kaggle and Colab live runs not repeated).
 
 [2026-11-07] Per-chapter shot counts (table in Book Processing, GET/POST /api/chapter_shots, saved to overrides.json) - PASS (direct tests of save/clear/bad input; headless UI test: 90-chapter book, Auto column follows the settings, save, reload, Estimate uses the saved counts, Clear all).
 [2026-11-07] Book Processing card moved from Movies to Import (under the Import card); Import/Stop/status/log moved into Book Processing - PASS (page structure unchanged; Import-tab UI suite 4/4, no page errors).
@@ -192,11 +192,11 @@ STATUS: PASS
 [2026-11-07] Deleted the 7 original hand-collected files from ~/Downloads after verifying the copies in regtest_i (5 byte-identical; the 2 webp are stored as PNG).
 [2026-11-07] Started the books over: moved projects/books/{adam_eve,book_of_jasher,enoch,genesis_adam_eve} to ~/.Trash/studio-books-2026-11-07 (recoverable until the Trash is emptied). Source files in books/ and projects/characters/ kept.
 
-[2026-11-07] Continuity book file is now named after the book (<book>.json, old bible.json still read): bookkit.bible_file used by book_bible/book_write/book_build/studio/character_tokens; the card's Edit line matches - PASS (throw-away book: written as zz_bk.json, second run refuses to overwrite, project_info and book_write find it, renamed to bible.json still found; UI test of the line passes).
+[2026-11-07] Continuity book file is now named after the book (<book>.json, old continuity book.json still read): bookkit.continuity_file used by book_continuity/book_write/book_build/studio/character_tokens; the card's Edit line matches - PASS (throw-away book: written as zz_bk.json, second run refuses to overwrite, project_info and book_write find it, renamed to continuity book.json still found; UI test of the line passes).
 
-[2026-11-07] Removed the old bible.json fallback everywhere (no bible.json exists; books start over) - PASS (py_compile clean; no 'bible.json' left in code except none; UI test of the card line passes).
+[2026-11-07] Removed the old continuity book.json fallback everywhere (no continuity book.json exists; books start over) - PASS (py_compile clean; no 'continuity book.json' left in code except none; UI test of the card line passes).
 
-[2026-11-07] Characters tab: tick box per character + 'Send ticked to the book' (character_tokens.send_to_bible, POST /api/characters send_to_book); old sync button relabelled - PASS (direct test of update/add/unchanged/missing/no book; headless UI test incl. cancel and confirm).
+[2026-11-07] Characters tab: tick box per character + 'Send ticked to the book' (character_tokens.send_to_book, POST /api/characters send_to_book); old sync button relabelled - PASS (direct test of update/add/unchanged/missing/no book; headless UI test incl. cancel and confirm).
 
 [2026-11-07] Cleanup now always lists the TPU notebooks (they used up the 'keep 3 newest' slots, so they were never offered) - PASS (cleanup_scan on the real folder lists all 3; nothing deleted yet - the Cleanup button does that).
 
@@ -209,3 +209,7 @@ STATUS: PASS
 [2026-11-07] Phase 1 workflow upgrades (studio.html): book-to-film rail on every tab driven by real files, clickable steps; Quick test/Standard/Best quality presets; volume sliders with readouts (Movies + Make film); Make the Movie summary shows movies, clips and film length. Fixed during review: misleading "no movies picked" text. Warnings: rail shown on non-book tabs; preset buttons < 48 px; hard-coded preset model names. Checks: node --check all scripts; headless Chrome CDP tests (rail states, clicks, presets, sliders, summary), no page errors - PASS
 
 [2026-11-07] studio.html: book-to-film rail hidden on the Single Prompts tab; activeTab localStorage write guarded. node --check OK - PASS
+
+[2026-11-07] Phase 2 (keyframes -> image-to-video, Storyboard): studio.html, scripts/studio.py, scripts/make_video.py, scripts/make_keyframes_csv.py (new), scripts/regress_kaggle.py; also scripts/run_kaggle_model.sh (bash -n; i2v pre-checks tested with a stand-in kaggle). Lower modules layout, bookkit, character_tokens, hf_spaces, prompt_guides, setup_check, templates: reviewed earlier, unchanged. Fixed during review: Colab keyframes would land in the wrong folder (now Kaggle only); regression would schedule *_i2v without keyframes; summary showed help text; clip lightbox walked the wrong gallery; stills not keyboard-operable. Warnings: both i2v models not yet run on a GPU; audio/shot row alignment assumed; dataset race only for manual parallel runs. Checks: py_compile, node --check, notebook ast parse, local keyframe crop test, temp-book plan/storyboard tests, headless Chrome storyboard test - PASS
+
+[2026-11-07] Old project word removed from the whole Studio (user request): studio.html, 15 scripts, 3 shell scripts, docs, notebooks (Studio_*), character series renamed to main (backup _cleanup_2026-11-07/characters_series_backup.tar.gz), 16 old log files renamed. Checks: py_compile all scripts, bash -n, node --check, 123 regenerated notebooks clean, status/book_steps/characters/guess_project exercised, headless page + /api/status clean. Pre-existing (not introduced, reported): Creative Direction calls /api/creative_direction and /api/continuity, which the server does not have - PASS

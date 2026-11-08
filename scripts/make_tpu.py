@@ -1,5 +1,5 @@
-"""Write the TPU notebooks: python3 scripts/make_tpu.py  ->  Bible_Kaggle_tpu_wan.ipynb (video),
-Bible_Kaggle_image_tpu_mage_flow.ipynb and Bible_Kaggle_image_tpu_flux_jax.ipynb (text to image)
+"""Write the TPU notebooks: python3 scripts/make_tpu.py  ->  Studio_Kaggle_tpu_wan.ipynb (video),
+Studio_Kaggle_image_tpu_mage_flow.ipynb and Studio_Kaggle_image_tpu_flux_jax.ipynb (text to image)
 
 EXPERIMENTAL and untested. Runs Wan 2.1 text-to-video on a Kaggle TPU v5e-8 with Google's MaxDiffusion (pure JAX).
 Facts used (from MaxDiffusion's README / config / generate_wan.py): config base_wan_14b.yml (the 14B model
@@ -9,7 +9,7 @@ Wan-AI/Wan2.1-T2V-14B-Diffusers, there is no 1.3B config), prompt_file = one pro
 import json
 from pathlib import Path
 import os as _os
-root = Path(_os.environ["BIBLE_GEN_DIR"]) if _os.environ.get("BIBLE_GEN_DIR") else Path(__file__).resolve().parent.parent   # BIBLE_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
+root = Path(_os.environ["STUDIO_GEN_DIR"]) if _os.environ.get("STUDIO_GEN_DIR") else Path(__file__).resolve().parent.parent   # STUDIO_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
 
 
 def md(t): return {"cell_type": "markdown", "metadata": {}, "source": t.strip().splitlines(True)}
@@ -17,7 +17,7 @@ def code(t): return {"cell_type": "code", "metadata": {}, "execution_count": Non
 
 
 INTRO = """
-# Bible film: Wan 2.1 14B on a Kaggle TPU v5e-8 (EXPERIMENT)
+# Pistachio's Studio: Wan 2.1 14B on a Kaggle TPU v5e-8 (EXPERIMENT)
 
 Uses Google's **MaxDiffusion** (JAX). **Nothing here has been run.** The first run is for learning what Kaggle's TPU allows,
 so every stage prints what it found and stops with the evidence if it cannot continue.
@@ -102,7 +102,7 @@ out_dir = WORK / 'out'; out_dir.mkdir(exist_ok=True)
 cmd = (f"{act}HF_HUB_CACHE=/tmp/hf_cache python src/maxdiffusion/generate_wan.py src/maxdiffusion/configs/base_wan_14b.yml "
        f"attention=flash num_inference_steps={STEPS} num_frames={NUM_FRAMES} width={WIDTH} height={HEIGHT} guidance_scale={GUIDANCE} "
        f"fps={FPS} flow_shift=5.0 per_device_batch_size=0.125 ici_data_parallelism=2 ici_context_parallelism=4 "      # 8 chips, batch of 1
-       f"prompt_file={pf} output_dir={out_dir} run_name=bible seed=0 jax_cache_dir=/tmp/jax_cache")
+       f"prompt_file={pf} output_dir={out_dir} run_name=studio seed=0 jax_cache_dir=/tmp/jax_cache")
 code_ = sh(cmd, cwd=REPO)
 made = sorted(out_dir.glob('*.mp4'), key=lambda p: int(re.search(r'_(\\d+)\\.mp4$', p.name).group(1)))
 for p in made:
@@ -120,8 +120,8 @@ def notebook():
     return {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "name": "python3"}}, "nbformat": 4, "nbformat_minor": 0}
 
 
-json.dump(notebook(), open(root / "Bible_Kaggle_tpu_wan.ipynb", "w"), indent=1)
-print("wrote Bible_Kaggle_tpu_wan.ipynb")
+json.dump(notebook(), open(root / "Studio_Kaggle_tpu_wan.ipynb", "w"), indent=1)
+print("wrote Studio_Kaggle_tpu_wan.ipynb")
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -134,7 +134,7 @@ print("wrote Bible_Kaggle_tpu_wan.ipynb")
 IMG_COMMON_DIAG = DIAG
 
 MAGE_INTRO = """
-# Bible film: Mage-Flow-Turbo (JAX) on a Kaggle TPU v5e-8, text to image
+# Pistachio's Studio: Mage-Flow-Turbo (JAX) on a Kaggle TPU v5e-8, text to image
 
 Text to image only. The model is Microsoft's **Mage-Flow-Turbo** converted to JAX by *dangkhoa2016* (MIT and Apache-2.0 parts, see the repo's LICENSES.md):
 https://huggingface.co/dangkhoa2016/Mage-Flow-Turbo-JAX-TPU-v5e8 . The author reports generating images with it on a Kaggle TPU v5e-8; **I have not run this notebook.**
@@ -236,7 +236,7 @@ assert total_saved > 0, 'no images were produced; read the output above'
 """
 
 FLUX_INTRO = """
-# Bible film: FLUX.1-dev (JAX, `diffuse`) on a Kaggle TPU, text to image (EXPERIMENT)
+# Pistachio's Studio: FLUX.1-dev (JAX, `diffuse`) on a Kaggle TPU, text to image (EXPERIMENT)
 
 Text to image only. `jcopo/flux_jax` is FLUX.1-dev stored in Orbax format for the `diffuse` library:
 https://huggingface.co/jcopo/flux_jax . **Not run by me, and the model card does not say which TPU it was tested on.**
@@ -325,7 +325,7 @@ def image_notebook(intro, cells):
 
 
 json.dump(image_notebook(MAGE_INTRO, [MAGE_CONFIG, MAGE_DOWNLOAD, MAGE_SETUP, MAGE_RUN]),
-          open(root / "Bible_Kaggle_image_tpu_mage_flow.ipynb", "w"), indent=1)
+          open(root / "Studio_Kaggle_image_tpu_mage_flow.ipynb", "w"), indent=1)
 json.dump(image_notebook(FLUX_INTRO, [FLUX_CONFIG, FLUX_INSTALL, FLUX_LOAD, FLUX_RUN]),
-          open(root / "Bible_Kaggle_image_tpu_flux_jax.ipynb", "w"), indent=1)
-print("wrote Bible_Kaggle_image_tpu_mage_flow.ipynb, Bible_Kaggle_image_tpu_flux_jax.ipynb")
+          open(root / "Studio_Kaggle_image_tpu_flux_jax.ipynb", "w"), indent=1)
+print("wrote Studio_Kaggle_image_tpu_mage_flow.ipynb, Studio_Kaggle_image_tpu_flux_jax.ipynb")

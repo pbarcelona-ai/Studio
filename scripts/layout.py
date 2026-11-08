@@ -5,7 +5,7 @@
     books/<book>/              a book (adam_eve, enoch, ...): chapters, <book>.json, prompt CSVs, clips, audio, films.
                                A movie belongs to a book.
     characters/<series>/       character token files (one .json per character) and references/<character>/ images.
-                               Shared between books: the series "bible" is used by Adam and Eve, Enoch, ...
+                               Shared between books: the series "main" is used by Adam and Eve, Enoch, ...
     characters/char_<name>/    image sets generated for one character on the Characters tab (same layout as a prompt set).
     prompts/<set>/             Single Prompts sets (stand-alone text-to-image / text-to-video).
     regression/regtest_*/      the regression test's results (lanes a and b) and the results collected by hand (lane i), plus regtest_ratings.json.

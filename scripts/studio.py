@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Local control page for the Bible film pipeline.
+"""Local control page for the Pistachio's Studio pipeline.
 
     cd <the Studio folder> && python3 scripts/studio.py        (or double-click the app, or run ./run_studio.sh)
 
 Opens http://127.0.0.1:8765/?t=<token>. Pick a book (project), optionally upload a new PDF, tick what to do, and this
-server runs the project's own scripts one after another: book_ingest.py, book_bible.py, book_write.py, book_build.py
+server runs the project's own scripts one after another: book_ingest.py, book_continuity.py, book_write.py, book_build.py
 (prompts written by Claude Code), run_kaggle_model.sh / run_colab_model.sh (video and audio on a free GPU), then
 merge_videos.py / mix_film.py (one film per ~10-minute movie).
 Safety: listens on 127.0.0.1 only, every API call needs the random token printed at start-up, and only whitelisted
@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from bookkit import EDIT_FIELDS, bible_file, LOCAL_LLM_URL, SLUG_RE, build_movies, hf_json, llm_json, local_chat, read_json, set_scene_field, slugify, write_json
+from bookkit import EDIT_FIELDS, continuity_file, LOCAL_LLM_URL, SLUG_RE, build_movies, hf_json, llm_json, local_chat, read_json, set_scene_field, slugify, write_json
 import character_tokens
 import hf_spaces
 import prompt_guides
@@ -47,11 +47,13 @@ def load_or_create_session():
 TOKEN, SESSION_PORT = load_or_create_session()
 
 VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_video", "cogvideox", "cogvideox_5b",
-                "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan"]     # tpu_wan = Kaggle TPU experiment
+                "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan",     # tpu_wan = Kaggle TPU experiment
+                "ltx_video_i2v", "wan22_ti2v_5b_i2v"]                     # image-to-video: animate each shot's keyframe
+I2V_MODELS = {"ltx_video_i2v", "wan22_ti2v_5b_i2v"}                      # need keyframes (images/<model>_keyframes) for every row they make
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
 VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
                 ("CogVideoX", ["cogvideox", "cogvideox_5b"]), ("Uncensored (adult content)", ["wan22_t2v_a14b_lora", "hunyuan_video_lora"]),
-                ("TPU (Kaggle only)", ["tpu_wan"])]
+                ("TPU (Kaggle only)", ["tpu_wan"]), ("From keyframes (image-to-video, Kaggle only)", ["wan22_ti2v_5b_i2v", "ltx_video_i2v"])]
 # Audio models: name -> (role, label, short note). The role decides which sound it makes (narration / sfx / music) and the file prefix it writes.
 AUDIO_MODELS = {
     "kokoro": ("narration", "Kokoro", "fast, light narration voices"),
@@ -78,6 +80,8 @@ MODEL_DEFAULTS = {
     "cogvideox": {"width": 720, "height": 480, "frames": 49, "steps": 50, "guidance": 6.0, "locked": ["width", "height", "frames"]},
     "cogvideox_5b": {"width": 720, "height": 480, "frames": 49, "steps": 50, "guidance": 6.0, "locked": ["width", "height", "frames"]},
     "wan22_ti2v_5b": {"width": 704, "height": 384, "frames": 33, "steps": 30, "guidance": 5.0},
+    "ltx_video_i2v": {"width": 768, "height": 320, "frames": 97, "steps": 40, "guidance": 3.0},
+    "wan22_ti2v_5b_i2v": {"width": 704, "height": 384, "frames": 33, "steps": 30, "guidance": 5.0},
     "wan22_t2v_a14b": {"width": 448, "height": 256, "frames": 25, "steps": 30, "guidance": 4.0},
     "wan22_t2v_a14b_lora": {"width": 448, "height": 256, "frames": 25, "steps": 30, "guidance": 4.0},
     "wan22_t2v_a14b_lightning": {"width": 448, "height": 256, "frames": 25, "steps": 4, "guidance": 1.0, "locked": ["negative", "steps", "guidance"]},
@@ -110,15 +114,15 @@ MODEL_DEFAULTS = {
     "moss_image_base": {"width": 1024, "height": 1024, "steps": 50, "guidance": 3.0},
     "moss_sharpness_slider": {"width": 1024, "height": 1024, "steps": 50, "guidance": 3.0},
 }
-LEGACY = {"adam_eve", "enoch"}        # imported production bibles; rebuilt with legacy_extract.py
+LEGACY = {"adam_eve", "enoch"}        # imported production notes; rebuilt with legacy_extract.py
 # Suggestions only: the page lets you type ANY model name that `claude --model` accepts (aliases or full IDs).
 CLAUDE_MODELS = ["sonnet", "opus", "haiku", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
 
 # Character series mapping: project slug -> character series name
 # This determines which character token set to use for a project
 CHARACTER_SERIES = {
-    "adam_eve": "bible",
-    "enoch": "bible",
+    "adam_eve": "main",
+    "enoch": "main",
     # Add more mappings as new series are added
     # "mcnally_1": "mcnally",
     # "mcnally_2": "mcnally",
@@ -187,7 +191,7 @@ def project_info(slug):
         "slug": slug, "legacy": slug in LEGACY, "not_started": not d.exists(), "pdf_choices": pdf_choices(slug),
         "pdfs": sorted(p.name for p in (d / "source").iterdir() if p.suffix.lower() in BOOK_EXTS) if (d / "source").exists() else [],
         "chapters": len(chapters.get("chapters", [])), "split_method": chapters.get("method"),
-        "bible": bible_file(d).exists(), "scripts": count_files(d / "scripts", "chapter-*.json"),
+        "continuity": continuity_file(d).exists(), "scripts": count_files(d / "scripts", "chapter-*.json"),
         "built": (d / "all_shots.csv").exists(),
         "character_series": series,
         "characters": char_list,
@@ -197,6 +201,7 @@ def project_info(slug):
             **{f"videos/{m}_chapters": count_files(d / "videos" / f"{m}_chapters", "shot-*.mp4") for m in VIDEO_MODELS},
             **{f"audio/{k}": count_files(d / "audio" / k, "*.wav") for k in AUDIO_KINDS},
             **{f"audio/{k}_chapters": count_files(d / "audio" / f"{k}_chapters", "*.wav") for k in AUDIO_KINDS},
+            **{f"keyframes/{m}": n for m in IMAGE_MODELS if (n := count_files(d / "images" / f"{m}_keyframes", "image-*.png"))},
             "films": count_files(d / "films", "*.mp4"),
         },
     }
@@ -312,7 +317,7 @@ def resolve_project_file(spec):
 
 
 def script_argv(argv):
-    """Steps name their Python scripts bare ("book_bible.py") but the job runs from the repository root and the scripts live in scripts/."""
+    """Steps name their Python scripts bare ("book_continuity.py") but the job runs from the repository root and the scripts live in scripts/."""
     out = []
     for a in argv:
         if a.endswith(".py") and "/" not in a and not (ROOT / a).exists() and (ROOT / "scripts" / a).exists():
@@ -392,9 +397,9 @@ def book_steps(opt, slug):
             raise PlanError("choose a book to read: a PDF or a text file (put them in the books folder)")
         steps.append({"label": f"Read {'text' if not name.lower().endswith('.pdf') else 'PDF'} and split chapters ({name})", "env": {},
                       "argv": ["uv", "run", "--with", "pypdf", "python", "book_ingest.py", slug, path]})
-    if st.get("bible"):
-        steps.append({"label": "Write the continuity bible", "env": {},
-                      "argv": ["python3", "book_bible.py", slug] + engine_args(opt) + ["--force"]})
+    if st.get("continuity"):
+        steps.append({"label": "Write the continuity book", "env": {},
+                      "argv": ["python3", "book_continuity.py", slug] + engine_args(opt) + ["--force"]})
     if st.get("write"):
         steps.append({"label": "Write shots, narration, sound and music", "env": {},
                       "argv": ["python3", "book_write.py", slug] + book_args(opt)})
@@ -433,8 +438,10 @@ BIG_RAM_MODELS = {"wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lora", "wan
 
 def model_blocker(name, service, gpu):
     """Why this video/image/audio model cannot run with this service and GPU, or None if it can (it may still be untested)."""
-    if service == "huggingface":
+    if service == "huggingface" and name not in I2V_MODELS:
         return None if name in hf_spaces.SPACES else "no public Hugging Face Space is set up for this model (see scripts/hf_spaces.py)"
+    if name in I2V_MODELS and service != "kaggle":
+        return "starts from keyframes, which only the Kaggle runner uploads (use Kaggle)"
     on_tpu = gpu.startswith("Tpu")
     if name in TPU_ONLY:
         if service != "kaggle":
@@ -498,9 +505,19 @@ def generation_steps(opt, slug):
     vmodels = [m for m in opt.get("video_models", []) if m in VIDEO_MODELS]
     akinds = [k for k in opt.get("audio", []) if k in AUDIO_KINDS]
     user = (opt.get("kaggle_user") or "").strip()
-    if service == "kaggle" and (st.get("video") or st.get("audio")) and not re.fullmatch(r"[A-Za-z0-9_-]{2,40}", user):
+    if service == "kaggle" and (st.get("video") or st.get("audio") or st.get("keyframes")) and not re.fullmatch(r"[A-Za-z0-9_-]{2,40}", user):
         raise PlanError("enter your Kaggle username (letters, digits, - and _)")
-    check_models(service, gpu, (vmodels if st.get("video") else []) + (akinds if st.get("audio") else []))
+    kmodel = opt.get("keyframe_model") or ""
+    if st.get("keyframes") and kmodel not in IMAGE_MODELS:
+        raise PlanError("choose the image model that makes the keyframes")
+    if kmodel and kmodel not in IMAGE_MODELS:
+        raise PlanError("unknown keyframe image model")
+    if st.get("keyframes") and service != "kaggle":
+        raise PlanError("keyframes are made on Kaggle (the Colab and Hugging Face runners do not keep them apart from other images): choose Kaggle")
+    i2v = [m for m in vmodels if m in I2V_MODELS] if st.get("video") else []
+    if (st.get("keyframes") or i2v) and chapters_mode:
+        raise PlanError("keyframes and the 'from keyframes' video models work per shot: choose 'Every shot'")
+    check_models(service, gpu, (vmodels if st.get("video") else []) + (akinds if st.get("audio") else []) + ([kmodel] if st.get("keyframes") else []))
     batch = num(opt, "batch", 0, int, 0, 100000)
     sync = opt.get("sync", "stretch")
     if sync not in ("stretch", "speed", "trim"):
@@ -530,16 +547,25 @@ def generation_steps(opt, slug):
     steps = []
 
     runner = make_runner(service, gpu, user, slug)
+    if st.get("keyframes"):
+        kw, kh = keyframe_size(kmodel, (i2v or vmodels or ["ltx_video"])[0])
+        steps.append({"label": f"Write keyframes.csv ({kw}x{kh})", "env": {},
+                      "argv": ["python3", "make_keyframes_csv.py", slug, "--width", str(kw), "--height", str(kh)]})
 
     done = set()
     for mv in chosen:
         lo, hi = mv["rows"]
         lo, hi = max(lo, lo_o or lo), min(hi, hi_o or hi)
         for s, e in (chunks(lo, hi, batch) if lo <= hi else []):
+            if st.get("keyframes") and ("kf", s, e) not in done:      # stills first, so the video steps after them can animate them
+                done.add(("kf", s, e)); argv, env = runner(f"image_{kmodel}", s, e, "keyframes.csv")
+                steps.append({"label": f"Movie {mv['id']} keyframes {kmodel}: rows {s}-{e}", "argv": argv, "env": env})
             if st.get("video"):
                 for m in vmodels:
                     if (m, s, e) not in done:
                         done.add((m, s, e)); argv, env = runner(m, s, e, vcsv)
+                        if m in I2V_MODELS and kmodel:
+                            env["KEYFRAME_MODEL"] = kmodel           # else the run script uses the newest keyframe set
                         steps.append({"label": f"Movie {mv['id']} video {m}: rows {s}-{e}", "argv": argv, "env": env})
             if st.get("audio"):
                 for k in akinds:
@@ -564,13 +590,45 @@ def generation_steps(opt, slug):
     return steps
 
 
+def keyframe_size(image_model, video_model):
+    """Keyframe size: the video's shape at about the image model's usual pixel count, in multiples of 64 (so it suits every image model)."""
+    v, i = MODEL_DEFAULTS.get(video_model, MODEL_DEFAULTS["ltx_video"]), MODEL_DEFAULTS.get(image_model, {"width": 1024, "height": 1024})
+    ratio, area = v["width"] / v["height"], i["width"] * i["height"]
+    w = max(256, min(2048, round((area * ratio) ** 0.5 / 64) * 64))
+    h = max(256, min(2048, round(w / ratio / 64) * 64))
+    return w, h
+
+
+def storyboard(slug, start, end):
+    """One card per shot row start..end: chapter, prompt, narration, and the keyframes and clips that exist for it (paths under the project)."""
+    d = pdir(slug)
+    if not SLUG_RE.match(slug) or not d.is_dir():
+        raise PlanError("pick a book first")
+    shots = read_csv_rows(d / "all_shots.csv")
+    if not shots:
+        raise PlanError("no shots yet: build the CSVs first")
+    audio = read_csv_rows(d / "audio_shots.csv")
+    start = max(1, start); end = min(len(shots), end, start + 199)         # at most 200 cards at once
+    kdirs = sorted(p for p in (d / "images").glob("*_keyframes") if p.is_dir()) if (d / "images").is_dir() else []
+    vdirs = sorted(p for p in (d / "videos").glob("*") if p.is_dir() and not p.name.endswith("_chapters")) if (d / "videos").is_dir() else []
+    cards = []
+    for n in range(start, end + 1):
+        r, a = shots[n - 1], (audio[n - 1] if n <= len(audio) else {})
+        cards.append({"n": n, "chapter": r.get("chapter", ""), "shot": r.get("shot", ""), "prompt": r.get("prompt", ""),
+                      "narration": a.get("narration", ""),
+                      "keyframes": {k.name.removesuffix("_keyframes"): f"images/{k.name}/image-{n:04d}.png" for k in kdirs if (k / f"image-{n:04d}.png").is_file()},
+                      "clips": {v.name: f"videos/{v.name}/shot-{n:04d}.mp4" for v in vdirs if (v / f"shot-{n:04d}.mp4").is_file()}})
+    return {"rows": len(shots), "start": start, "end": end, "cards": cards,
+            "keyframe_models": [k.name.removesuffix("_keyframes") for k in kdirs]}
+
+
 def build_plan(opt, commit=False):
     if opt.get("mode") == "prompts":
         return prompt_plan(opt, commit)
     slug = project_slug(opt)
     st = opt.get("steps", {})
     steps = book_steps(opt, slug)
-    if any(st.get(k) for k in ("video", "audio", "merge", "mix")):
+    if any(st.get(k) for k in ("keyframes", "video", "audio", "merge", "mix")):
         if any(s["label"].startswith(("Build CSVs", "Rebuild", "Plan movies")) for s in steps):
             steps.append({"label": "generate the chosen movies", "expand": True})   # movies.json changes while the plan runs
         else:
@@ -765,6 +823,8 @@ def prompt_plan(opt, commit):
     model = opt.get("model")
     if model not in (VIDEO_MODELS if kind == "video" else IMAGE_MODELS):
         raise PlanError("unknown model for that kind")
+    if model in I2V_MODELS:
+        raise PlanError(f"{model} animates a book's keyframes; for single prompts use {model.removesuffix('_i2v')}")
     service = opt.get("service")
     if service not in GPUS:
         raise PlanError("service must be kaggle or colab")
@@ -1044,12 +1104,12 @@ def enhance_prompt(opt):
     global_positives = global_params.get("positives", "")
     global_negatives = global_params.get("negatives", "")
 
-    # Get the bible for context
-    bible = {}
-    bible_path = bible_file(d)
-    if bible_path.exists():
+    # The continuity book, for context
+    continuity = {}
+    book_path = continuity_file(d)
+    if book_path.exists():
         try:
-            bible = json.loads(bible_path.read_text())
+            continuity = json.loads(book_path.read_text())
         except Exception:
             pass
 
@@ -1059,16 +1119,16 @@ def enhance_prompt(opt):
     model = args[3] if len(args) > 3 else None
 
     # Build the enhancement prompt
-    bible_context = ""
-    if bible:
-        style = bible.get("style", {})
+    book_context = ""
+    if continuity:
+        style = continuity.get("style", {})
         visual = style.get("visual", "")
         if visual:
-            bible_context += f"\nVisual style: {visual}"
-        characters = bible.get("characters", {})
+            book_context += f"\nVisual style: {visual}"
+        characters = continuity.get("characters", {})
         if characters:
             char_desc = ", ".join(f"{k}: {v.get('visual_token', '')}" for k, v in characters.items() if v.get('visual_token'))
-            bible_context += f"\nCharacters: {char_desc}"
+            book_context += f"\nCharacters: {char_desc}"
 
     # Include global parameters in the enhancement prompt
     global_section = ""
@@ -1083,7 +1143,7 @@ def enhance_prompt(opt):
     preview_text = "Preview only - do NOT save the updated prompt, just show what it would look like." if preview_only else "Provide the updated prompt ready to use."
 
     prompt = (f'Original prompt:\n{original_prompt}\n\n'
-              f'Bible context:{bible_context}\n'
+              f'Continuity book:{book_context}\n'
               f'{global_section}\n'
               f'User instruction: {instruction}\n\n'
               f'Rewrite the prompt incorporating the instruction. Keep the same format and length. '
@@ -1312,18 +1372,20 @@ def library():
 KERNEL_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,120}$")
 
 
-# Notebook names made by run_kaggle_model.sh:  <project>-<model><-chapters>-<first row>-<last row>   (older runs had a "bible-" prefix)
-TOOL_SLUG_RE = re.compile(r"^(?:bible-)?[a-z0-9-]+?-(?:image-[a-z0-9-]+?|audio-[a-z0-9-]+?|ltx-video|wan[a-z0-9]*(?:-[a-z0-9]+)*?|hunyuan-video(?:-lora|-nsfw)?|cogvideox(?:-5b)?|tpu-[a-z0-9-]+?)(?:-chapters)?-\d+-\d+$")
+# Notebook names made by run_kaggle_model.sh:  <project>-<model><-chapters>-<first row>-<last row>   (very old runs had one extra word in front; guess_project skips it)
+TOOL_SLUG_RE = re.compile(r"^[a-z0-9-]+?-(?:image-[a-z0-9-]+?|audio-[a-z0-9-]+?|ltx-video|wan[a-z0-9]*(?:-[a-z0-9]+)*?|hunyuan-video(?:-lora|-nsfw)?|cogvideox(?:-5b)?|tpu-[a-z0-9-]+?)(?:-chapters)?-\d+-\d+$")
 
 
 def guess_project(slug):
     """Longest book / character set / prompt set whose name (underscores -> dashes) starts the notebook name (same rule as fetch_kaggle_run.sh)."""
-    slug = slug[len("bible-"):] if slug.startswith("bible-") and not any(d.name.replace("_", "-").startswith("bible-") for d in layout.all_dirs()) else slug
-    best = ""
-    for d in layout.all_dirs():
-        if d.is_dir() and slug.startswith(f"{d.name.replace('_', '-')}-") and len(d.name) > len(best):
-            best = d.name
-    return best
+    for name in (slug, slug.split("-", 1)[-1]):           # very old runs had one extra word in front of the project name
+        best = ""
+        for d in layout.all_dirs():
+            if d.is_dir() and name.startswith(f"{d.name.replace('_', '-')}-") and len(d.name) > len(best):
+                best = d.name
+        if best:
+            return best
+    return ""
 
 
 def kaggle_runs(limit=10):
@@ -1516,10 +1578,10 @@ def cleanup_scan():
             add("pycache", Path(dirpath) / "__pycache__")
             dirnames.remove("__pycache__")
     nb_dirs = [ROOT, ROOT / "notebooks"]
-    notebooks = sorted((f for d in nb_dirs if d.is_dir() for f in d.glob("Bible_*.ipynb")), key=lambda f: (f.stat().st_mtime, f.name), reverse=True)
-    tpu = [f for f in notebooks if "tpu_" in f.name]            # the TPU experiments (Bible_Kaggle_tpu_wan, Bible_Kaggle_image_tpu_*) are never kept: they are always listed
+    notebooks = sorted((f for d in nb_dirs if d.is_dir() for f in d.glob("Studio_*.ipynb")), key=lambda f: (f.stat().st_mtime, f.name), reverse=True)
+    tpu = [f for f in notebooks if "tpu_" in f.name]            # the TPU experiments (Studio_Kaggle_tpu_wan, Studio_Kaggle_image_tpu_*) are never kept: they are always listed
     notebooks = [f for f in notebooks if f not in tpu]
-    kept_keys = {m.group(1) for f in notebooks[:KEEP_NOTEBOOKS] if (m := re.match(r"Bible_(?:Colab|Kaggle)_(.+)\.ipynb$", f.name))}
+    kept_keys = {m.group(1) for f in notebooks[:KEEP_NOTEBOOKS] if (m := re.match(r"Studio_(?:Colab|Kaggle)_(.+)\.ipynb$", f.name))}
     for f in notebooks[KEEP_NOTEBOOKS:] + tpu:
         add("notebooks", f)
     for d in nb_dirs:
@@ -1781,8 +1843,8 @@ def prompt_suggest(opt):
         sc = read_json(d / "scripts" / f"chapter-{int(mm.group(1)):03d}.json", {})
         sh = (sc.get("shots") or [])
         source = (sh[shot - 1].get("slice") or "")[:900] if 0 < shot <= len(sh) else ""
-    bible = read_json(bible_file(d), {})
-    chars = "; ".join(f"{c['name']}: {c['token']}" for c in bible.get("characters", []))[:1800]
+    continuity = read_json(continuity_file(d), {})
+    chars = "; ".join(f"{c['name']}: {c['token']}" for c in continuity.get("characters", []))[:1800]
     rules = {
         "prompt": ("a text-to-video prompt for ONE continuous shot of about 4 seconds: shot size, camera movement, subject, action, setting, light. "
                    "No on-screen text, nothing modern. Keep any fixed character descriptions (like NAME: description) and any trailing style/quality "
@@ -1849,13 +1911,13 @@ def recreate_notebooks():
     r = subprocess.run(["python3", "scripts/make_all.py"], cwd=ROOT, env=clean_env(), capture_output=True, text=True, timeout=120)
     if r.returncode != 0:
         raise PlanError("could not re-create the notebooks: " + (r.stderr or r.stdout)[-300:])
-    return {"notebooks": len(list(ROOT.glob("Bible_*.ipynb"))), "scripts": len(list(ROOT.glob("colab_generate_*.py")))}
+    return {"notebooks": len(list(ROOT.glob("Studio_*.ipynb"))), "scripts": len(list(ROOT.glob("colab_generate_*.py")))}
 
 
 def delete_notebooks():
     """Delete all generated notebook and script files."""
     deleted = {"notebooks": 0, "scripts": 0}
-    for pattern in ("Bible_*.ipynb", "colab_generate_*.py"):
+    for pattern in ("Studio_*.ipynb", "colab_generate_*.py"):
         for f in ROOT.glob(pattern):
             f.unlink()
             if f.suffix == ".ipynb":
@@ -1995,6 +2057,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": str(e)})
         if url.path == "/api/cleanup_scan":
             return self._json(200, {"categories": cleanup_scan()})
+        if url.path == "/api/storyboard":
+            q = parse_qs(url.query)
+            try:
+                return self._json(200, storyboard(q.get("project", [""])[0], num({"s": q.get("start", ["1"])[0]}, "s", 1, int, 1),
+                                                  num({"e": q.get("end", ["24"])[0]}, "e", 24, int, 1)))
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
         if url.path == "/api/media":
             try:
                 return self._json(200, media_inventory(parse_qs(url.query).get("project", [""])[0]))
@@ -2379,8 +2448,8 @@ class Handler(BaseHTTPRequestHandler):
                             raise PlanError("unknown project")
                         if not series:
                             raise PlanError("pick a series first")
-                        r = character_tokens.sync_from_bible(project, series, overwrite=bool(body.get("overwrite")), dry_run=bool(body.get("dry_run")))
-                        if not r["bible"]:
+                        r = character_tokens.sync_from_book(project, series, overwrite=bool(body.get("overwrite")), dry_run=bool(body.get("dry_run")))
+                        if not r["continuity"]:
                             raise PlanError(f"{project} has no continuity book file ({project}.json), so there is nothing to sync. Sync reads the file that "
                                             f"\"Write the continuity book\" creates for a PDF or text book; imported books such as adam_eve do not have one.")
                         return self._json(200, {**r, "count": r["added"]})
@@ -2394,7 +2463,7 @@ class Handler(BaseHTTPRequestHandler):
                         if not series or not isinstance(names, list) or not names or len(names) > 300 or not all(isinstance(n, str) and n.strip() for n in names):
                             raise PlanError("pick a series and tick at least one character")
                         try:
-                            r = character_tokens.send_to_bible(project, series, [n.strip() for n in names], dry_run=bool(body.get("dry_run")))
+                            r = character_tokens.send_to_book(project, series, [n.strip() for n in names], dry_run=bool(body.get("dry_run")))
                         except ValueError as e:
                             raise PlanError(str(e))
                         if not r["found"]:

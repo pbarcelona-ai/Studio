@@ -13,7 +13,7 @@ Directory structure:
 Each character token:
 {
   "name": "Adam",
-  "series": "bible",
+  "series": "main",
   "visual_token": "adam_visual_token_here",
   "trigger_words": ["adam", "first man", "biblical figure"],
   "physical_traits": {
@@ -33,8 +33,8 @@ Each character token:
     "trained": false
   },
   "reference_images": [
-    "projects/characters/bible/references/adam/ref_01.png",
-    "projects/characters/bible/references/adam/ref_02.png"
+    "projects/characters/main/references/adam/ref_01.png",
+    "projects/characters/main/references/adam/ref_02.png"
   ],
   "consistency_notes": "Always depict as the first man, noble but human",
   "created": "2026-01-15",
@@ -509,13 +509,13 @@ def get_character_tokens_for_prompt(series: str, characters: List[str]) -> str:
 
 
 # <book>.json "voice" words (see bookkit.VOICE_MAP) -> Kokoro voice ids, which is what a character token stores
-BIBLE_VOICES = {"narrator": "bm_george", "male": "am_michael", "female": "af_bella", "elder": "bm_lewis",
+BOOK_VOICES = {"narrator": "bm_george", "male": "am_michael", "female": "af_bella", "elder": "bm_lewis",
                 "deity": "bm_lewis", "child": "af_sky", "villain": "am_adam"}
 
 
-def _character_from_bible_entry(name: str, data: Dict) -> Dict:
+def _character_from_book_entry(name: str, data: Dict) -> Dict:
     """One <book>.json character -> a character token. Handles both shapes:
-       list form written by book_bible.py : {"name", "token", "voice": "male"}
+       list form written by book_continuity.py : {"name", "token", "voice": "male"}
        older dict form                    : {"visual_token", "physical_traits", "clothing", "voice", "aliases", "notes"}"""
     voice = data.get("voice", "")
     return {
@@ -525,54 +525,54 @@ def _character_from_bible_entry(name: str, data: Dict) -> Dict:
         "trigger_words": [name.lower()] + list(data.get("aliases", [])),
         "physical_traits": data.get("physical_traits", {}),
         "clothing": data.get("clothing", ""),
-        "voice": BIBLE_VOICES.get(voice, voice),
+        "voice": BOOK_VOICES.get(voice, voice),
         "lora": {"repo": "", "trigger_word": "", "base_model": "", "trained": False},
         "reference_images": [],
         "consistency_notes": data.get("notes", ""),
     }
 
 
-def extract_characters_from_bible(bible_path: Path) -> List[Dict]:
+def extract_characters_from_book(book_path: Path) -> List[Dict]:
     """Extract character definitions from a <book>.json file."""
-    if not bible_path.exists():
+    if not book_path.exists():
         return []
 
     try:
-        bible = json.loads(bible_path.read_text())
+        continuity = json.loads(book_path.read_text())
     except Exception:
         return []
 
-    chars = bible.get("characters", [])
+    chars = continuity.get("characters", [])
     characters = []
     if isinstance(chars, dict):                       # older shape: {name: {...}}
         for name, data in chars.items():
             if isinstance(data, dict):
-                characters.append(_character_from_bible_entry(name, data))
-    elif isinstance(chars, list):                     # shape written by book_bible.py: [{name, token, voice}, ...]
+                characters.append(_character_from_book_entry(name, data))
+    elif isinstance(chars, list):                     # shape written by book_continuity.py: [{name, token, voice}, ...]
         for data in chars:
             if isinstance(data, dict) and data.get("name"):
-                characters.append(_character_from_bible_entry(str(data["name"]), data))
+                characters.append(_character_from_book_entry(str(data["name"]), data))
     return characters
 
 
-# The fields a bible can supply. On overwrite only these are replaced, and only when the bible has a value for them.
-BIBLE_FIELDS = ("visual_token", "physical_traits", "clothing", "voice", "consistency_notes")
+# The fields a continuity book can supply. On overwrite only these are replaced, and only when the book has a value for them.
+BOOK_FIELDS = ("visual_token", "physical_traits", "clothing", "voice", "consistency_notes")
 
 
-def sync_from_bible(project_slug: str, series: Optional[str] = None, overwrite: bool = False, dry_run: bool = False) -> Dict:
+def sync_from_book(project_slug: str, series: Optional[str] = None, overwrite: bool = False, dry_run: bool = False) -> Dict:
     """Copy a project's <book>.json characters into a series.
     overwrite=False : characters already in the series are left alone (they may have been edited by hand).
-    overwrite=True  : an existing character gets the bible's visual token, voice, clothing, traits and notes (each only if the bible
+    overwrite=True  : an existing character gets the continuity book's visual token, voice, clothing, traits and notes (each only if the continuity book
                       has a value), plus any new trigger words. Reference images, LoRA info, created date, other fields and trigger
                       words you added are kept.
     dry_run=True    : count what would happen, write nothing.
-    Returns {"series", "bible" (was there a <book>.json), "total", "added", "updated", "skipped", "dry_run"}."""
-    bible_path = PROJECTS / "books" / project_slug / f"{project_slug}.json"
+    Returns {"series", "continuity" (was there a <book>.json), "total", "added", "updated", "skipped", "dry_run"}."""
+    book_path = PROJECTS / "books" / project_slug / f"{project_slug}.json"
     series = series or project_slug
-    report = {"series": series, "bible": bible_path.exists(), "total": 0, "added": 0, "updated": 0, "skipped": 0, "dry_run": dry_run}
-    if not report["bible"]:
+    report = {"series": series, "continuity": book_path.exists(), "total": 0, "added": 0, "updated": 0, "skipped": 0, "dry_run": dry_run}
+    if not report["continuity"]:
         return report
-    for char in extract_characters_from_bible(bible_path):
+    for char in extract_characters_from_book(book_path):
         report["total"] += 1
         char["series"] = series
         current = load_character(series, char["name"]) if get_character_path(series, char["name"]).exists() else None
@@ -582,7 +582,7 @@ def sync_from_bible(project_slug: str, series: Optional[str] = None, overwrite: 
         if current is not None:                       # overwrite: merge, do not replace the whole file
             merged = dict(current)
             merged["series"] = series
-            for key in BIBLE_FIELDS:
+            for key in BOOK_FIELDS:
                 if char.get(key):
                     merged[key] = char[key]
             words = list(current.get("trigger_words", []))
@@ -596,12 +596,12 @@ def sync_from_bible(project_slug: str, series: Optional[str] = None, overwrite: 
 
 
 VOICE_WORD_OF = {}           # Kokoro voice id -> the book's voice word; the first word listed for an id wins
-for _w, _v in BIBLE_VOICES.items():
+for _w, _v in BOOK_VOICES.items():
     VOICE_WORD_OF.setdefault(_v, _w)
 
 
-def send_to_bible(project_slug: str, series: str, names: List[str], dry_run: bool = False) -> Dict:
-    """The other direction of sync_from_bible: copy the chosen series characters INTO the book's continuity book (<book>.json).
+def send_to_book(project_slug: str, series: str, names: List[str], dry_run: bool = False) -> Dict:
+    """The other direction of sync_from_book: copy the chosen series characters INTO the book's continuity book (<book>.json).
     A character already in the book gets the series' visual token (and its voice, when the series voice maps to one of the book's voice
     words); a character the book does not have is added. Other fields in the book's file are kept. Chapters that are already written
     keep the old wording; only chapters written (or rebuilt) afterwards use the new tokens.
@@ -610,8 +610,8 @@ def send_to_bible(project_slug: str, series: str, names: List[str], dry_run: boo
     report = {"book": project_slug, "found": path.exists(), "updated": 0, "added": 0, "unchanged": 0, "missing": [], "dry_run": dry_run}
     if not report["found"]:
         return report
-    bible = json.loads(path.read_text())
-    chars = bible.get("characters")
+    continuity = json.loads(path.read_text())
+    chars = continuity.get("characters")
     if not isinstance(chars, list):
         raise ValueError(f"{project_slug}.json keeps its characters in an older layout that cannot be updated from here")
     by_name = {str(c.get("name", "")).lower(): c for c in chars if isinstance(c, dict)}
@@ -634,14 +634,14 @@ def send_to_bible(project_slug: str, series: str, names: List[str], dry_run: boo
             changed = True
             if not dry_run:
                 cur["token"] = token
-        if word and cur.get("voice") != word and BIBLE_VOICES.get(cur.get("voice")) != src.get("voice"):
+        if word and cur.get("voice") != word and BOOK_VOICES.get(cur.get("voice")) != src.get("voice"):
             changed = True
             if not dry_run:
                 cur["voice"] = word
         report["updated" if changed else "unchanged"] += 1
     if not dry_run and (report["updated"] or report["added"]):
         tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(json.dumps(bible, indent=1, ensure_ascii=False))
+        tmp.write_text(json.dumps(continuity, indent=1, ensure_ascii=False))
         tmp.replace(path)
     return report
 
@@ -651,12 +651,12 @@ def sync_characters_from_project(project_slug: str) -> int:
     Never overwrites an existing character. Returns the number of characters added.
     (studio.py calls this each time it lists projects, so it must be safe to repeat.)"""
     series_map = {
-        "adam_eve": "bible",
-        "enoch": "bible",
+        "adam_eve": "main",
+        "enoch": "main",
         # Add more mappings as needed
     }
     series = series_map.get(project_slug, project_slug)
-    return sync_from_bible(project_slug, series, overwrite=False)["added"]
+    return sync_from_book(project_slug, series, overwrite=False)["added"]
 
 
 def create_character_from_description(series: str, name: str, description: str,
@@ -834,14 +834,14 @@ if __name__ == "__main__":
     if cmd == "list-series":
         print(json.dumps(list_series(), indent=2))
     elif cmd == "list":
-        series = sys.argv[2] if len(sys.argv) > 2 else "bible"
+        series = sys.argv[2] if len(sys.argv) > 2 else "main"
         print(json.dumps(list_characters(series), indent=2))
     elif cmd == "get":
-        series = sys.argv[2] if len(sys.argv) > 2 else "bible"
+        series = sys.argv[2] if len(sys.argv) > 2 else "main"
         name = sys.argv[3] if len(sys.argv) > 3 else ""
         print(json.dumps(load_character(series, name), indent=2))
     elif cmd == "delete":
-        series = sys.argv[2] if len(sys.argv) > 2 else "bible"
+        series = sys.argv[2] if len(sys.argv) > 2 else "main"
         name = sys.argv[3] if len(sys.argv) > 3 else ""
         ok = delete_character(series, name)
         print(f"Deleted: {ok}")
@@ -850,7 +850,7 @@ if __name__ == "__main__":
         count = sync_characters_from_project(project)
         print(f"Synced {count} characters from {project}")
     elif cmd == "tokens":
-        series = sys.argv[2] if len(sys.argv) > 2 else "bible"
+        series = sys.argv[2] if len(sys.argv) > 2 else "main"
         print(get_all_character_tokens(series))
     else:
         print(f"Unknown command: {cmd}")

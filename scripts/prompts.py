@@ -5,10 +5,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PROJECTS = ROOT / "projects"
 BOOKS = PROJECTS / "books"
-ADAM_ROOT = BOOKS / "adam_eve" / "production_bible"
+ADAM_ROOT = BOOKS / "adam_eve" / "production_notes"
 BOOK1 = ADAM_ROOT / "Book_1_First_Book_of_Adam_and_Eve"
 BOOK2 = ADAM_ROOT / "Book_2_Second_Book_of_Adam_and_Eve"
-ENOCH = BOOKS / "enoch" / "production_bible"
+ENOCH = BOOKS / "enoch" / "production_notes"
 
 SERVICES = [
     ("Krea", 60, "https://krea.ai/video"),

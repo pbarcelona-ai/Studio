@@ -76,3 +76,6 @@ __pycache__/
 
 # Things moved aside by the clean-up (safe to delete)
 /_cleanup_*/
+
+# old project data (not in git): kept until it is restored or no longer wanted
+/_old_project_data/

@@ -18,7 +18,7 @@ One resumable Claude call per chapter; finished chapters (scripts/chapter-NNN.js
 """
 import argparse, sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from bookkit import (bible_file, CLIP_SECONDS, COST, cost_note, VOICE_MAP, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
+from bookkit import (continuity_file, CLIP_SECONDS, COST, cost_note, VOICE_MAP, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
                      project_dir, read_json, shot_count, slice_text, strip_verse_numbers, words, write_json)
 import json
 
@@ -45,9 +45,9 @@ pdir = project_dir(args.project)
 index = read_json(pdir / "chapters.json")
 if not index:
     sys.exit("run book_ingest.py first (no chapters.json)")
-bible = read_json(bible_file(pdir))
-if not bible and not args.dry_run:
-    sys.exit(f"run book_bible.py first (no {pdir.name}.json)")
+continuity = read_json(continuity_file(pdir))
+if not continuity and not args.dry_run:
+    sys.exit(f"run book_continuity.py first (no {pdir.name}.json)")
 overrides = read_json(pdir / "overrides.json", {})
 wps = args.words_per_shot or (25 if args.narration == "verbatim" else 60)
 
@@ -139,7 +139,7 @@ if args.dry_run:
         print(f"WARNING: each shot would last about {avg:.0f} s but a clip is only {CLIP_SECONDS:.0f} s, so most of every shot "
               f"is a held frame under the narration. To keep shots near 8 s you need about {need:.0f} shots "
               f"(raise --max-shots), or use condensed narration.")
-    print(f"Claude calls: {len(chapters)} (one per chapter) + 1 for the bible")
+    print(f"Claude calls: {len(chapters)} (one per chapter) + 1 for the continuity book")
     gpu_hours = total_shots * args.min_per_clip / 60
     print(f"GPU time (assumption of {args.min_per_clip:g} min/clip, not measured): about {gpu_hours:.0f} hours "
           f"for video, plus audio")
@@ -158,13 +158,13 @@ SYSTEM = ("You are an expert hollywood filmmaker, storyboard artist, and technic
           "You are also a sound designer: you adapt the book into short AI-video shots. "
           "You reply with a single JSON object and nothing else.")
 (pdir / "scripts").mkdir(exist_ok=True)
-char_names = [c["name"] for c in bible["characters"]]
-bible_brief = {k: bible[k] for k in ("setting", "visual_style", "music_theme") if k in bible}
-if bible.get("creative_direction"):        # optional: only present if the director added one
-    bible_brief["creative_direction"] = bible["creative_direction"]
-bible_brief["characters"] = [{"name": c["name"], "look": c["token"]} for c in bible["characters"]]
-bible_brief["locations"] = [{"name": loc["name"], "look": loc["token"]} for loc in bible.get("locations", [])]
-voice_of = {c["name"].lower(): VOICE_MAP.get(c.get("voice"), "") for c in bible["characters"]}
+char_names = [c["name"] for c in continuity["characters"]]
+book_brief = {k: continuity[k] for k in ("setting", "visual_style", "music_theme") if k in continuity}
+if continuity.get("creative_direction"):        # optional: only present if the director added one
+    book_brief["creative_direction"] = continuity["creative_direction"]
+book_brief["characters"] = [{"name": c["name"], "look": c["token"]} for c in continuity["characters"]]
+book_brief["locations"] = [{"name": loc["name"], "look": loc["token"]} for loc in continuity.get("locations", [])]
+voice_of = {c["name"].lower(): VOICE_MAP.get(c.get("voice"), "") for c in continuity["characters"]}
 
 
 def build_prompt(c, slices, quotes=None):
@@ -197,7 +197,7 @@ def build_prompt(c, slices, quotes=None):
         if global_negatives:
             global_section += f"  Always avoid: {global_negatives}\n"
 
-    return f"""BIBLE (fixed for the whole book): {bible_brief}
+    return f"""CONTINUITY BOOK (fixed for the whole book): {book_brief}
 {global_section}
 CHAPTER {c['n']}: {c['title']}
 The chapter is cut into {len(slices)} consecutive slices. Each slice becomes ONE 4-second video clip:
@@ -254,8 +254,8 @@ def write_chapter(c):
                     "narration": narration, "speaker": speaker if known or speaker.upper() == "NARRATOR" else "NARRATOR",
                     "voice": voice_of.get(speaker.lower(), "") if known else "",
                     "sfx": (s.get("sfx") or "quiet ambient sound").strip()[:300],
-                    "music": (s.get("music") or bible["music_theme"]).strip()[:300],
-                    "prompt": compose_prompt(s["visual"], s.get("characters", []), bible, global_positives=global_positives, global_negatives=global_negatives), "slice": sl,
+                    "music": (s.get("music") or continuity["music_theme"]).strip()[:300],
+                    "prompt": compose_prompt(s["visual"], s.get("characters", []), continuity, global_positives=global_positives, global_negatives=global_negatives), "slice": sl,
                     **({"lines": lines} if lines is not None else {})})
     write_json(pdir / "scripts" / f"chapter-{c['n']:03d}.json",
                {"chapter": c["n"], "title": c["title"], "narration_mode": args.narration, "shots": out})

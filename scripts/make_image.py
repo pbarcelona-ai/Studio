@@ -1,14 +1,14 @@
 """Generate the text-to-image scripts and notebooks. Run: python3 scripts/make_image.py
 
 For each model below this writes   colab_generate_image_<key>.py      (runs on the VM via the Colab CLI)
-                                   Bible_Kaggle_image_<key>.ipynb      and   Bible_Colab_image_<key>.ipynb
+                                   Studio_Kaggle_image_<key>.ipynb      and   Studio_Colab_image_<key>.ipynb
 Rows come from a CSV with columns  chapter,shot,prompt  plus optional  negative,width,height,steps,guidance,seed.
 Output: image-NNNN.png (NNNN = CSV row number).
 """
 import json
 from pathlib import Path
 import os as _os
-root = Path(_os.environ["BIBLE_GEN_DIR"]) if _os.environ.get("BIBLE_GEN_DIR") else Path(__file__).resolve().parent.parent   # BIBLE_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
+root = Path(_os.environ["STUDIO_GEN_DIR"]) if _os.environ.get("STUDIO_GEN_DIR") else Path(__file__).resolve().parent.parent   # STUDIO_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
 
 HEADER = '''import csv, os, tarfile, time
 from pathlib import Path
@@ -379,14 +379,14 @@ PIP = "!pip install -q -U diffusers transformers accelerate sentencepiece protob
 def notebook(key, m, platform):
     suffix = "SUFFIX = ''"
     if platform == "colab":
-        intro = f"# Bible film: {m['title']} images on Colab\n\n{m['note']}\n\nRuntime → Change runtime type → **T4 GPU**. Put `all_images.csv` in `MyDrive/Bible/`."
+        intro = f"# Pistachio's Studio: {m['title']} images on Colab\n\n{m['note']}\n\nRuntime → Change runtime type → **T4 GPU**. Put `all_images.csv` in `MyDrive/PistachioStudio/`."
         secret = ("import os\ntry:\n    from google.colab import userdata\n    os.environ['HF_TOKEN'] = userdata.get('HF_TOKEN')   # only needed for gated models\n"
                   "except Exception:\n    pass")
         setup = [code("from google.colab import drive\ndrive.mount('/content/drive')")]
-        paths = ("from pathlib import Path\nBASE = Path('/content/drive/MyDrive/Bible')\nCSV_NAME = 'all_images.csv'\nCSV_PATH = BASE / CSV_NAME\n"
+        paths = ("from pathlib import Path\nBASE = Path('/content/drive/MyDrive/PistachioStudio')\nCSV_NAME = 'all_images.csv'\nCSV_PATH = BASE / CSV_NAME\n"
                  f"OUT = BASE / 'images' / '{key}'")
     else:
-        intro = (f"# Bible film: {m['title']} images on Kaggle\n\n{m['note']}\n\nAccelerator = GPU T4 x2, Internet = On, dataset with the CSVs attached. "
+        intro = (f"# Pistachio's Studio: {m['title']} images on Kaggle\n\n{m['note']}\n\nAccelerator = GPU T4 x2, Internet = On, dataset with the CSVs attached. "
                  "Images go to `/kaggle/working/images/`.")
         secret = ("import os\ntry:\n    from kaggle_secrets import UserSecretsClient\n    os.environ['HF_TOKEN'] = UserSecretsClient().get_secret('HF_TOKEN')   # only needed for gated models\n"
                   "except Exception:\n    pass")
@@ -402,6 +402,6 @@ def notebook(key, m, platform):
 
 for key, m in MODELS.items():
     (root / f"colab_generate_image_{key}.py").write_text(script(key, m))
-    json.dump(notebook(key, m, "colab"), open(root / f"Bible_Colab_image_{key}.ipynb", "w"), indent=1)
-    json.dump(notebook(key, m, "kaggle"), open(root / f"Bible_Kaggle_image_{key}.ipynb", "w"), indent=1)
+    json.dump(notebook(key, m, "colab"), open(root / f"Studio_Colab_image_{key}.ipynb", "w"), indent=1)
+    json.dump(notebook(key, m, "kaggle"), open(root / f"Studio_Kaggle_image_{key}.ipynb", "w"), indent=1)
 print("wrote", ", ".join(MODELS))

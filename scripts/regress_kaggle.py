@@ -58,7 +58,7 @@ stop = threading.Event()               # set at the first failure unless --keep-
 
 
 def all_models():
-    video = [("video", m) for m in S.VIDEO_MODELS if not m.startswith("tpu_")]
+    video = [("video", m) for m in S.VIDEO_MODELS if not m.startswith("tpu_") and m not in S.I2V_MODELS]   # *_i2v need a book's keyframes
     image = [("image", m) for m in S.IMAGE_MODELS if not m.startswith("tpu_")]
     audio = [("audio", m) for m in AUDIO]
     return image + video + audio                 # cheap image models first, the 14B / 13B ones later

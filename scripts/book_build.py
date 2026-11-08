@@ -8,7 +8,7 @@ audio_chapters.csv (same row order, row N of audio = row N of video) and movies.
 minutes; each movie ends at the end of a chapter). Chapters without a script yet are left out.
 """
 import argparse, csv, json, sys
-from bookkit import apply_prompt_edits, bible_file, build_movies, project_dir, read_json
+from bookkit import apply_prompt_edits, continuity_file, build_movies, project_dir, read_json
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
@@ -16,7 +16,7 @@ ap.add_argument("--minutes", type=float, default=10.0)
 args = ap.parse_args()
 
 pdir = project_dir(args.project)
-bible = read_json(bible_file(pdir), {})
+continuity = read_json(continuity_file(pdir), {})
 prompts, audio = [], []
 for f in sorted((pdir / "scripts").glob("chapter-*.json")):
     d = read_json(f)
