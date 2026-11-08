@@ -230,3 +230,8 @@ REVIEW RESULTS (creative direction, new scene)
 Files reviewed: scripts/studio.py, studio.html (lower-level: bookkit.py, character_tokens.py, layout.py unchanged)
 Errors found and fixed: escapeHtml did not escape; three missing server routes added. Tested with throwaway books (deleted).
 Status: PASS
+
+REVIEW RESULTS (captions)
+Files reviewed: scripts/mix_film.py, scripts/make_animatic.py (lower-level: layout.py unchanged)
+Errors found: none. Tested with throwaway books (deleted).
+Status: PASS

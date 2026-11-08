@@ -139,15 +139,35 @@ else:
 if not plan:
     sys.exit("no clips to use (nothing selected, or no shot-*.mp4 files in the folder for that range)")
 
+def srt_time(t):
+    ms = round(t * 1000)
+    return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
+
+
+def narration_lines():
+    """Narration text per row number, from audio_shots.csv (empty if the book has none)."""
+    import csv
+    try:
+        with open(ROOT / "audio_shots.csv", newline="", encoding="utf-8") as fh:
+            return [(r.get("narration") or "").strip() for r in csv.DictReader(fh)]
+    except OSError:
+        return []
+
+
 tmp = Path(tempfile.mkdtemp(prefix="mix_"))
 segments, total_len, used = [], 0.0, {"narration": 0, "sfx": 0, "music": 0}
+captions, lines = [], narration_lines()
 for n, video, files in plan:
     stems = []
     for name, f in files:
         stems.append((name, f, duration(f))); used[name] += 1
     seg = tmp / f"seg-{n:04d}.mp4"
     try:
-        total_len += build_segment(n, video, stems, seg)
+        seg_len = build_segment(n, video, stems, seg)
+        text = lines[n - 1] if 0 < n <= len(lines) else ""
+        if text and any(k == "narration" for k, _, _ in stems):          # a caption only where the narration is actually heard
+            captions.append((total_len, total_len + seg_len - 0.1, text))
+        total_len += seg_len
         segments.append(seg)
     except subprocess.CalledProcessError:
         print(f"  shot {n}: ffmpeg failed, skipped")
@@ -160,4 +180,7 @@ out = (ROOT / "films" / (args.out or ("selected_film.mp4" if args.selection else
 subprocess.run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(listfile), "-c", "copy", str(out)],
                check=True, stderr=subprocess.DEVNULL)
 shutil.rmtree(tmp, ignore_errors=True)
+if captions:                                  # subtitles next to the film (same name, .srt): players and editors pick them up
+    out.with_suffix(".srt").write_text("".join(f"{i}\n{srt_time(a)} --> {srt_time(b)}\n{t}\n\n" for i, (a, b, t) in enumerate(captions, 1)), encoding="utf-8")
+    print(f"captions: {len(captions)} line(s) -> {out.with_suffix('.srt').name}")
 print(f"mixed {len(segments)} clips, {total_len:.1f}s, stems used {used} → {out}")

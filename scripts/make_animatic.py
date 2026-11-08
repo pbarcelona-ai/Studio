@@ -101,6 +101,18 @@ try:
     r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(out)], capture_output=True, text=True)
     if r.returncode:
         sys.exit("joining failed: " + r.stderr.strip()[-400:])
+    t, cues = 0.0, []                          # subtitles next to the video (same name, .srt)
+    for n, _, _, dur in shots:
+        text = (narr[n - 1] if n <= len(narr) else "").strip()
+        if text:
+            cues.append((t, t + dur - a.pause, text))
+        t += dur
+
+    def stamp(x):
+        ms = round(x * 1000)
+        return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
+    if cues:
+        out.with_suffix(".srt").write_text("".join(f"{i}\n{stamp(x)} --> {stamp(y)}\n{z}\n\n" for i, (x, y, z) in enumerate(cues, 1)), encoding="utf-8")
     print(f"animatic: {len(shots)} shot(s), {sum(s[3] for s in shots):.0f} s -> {out}")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
