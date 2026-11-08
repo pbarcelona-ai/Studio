@@ -156,7 +156,7 @@ GPUS = {  # "paid"/"restricted" are warnings only; Kaggle's own docs say some ac
                ("NvidiaTeslaA100", "A100 (may be restricted)"), ("NvidiaH100", "H100 (may be restricted)"),
                ("TpuV5E8", "TPU v5e-8 (experimental; only for tpu_wan)")],
     "huggingface": [("ZeroGPU", "ZeroGPU: Hugging Face's shared GPUs (free daily quota)")],     # runs a public Space, only for the models in hf_spaces.py
-    "computer": [("local", "This computer's NVIDIA GPU")],       # scripts/run_local_model.py: no website; the label is filled in from nvidia-smi
+    "computer": [("local", "This computer's GPU")],       # scripts/run_local_model.py: no website; the label is the GPU found (any maker)
 }
 MAX_UPLOAD = 300 * 1024 * 1024
 BOOK_EXTS = (".pdf", ".txt", ".md")                   # what can be imported as a book: a PDF, or plain text (a file or pasted text)
@@ -308,7 +308,7 @@ def save_global_params(project, positives, negatives):
 def setup_status():
     """The Setup window's data: what this computer has and lacks, plus the Kaggle account name found (never any key)."""
     items = setup_check.check(path=ENV_PATH, local_llm_ready=bool(local_llm_status().get("ready")),
-                              local_gpu="" if gpu_blocker("computer", "local") else local_gpu_label())
+                              local_gpu="" if gpu_blocker("computer", "local") else local_gpu_label(), gpu_seen=gpu_blocker("computer", "local") or "")
     return {"items": items, **setup_check.summary(items), "kaggle_username": setup_check.kaggle_state()["username"], "root": str(ROOT)}
 
 
@@ -450,30 +450,33 @@ TPU_CLI_NOTE = ("Kaggle did not attach a TPU to notebooks started from the comma
                 "TPUs may also just have been busy). Try the notebook in the Kaggle web page, or retest later")
 
 
-_LOCAL_GPUS = None
+_ALL_GPUS = None
+
+
+def all_gpus():
+    """Every GPU this computer has, any maker (run_local_model.detect_gpus), asked once."""
+    global _ALL_GPUS
+    if _ALL_GPUS is None:
+        _ALL_GPUS = run_local_model.detect_gpus()
+    return _ALL_GPUS
 
 
 def local_gpus():
-    """This computer's NVIDIA GPUs [(name, GB, compute capability)], asked once (nvidia-smi); [] if there are none."""
-    global _LOCAL_GPUS
-    if _LOCAL_GPUS is None:
-        _LOCAL_GPUS = run_local_model.gpu_info() if sys.platform.startswith("linux") else []
-    return _LOCAL_GPUS
+    """The NVIDIA GPUs the models can run on here [(name, GB, compute capability)]; [] if none (or not on Linux / WSL 2)."""
+    return [(g["name"], g["gb"], g["cap"]) for g in all_gpus() if g["nvidia_ready"]] if sys.platform.startswith("linux") else []
 
 
 def local_gpu_label():
-    g = local_gpus()
-    return f"{g[0][0]} ({g[0][1]:g} GB)" + (f" + {len(g) - 1} more" if len(g) > 1 else "") if g else "This computer's NVIDIA GPU (none found)"
+    """The GPU's real name and memory, whatever its maker, e.g. 'Intel Iris Plus Graphics 645 (1.5 GB shared)'."""
+    g = all_gpus()
+    if not g:
+        return "No graphics processor found"
+    return run_local_model.gpu_text(g[0]) + (f" + {len(g) - 1} more" if len(g) > 1 else "")
 
 
 def gpu_blocker(service, gpu):
     if service == "computer":
-        if not sys.platform.startswith("linux"):
-            return ("models run on this computer only on Linux (or Windows through WSL 2) with an NVIDIA GPU; this one is "
-                    + ("macOS" if sys.platform == "darwin" else sys.platform) + ". Use Kaggle, Colab or Hugging Face here")
-        if not local_gpus():
-            return "no NVIDIA GPU found on this computer (nvidia-smi is missing or lists none)"
-        return None
+        return run_local_model.gpu_problem(all_gpus())
     return TPU_CLI_NOTE if gpu.startswith("Tpu") and not TPU_CLI_WORKS else None
 
 

@@ -1738,7 +1738,7 @@
         <label class="opt svc-opt"><input type="radio" name="svc" value="kaggle" checked><span>Kaggle<small>Free weekly GPU. Needs sign-in and a phone-verified account.</small></span></label>
         <label class="opt svc-opt"><input type="radio" name="svc" value="colab"><span>Colab<small>Free T4 is often unavailable.</small></span></label>
         <label class="opt svc-opt"><input type="radio" name="svc" value="huggingface"><span>Hugging Face<small>Free shared GPUs (daily quota). Only models with a public Space; the Space's own version of the model.</small></span></label>
-        <label class="opt svc-opt"><input type="radio" name="svc" value="computer"><span>This computer<small>Your own NVIDIA GPU (Linux or Windows WSL 2). No website or account; models download once, then work offline. Each model's memory need is in its note.</small></span></label>
+        <label class="opt svc-opt"><input type="radio" name="svc" value="computer"><span>This computer<small>This computer's own graphics card. The models need an NVIDIA card (Linux or Windows WSL 2). No website or account; models download once, then work offline.</small></span></label>
       </div>
       <div><label class="f" for="gpu">GPU</label><select id="gpu"></select></div>
       <div id="userbox"><label class="f" for="kuser">Kaggle username</label><input type="text" id="kuser" name="kaggle_account_slug" placeholder="the part after kaggle.com/" spellcheck="false" autocapitalize="off" autocomplete="nope" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
@@ -3411,7 +3411,7 @@ function applyConstraints() {
   }
   // Service radio buttons: show warning if CLI not installed, but don't disable - let user choose
   document.querySelectorAll("input[name=svc]").forEach(r => {
-    const why = tools[r.value] ? null : r.value === "computer" ? (ST.computer_why || "no NVIDIA GPU found") : `the ${r.value} command is not installed`;
+    const why = tools[r.value] ? null : r.value === "computer" ? (ST.computer_why || "no usable GPU found") : `the ${r.value} command is not installed`;
     const label = r.closest("label");
     if (label) {
       label.classList.toggle("off", !!why);

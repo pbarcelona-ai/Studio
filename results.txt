@@ -304,3 +304,11 @@ Status: PASS
 Files reviewed: studio.html (CSS rule .look-opt span, line 1347)
 Errors (blocking): none. Warnings: none. Suggestions: none.
 Status: PASS
+
+==== Review pass 2026-11-08 (4): show the real GPU of any maker ====
+Files reviewed: scripts/run_local_model.py (detect_gpus, gpu_text, gpu_problem, _mem_gb), scripts/studio.py (all_gpus, local_gpus,
+  local_gpu_label, gpu_blocker), scripts/setup_check.py (gpu_seen), studio.html (This computer text)
+Errors (blocking): none.
+Warnings: none. Suggestions: scripts/run_local_model.py: Linux lspci gives no memory size for non-NVIDIA cards.
+Requirements: no *_prompt.md files exist for these modules.
+Status: PASS

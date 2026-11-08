@@ -97,10 +97,10 @@ def _has_module(name):
         return False
 
 
-def check(path=None, home=None, environ=None, local_llm_ready=False, local_gpu=""):
+def check(path=None, home=None, environ=None, local_llm_ready=False, local_gpu="", gpu_seen=""):
     """The list shown in the Setup window. Each item: id, title, level (required / recommended / optional), ok, detail, fix.
     local_gpu: this computer's NVIDIA GPU (for example "NVIDIA RTX 4090 (24 GB)"), or "" if it has none. With one, models can run here
-    (scripts/run_local_model.py), so a Kaggle account becomes optional instead of required."""
+    (scripts/run_local_model.py), so a Kaggle account becomes optional instead of required. gpu_seen: why the GPU that was found cannot be used."""
     env = os.environ if environ is None else environ
     which = lambda t: shutil.which(t, path=path)
     items = []
@@ -112,7 +112,7 @@ def check(path=None, home=None, environ=None, local_llm_ready=False, local_gpu="
     add("python", "Python 3.9 or newer", "required", v >= (3, 9), f"Python {v.major}.{v.minor}.{v.micro}",
         "Install a current Python from python.org (or: brew install python), then run install.sh again.")
     add("local_gpu", "A GPU in this computer (NVIDIA, Linux or Windows WSL 2)", "optional" if not local_gpu else "recommended", bool(local_gpu),
-        local_gpu or "none found: the models run on Kaggle, Colab or Hugging Face instead",
+        local_gpu or gpu_seen or "none found: the models run on Kaggle, Colab or Hugging Face instead",
         "Only needed to run the models here instead of on a website: an NVIDIA GPU with its driver (nvidia-smi), on Linux or WSL 2.")
     if local_gpu:
         add("git", "git (some models fetch their own program)", "recommended", bool(which("git")), "found" if which("git") else "not found",

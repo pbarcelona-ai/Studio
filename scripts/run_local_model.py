@@ -77,6 +77,83 @@ def gpu_info():
     return gpus
 
 
+def _mem_gb(text):
+    """'1536 MB' / '8 GB' / bytes -> GB (one decimal), or None."""
+    m = re.match(r"\s*([\d.]+)\s*(MB|GB|TB)?", str(text or ""), re.I)
+    if not m:
+        return None
+    v = float(m.group(1))
+    unit = (m.group(2) or "B").upper()
+    return round(v / 1024 if unit == "MB" else v * 1024 if unit == "TB" else v if unit == "GB" else v / 2**30, 1)
+
+
+def _run(argv, timeout=20):
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def detect_gpus():
+    """Every graphics processor this computer has, whatever its maker: [{"name", "vendor", "gb", "shared", "cap", "nvidia_ready"}].
+    nvidia_ready: an NVIDIA GPU whose driver answers (nvidia-smi), the only kind the models run on. The others are listed so the Studio can
+    say what it found and why it cannot use it: macOS (system_profiler), Linux (lspci), Windows (PowerShell)."""
+    found = [{"name": n, "vendor": "NVIDIA", "gb": gb, "shared": False, "cap": cap, "nvidia_ready": True} for n, gb, cap in gpu_info()]
+    if found:
+        return found
+    if sys.platform == "darwin":
+        try:
+            cards = json.loads(_run(["system_profiler", "SPDisplaysDataType", "-json"]) or "{}").get("SPDisplaysDataType", [])
+        except ValueError:
+            cards = []
+        for c in cards:
+            name = c.get("sppci_model") or c.get("_name") or "unknown GPU"
+            vendor = str(c.get("spdisplays_vendor") or "").replace("sppci_vendor_", "").strip() or ("Apple" if name.startswith("Apple") else "")
+            vram = c.get("spdisplays_vram") or c.get("_spdisplays_vram")
+            gb, shared = _mem_gb(vram), bool(c.get("spdisplays_vram_shared")) or not vram
+            if gb is None:                                   # Apple silicon: the GPU shares the computer's memory
+                gb = _mem_gb(_run(["sysctl", "-n", "hw.memsize"]).strip())
+            found.append({"name": name, "vendor": vendor.title() if vendor.islower() else vendor, "gb": gb, "shared": shared, "cap": "", "nvidia_ready": False})
+    elif sys.platform.startswith("linux"):
+        for line in _run(["lspci"]).splitlines():
+            if re.search(r"VGA compatible|3D controller|Display controller", line):
+                name = line.split(": ", 1)[-1].strip()
+                vendor = "NVIDIA" if "NVIDIA" in name else "AMD" if re.search(r"AMD|ATI|Radeon", name) else "Intel" if "Intel" in name else ""
+                found.append({"name": name, "vendor": vendor, "gb": None, "shared": vendor == "Intel", "cap": "", "nvidia_ready": False})
+    elif sys.platform == "win32":
+        out = _run(["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name + '|' + $_.AdapterRAM }"])
+        for line in out.splitlines():
+            name, _, ram = line.strip().partition("|")
+            if name:
+                vendor = "NVIDIA" if "NVIDIA" in name else "AMD" if re.search(r"AMD|Radeon", name) else "Intel" if "Intel" in name else ""
+                found.append({"name": name, "vendor": vendor, "gb": _mem_gb(ram) if ram.isdigit() else None, "shared": vendor == "Intel", "cap": "", "nvidia_ready": False})
+    return found
+
+
+def gpu_text(g):
+    """'Intel Iris Plus Graphics 645 (1.5 GB shared)'"""
+    mem = f"{g['gb']:g} GB{' shared' if g['shared'] else ''}" if g.get("gb") else ""
+    return g["name"] + (f" ({mem})" if mem else "")
+
+
+def gpu_problem(gpus, platform=None):
+    """Why the models cannot run on this computer's GPU(s), or None when they can."""
+    platform = platform or sys.platform
+    ready = [g for g in gpus if g["nvidia_ready"]]
+    if ready and platform.startswith("linux"):
+        return None
+    if ready:
+        return f"{gpu_text(ready[0])} found; the Studio runs models on it only under Linux or Windows WSL 2 (this is {'macOS' if platform == 'darwin' else platform})"
+    if not gpus:
+        return "no graphics processor found on this computer"
+    g = gpus[0]
+    why = {"NVIDIA": "its driver is not answering (install the NVIDIA driver so that nvidia-smi works)",
+           "AMD": "the models here are set up for NVIDIA's CUDA; AMD cards would need PyTorch's ROCm build, which the Studio does not set up yet",
+           "Apple": "the models here are set up for NVIDIA's CUDA, not Apple's Metal",
+           "Intel": "it is built-in graphics, with far too little memory for these models and no CUDA"}.get(g["vendor"], "the models here need an NVIDIA graphics card (CUDA)")
+    return f"{gpu_text(g)} found, but {why}. Use Kaggle, Colab or Hugging Face on this computer"
+
+
 def csv_rows(path):
     with open(path, newline="", encoding="utf-8") as fh:
         return len(list(csv.DictReader(fh)))
@@ -249,7 +326,7 @@ def main(argv=None):
 
     gpus = gpu_info()
     if not gpus:
-        die("no NVIDIA GPU found on this computer (nvidia-smi is missing or lists none). Use Kaggle, Colab or Hugging Face instead.")
+        die(gpu_problem(detect_gpus()) or "no NVIDIA GPU found on this computer (nvidia-smi is missing or lists none)")
     print("== GPU: " + "; ".join(f"{n} ({gb:g} GB)" for n, gb, _ in gpus), flush=True)
 
     base = {"audio": pd / "audio" / model.removeprefix("audio_"), "image": pd / "images" / model.removeprefix("image_")}.get(kind, pd / "videos" / model)
