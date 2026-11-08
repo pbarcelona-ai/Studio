@@ -331,6 +331,20 @@
     color: var(--accent);
     font-weight: 600;
   }
+  /* The rail sits above the tab panels (not inside a card), and each step is a button that opens its tab. */
+  #pipelineStepper { margin: 0 0 var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+  button.stepper__step { background: none; border: 0; font: inherit; color: inherit; cursor: pointer; min-height: 48px; }
+  button.stepper__step:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-md); }
+  button.stepper__step:hover .stepper__circle { border-color: var(--accent); }
+  .stepper__step.optional .stepper__circle { border-style: dashed; }
+  #stepperHint { margin: 0 0 var(--space-4); }
+  /* Quality presets on the Movies tab */
+  .preset-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .preset-row button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  /* Volume sliders show their value next to the label */
+  .vol-slider { min-width: 140px; }
+  .vol-slider input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .vol-slider output { font-family: "JetBrains Mono", monospace; font-size: var(--text-xs); color: var(--fg-muted); margin-left: 4px; }
 
   /* === CARD COMPONENT === */
   .card {
@@ -1526,8 +1540,19 @@
 
     <div id="msg" class="warn" role="status" aria-live="polite"></div>
 
-    <!-- Pipeline Stepper (shows in Movies tab) -->
-    
+    <!-- Book-to-film rail: where the selected book is, shown on every tab. Each step opens the tab where it is done. -->
+    <nav class="stepper" id="pipelineStepper" aria-label="Book to film progress">
+      <button type="button" class="stepper__step" data-step="ingest" data-go="project" data-target="bookpanel"><span class="stepper__circle">1</span><span class="stepper__label">Read book</span></button>
+      <button type="button" class="stepper__step" data-step="bible" data-go="project" data-target="bookpanel"><span class="stepper__circle">2</span><span class="stepper__label">Continuity bible</span></button>
+      <button type="button" class="stepper__step optional" data-step="cast" data-go="characters"><span class="stepper__circle">3</span><span class="stepper__label">Cast (optional)</span></button>
+      <button type="button" class="stepper__step" data-step="write" data-go="project" data-target="bookpanel"><span class="stepper__circle">4</span><span class="stepper__label">Write shots</span></button>
+      <button type="button" class="stepper__step" data-step="build" data-go="project" data-target="bookpanel"><span class="stepper__circle">5</span><span class="stepper__label">Build CSVs</span></button>
+      <button type="button" class="stepper__step" data-step="video" data-go="movies" data-target="movieRunCard"><span class="stepper__circle">6</span><span class="stepper__label">Video</span></button>
+      <button type="button" class="stepper__step" data-step="audio" data-go="movies" data-target="movieRunCard"><span class="stepper__circle">7</span><span class="stepper__label">Audio</span></button>
+      <button type="button" class="stepper__step" data-step="film" data-go="results" data-target="filmpanel"><span class="stepper__circle">8</span><span class="stepper__label">Final film</span></button>
+    </nav>
+    <p id="stepperHint" class="warn" aria-live="polite"></p>
+
 
     <!-- TAB PANELS -->
 
@@ -1935,36 +1960,6 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
 
     <!-- MOVIES TAB: generate a film from the imported book (the old Generate tab lives here now) -->
     <div class="tab-panel" id="panel-movies" role="tabpanel" aria-labelledby="tab-movies">
-        <div class="stepper" id="pipelineStepper" role="navigation" aria-label="Pipeline progress">
-        <div class="stepper__step complete" data-step="ingest">
-            <div class="stepper__circle">1</div>
-            <span class="stepper__label">Ingest PDF</span>
-        </div>
-        <div class="stepper__step complete" data-step="bible">
-            <div class="stepper__circle">2</div>
-            <span class="stepper__label">Continuity Bible</span>
-        </div>
-        <div class="stepper__step" data-step="write">
-            <div class="stepper__circle">3</div>
-            <span class="stepper__label">Write Shots</span>
-        </div>
-        <div class="stepper__step" data-step="build">
-            <div class="stepper__circle">4</div>
-            <span class="stepper__label">Build CSVs</span>
-        </div>
-        <div class="stepper__step" data-step="video">
-            <div class="stepper__circle">5</div>
-            <span class="stepper__label">Generate Video</span>
-        </div>
-        <div class="stepper__step" data-step="audio">
-            <div class="stepper__circle">6</div>
-            <span class="stepper__label">Generate Audio</span>
-        </div>
-        <div class="stepper__step" data-step="merge">
-            <div class="stepper__circle">7</div>
-            <span class="stepper__label">Merge & Mix</span>
-        </div>
-    </div>
 
         <div class="card">
             <div class="card__header">
@@ -2137,6 +2132,13 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
             <div class="card__body">
                 <section class="bookonly">
     <h2>10. Steps to run</h2>
+    <div class="preset-row" role="group" aria-label="Quality preset">
+      <span class="f" style="margin:0">Quality:</span>
+      <button type="button" class="preset-btn" data-preset="draft" aria-pressed="false" title="Fastest models: check framing and timing before a long run">Quick test</button>
+      <button type="button" class="preset-btn" data-preset="standard" aria-pressed="false" title="Good quality that fits a free T4">Standard</button>
+      <button type="button" class="preset-btn" data-preset="best" aria-pressed="false" title="Newest, largest models this GPU can run; slowest">Best</button>
+    </div>
+    <p id="presetNote" class="warn" aria-live="polite" style="margin-bottom:8px">A preset ticks the video and audio models on the Models tab. You can still change them there.</p>
     <div class="row">
       <div>
         <label class="opt"><input type="checkbox" id="s_video" checked><span>Generate video</span></label>
@@ -2149,9 +2151,9 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
         <label class="f">When narration is longer than the clip</label>
         <select id="sync"><option value="stretch">Stretch video to fit (default)</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select>
         <div class="row" style="gap:8px;margin-top:8px">
-          <div style="min-width:80px"><label class="f">Voice</label><input type="number" id="vn" step="0.05" value="1.0" autocomplete="off"></div>
-          <div style="min-width:80px"><label class="f">Effects</label><input type="number" id="vs" step="0.05" value="0.5" autocomplete="off"></div>
-          <div style="min-width:80px"><label class="f">Music</label><input type="number" id="vm" step="0.05" value="0.25" autocomplete="off"></div>
+          <div class="vol-slider"><label class="f" for="vn">Voice <output id="vnOut" for="vn">1.00</output></label><input type="range" id="vn" min="0" max="2" step="0.05" value="1.0" data-out="vnOut"></div>
+          <div class="vol-slider"><label class="f" for="vs">Effects <output id="vsOut" for="vs">0.50</output></label><input type="range" id="vs" min="0" max="2" step="0.05" value="0.5" data-out="vsOut"></div>
+          <div class="vol-slider"><label class="f" for="vm">Music <output id="vmOut" for="vm">0.25</output></label><input type="range" id="vm" min="0" max="2" step="0.05" value="0.25" data-out="vmOut"></div>
         </div>
       </div>
     </div>
@@ -2255,9 +2257,9 @@ projects/characters/bible/references/adam/ref_02.png" autocomplete="off"></texta
       </div>
       <div class="stack" style="margin-top:12px">
         <div><label class="f">When narration is longer than the clip</label><select id="fsync"><option value="stretch">Stretch video to fit</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select></div>
-        <div style="min-width:80px"><label class="f">Voice</label><input type="number" id="fvn" step="0.05" value="1.0" autocomplete="off"></div>
-        <div style="min-width:80px"><label class="f">Effects</label><input type="number" id="fvs" step="0.05" value="0.5" autocomplete="off"></div>
-        <div style="min-width:80px"><label class="f">Music</label><input type="number" id="fvm" step="0.05" value="0.25" autocomplete="off"></div>
+        <div class="vol-slider"><label class="f" for="fvn">Voice <output id="fvnOut" for="fvn">1.00</output></label><input type="range" id="fvn" min="0" max="2" step="0.05" value="1.0" data-out="fvnOut"></div>
+        <div class="vol-slider"><label class="f" for="fvs">Effects <output id="fvsOut" for="fvs">0.50</output></label><input type="range" id="fvs" min="0" max="2" step="0.05" value="0.5" data-out="fvsOut"></div>
+        <div class="vol-slider"><label class="f" for="fvm">Music <output id="fvmOut" for="fvm">0.25</output></label><input type="range" id="fvm" min="0" max="2" step="0.05" value="0.25" data-out="fvmOut"></div>
         <div><label class="f" for="fname">Film file (saved as films/&lt;file&gt;.mp4)</label><input type="text" id="fname" name="film_file" value="my_film" spellcheck="false" autocapitalize="off" autocomplete="nope" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
       </div>
       <div class="row" style="margin-top:8px;align-items:center">
@@ -2680,8 +2682,64 @@ function updateMSummary() {
   const p = cur();
   const steps = ["s_video", "s_audio", "s_merge", "s_mix"].filter(id => $(id) && $(id).checked)
     .map(id => $(id).closest("label").innerText.trim().replace(/\s+/g, " "));
-  $("mSummary").textContent = (p ? `Book: ${p.slug}` : "No book selected") + " · " + (steps.length ? "steps: " + steps.join(", ") : "no steps ticked (choose them in the Generate tab)");
+  const picked = selectedMovies(p);
+  const clips = picked.reduce((a, m) => a + (m.clips || 0), 0), secs = picked.reduce((a, m) => a + (m.est_seconds || 0), 0);
+  const planned = p && p.movies ? (p.movies[radio("gran")] || []).length : 0;
+  const size = picked.length ? `${picked.length} movie(s), ${clips} clips, about ${(secs / 60).toFixed(1)} min of film`
+             : planned ? "no movies picked yet" : "no movies planned yet (build the CSVs first)";
+  $("mSummary").textContent = (p ? `Book: ${p.slug} · ${size}` : "No book selected") + " · " + (steps.length ? "steps: " + steps.join(", ") : "no steps ticked (choose them in Steps to Run above)");
 }
+
+// The planned movies the Which Movies card points at: the ticked ones, the first N, or all. Movies that do not exist yet are not counted.
+function selectedMovies(p) {
+  if (!p || !p.movies) return [];
+  const list = p.movies[radio("gran")] || [], sel = radio("msel");
+  if (sel === "all") return list;
+  if (sel === "first") return list.slice(0, Math.max(0, parseInt($("mfirst").value, 10) || 0));
+  const ids = new Set(checked("movie"));
+  return list.filter(m => ids.has(String(m.id)));
+}
+
+// ---------- quality presets: tick the models for a quick test, a standard run or the best this GPU allows ----------
+// Each list is tried in order; the first model that is not greyed out (blocked for this service and GPU) is used.
+const QUALITY_PRESETS = {
+  draft: { label: "Quick test", video: ["ltx_video", "wan"], narration: ["kokoro"], sfx: [], music: ["musicgen"] },
+  standard: { label: "Standard", video: ["wan22_ti2v_5b", "wan", "ltx_video"], narration: ["qwen3_tts", "kokoro"], sfx: [], music: ["musicgen"] },
+  best: { label: "Best", video: ["wan22_t2v_a14b_lightning", "hunyuan_video_15", "wan22_ti2v_5b", "wan"], narration: ["chatterbox_turbo", "qwen3_tts", "kokoro"], sfx: ["mmaudio"], music: ["musicgen"] },
+};
+function applyPreset(name) {
+  const pr = QUALITY_PRESETS[name]; if (!pr || !ST) return;
+  const boxes = sel => [...document.querySelectorAll(sel)];
+  const usable = (all, wanted) => wanted.map(v => all.find(b => b.value === v)).find(b => b && !b.disabled);
+  const vids = boxes("input[name=vmodel]"), auds = boxes("input[name=audio]");
+  const roleOf = k => (ST.audio_models[k] || {}).role;
+  const pickV = usable(vids, pr.video);
+  const pickA = ["narration", "sfx", "music"].map(r => usable(auds.filter(b => roleOf(b.value) === r), pr[r])).filter(Boolean);
+  const want = new Set([pickV, ...pickA].filter(Boolean));
+  for (const b of [...vids, ...auds]) {
+    const on = want.has(b);
+    if (b.checked !== on) { b.checked = on; b.dispatchEvent(new Event("change", { bubbles: true })); }
+  }
+  document.querySelectorAll(".preset-btn").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.preset === name)));
+  const names = [pickV, ...pickA].filter(Boolean).map(b => b.value);
+  $("presetNote").textContent = pickV ? `${pr.label}: ${names.join(", ")}. Change any of these on the Models tab.`
+                                      : `${pr.label}: no video model in this preset can run on the chosen service and GPU. Pick one on the Models tab.`;
+  $("presetNote").className = pickV ? "warn" : "err";
+  updateMSummary();
+}
+document.querySelectorAll(".preset-btn").forEach(b => b.addEventListener("click", () => applyPreset(b.dataset.preset)));
+// Ticking a model by hand means no preset is in force any more.
+document.addEventListener("change", e => {
+  if (e.isTrusted && e.target.matches("input[name=vmodel], input[name=audio]")) document.querySelectorAll(".preset-btn").forEach(b => b.setAttribute("aria-pressed", "false"));
+});
+
+// ---------- volume sliders: show the number next to each one ----------
+function showSliderValue(r) { const o = $(r.dataset.out); if (o) o.textContent = Number(r.value).toFixed(2); }
+document.querySelectorAll("input[type=range][data-out]").forEach(r => { r.addEventListener("input", () => showSliderValue(r)); showSliderValue(r); });
+
+// The summary follows the movie choices too (the movie checkboxes are redrawn, so listen on the panel).
+$("panel-movies").addEventListener("change", e => { if (e.target.matches("input[name=movie], input[name=msel], input[name=gran]")) updateMSummary(); });
+$("mfirst").addEventListener("input", updateMSummary);
 
 // ---------- Single Prompts tab ----------
 function appendLog(box, msg, isErr = false) {
@@ -5657,8 +5715,13 @@ function initTabs() {
                 activePanel.setAttribute('aria-hidden', 'false');
             }
             
+            // The book-to-film rail is about the chosen book; Single Prompts has nothing to do with it
+            const offBook = tabName === 'prompts';
+            document.getElementById('pipelineStepper')?.classList.toggle('hidden', offBook);
+            document.getElementById('stepperHint')?.classList.toggle('hidden', offBook);
+
             // Save to localStorage
-            localStorage.setItem('activeTab', tabName);
+            try { localStorage.setItem('activeTab', tabName); } catch (e) { /* private window: the tab is just not remembered */ }
         });
     });
     
@@ -5668,46 +5731,58 @@ function initTabs() {
     if (savedBtn) savedBtn.click();
 }
 
-// ===== STEPPER =====
-function updateStepper(project) {
-    if (!project) return;
-    
-    const steps = ['ingest', 'bible', 'write', 'build', 'video', 'audio', 'merge'];
-    const stepElements = document.querySelectorAll('.stepper__step');
-    
-    // Determine current step based on project state
-    let currentStepIndex = 0;
-    
-    if (project.not_started || !project.chapters) {
-        currentStepIndex = 0; // ingest
-    } else if (!project.bible) {
-        currentStepIndex = 1; // bible
-    } else if (project.scripts < project.chapters) {
-        currentStepIndex = 2; // write
-    } else if (!project.built) {
-        currentStepIndex = 3; // build
-    } else {
-        // Check what steps are enabled in the UI
-        const videoChecked = $('s_video')?.checked;
-        const audioChecked = $('s_audio')?.checked;
-        const mergeChecked = $('s_merge')?.checked;
-        const mixChecked = $('s_mix')?.checked;
-        
-        if (videoChecked) currentStepIndex = 4;
-        else if (audioChecked) currentStepIndex = 5;
-        else if (mergeChecked || mixChecked) currentStepIndex = 6;
-        else currentStepIndex = 6; // all done
-    }
-    
-    stepElements.forEach((el, i) => {
-        el.classList.remove('active', 'complete');
-        if (i < currentStepIndex) {
-            el.classList.add('complete');
-        } else if (i === currentStepIndex) {
-            el.classList.add('active');
-        }
-    });
+// ===== STEPPER (book-to-film rail above the tabs) =====
+// Each step is done when its files exist (from /api/status), not when a checkbox is ticked. "cast" is optional and never the current step.
+const STEP_NEXT = {
+    ingest: 'Next: on the Import tab, tick "Read the PDF" and run it.',
+    bible: 'Next: on the Import tab, write the continuity bible.',
+    write: 'Next: on the Import tab, write the shots, narration, sound and music.',
+    build: 'Next: on the Import tab, build the CSV files and plan the movies.',
+    video: 'Next: on the Movies tab, pick a quality preset and generate the video.',
+    audio: 'Next: on the Movies tab, generate the narration, effects and music.',
+    film: 'Next: on the Results tab, use Make film to join the clips and sound.',
+};
+function stepDone(p) {
+    const have = p.have || {};
+    const sum = pre => Object.entries(have).filter(([k]) => k.startsWith(pre)).reduce((a, [, n]) => a + (Number(n) || 0), 0);
+    const old = !!p.legacy;                                           // imported books arrive with the book steps already done
+    return {
+        ingest: old || (!p.not_started && !!p.chapters),
+        bible: old || !!p.bible,
+        cast: Array.isArray(p.characters) && p.characters.length > 0,
+        write: old || (p.chapters > 0 && p.scripts >= p.chapters),
+        build: old || !!p.built,
+        video: sum('videos/') > 0,
+        audio: sum('audio/') > 0,
+        film: (Number(have.films) || 0) > 0,
+        counts: { video: sum('videos/'), audio: sum('audio/'), films: Number(have.films) || 0 },
+    };
 }
+function updateStepper(project) {
+    const els = document.querySelectorAll('#pipelineStepper .stepper__step');
+    const hint = $('stepperHint');
+    els.forEach(el => { el.classList.remove('active', 'complete'); el.removeAttribute('aria-current'); });
+    if (!project) { if (hint) hint.textContent = 'Choose a book on the Import tab, or import a new one.'; return; }
+    const done = stepDone(project);
+    const current = [...els].find(el => el.dataset.step !== 'cast' && !done[el.dataset.step]);
+    els.forEach(el => {
+        const label = el.querySelector('.stepper__label').textContent;
+        if (done[el.dataset.step]) el.classList.add('complete');
+        if (el === current) { el.classList.add('active'); el.setAttribute('aria-current', 'step'); }
+        el.setAttribute('aria-label', `${label}: ${done[el.dataset.step] ? 'done' : el === current ? 'next step' : 'not done yet'}`);
+    });
+    const c = done.counts;
+    const have = `${project.slug}: ${c.video} clip(s), ${c.audio} sound file(s), ${c.films} film(s).`;
+    if (hint) hint.textContent = have + ' ' + (current ? STEP_NEXT[current.dataset.step] : 'Every step is done. Watch your film on the Results tab.');
+}
+function goToStep(el) {
+    if (el.dataset.step === 'film') { loadFilm(true); return; }       // opens the Results tab and the Make film panel with the downloaded files
+    const tab = document.querySelector(`.tab-btn[data-tab="${el.dataset.go}"]`);
+    if (tab) tab.click();
+    const target = el.dataset.target && $(el.dataset.target);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+document.querySelectorAll('#pipelineStepper .stepper__step').forEach(el => el.addEventListener('click', () => goToStep(el)));
 
 // ===== COMMAND PALETTE =====
 const COMMANDS = [
@@ -6142,8 +6217,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const originalLoadStatus = loadStatus;
     loadStatus = async function(applyDef) {
         await originalLoadStatus(applyDef);
-        const project = cur();
-        if (project) updateStepper(project);
+        updateStepper(cur());
         
         // Update status badge
         const badge = $('statusBadge');
@@ -6153,14 +6227,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // Update stepper when checkboxes change
-    ['s_video', 's_audio', 's_merge', 's_mix'].forEach(id => {
-        const el = $(id);
-        if (el) el.addEventListener('change', () => {
-            const project = cur();
-            if (project) updateStepper(project);
-        });
-    });
+    // The rail shows the chosen book, so redraw it when another book is picked
+    $('proj').addEventListener('change', () => updateStepper(cur()));
 });
 
 // Override showToast to use new implementation

@@ -205,3 +205,7 @@ STATUS: PASS
 [2026-11-07] Characters tab: Generate button moved next to Generate Prompt and renamed Generate Character - PASS (headless check: adjacent, no page errors).
 
 [2026-11-07] Characters tab: generation options moved next to the Generate Character button - PASS (headless order/adjacency check, no page errors).
+
+[2026-11-07] Phase 1 workflow upgrades (studio.html): book-to-film rail on every tab driven by real files, clickable steps; Quick test/Standard/Best quality presets; volume sliders with readouts (Movies + Make film); Make the Movie summary shows movies, clips and film length. Fixed during review: misleading "no movies picked" text. Warnings: rail shown on non-book tabs; preset buttons < 48 px; hard-coded preset model names. Checks: node --check all scripts; headless Chrome CDP tests (rail states, clicks, presets, sliders, summary), no page errors - PASS
+
+[2026-11-07] studio.html: book-to-film rail hidden on the Single Prompts tab; activeTab localStorage write guarded. node --check OK - PASS
