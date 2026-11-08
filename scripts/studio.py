@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from bookkit import EDIT_FIELDS, continuity_file, LOCAL_LLM_URL, SLUG_RE, build_movies, hf_json, llm_json, local_chat, read_json, set_scene_field, slugify, write_json
+from bookkit import EDIT_FIELDS, KOKORO_VOICE_RE, KOKORO_VOICES, VOICE_CAST_FILE, apply_voice_cast, read_voice_cast, voice_id, continuity_file, LOCAL_LLM_URL, SLUG_RE, build_movies, hf_json, llm_json, local_chat, read_json, set_scene_field, slugify, write_json
 import character_tokens
 import hf_spaces
 import prompt_guides
@@ -793,6 +793,73 @@ def _write_rows(path, rows):
         w.writeheader()
         w.writerows(rows)
     os.replace(tmp, path)
+
+
+def voice_cast(opt):
+    """The voice cast of a book: every speaker in audio_shots.csv with its line count and the voice its lines use now.
+    With "cast" ({speaker: Kokoro voice id, or "" to leave that speaker's lines as they are}) the cast is saved to voice_cast.json and applied to the
+    audio CSVs; a character's voice overrides the narrator's for that character's lines. "move_old": the Kokoro narration files of the rows
+    whose voice changed go to the Trash, so the next narration run remakes them. "series": suggest each speaker's voice from that
+    character series (the Characters tab)."""
+    d = _direction_book(str(opt.get("project", "")))
+    if not (d / "audio_shots.csv").exists():
+        raise PlanError("build the CSVs first (Book Processing)")
+    result = {"changed": [], "moved": 0}
+    if opt.get("cast") is not None:
+        cast = opt["cast"]
+        if not isinstance(cast, dict) or len(cast) > 200:
+            raise PlanError("cast must be {speaker: voice}")
+        clean = {}
+        for k, v in cast.items():
+            k, v = str(k).strip()[:60], str(v or "").strip()
+            if not k:
+                continue
+            if v and not KOKORO_VOICE_RE.match(v):
+                raise PlanError(f"{v!r} is not a Kokoro voice (for example bm_george or af_bella)")
+            if v:
+                clean[k] = v
+        write_json(d / VOICE_CAST_FILE, {"cast": clean})
+        result["changed"] = apply_voice_cast(d, clean)
+        if opt.get("move_old") and result["changed"]:
+            rel = layout.rel(d.name)
+            old = [f"{rel}/audio/kokoro/narration-{n:04d}.wav" for n in result["changed"] if (d / "audio" / "kokoro" / f"narration-{n:04d}.wav").exists()]
+            result["moved"] = move_to_trash(old, "pistachio-old-voice")["moved"] if old else 0
+    series = str(opt.get("series") or "")
+    if series and not SLUG_RE.match(series):
+        raise PlanError("bad series name")
+    cast = read_voice_cast(d)
+    cast_lc = {k.lower(): v for k, v in cast.items()}
+    book_voice = {str(c.get("name", "")).lower(): voice_id(c.get("voice")) for c in (read_json(continuity_file(d), {}) or {}).get("characters", []) or []
+                  if isinstance(c, dict)}
+    speakers = {}
+    for r in read_csv_rows(d / "audio_shots.csv"):
+        try:
+            lines = json.loads(r.get("lines_json") or "[]")
+        except ValueError:
+            continue
+        for ln in lines if isinstance(lines, list) else []:
+            if not (isinstance(ln, list) and len(ln) >= 2):
+                continue
+            name = str(ln[0]).strip() or "NARRATOR"
+            sp = speakers.setdefault(name.lower(), {"name": name, "lines": 0, "voices": {}})
+            sp["lines"] += 1
+            v = str(ln[2]) if len(ln) > 2 else ""
+            sp["voices"][v] = sp["voices"].get(v, 0) + 1
+    out = []
+    for key, sp in speakers.items():
+        now = max(sp["voices"], key=sp["voices"].get) if sp["voices"] else ""
+        suggest = ""
+        if series:
+            try:
+                ch = character_tokens.load_character(series, sp["name"]) if character_tokens.get_character_path(series, sp["name"]).exists() else None
+            except Exception:
+                ch = None
+            suggest = voice_id((ch or {}).get("voice"))
+        out.append({"name": sp["name"], "lines": sp["lines"], "voice": now, "cast": cast_lc.get(key, ""),
+                    "book": book_voice.get(key, ""), "suggest": suggest})
+    out.sort(key=lambda x: (x["name"].upper() != "NARRATOR", -x["lines"], x["name"].lower()))
+    result.update({"speakers": out, "voices": KOKORO_VOICES})
+    return result
 
 
 def new_scene(opt):
@@ -2634,6 +2701,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, creative_direction(body))
             if url.path == "/api/creative_direction_get":
                 return self._json(200, creative_direction_get(body))
+            if url.path == "/api/voice_cast":
+                return self._json(200, voice_cast(body))
             if url.path == "/api/make_animatic":
                 JOB.start([animatic_step(body)], body)
                 return self._json(200, {"started": 1})

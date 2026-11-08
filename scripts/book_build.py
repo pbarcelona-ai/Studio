@@ -8,7 +8,7 @@ audio_chapters.csv (same row order, row N of audio = row N of video) and movies.
 minutes; each movie ends at the end of a chapter). Chapters without a script yet are left out.
 """
 import argparse, csv, json, sys
-from bookkit import apply_prompt_edits, continuity_file, build_movies, project_dir, read_json
+from bookkit import apply_prompt_edits, apply_voice_cast, continuity_file, build_movies, project_dir, read_json
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
@@ -37,7 +37,7 @@ AUDIO_FIELDS = ["chapter", "shot", "lines_json", "narration", "sfx", "music"]
 
 def write(name, fields, rows):
     with open(pdir / name, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=fields)
+        w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")    # all_chapters.csv leaves out the shots' characters column
         w.writeheader()
         w.writerows(rows)
 
@@ -57,6 +57,9 @@ write("audio_chapters.csv", AUDIO_FIELDS, first_per_chapter(audio))
 kept = apply_prompt_edits(pdir)                          # your saved scene edits survive a rebuild
 if kept:
     print(f"re-applied {kept} saved prompt edit(s)")
+recast = apply_voice_cast(pdir)                          # and so does the voice cast (voice_cast.json)
+if recast:
+    print(f"voice cast applied to {len(recast)} row(s)")
 plan = build_movies(pdir, args.minutes)
 chapters = len({r["chapter"] for r in prompts})
 print(f"{args.project}: {len(prompts)} shots in {chapters} chapters")

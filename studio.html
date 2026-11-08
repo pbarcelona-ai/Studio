@@ -2028,6 +2028,29 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
   </section>
             </div>
         </div>
+
+        <div class="card">
+            <div class="card__header">
+                <h2 class="card__title">Voice Cast</h2>
+                <p class="card__subtitle">Who speaks with which voice: a character's voice overrides the narrator's</p>
+            </div>
+            <div class="card__body">
+                <section class="bookonly" id="castpanel">
+    <p class="warn" style="margin-bottom:8px">Every speaker in this book's narration, with the Kokoro voice its lines use now. Give a character a voice and all of that character's lines are spoken with it instead of the narrator's. Blank leaves that speaker's lines as they are. The cast is kept when the CSVs are rebuilt.</p>
+    <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <div><label class="f" for="castSeries">Suggest voices from character series</label><select id="castSeries"><option value="">(none)</option></select></div>
+      <button type="button" id="bCastLoad">Load speakers</button>
+      <button type="button" id="bCastSuggest" title="Fill each blank voice with the character series' voice, else the continuity book's">Fill blanks with suggestions</button>
+    </div>
+    <div class="movies" style="margin-top:8px;max-height:320px"><table id="castTable"><tr><td class="warn">Pick a book, then Load speakers.</td></tr></table></div>
+    <div class="row" style="gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      <label class="opt"><input type="checkbox" id="castMoveOld" checked><span>Move narration made with an old voice to the Trash<small>The next Kokoro narration run remakes those rows.</small></span></label>
+      <button type="button" id="bCastSave" class="primary">Save voice cast</button>
+      <span id="castStatus" class="warn" role="status"></span>
+    </div>
+  </section>
+            </div>
+        </div>
         
         <div class="card">
             <div class="card__header">
@@ -3736,6 +3759,56 @@ $("proj").addEventListener("change", async () => {
 });
 
 
+// ---- Voice cast: one Kokoro voice per speaker; a character's voice overrides the narrator's ----
+let castData = null;
+function renderCast() {
+  const t = $("castTable");
+  if (!castData || !castData.speakers.length) {
+    t.innerHTML = `<tr><td class="warn">${castData ? "No spoken lines in this book yet." : "Pick a book, then Load speakers."}</td></tr>`;
+    return;
+  }
+  const opts = v => `<option value="">(leave as is)</option>` + castData.voices.map(x => `<option value="${x}"${x === v ? " selected" : ""}>${x}</option>`).join("")
+    + (v && !castData.voices.includes(v) ? `<option value="${escapeHtml(v)}" selected>${escapeHtml(v)}</option>` : "");
+  t.innerHTML = `<tr><th>Speaker</th><th>Lines</th><th>Voice now</th><th>Suggested</th><th>Cast voice</th></tr>` + castData.speakers.map((sp, i) =>
+    `<tr><td>${escapeHtml(sp.name)}</td><td>${sp.lines}</td><td>${escapeHtml(sp.voice || "default")}</td>` +
+    `<td>${escapeHtml(sp.suggest || sp.book || "")}</td>` +
+    `<td><select data-cast="${i}" aria-label="Voice for ${escapeHtml(sp.name)}">${opts(sp.cast)}</select></td></tr>`).join("");
+}
+async function loadCast(body) {
+  const proj = $("proj").value;
+  if (!proj) { $("castStatus").textContent = "pick a book first"; return; }
+  $("castStatus").textContent = body ? "saving..." : "loading...";
+  try {
+    const j = await api("/api/voice_cast", { project: proj, series: $("castSeries").value, ...(body || {}) });
+    castData = j;
+    renderCast();
+    $("castStatus").textContent = body
+      ? `Saved. ${j.changed.length} row(s) re-voiced` + (j.moved ? `, ${j.moved} old narration file(s) moved to the Trash` : "") + "."
+      : `${j.speakers.length} speaker(s).`;
+  } catch (e) {
+    castData = null; renderCast();
+    $("castStatus").textContent = e.message;
+  }
+}
+$("bCastLoad").addEventListener("click", () => loadCast());
+$("castSeries").addEventListener("change", () => { if (castData) loadCast(); });
+$("bCastSuggest").addEventListener("click", () => {
+  if (!castData) return;
+  castData.speakers.forEach((sp, i) => {
+    const sel = document.querySelector(`#castTable select[data-cast="${i}"]`);
+    const want = sp.suggest || sp.book;
+    if (sel && !sel.value && want && castData.voices.includes(want)) sel.value = want;
+  });
+});
+$("bCastSave").addEventListener("click", () => {
+  if (!castData) return;
+  const cast = {};
+  castData.speakers.forEach((sp, i) => { const sel = document.querySelector(`#castTable select[data-cast="${i}"]`); if (sel && sel.value) cast[sp.name] = sel.value; });
+  loadCast({ cast, move_old: $("castMoveOld").checked });
+});
+$("proj").addEventListener("change", () => { castData = null; renderCast(); $("castStatus").textContent = ""; });
+
+
 // ---- Scene Enhancement API ----
 let enhConv = [];  // conversation history for enhancements
 let enhSelection = [];  // array of selected clips: [{n, video, narration, sfx, music, prompt}]
@@ -4075,6 +4148,7 @@ async function loadCharSeries() {
     $("charSeries").innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join("");
     // Also populate the New Scene series dropdown
     $("newSceneSeries").innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join("");
+    $("castSeries").innerHTML = `<option value="">(none)</option>` + series.map(s => `<option value="${s}">${s}</option>`).join("");
     if (series.length) {
       $("charSeries").value = series[0];
       charCurrentSeries = series[0];

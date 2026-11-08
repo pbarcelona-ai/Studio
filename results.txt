@@ -235,3 +235,10 @@ REVIEW RESULTS (captions)
 Files reviewed: scripts/mix_film.py, scripts/make_animatic.py (lower-level: layout.py unchanged)
 Errors found: none. Tested with throwaway books (deleted).
 Status: PASS
+
+REVIEW RESULTS (voice cast)
+Files reviewed: scripts/studio.py, studio.html, scripts/bookkit.py, scripts/book_write.py, scripts/book_build.py (lower-level: layout.py, character_tokens.py unchanged)
+Errors found and fixed: book_build.py failed on every rebuild since the characters column was added (all_chapters.csv field list); Kokoro voice ids in the continuity book were ignored.
+Warnings: LOW - CSV writes in place (existing pattern).
+Tested: throwaway books (deleted), headless Chrome Voice Cast card.
+Status: PASS

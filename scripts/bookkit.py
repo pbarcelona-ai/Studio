@@ -467,3 +467,60 @@ def apply_prompt_edits(pdir):
         for field, v in e.get("fields", {}).items():
             n += set_scene_field(pdir, e["chapter"], e["shot"], field, v["edited"])
     return n
+
+
+# ------------------------------------------------------------------ voice cast: which voice speaks each speaker's lines
+# projects/<name>/voice_cast.json: {"cast": {"NARRATOR": "bm_george", "Eve": "af_bella", ...}}
+# Each line of audio_shots.csv's lines_json is [speaker, text, (voice)]. The cast gives every line of a speaker that speaker's voice, so a
+# character's own voice overrides the narrator's. A speaker the cast leaves blank keeps the voice its lines have now (the writing step's
+# choice, an earlier cast, or none: then the narration step's default). Kept in its own file and re-applied after each rebuild (book_build.py), like prompt_edits.json.
+KOKORO_VOICE_RE = re.compile(r"^[ab][fm]_[a-z]{2,16}$")       # a = American, b = British English (the two Kokoro pipelines the narration step loads)
+KOKORO_VOICES = ["af_heart", "af_bella", "af_nicole", "af_sarah", "af_sky", "af_nova", "af_river", "af_jessica", "af_kore", "af_aoede", "af_alloy",
+                 "am_michael", "am_adam", "am_eric", "am_liam", "am_onyx", "am_echo", "am_fenrir", "am_puck",
+                 "bf_emma", "bf_isabella", "bf_alice", "bf_lily", "bm_george", "bm_lewis", "bm_daniel", "bm_fable"]
+VOICE_CAST_FILE = "voice_cast.json"
+
+
+def voice_id(word):
+    """A continuity-book voice word (male, elder, ...) or a Kokoro voice id -> the Kokoro id, or "" if it is neither."""
+    w = str(word or "").strip()
+    return VOICE_MAP.get(w.lower()) or (w if KOKORO_VOICE_RE.match(w) else "")
+
+
+def read_voice_cast(pdir):
+    cast = read_json(Path(pdir) / VOICE_CAST_FILE, {}).get("cast")
+    return {str(k): str(v) for k, v in cast.items() if KOKORO_VOICE_RE.match(str(v))} if isinstance(cast, dict) else {}
+
+
+def apply_voice_cast(pdir, cast=None):
+    """Re-voice every line of audio_shots.csv and audio_chapters.csv from the cast (default: the saved voice_cast.json).
+    Returns the audio_shots.csv row numbers (1-based, the narration file numbers) whose voices changed."""
+    pdir = Path(pdir)
+    cast = read_voice_cast(pdir) if cast is None else cast
+    by_speaker = {k.strip().lower(): v for k, v in cast.items() if v}
+    changed_rows = []
+    if not by_speaker:
+        return changed_rows
+    for name in ("audio_shots.csv", "audio_chapters.csv"):
+        rows = read_csv(pdir / name)
+        hit = False
+        for i, r in enumerate(rows, start=1):
+            try:
+                lines = json.loads(r.get("lines_json") or "[]")
+            except ValueError:
+                continue
+            if not isinstance(lines, list):
+                continue
+            new = []
+            for ln in lines:
+                if isinstance(ln, list) and len(ln) >= 2 and str(ln[0]).strip().lower() in by_speaker:
+                    ln = [ln[0], ln[1], by_speaker[str(ln[0]).strip().lower()]]
+                new.append(ln)
+            if new != lines:
+                r["lines_json"] = json.dumps(new, ensure_ascii=False)
+                hit = True
+                if name == "audio_shots.csv":
+                    changed_rows.append(i)
+        if hit:
+            _write_csv(pdir / name, rows)
+    return changed_rows

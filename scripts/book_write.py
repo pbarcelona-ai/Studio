@@ -18,7 +18,7 @@ One resumable Claude call per chapter; finished chapters (scripts/chapter-NNN.js
 """
 import argparse, sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from bookkit import (continuity_file, CLIP_SECONDS, COST, cost_note, VOICE_MAP, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
+from bookkit import (continuity_file, CLIP_SECONDS, COST, cost_note, voice_id, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
                      project_dir, read_json, shot_count, slice_text, strip_verse_numbers, words, write_json)
 import json
 
@@ -164,7 +164,7 @@ if continuity.get("creative_direction"):        # optional: only present if the 
     book_brief["creative_direction"] = continuity["creative_direction"]
 book_brief["characters"] = [{"name": c["name"], "look": c["token"]} for c in continuity["characters"]]
 book_brief["locations"] = [{"name": loc["name"], "look": loc["token"]} for loc in continuity.get("locations", [])]
-voice_of = {c["name"].lower(): VOICE_MAP.get(c.get("voice"), "") for c in continuity["characters"]}
+voice_of = {c["name"].lower(): voice_id(c.get("voice")) for c in continuity["characters"]}   # a voice word (male, elder) or a Kokoro id
 
 
 def build_prompt(c, slices, quotes=None):
