@@ -299,3 +299,8 @@ Warnings:
 Suggestions: none
 Requirements: no *_prompt.md files exist for these modules.
 Status: PASS
+
+==== Review pass 2026-11-08 (3): look buttons text centred ====
+Files reviewed: studio.html (CSS rule .look-opt span, line 1347)
+Errors (blocking): none. Warnings: none. Suggestions: none.
+Status: PASS
