@@ -326,3 +326,9 @@ Errors (blocking): none. Fixed during the pass: Final film's back button named "
 Warnings: none. Suggestions: none.
 Requirements: no *_prompt.md files exist for these modules.
 Status: PASS
+
+==== Review pass 2026-11-08 (7): Import button follows the ticks ====
+Files reviewed: studio.html (runImport)
+Errors (blocking): fixed: the Import button ran all four book steps regardless of the ticks (the card says "Run the ticked book steps").
+Warnings: none. Suggestions: none.
+Status: PASS

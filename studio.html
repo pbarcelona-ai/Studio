@@ -3112,12 +3112,18 @@ async function runImport() {
     const p = cur();
     if (!p) return fail("Pick a book above, choose a file to upload, or paste some text.");
     const o = options();
-    o.steps = { ingest: !p.legacy, extract: !!p.legacy, continuity: !p.legacy, write: !p.legacy, build: !p.legacy, video: false, audio: false, merge: false, mix: false };   // AI steps only: no video/audio, so nothing goes to Kaggle or Colab
+    // The steps ticked in the Read book, Continuity book, Write shots and Build CSVs cards; never video or audio, so nothing goes to Kaggle or Colab
+    const tick = id => $(id).checked && !$(id).disabled;
+    o.steps = p.legacy ? { extract: true, video: false, audio: false, merge: false, mix: false }
+      : { ingest: tick("b_ingest") || !!uploaded, continuity: tick("b_continuity"), write: tick("b_write"), build: tick("b_build"), video: false, audio: false, merge: false, mix: false };
+    if (uploaded && !tick("b_ingest")) impLog("A new book was uploaded, so Read book runs too (its chapters are needed by every later step).");
+    if (!p.legacy && !["ingest", "continuity", "write", "build"].some(k => o.steps[k]))
+      return fail("Tick at least one step: Read book, Continuity book, Write shots or Build CSVs.");
     if (!p.legacy) {
       if (uploaded) { const opt = [...$("pdf").options].find(x => x.value.endsWith("/" + uploaded)); if (opt) $("pdf").value = opt.value; }
       o.pdf = $("pdf").value;
-      if (!o.pdf) return fail("No book file found for this book. Choose one above and press Import again.");
-      if (p.chapters && !uploaded && !confirm(`${p.slug} is already imported (${p.chapters} chapters). Importing again re-splits the PDF (hand edits to chapters.json are lost), rewrites the continuity book and calls the AI again. Continue?`)) {
+      if (!o.pdf && o.steps.ingest) return fail("No book file found for this book. Choose one in Read book and press Import again.");
+      if (p.chapters && !uploaded && (o.steps.ingest || o.steps.continuity) && !confirm(`${p.slug} is already imported (${p.chapters} chapters). This will ${[o.steps.ingest ? "split the book into chapters again (hand edits to chapters.json are lost)" : "", o.steps.continuity ? "write the continuity book again (the AI is called)" : ""].filter(Boolean).join(" and ")}. Continue?`)) {
         impLog("Cancelled: nothing was changed."); impStatus("Cancelled."); btn.disabled = false; return;
       }
     }
