@@ -259,7 +259,7 @@ MODELS["sd35_large_turbo"] = dict(title="Stable Diffusion 3.5 Large Turbo (GGUF)
   load=_GGUF_LOAD.format(pipe_cls="StableDiffusion3Pipeline", tr_cls="SD3Transformer2DModel"), gen=_SD35_GEN)
 
 MODELS["flux2_klein_4b"] = dict(title="FLUX.2 klein 4B", repo="black-forest-labs/FLUX.2-klein-4B",
-  note="Black Forest Labs' small, fast FLUX.2 model (Apache-2.0, not gated): 4 steps, 1024x1024, about 4B parameters plus a Qwen3 text encoder, so it fits a T4 with CPU offload. No negative prompt. EXPERIMENTAL: not run on a GPU yet.",
+  note="Black Forest Labs' small, fast FLUX.2 model (Apache-2.0, not gated): 4 steps, 1024x1024, about 4B parameters plus a Qwen3 text encoder, so it fits a T4 with CPU offload. No negative prompt. Tested on a Kaggle T4: about 2 minutes per 1536x640 keyframe, with one character reference picture (several are shrunk to the size of one).",
   pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf",
   config='MODEL_ID = "black-forest-labs/FLUX.2-klein-4B"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 1.0',
   load='from diffusers import Flux2KleinPipeline\n\npipe = Flux2KleinPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()',
@@ -277,19 +277,36 @@ def references(row):
             pics.append(Image.open(hits[0]).convert("RGB"))
         else:
             print(f"   reference picture {name} not found; continuing without it", flush=True)
+    if len(pics) > 1:     # keep the pictures' total size near one 448 px picture: on a T4 one fits beside a wide keyframe, two full ones do not
+        side = int(448 / len(pics) ** 0.5)
+        for p in pics:
+            p.thumbnail((side, side))
     return pics or None
+
+
+def _free_gpu():
+    """After an out-of-memory error: drop what the failed attempt held and move the offloaded models back to the CPU."""
+    import gc
+    gc.collect()
+    torch.cuda.empty_cache()
+    if hasattr(pipe, "maybe_free_model_hooks"):
+        pipe.maybe_free_model_hooks()
 
 
 def generate(row, seed):
     kw = dict(prompt=row["prompt"], width=opt(row, "width", WIDTH), height=opt(row, "height", HEIGHT),
               num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float))
     refs = references(row)
-    if refs:
-        try:       # each picture adds tokens to every attention step; on a T4 that can run out of memory
+    while refs:            # each picture adds tokens to every attention step; on a T4 that can run out of memory
+        oom = False
+        try:
             return pipe(image=refs, generator=torch.Generator("cpu").manual_seed(seed), **kw).images[0]
         except torch.cuda.OutOfMemoryError:
-            torch.cuda.empty_cache()
-            print("   out of GPU memory with reference pictures; this image is made without them", flush=True)
+            oom = True     # freed below: inside the except block the error still holds the failed attempt's tensors
+        if oom:
+            _free_gpu()
+            refs = refs[:-1]
+            print(f"   out of GPU memory with reference pictures; trying again with {len(refs)}", flush=True)
     return pipe(generator=torch.Generator("cpu").manual_seed(seed), **kw).images[0]''')
 
 # --- adult-content (uncensored) additions. Community models; use only for clearly adult, fictional subjects. ---

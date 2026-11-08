@@ -248,3 +248,8 @@ Files reviewed: scripts/mix_film.py, scripts/studio.py, studio.html (lower-level
 Errors found and fixed: num() let NaN through its range checks.
 Tested: synthetic clips through mix_film.py directly and through the page (headless Chrome); throwaway book zz_film_test.
 Status: PASS
+
+REVIEW RESULTS (FLUX.2 klein references, GPU test)
+Files reviewed: scripts/make_image.py (generated notebook Studio_Kaggle_image_flux2_klein_4b.ipynb parsed)
+Errors found and fixed: two reference pictures ran out of GPU memory on a T4 and the fallback failed too (memory freed inside the except block). Verified on Kaggle: 3/3 keyframes.
+Status: PASS
