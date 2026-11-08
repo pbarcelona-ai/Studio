@@ -720,6 +720,25 @@ def pick_take(body):
     return {"current_from_take": k}
 
 
+def animatic_step(body):
+    """Step that makes films/animatic_<start>-<end>.mp4 from the keyframes (and narration, if made) of rows start..end."""
+    slug = str(body.get("project", ""))
+    if not SLUG_RE.match(slug) or not pdir(slug).is_dir():
+        raise PlanError("pick a book first")
+    start, end = num(body, "start", 1, int, 1, 100000), num(body, "end", 24, int, 1, 100000)
+    if end < start:
+        raise PlanError("end is before start")
+    end = min(end, start + 199)
+    argv = ["uv", "run", "--with", "imageio-ffmpeg", "python", "make_animatic.py", "--project", slug, "--start", str(start), "--end", str(end),
+            "--out", f"animatic_{start}-{end}.mp4"]
+    kf = str(body.get("keyframes") or "")
+    if kf:
+        if not re.fullmatch(r"[a-z0-9_]{2,60}", kf):
+            raise PlanError("bad keyframe model name")
+        argv += ["--keyframes", kf]
+    return {"label": f"Make animatic for rows {start}-{end}", "argv": argv, "env": {}}
+
+
 def build_plan(opt, commit=False):
     if opt.get("mode") == "prompts":
         return prompt_plan(opt, commit)
@@ -2466,6 +2485,9 @@ class Handler(BaseHTTPRequestHandler):
                 (pdir(slug) / "films" / "_selection.json").write_text(json.dumps({"clips": clips}, indent=1))
                 JOB.start([step], body)
                 return self._json(200, {"clips": len(clips)})
+            if url.path == "/api/make_animatic":
+                JOB.start([animatic_step(body)], body)
+                return self._json(200, {"started": 1})
             if url.path == "/api/fetch":
                 JOB.start([fetch_step(body)], body)
                 return self._json(200, {"started": 1})

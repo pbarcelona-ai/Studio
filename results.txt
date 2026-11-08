@@ -220,3 +220,8 @@ REVIEW RESULTS (takes)
 Files reviewed: scripts/studio.py, studio.html (lower-level: layout.py, bookkit.py unchanged)
 Errors found: none. Tested with a throwaway book (deleted) in Python and headless Chrome.
 Status: PASS
+
+REVIEW RESULTS (animatic)
+Files reviewed: scripts/make_animatic.py, scripts/studio.py, studio.html (lower-level: layout.py unchanged)
+Errors found: none. make_animatic.py tested with a throwaway book (deleted); the plan step tested with validation cases.
+Status: PASS

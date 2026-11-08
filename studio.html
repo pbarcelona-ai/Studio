@@ -2139,6 +2139,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
       <div><label class="f" for="sbMovie">Movie</label><select id="sbMovie"></select></div>
       <div><label class="f" for="sbKf">Keyframes from</label><select id="sbKf"><option value="">(newest)</option></select></div>
       <button type="button" id="sbLoad">Show storyboard</button>
+      <button type="button" id="sbAnimatic" title="Play the stills in order, each as long as its narration, as one video in the films folder">Make animatic</button>
       <span id="sbStatus" class="warn" role="status" aria-live="polite"></span>
     </div>
     <div class="pz-grid" id="sbGrid" style="margin-top:12px"></div>
@@ -6781,6 +6782,12 @@ showToast = function(message, type, duration) {
     } catch (e) { $("sbGrid").innerHTML = ""; $("sbStatus").textContent = e.message; }
   }
   $("sbLoad").addEventListener("click", loadStoryboard);
+  $("sbAnimatic").addEventListener("click", async () => {      // stills timed to the narration: judge pacing before paying for video clips
+    const proj = $("proj").value, [start, end] = ($("sbMovie").value || "").split("-").map(Number);
+    if (!proj || !start) return;
+    try { await api("/api/make_animatic", { project: proj, start, end, keyframes: $("sbKf").value }); $("sbStatus").textContent = `Making the animatic for rows ${start}-${end}; the log shows progress and the file lands in the films folder.`; }
+    catch (e) { $("sbStatus").textContent = e.message; }
+  });
   $("sbKf").addEventListener("change", loadStoryboard);
   $("sbGrid").addEventListener("click", e => {
     const act = e.target.closest("[data-retake],[data-take-use]");
