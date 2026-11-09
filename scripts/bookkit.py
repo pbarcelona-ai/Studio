@@ -424,7 +424,8 @@ def group_chapters(chapters, target_seconds):
         movies.append(chapters[i:best[0] + 1])
         i = best[0] + 1
     if len(movies) > 1 and sum(c["seconds"] for c in movies[-1]) < 0.4 * target_seconds:
-        movies[-2] += movies.pop()
+        tail = movies.pop()                   # (not `movies[-2] += movies.pop()`: the target index is read before the pop, so the wrong movie was replaced)
+        movies[-1] += tail
     return movies
 
 
