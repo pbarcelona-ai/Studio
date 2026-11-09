@@ -373,3 +373,8 @@ Checks run: real runs on the same 3 keyframes: Pika H3 Flex on its Space (36-46 
 Not run: SkyReels-V2, SVD, SVD-XT, LTX-2.5: Kaggle's weekly 30-hour GPU quota ran out. They stay unlisted.
 Status: PASS
 Update (2026-11-08, quota message): reviewed scripts/run_hf_space.py. Real quota refusal seen: 138 s requested, 29 s left, back in about 23 hours, with a token. Status: PASS
+Update (2026-11-08, Make my film): reviewed local_audio.py, studio.py, studio.html, mix_film.py, book_write.py, book_continuity.py, init_characters.py.
+Errors found and fixed: Kokoro on an Intel Mac needed an older transformers than its newest; a missing stage did not stop the progress list showing done.
+Checks run: all scripted tests pass; mix_film --models on clips of two sizes; headless Chrome pressed Make my film with pasted text and reached a 22.8 s film with narration, music and captions, resumed after a real failure; Pika's real quota refusal was handled.
+Not run: Make my film with real GPU clips, because Kaggle's weekly quota and Hugging Face's daily quota were used up; a whole book through the button was still running.
+Status: PASS

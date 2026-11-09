@@ -302,7 +302,7 @@ Rules:
   out of place for the book's era and world. Where the text is silent make a sensible cinematic choice.
   Video models garble small faces: when a face shows, frame the person from a medium shot to a close-up, so the head is at least a fifth of the picture's
   height. In a wide shot show people from behind, in silhouette or too far away to see a face, or show the place alone. Keep movement of the head and hands slow.
-- characters: exact names from this list who appear in the shot, or []: {char_names}
+- characters: exact names from this list of everyone visible in the shot, even if you describe them only as "a man" or "a woman", or []: {char_names}
 - location: exact name from this list only if the shot truly happens there, otherwise "", never the nearest: {location_names}. Its description is pasted into the prompt, so it must not contradict your visual.
 - continues: true only if this shot carries on the same action in the same place from the shot before it, as an unbroken moment (a continuous
   walk, a fall, a fight). A cut to another angle, place or time is false. The first shot of the chapter is false.

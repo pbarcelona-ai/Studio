@@ -49,7 +49,7 @@ Return ONE JSON object with exactly these keys:
  "visual_style": "one sentence of film look to append to every shot: lighting, palette, lens, mood (no people)",
  "music_theme": "one sentence describing the score: instruments, mood, tempo",
  "characters": [
-   {{"name": "Adam", "token": "a COMPLETE, fixed visual description under 200 characters: apparent age, build, skin, hair, beard, clothing, bearing",
+   {{"name": "Adam", "token": "a COMPLETE, fixed visual description under 200 characters: apparent age, build, skin, hair, beard, bearing, and exact clothing including sleeve length, hem length and colour",
      "voice": "one of: {', '.join(sorted(VOICE_MAP))}",
      "stages": [{{"label": "young", "chapters": "1-12", "token": "the same person at this age: same face, build and skin, with the age, hair and clothing of this time"}}]}}
  ],

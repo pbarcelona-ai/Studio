@@ -1609,6 +1609,26 @@
 
     <!-- IMPORT TAB -->
     <div class="tab-panel active" id="panel-project" role="tabpanel" aria-labelledby="tab-project">
+        <div class="card" id="filmCard">
+            <div class="card__header">
+                <h2 class="card__title">Make my film</h2>
+                <p class="card__subtitle">One button, from the book to the finished film. If a GPU limit stops it, press it again later: it carries on from where it stopped.</p>
+            </div>
+            <div class="card__body">
+                <p class="warn" style="margin-bottom:8px">Uses the book chosen or pasted in Read book below, the look chosen above, and Where to run on the Models tab. "Only chapters" in Write shots limits it to part of the book.</p>
+                <label class="opt"><input type="checkbox" id="filmSpace" checked><span>Shots with people on Pika's public Hugging Face Space<small>The cleanest faces so far, about 3 or 4 clips a day on the free quota; the rest use LTX-Video on your GPU. Uploads those keyframes to the Space. MiniMax's H3 licence applies: read it before publishing or selling.</small></span></label>
+                <label class="opt"><input type="checkbox" id="filmLocalAudio" checked><span>Narration and music on this computer<small>No GPU hours. Narration takes seconds a line; each chapter's music takes several minutes on an older computer.</small></span></label>
+                <div class="row" style="margin-top:8px;align-items:center;gap:8px">
+                    <button id="bFilm" class="primary" type="button">Make my film</button>
+                    <button id="bFilmStop" type="button" disabled>Stop</button>
+                    <span id="filmNow" class="warn" role="status" aria-live="polite"></span>
+                </div>
+                <ol id="filmStages" style="margin:12px 0 0;padding-left:20px;font-size:var(--text-sm)"></ol>
+                <div id="filmDone" style="margin-top:12px"></div>
+                <pre id="filmLog" class="fill" data-empty="1" aria-live="polite" style="max-height:240px;overflow:auto;margin-top:8px">nothing running</pre>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card__header">
                 <h2 class="card__title">Tools Status</h2>
@@ -3120,6 +3140,68 @@ $("impText").addEventListener("input", updTextCount);
 const impLog = (msg, isErr) => appendLog($("importLog"), msg, isErr);
 function impStatus(text, cls = "warn") { $("importStatus").textContent = text; $("importStatus").className = cls; }
 
+// Saves the file chosen or text pasted in Read book to the books folder and makes it the chosen book. {uploaded: name or ""} or {error}.
+async function uploadChosenBook(log, status) {
+    let f = $("file").files[0];
+    const pasted = $("impText").value.trim();
+    if (!f && pasted) {                                           // pasted text becomes a small text book
+      if (pasted.split(/\s+/).length < 5) return { error: "Paste at least a few words of text." };
+      const nm = ($("impTitle").value.trim() || pasted.split(/\s+/).slice(0, 4).join(" ")).replace(/[^A-Za-z0-9._ -]/g, " ").replace(/\s+/g, " ").trim().slice(0, 50) || "pasted text";
+      f = new File([pasted], nm + ".txt", { type: "text/plain" });
+    } else if (f && pasted) { log("Both a file and pasted text were given; the file is used. Clear it to use the pasted text."); }
+    let uploaded = "";
+    if (f) {
+      status("Uploading...");
+      log(`Uploading ${f.name} (${(f.size / 1048576).toFixed(1)} MB) to the books folder...`);
+      const r = await fetch(`/api/upload?filename=${encodeURIComponent(f.name)}`, { method: "POST", headers: { ...hdr, "Content-Type": f.type || "application/octet-stream" }, body: f });
+      const j = await r.json();
+      if (!r.ok) return { error: j.error || "upload failed" };
+      log(`✓ Saved books/${j.filename}; the book is called "${j.project}"`);
+      uploaded = j.filename;
+      $("file").value = ""; if (pasted && f.type === "text/plain") { $("impText").value = ""; $("impTitle").value = ""; updTextCount(); }
+      await loadStatus(); $("proj").value = j.project; renderProject(true);
+    }
+    return { uploaded };
+}
+
+// ---------- Make my film: the whole road from the book, and how far it has come ----------
+const FILM_STAGES = [["chapters", "Read the book", s => s.chapters], ["continuity", "Continuity book", s => s.continuity ? "done" : 0], ["scripts", "Write shots", s => s.scripts && `${s.scripts} chapter(s), ${s.shots} shots`],
+                     ["keyframes", "Keyframes", s => s.shots && s.keyframes && `${s.keyframes} of ${s.shots}`], ["clips", "Video clips", s => s.shots && s.clips && `${s.clips} of ${s.shots}`],
+                     ["narration", "Narration", s => s.shots && s.narration && `${s.narration} of ${s.shots}`], ["cues", "Music", s => s.cues_wanted && s.cues && `${s.cues} of ${s.cues_wanted} cue(s)`],
+                     ["films", "Finished film", s => (s.films || []).length]];
+async function showFilmStatus(slug) {
+  if (!slug) return;
+  const s = await api(`/api/film_status?project=${encodeURIComponent(slug)}`);
+  $("filmStages").innerHTML = FILM_STAGES.map(([, title, f]) => { const v = s.exists ? f(s) : 0; return `<li>${v ? "✓" : "○"} ${escapeHtml(title)}${v && v !== true ? ` <small>(${escapeHtml(String(v))})</small>` : ""}</li>`; }).join("");
+  const film = (s.films || [])[0];
+  $("filmDone").innerHTML = film ? `<p class="f" style="margin:0 0 4px">Newest film: ${escapeHtml(film.split("/").pop())}</p><video controls preload="metadata" style="width:100%;max-width:720px" src="/file/${film.split("/").map(encodeURIComponent).join("/")}?t=${TOKEN}"></video>` : "";
+}
+async function runFilm() {
+  const btn = $("bFilm"), log = (m, bad) => appendLog($("filmLog"), m, bad), status = (t, cls = "warn") => { $("filmNow").textContent = t; $("filmNow").className = cls; };
+  btn.disabled = true; $("filmLog").textContent = ""; $("filmLog").dataset.empty = "0";
+  let timer = null;
+  try {
+    const up = await uploadChosenBook(log, status);
+    if (up.error) throw new Error(up.error);
+    if (!cur()) throw new Error("Choose a book in Read book below, or paste some text.");
+    const o = options();
+    o.film = true; o.film_space = $("filmSpace").checked; o.local_audio = $("filmLocalAudio").checked;
+    if (up.uploaded) { const opt = [...$("pdf").options].find(x => x.value.endsWith("/" + up.uploaded)); if (opt) $("pdf").value = opt.value; }
+    o.pdf = $("pdf").value;
+    await api("/api/run", o);
+    $("bFilmStop").disabled = false; status("Making your film. You can leave this page open.");
+    const slug = o.project;
+    timer = setInterval(() => { showFilmStatus(slug).catch(() => {}); api("/api/log?since=999999999").then(j => { if (j.current) status(`Step ${j.current}`); }).catch(() => {}); }, 5000);
+    const lines = await followJob(log, 2000);
+    await showFilmStatus(slug);
+    const failed = lines.some(l => /^!! /.test(l)), done = lines.some(l => /^mixed \d+ clips/.test(l));
+    if (done && !failed) status("Your film is ready.", "chip done");
+    else if (done) status("A film was made, with some shots still missing or remade with the other model. See the log.", "warn");
+    else status("It stopped before the end. What finished is kept: press Make my film again once the limit has passed.", "err");
+  } catch (e) { log(`✗ ${e.message}`, true); status(e.message, "err"); }
+  finally { if (timer) clearInterval(timer); $("bFilmStop").disabled = true; btn.disabled = false; await loadStatus(true).catch(() => {}); }
+}
+
 async function runImport() {
   const btn = $("bImport");
   btn.disabled = true;
@@ -3127,25 +3209,9 @@ async function runImport() {
   const fail = msg => { impLog(`✗ ${msg}`, true); impStatus(msg, "err"); btn.disabled = false; };
   try {
     // 1. upload the PDF chosen above, if there is one
-    let f = $("file").files[0];
-    const pasted = $("impText").value.trim();
-    if (!f && pasted) {                                           // pasted text becomes a small text book
-      if (pasted.split(/\s+/).length < 5) return fail("Paste at least a few words of text.");
-      const nm = ($("impTitle").value.trim() || pasted.split(/\s+/).slice(0, 4).join(" ")).replace(/[^A-Za-z0-9._ -]/g, " ").replace(/\s+/g, " ").trim().slice(0, 50) || "pasted text";
-      f = new File([pasted], nm + ".txt", { type: "text/plain" });
-    } else if (f && pasted) { impLog("Both a file and pasted text were given; the file is used. Clear it to use the pasted text."); }
-    let uploaded = "";
-    if (f) {
-      impStatus("Uploading...");
-      impLog(`Uploading ${f.name} (${(f.size / 1048576).toFixed(1)} MB) to the books folder...`);
-      const r = await fetch(`/api/upload?filename=${encodeURIComponent(f.name)}`, { method: "POST", headers: { ...hdr, "Content-Type": f.type || "application/octet-stream" }, body: f });
-      const j = await r.json();
-      if (!r.ok) return fail(j.error || "upload failed");
-      impLog(`✓ Saved books/${j.filename}; the book is called "${j.project}"`);
-      uploaded = j.filename;
-      $("file").value = ""; if (pasted && f.type === "text/plain") { $("impText").value = ""; $("impTitle").value = ""; updTextCount(); }
-      await loadStatus(); $("proj").value = j.project; renderProject(true);
-    }
+    const up = await uploadChosenBook(impLog, impStatus);
+    if (up.error) return fail(up.error);
+    const uploaded = up.uploaded;
     // 2. what to do with the chosen book
     const p = cur();
     if (!p) return fail("Pick a book above, choose a file to upload, or paste some text.");
@@ -6389,6 +6455,9 @@ $("autoClean").addEventListener("change", async e => {
   try { await api("/api/auto_cleanup", { on: e.target.checked }); }
   catch (err) { e.target.checked = !e.target.checked; clnStatus(err.message, "err"); }
 });
+$("bFilm").addEventListener("click", runFilm);
+$("bFilmStop").addEventListener("click", () => api("/api/stop", {}).catch(() => {}));
+$("proj").addEventListener("change", () => showFilmStatus($("proj").value).catch(() => {}));
 $("showAdvanced").checked = localStorage.getItem("showAdvancedModels") === "1";
 function applyShowAdvanced() { $("modelGrid").classList.toggle("hide-advanced", !$("showAdvanced").checked); }
 $("showAdvanced").addEventListener("change", () => { localStorage.setItem("showAdvancedModels", $("showAdvanced").checked ? "1" : "0"); applyShowAdvanced(); });

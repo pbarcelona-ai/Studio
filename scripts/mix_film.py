@@ -43,6 +43,7 @@ from pathlib import Path
 ap = argparse.ArgumentParser()
 ap.add_argument("--project", default="adam_eve")
 ap.add_argument("--model", default="ltx_video")
+ap.add_argument("--models", default=None, help="several video folders, comma-separated, best first: each shot uses the first folder that has it, all brought to one size")
 ap.add_argument("--chapters", action="store_true", help="use the *_chapters folders (one clip per chapter)")
 ap.add_argument("--start", type=int, default=1)
 ap.add_argument("--end", type=int, default=10**9)
@@ -157,6 +158,9 @@ def dissolve_join(parts, lengths, fade, out):
     return d
 
 
+SAME_SHAPE = ""      # filter text that brings clips of different models to one size and frame rate (--models)
+
+
 def build_segment(i, video, stems, out, trim_start=0.0, trim_end=0.0):
     full = duration(video)
     trim_start = min(max(trim_start, 0.0), max(full - 0.5, 0.0))
@@ -176,7 +180,7 @@ def build_segment(i, video, stems, out, trim_start=0.0, trim_end=0.0):
         cmd += ["-i", str(path)]
     fade = min(args.fade, total / 3) if args.transition == "fade" else 0.0
     vfade = f",fade=t=in:st=0:d={fade:.3f},fade=t=out:st={total - fade:.3f}:d={fade:.3f}" if fade else ""
-    fc = [f"[0:v]{NUDGES.get(i, '')}trim=start={trim_start:.3f}:duration={vd:.3f},setpts=PTS-STARTPTS,{video_filter},trim=0:{total:.3f},setpts=PTS-STARTPTS{vfade}[v]",
+    fc = [f"[0:v]{NUDGES.get(i, '')}trim=start={trim_start:.3f}:duration={vd:.3f},setpts=PTS-STARTPTS,{video_filter},trim=0:{total:.3f},setpts=PTS-STARTPTS{SAME_SHAPE}{vfade}[v]",
           "[1:a]aformat=sample_rates=44100:channel_layouts=stereo[a0]"]
     labels = ["[a0]"]
     duck = not args.no_duck and {"narration", "music"} <= {n for n, _, _ in stems}
@@ -346,8 +350,21 @@ if args.selection:
         trims = tuple(min(max(float(it.get(k) or 0), 0.0), 30.0) for k in ("trim_start", "trim_end"))
         plan.append((int(it["row"]), inside_project(it["video"]), files, trims))
 else:
-    clips = sorted((int(p.stem.split("-")[1]), p) for p in VIDEO_DIR.glob("shot-*.mp4"))
-    clips = [(n, p) for n, p in clips if args.start <= n <= args.end]
+    folders = [ROOT / "videos" / f"{m.strip()}{suffix}" for m in args.models.split(",") if m.strip()] if args.models else [VIDEO_DIR]
+    found = {}
+    for folder in folders:                       # best first: a shot keeps the first clip found for it
+        for p in folder.glob("shot-*.mp4"):
+            found.setdefault(int(p.stem.split("-")[1]), p)
+    clips = sorted((n, p) for n, p in found.items() if args.start <= n <= args.end)
+    if args.models and clips:
+        shapes = {video_shape(p)[:2] for _, p in clips}
+        if len(shapes) > 1:
+            w, h = max(shapes)
+            SAME_SHAPE = f",scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24"
+            print(f"clips of {len(shapes)} sizes brought to {w}x{h}", flush=True)
+        gaps = [n for n in range(clips[0][0], clips[-1][0] + 1) if n not in found]
+        if gaps:
+            print(f"no clip yet for row(s) {gaps}: the film skips them; run it again once they exist", flush=True)
     plan = []
     for n, video in clips:
         files = [(name, d / pattern.format(n)) for name, d, pattern, _ in STEMS if (d / pattern.format(n)).exists()]

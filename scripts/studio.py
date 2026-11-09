@@ -608,8 +608,155 @@ def make_runner(service, gpu, user, slug):
     return runner
 
 
+PEOPLE_WORDS = re.compile(r"\b(man|woman|men|women|person|people|figure|child|boy|girl|he|she|his|her)\b", re.I)
+FILM_KEYFRAMES = "flux2_klein_4b"
+FILM_VIDEO = "ltx_video_fast_i2v"
+FILM_SPACE = "pika_h3_flex_i2v"
+
+
+def film_options(opt):
+    """Fill in a Make my film request: everything from the book to the film, and only what is not done yet. Changes opt, which later steps read too."""
+    slug = str(opt.get("project") or "")
+    if not SLUG_RE.match(slug):
+        raise PlanError("choose a book in Read book first, or paste some text")
+    d = layout.find_dir(slug)
+    opt["steps"] = {"ingest": not (d and (d / "chapters.json").exists()), "continuity": not (d and continuity_file(d).exists()), "write": True, "build": True,
+                    "keyframes": True, "video": True, "audio": True, "mix": True}
+    opt["force_write"] = False
+    opt["sync"] = opt.get("sync") or "gentle"
+    opt["aspect"] = opt.get("aspect") or "16:9"
+    opt["scenes"] = True
+    opt["music_bed"] = True
+    return opt
+
+
+def rows_missing(lo, hi, *patterns):
+    """The rows lo..hi with no file in any of these patterns ("folder/shot-{:04d}.mp4"), as runs of neighbours: [(lo, hi), ...]."""
+    runs = []
+    for n in range(lo, hi + 1):
+        if any(Path(str(p).format(n)).is_file() or next(Path(str(p).format(n)).parent.glob(f"takes/{Path(str(p).format(n)).stem}-t*"), None) for p in patterns):
+            continue
+        if runs and runs[-1][1] == n - 1:
+            runs[-1][1] = n
+        else:
+            runs.append([n, n])
+    return [tuple(r) for r in runs]
+
+
+def is_people_shot(row):
+    return bool((row.get("characters") or "").strip()) or bool(PEOPLE_WORDS.search(row.get("prompt") or ""))
+
+
+def local_audio_step(slug, kind):
+    pins = ["--with", "numpy<2", "--with", "pip"]
+    if sys.platform == "darwin" and os.uname().machine == "x86_64":
+        pins += ["--with", "torch==2.2.2", "--with", "transformers<4.50"]      # the last PyTorch for Intel Macs, and the last transformers that accepts it
+    extra = ["--with", "kokoro", "--with", "soundfile"] if kind == "kokoro" else ["--with", "transformers<4.50", "--with", "scipy", "--with", "accelerate"]
+    title = "narration" if kind == "kokoro" else "one music cue per chapter"
+    return {"label": f"Make {title} on this computer", "env": {}, "argv": ["uv", "run", "--quiet", "--python", "3.11"] + pins + extra + ["python", "local_audio.py", slug, kind]}
+
+
+def film_video_steps(opt, slug):
+    """Clips still missing, with the T4-sized model. Decided when the step is reached, after Pika's quota has done what it can."""
+    d, runner = pdir(slug), make_runner(opt["service"], opt["gpu"], (opt.get("kaggle_user") or "").strip(), slug)
+    out = []
+    for mv in read_json(d / "movies.json", {}).get("shots", []):
+        for s, e in rows_missing(mv["rows"][0], mv["rows"][1], d / "videos" / FILM_VIDEO / "shot-{:04d}.mp4", d / "videos" / FILM_SPACE / "shot-{:04d}.mp4"):
+            argv, env = runner(FILM_VIDEO, s, e, "all_shots.csv")
+            env["KEYFRAME_MODEL"] = FILM_KEYFRAMES
+            out.append({"label": f"Movie {mv['id']} video {FILM_VIDEO}: rows {s}-{e}", "argv": argv, "env": env})
+    return out
+
+
+def film_steps(opt, slug):
+    """Everything after the book's CSVs, for each movie, skipping what exists: running it again carries on after a quota stop."""
+    service, gpu = opt.get("service"), opt.get("gpu")
+    if service not in ("kaggle", "computer"):
+        raise PlanError("Make my film makes its keyframes on Kaggle or this computer: choose one in the Models tab, Where to run")
+    if gpu not in [g for g, _ in GPUS[service]]:
+        raise PlanError(f"gpu {gpu!r} is not an option for {service}")
+    if gpu_blocker(service, gpu):
+        raise PlanError(gpu_blocker(service, gpu))
+    user = (opt.get("kaggle_user") or "").strip()
+    if service == "kaggle" and not re.fullmatch(r"[A-Za-z0-9_-]{2,40}", user):
+        raise PlanError("enter your Kaggle username (letters, digits, - and _), Models tab")
+    d = pdir(slug)
+    movies = read_json(d / "movies.json", {}).get("shots", [])
+    if not movies:
+        raise PlanError("no movies planned: the book's steps made no shots")
+    shots = read_csv_rows(d / "all_shots.csv")
+    kw, kh = keyframe_size(FILM_KEYFRAMES, FILM_VIDEO, opt["aspect"])
+    series = opt.get("keyframe_series") or get_character_series(slug)
+    refs = ["--refs", series] if series in character_tokens.list_series() else []
+    look = opt.get("look") if opt.get("look") in model_advisor.LOOKS else ""
+    runner = make_runner(service, gpu, user, slug)
+    steps = [{"label": f"Film format: {opt['aspect']}", "env": {}, "argv": ["python3", "film_format.py", slug, "--aspect", opt["aspect"], "--chain", "off"]},
+             {"label": f"Write keyframes.csv ({kw}x{kh})", "env": {},
+              "argv": ["python3", "make_keyframes_csv.py", slug, "--width", str(kw), "--height", str(kh)] + refs + (["--look", look] if look else [])}]
+    kf = d / "images" / f"{FILM_KEYFRAMES}_keyframes"
+    use_space = bool(opt.get("film_space"))
+    for mv in movies:
+        lo, hi = mv["rows"]
+        for s, e in rows_missing(lo, hi, kf / "image-{:04d}.png"):
+            argv, env = runner(f"image_{FILM_KEYFRAMES}", s, e, "keyframes.csv")
+            steps.append({"label": f"Movie {mv['id']} keyframes: rows {s}-{e}", "argv": argv, "env": env})
+        if use_space:                                    # shots with people on the Space; its quota running out is expected, not a failure
+            people = [n for n in range(lo, hi + 1) if n <= len(shots) and is_people_shot(shots[n - 1])]
+            done = lambda n: (d / "videos" / FILM_SPACE / f"shot-{n:04d}.mp4").is_file() or (d / "videos" / FILM_VIDEO / f"shot-{n:04d}.mp4").is_file()
+            todo, runs = [n for n in people if not done(n)], []
+            for n in todo:
+                if runs and runs[-1][1] == n - 1:
+                    runs[-1][1] = n
+                else:
+                    runs.append([n, n])
+            for s, e in runs:
+                env = {"PROJECT": slug, "SHOTS_CSV": "all_shots.csv", "KEYFRAME_MODEL": FILM_KEYFRAMES}
+                steps.append({"label": f"Movie {mv['id']} shots with people on Pika's Space: rows {s}-{e}", "env": env, "ok_codes": (0, 1),
+                              "argv": ["scripts/run_hf_space.sh", FILM_SPACE, str(s), str(e)]})
+    steps.append({"label": "clips still missing", "expand": "film_video"})
+    if opt.get("local_audio"):
+        steps += [local_audio_step(slug, "kokoro"), local_audio_step(slug, "musicgen")]
+    else:
+        narr, cue = d / "audio" / "kokoro" / "narration-{:04d}.wav", d / "audio" / "musicgen_chapters" / "music-{:04d}.wav"
+        for mv in movies:
+            for s, e in rows_missing(mv["rows"][0], mv["rows"][1], narr):
+                argv, env = runner("audio_kokoro", s, e, "audio_shots.csv")
+                steps.append({"label": f"Movie {mv['id']} narration: rows {s}-{e}", "argv": argv, "env": env})
+        chapters = len(read_csv_rows(d / "audio_chapters.csv"))
+        for s, e in rows_missing(1, chapters, cue):
+            argv, env = runner("audio_musicgen", s, e, "audio_chapters.csv")
+            steps.append({"label": f"Music cues: chapters {s}-{e}", "argv": argv, "env": env})
+    vols = {k: num(opt.get("vol", {}), k, v, float, 0, 5) for k, v in (("narration", 1.0), ("sfx", 0.5), ("music", 0.25))}
+    for mv in movies:
+        lo, hi = mv["rows"]
+        steps.append({"label": f"Movie {mv['id']} final film", "env": {},
+                      "argv": ["uv", "run", "--with", "imageio-ffmpeg", "python", "mix_film.py", "--project", slug, "--models", f"{FILM_SPACE},{FILM_VIDEO}", "--start", str(lo), "--end", str(hi),
+                               "--sync", opt["sync"] if opt["sync"] in SYNC_MODES else "gentle", "--music-bed", "--out", f"{slug}-movie-{mv['id']:02d}.mp4",
+                               "--vol-narration", str(vols["narration"]), "--vol-sfx", str(vols["sfx"]), "--vol-music", str(vols["music"])]})
+    return steps
+
+
+def film_status(slug):
+    """How far a book has come, for the Make my film card: a count for each stage, and its finished films newest first."""
+    if not SLUG_RE.match(slug or ""):
+        raise PlanError("bad book name")
+    d = layout.find_dir(slug)
+    if d is None:
+        return {"exists": False}
+    count = lambda folder, pattern: len(list((d / folder).glob(pattern))) if (d / folder).is_dir() else 0
+    clips = {p.name for sub in (FILM_SPACE, FILM_VIDEO) for p in (d / "videos" / sub).glob("shot-*.mp4")} if (d / "videos").is_dir() else set()
+    films = sorted((d / "films").glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True) if (d / "films").is_dir() else []
+    return {"exists": True, "chapters": len(read_json(d / "chapters.json", {}).get("chapters", [])) if (d / "chapters.json").exists() else 0,
+            "continuity": continuity_file(d).exists(), "scripts": count("scripts", "chapter-*.json"), "shots": len(read_csv_rows(d / "all_shots.csv")),
+            "keyframes": count(f"images/{FILM_KEYFRAMES}_keyframes", "image-*.png"), "clips": len(clips), "narration": count("audio/kokoro", "narration-*.wav"),
+            "cues": count("audio/musicgen_chapters", "music-*.wav"), "cues_wanted": len(read_csv_rows(d / "audio_chapters.csv")),
+            "films": [f"{slug}/films/{p.name}" for p in films]}
+
+
 def generation_steps(opt, slug):
     """Video/audio/merge/mix steps for the chosen movies. Needs movies.json, so it may run after the book steps."""
+    if opt.get("film"):
+        return film_steps(opt, slug)
     service = opt.get("service")
     if service not in GPUS:
         raise PlanError("choose where the models run: Kaggle, Colab, Hugging Face or this computer")
@@ -1163,6 +1310,8 @@ def upscale_step(body):
 def build_plan(opt, commit=False):
     if opt.get("mode") == "prompts":
         return prompt_plan(opt, commit)
+    if opt.get("film"):
+        film_options(opt)
     slug = project_slug(opt)
     st = opt.get("steps", {})
     steps = book_steps(opt, slug)
@@ -2769,7 +2918,7 @@ class Job:
                 break
             if "expand" in step:
                 try:
-                    new = generation_steps(opt, project_slug(opt))
+                    new = film_video_steps(opt, project_slug(opt)) if step["expand"] == "film_video" else generation_steps(opt, project_slug(opt))
                 except PlanError as e:
                     self.log(f"!! cannot plan the movies: {e}")
                     break
@@ -2876,6 +3025,11 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 return self._json(200, storyboard(q.get("project", [""])[0], num({"s": q.get("start", ["1"])[0]}, "s", 1, int, 1),
                                                   num({"e": q.get("end", ["24"])[0]}, "e", 24, int, 1)))
+            except PlanError as e:
+                return self._json(400, {"error": str(e)})
+        if url.path == "/api/film_status":
+            try:
+                return self._json(200, film_status(parse_qs(url.query).get("project", [""])[0]))
             except PlanError as e:
                 return self._json(400, {"error": str(e)})
         if url.path == "/api/suggest":
