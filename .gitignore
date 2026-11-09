@@ -93,3 +93,4 @@ __pycache__/
 /htmlcov/
 .coverage
 /ChatGPT*.pdf
+studio.log*
