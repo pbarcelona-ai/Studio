@@ -211,14 +211,12 @@ def enhance_prompt(opt):
     # Build the enhancement prompt
     book_context = ""
     if continuity:
-        style = continuity.get("style", {})
-        visual = style.get("visual", "")
+        visual = continuity.get("visual_style", "")
         if visual:
             book_context += f"\nVisual style: {visual}"
-        characters = continuity.get("characters", {})
+        characters = [c for c in continuity.get("characters", []) if isinstance(c, dict) and c.get("token")]
         if characters:
-            char_desc = ", ".join(f"{k}: {v.get('visual_token', '')}" for k, v in characters.items() if v.get('visual_token'))
-            book_context += f"\nCharacters: {char_desc}"
+            book_context += "\nCharacters: " + ", ".join(f"{c.get('name', '')}: {c['token']}" for c in characters)
 
     # Include global parameters in the enhancement prompt
     global_section = ""
@@ -268,7 +266,7 @@ def enhance_prompt(opt):
             if csv_path.exists():
                 rows = read_csv_rows(csv_path)
                 if 0 < row <= len(rows):
-                    rows[row - 1]["prompt"] = data["updated_prompt"]
+                    rows[row - 1]["prompt"] = updated_prompt          # what the preview showed
                     # Write back the CSV
                     with open(csv_path, "w", newline="") as f:
                         if rows:
