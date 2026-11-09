@@ -83,6 +83,7 @@ def save_rating(key, stars, keep):
         raise PlanError("stars must be a number from 0 to 5") from None
     ratings = load_ratings()
     ratings[key] = {"stars": stars, "keep": bool(keep)}
+    RATINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     write_json(RATINGS_FILE, ratings)
     return ratings[key]
 
