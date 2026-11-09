@@ -14,11 +14,15 @@ from .session import SESSION
 log = get_logger("server")
 
 
+class StudioServer(ThreadingHTTPServer):
+    request_queue_size = 128          # the page fetches a dozen files at once; the default backlog of 5 resets connections
+
+
 def make_server(preferred_ports, host: str = "127.0.0.1") -> ThreadingHTTPServer:
     """The first port in `preferred_ports` that is free (0 = any free port). Bound to localhost only."""
     for port in preferred_ports:
         try:
-            return ThreadingHTTPServer((host, port), Handler)
+            return StudioServer((host, port), Handler)
         except OSError:
             continue
     raise SystemExit("no free port found")
