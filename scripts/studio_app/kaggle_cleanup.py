@@ -1,4 +1,5 @@
 """Automatic and manual clean-up of old Kaggle notebooks and local notebook files."""
+from typing import Any
 import re
 import shutil
 import subprocess
@@ -22,8 +23,10 @@ ACTIVE_STATUSES = {"RUNNING", "QUEUED", "NEW", "UNKNOWN"}          # never delet
 def kaggle_cleanup_scan():
     """Which of YOUR Kaggle notebooks made by this tool would be deleted: all but the newest KEEP_KAGGLE_NOTEBOOKS. Read-only.
     Only notebooks whose names match this tool's naming are considered; anything else in the account is never listed."""
-    runs = sorted(kaggle_runs(limit=100), key=lambda r: r["last_run"], reverse=True)
-    keep, remove, busy = runs[:KEEP_KAGGLE_NOTEBOOKS], [], []
+    runs: list = sorted(kaggle_runs(limit=100), key=lambda r: r["last_run"], reverse=True)
+    keep = runs[:KEEP_KAGGLE_NOTEBOOKS]
+    remove: list = []
+    busy: list = []
     for r in runs[KEEP_KAGGLE_NOTEBOOKS:]:
         (busy if r["status"] in ACTIVE_STATUSES else remove).append(r)
     return {"keep": keep, "remove": remove, "busy": busy, "keep_count": KEEP_KAGGLE_NOTEBOOKS}
@@ -39,7 +42,7 @@ def kaggle_cleanup_delete():
 
 AUTO_CLEAN_OFF = Path.home() / ".pistachios_studio" / "auto_cleanup_off"     # this file exists = the person turned automatic clean-up off
 AUTO_CLEAN_EVERY = 3600                     # asking Kaggle about every notebook takes a while: at most once an hour
-_AUTO_CLEAN = {"lock": threading.Lock(), "last": 0.0}
+_AUTO_CLEAN: dict[str, Any] = {"lock": threading.Lock(), "last": 0.0}
 
 
 def run_results_here(slug):
@@ -49,7 +52,7 @@ def run_results_here(slug):
     d = layout.find_dir(project) if project and SLUG_RE.match(project) else None
     prefix = (project or "").replace("_", "-") + "-"
     m = re.fullmatch(r"(.+?)(-chapters|-keyframes)?-(\d+)-(\d+)", slug[len(prefix):]) if d and slug.startswith(prefix) else None
-    if not m:
+    if not m or d is None:
         return False
     model, mode, lo, hi = m.group(1).replace("-", "_"), (m.group(2) or "")[1:], int(m.group(3)), int(m.group(4))
     suffix = f"_{mode}" if mode else ""
@@ -84,7 +87,8 @@ def auto_cleanup_plan():
     Read-only. A notebook that finished but whose results are not all here is kept: deleting it would lose them. A failed one waits FAILED_RUN_KEEP_DAYS days. {"remove", "kept_not_downloaded"}"""
     kaggle = shutil.which("kaggle", path=ENV_PATH)
     runs = sorted(kaggle_runs(limit=100, with_status=False), key=lambda r: r["last_run"], reverse=True)[KEEP_KAGGLE_NOTEBOOKS:]
-    remove, kept = [], []
+    remove: list = []
+    kept: list = []
     for r in runs:
         here, old = run_results_here(r["slug"]), run_older_than(r, FAILED_RUN_KEEP_DAYS)
         if not here and not old:              # nothing could make it deletable, so Kaggle need not be asked about it

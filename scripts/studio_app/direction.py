@@ -1,4 +1,5 @@
 """Creative direction, voice casting, new scenes, the animatic and the upscale step."""
+from typing import Any
 import csv
 import json
 import os
@@ -103,7 +104,7 @@ def voice_cast(opt):
     d = _direction_book(str(opt.get("project", "")))
     if not (d / "audio_shots.csv").exists():
         raise PlanError("build the CSVs first (Build CSVs, Import tab)")
-    result = {"changed": [], "moved": 0}
+    result: dict[str, Any] = {"changed": [], "moved": 0}
     if opt.get("cast") is not None:
         cast = opt["cast"]
         if not isinstance(cast, dict) or len(cast) > 200:
@@ -130,7 +131,7 @@ def voice_cast(opt):
     cast_lc = {k.lower(): v for k, v in cast.items()}
     book_voice = {str(c.get("name", "")).lower(): voice_id(c.get("voice")) for c in (read_json(continuity_file(d), {}) or {}).get("characters", []) or []
                   if isinstance(c, dict)}
-    speakers = {}
+    speakers: dict = {}
     for r in read_csv_rows(d / "audio_shots.csv"):
         try:
             lines = json.loads(r.get("lines_json") or "[]")

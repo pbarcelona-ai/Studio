@@ -36,7 +36,7 @@ def _size(path):
 
 
 def cleanup_scan():
-    found = {c[0]: [] for c in CLEAN_CATEGORIES}
+    found: dict[str, list] = {c[0]: [] for c in CLEAN_CATEGORIES}
 
     def add(cat, path):
         if path.exists() and not any(i["path"] == str(path.relative_to(ROOT)) for i in found[cat]):
@@ -113,7 +113,8 @@ def cleanup_delete(categories):
     wanted = {c for c in categories if c in {x[0] for x in CLEAN_CATEGORIES}}
     if not wanted:
         raise PlanError("tick at least one group")
-    paths, seen = [], []
+    paths: list = []
+    seen: list = []
     for cat in cleanup_scan():                                              # re-scan: only what the server finds itself is ever removed
         if cat["id"] in wanted:
             for item in cat["items"]:

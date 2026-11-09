@@ -81,7 +81,7 @@ def codex_models():
 
 def is_promptset(slug):
     d = layout.find_dir(slug)
-    return bool(d) and (d / "promptset.json").exists()
+    return d is not None and (d / "promptset.json").exists()
 
 
 def promptset_info(slug):

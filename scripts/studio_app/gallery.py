@@ -100,7 +100,8 @@ def regression_minutes():
 
 def compare_data():
     """Every regression picture and clip, grouped by the prompt that made it, with your ratings: {"prompts": [{"text", "items": [...]}]}."""
-    ratings, minutes, groups = load_ratings(), regression_minutes(), {}
+    groups: dict = {}
+    ratings, minutes = load_ratings(), regression_minutes()
     for lane in REG_LANES:
         d = pdir(lane)
         if not d.is_dir():
@@ -108,7 +109,7 @@ def compare_data():
         csvs = {n: read_csv_rows(d / n) for n in ("all_images.csv", "all_shots.csv")}
         for sub, pattern, kind, csv_name in (("images", "*/image-*.png", "image", "all_images.csv"), ("videos", "*/shot-*.mp4", "video", "all_shots.csv")):
             for f in (d / sub).glob(pattern) if (d / sub).exists() else []:
-                n = int(re.search(r"(\d+)", f.stem).group(1))
+                n = int(re.findall(r"\d+", f.stem)[0])
                 rows = csvs[csv_name]
                 text = " ".join((rows[n - 1].get("prompt") or "").split()) if 0 < n <= len(rows) else ""
                 if not text:

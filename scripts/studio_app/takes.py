@@ -22,7 +22,7 @@ def storyboard(slug, start, end):
     start = max(1, start); end = min(len(shots), end, start + 199)         # at most 200 cards at once
     kdirs = sorted(p for p in (d / "images").glob("*_keyframes") if p.is_dir()) if (d / "images").is_dir() else []
     vdirs = sorted(p for p in (d / "videos").glob("*") if p.is_dir() and not p.name.endswith("_chapters")) if (d / "videos").is_dir() else []
-    cards = []
+    cards: list[dict] = []
     for n in range(start, end + 1):
         r, a = shots[n - 1], (audio[n - 1] if n <= len(audio) else {})
         cards.append({"n": n, "chapter": r.get("chapter", ""), "shot": r.get("shot", ""), "prompt": r.get("prompt", ""),

@@ -20,7 +20,7 @@ def media_inventory(slug):
     d = pdir(slug)
     if not SLUG_RE.match(slug) or not d.is_dir():
         raise PlanError("pick a book or prompt set first")
-    inv = {"videos": {}, "narration": {}, "sfx": {}, "music": {}, "texts": {}}
+    inv: dict[str, dict] = {"videos": {}, "narration": {}, "sfx": {}, "music": {}, "texts": {}}
 
     def rows_of(folder, pattern):
         out = []

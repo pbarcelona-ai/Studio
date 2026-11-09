@@ -47,7 +47,7 @@ def chapter_shots(slug, body=None):
             if str(k) not in known:
                 raise PlanError(f"chapter {k} does not exist")
             v = str(v).strip()
-            entry = ov.get(str(k)) if isinstance(ov.get(str(k)), dict) else {}
+            entry = ov[str(k)] if isinstance(ov.get(str(k)), dict) else {}
             if v in ("", "0"):
                 entry.pop("shots", None)
             else:

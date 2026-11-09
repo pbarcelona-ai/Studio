@@ -131,7 +131,7 @@ def model_blocker(name, service, gpu):
 
 def blockers():
     """{model: {service: {gpu: reason}}} for every combination that cannot work (sent to the page so it can grey them out)."""
-    out = {}
+    out: dict = {}
     for name in VIDEO_MODELS + IMAGE_MODELS + AUDIO_KINDS + list(UPSCALE_MODELS):
         for service, gpus in GPUS.items():
             for g, _ in gpus:

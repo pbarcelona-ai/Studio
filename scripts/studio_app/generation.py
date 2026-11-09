@@ -34,7 +34,7 @@ def film_options(opt):
 
 def rows_missing(lo, hi, *patterns):
     """The rows lo..hi with no file in any of these patterns ("folder/shot-{:04d}.mp4"), as runs of neighbours: [(lo, hi), ...]."""
-    runs = []
+    runs: list = []
     for n in range(lo, hi + 1):
         if any(Path(str(p).format(n)).is_file() or next(Path(str(p).format(n)).parent.glob(f"takes/{Path(str(p).format(n)).stem}-t*"), None) for p in patterns):
             continue
@@ -92,7 +92,7 @@ def film_steps(opt, slug):
     refs = ["--refs", series] if series in character_tokens.list_series() else []
     look = opt.get("look") if opt.get("look") in model_advisor.LOOKS else ""
     runner = make_runner(service, gpu, user, slug)
-    steps = [{"label": f"Film format: {opt['aspect']}", "env": {}, "argv": ["python3", "film_format.py", slug, "--aspect", opt["aspect"], "--chain", "off"]},
+    steps: list[dict] = [{"label": f"Film format: {opt['aspect']}", "env": {}, "argv": ["python3", "film_format.py", slug, "--aspect", opt["aspect"], "--chain", "off"]},
              {"label": f"Write keyframes.csv ({kw}x{kh})", "env": {},
               "argv": ["python3", "make_keyframes_csv.py", slug, "--width", str(kw), "--height", str(kh)] + refs + (["--look", look] if look else [])}]
     kf = d / "images" / f"{FILM_KEYFRAMES}_keyframes"
@@ -105,7 +105,8 @@ def film_steps(opt, slug):
         if use_space:                                    # shots with people on the Space; its quota running out is expected, not a failure
             people = [n for n in range(lo, hi + 1) if n <= len(shots) and is_people_shot(shots[n - 1])]
             done = lambda n: (d / "videos" / FILM_SPACE / f"shot-{n:04d}.mp4").is_file() or (d / "videos" / FILM_VIDEO / f"shot-{n:04d}.mp4").is_file()
-            todo, runs = [n for n in people if not done(n)], []
+            runs: list = []
+            todo = [n for n in people if not done(n)]
             for n in todo:
                 if runs and runs[-1][1] == n - 1:
                     runs[-1][1] = n

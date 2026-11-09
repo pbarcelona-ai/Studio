@@ -3,6 +3,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 
 
@@ -59,7 +60,7 @@ IMAGE_GROUPS = [("Stable Diffusion", ["sdxl_turbo", "sdxl", "sd35_large", "sd35_
 # Defaults baked into each generator script; shown as placeholders on the page. "locked" = fields the model ignores (greyed out).
 LIPSYNC_MODEL = "upscale_lipsync"      # goes the upscalers' road (clips in, clips back), but is not one of them
 SYNC_MODES = ("stretch", "gentle", "speed", "trim")     # mix_film.py --sync
-MODEL_DEFAULTS = {
+MODEL_DEFAULTS: dict[str, dict[str, Any]] = {
     "ltx_video": {"width": 768, "height": 320, "frames": 97, "steps": 40, "guidance": 3.0},
     "wan": {"width": 512, "height": 288, "frames": 33, "steps": 30, "guidance": 5.0},
     "cogvideox": {"width": 720, "height": 480, "frames": 49, "steps": 50, "guidance": 6.0, "locked": ["width", "height", "frames"]},

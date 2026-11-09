@@ -1,4 +1,5 @@
 """Language-model features: local model status, describing and reviewing pictures, clip prompts, prompt enhancement."""
+from typing import Any
 import csv
 import io
 import json
@@ -21,7 +22,7 @@ from .steps import ENGINES, HF_VISION_MODELS, engine_args
 
 
 log = get_logger("llm")
-_LOCAL_CACHE = {"at": 0.0, "value": None}
+_LOCAL_CACHE: dict[str, Any] = {"at": 0.0, "value": None}
 
 
 def local_llm_status(force=False):
@@ -288,11 +289,11 @@ def gallery(slug, limit=60):
     if not d.is_dir():
         return []
     prompts = {name: read_csv_rows(d / name) for name in ("all_shots.csv", "all_chapters.csv", "all_images.csv")}
-    items = []
+    items: list[dict[str, Any]] = []
     for sub, pattern, kind in (("videos", "*/shot-*.mp4", "video"), ("images", "*/image-*.png", "image"), ("films", "*.mp4", "film")):
         for f in (d / sub).glob(pattern) if (d / sub).exists() else []:
             model = f.parent.name if kind != "film" else ""
-            n = int(re.search(r"(\d+)", f.stem).group(1)) if kind != "film" else 0
+            n = int(re.findall(r"\d+", f.stem)[0]) if kind != "film" else 0
             csv_name = "all_images.csv" if kind == "image" else "all_chapters.csv" if model.endswith("_chapters") else "all_shots.csv"
             rows = prompts.get(csv_name, [])
             text = rows[n - 1]["prompt"] if kind != "film" and 0 < n <= len(rows) else ""

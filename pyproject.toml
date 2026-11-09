@@ -45,3 +45,7 @@ ignore_missing_imports = true
 check_untyped_defs = false
 warn_unused_ignores = true
 files = ["scripts"]
+
+[[tool.mypy.overrides]]
+module = ["studio_app.*"]
+check_untyped_defs = true       # the server package is checked inside untyped functions too

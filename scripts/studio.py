@@ -17,7 +17,7 @@ if sys.version_info < (3, 11):  # noqa: UP036  (a runtime guard for people who s
     sys.exit("Pistachio's Studio needs Python 3.11 or newer (run ./install.sh, which makes .venv with a suitable Python).")
 
 from studio_app.common import PlanError  # noqa: E402, F401
-from studio_app.config import AUDIO_MODELS, IMAGE_MODELS, MODEL_DEFAULTS, VIDEO_MODELS, clean_env  # noqa: F401
+from studio_app.config import AUDIO_MODELS, I2V_MODELS, IMAGE_MODELS, MODEL_DEFAULTS, VIDEO_MODELS, clean_env  # noqa: F401
 from studio_app.server import main
 from studio_app.single_prompts import prompt_plan  # noqa: F401
 

@@ -21,11 +21,11 @@ def status():
     sets = layout.promptset_slugs()               # Single Prompts sets and character image sets
     slugs = set(layout.book_slugs())              # books
     slugs |= {slugify(Path(f).stem) for f in library_files()}          # books in books/ that have no project yet
-    slugs = sorted(x for x in slugs if SLUG_RE.match(x))
+    names = sorted(x for x in slugs if SLUG_RE.match(x))
     return {
         "tools": {**{t: bool(shutil.which(t, path=ENV_PATH)) for t in ("claude", "fcc-claude", "codex", "fcc-codex", "colab", "kaggle", "uv")},
                   "hf": True, "huggingface": True, "computer": not gpu_blocker("computer", "local"), "local": local_llm_status()["ready"]},     # hf needs no program (its token is checked when it is used); local needs a capable computer and a model server
-        "projects": [project_info(s) for s in slugs], "library": library_files(),
+        "projects": [project_info(s) for s in names], "library": library_files(),
         "promptsets": [promptset_info(x) for x in sets], "image_models": IMAGE_MODELS, "model_defaults": MODEL_DEFAULTS,
         "blockers": blockers(),
         "gpu_blockers": {svc: {g: gpu_blocker(svc, g) for g, _ in gl if gpu_blocker(svc, g)} for svc, gl in GPUS.items()},

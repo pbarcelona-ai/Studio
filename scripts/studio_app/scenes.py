@@ -43,7 +43,7 @@ def scene_data(slug, chapter=""):
         if e.get("chapter") in edited:
             edited[e["chapter"]] += 1
     chapter = chapter if chapter in counts else order[0]
-    existing = {}                                           # which downloaded files already exist, per row (shot-mode folders only)
+    existing: dict = {}                                           # which downloaded files already exist, per row (shot-mode folders only)
     for top, pattern in (("videos", "shot-{:04d}.mp4"), ("audio", None)):
         for sub in sorted((d / top).glob("*")) if (d / top).is_dir() else []:
             if sub.is_dir() and not sub.name.endswith("_chapters"):
