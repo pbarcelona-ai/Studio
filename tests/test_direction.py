@@ -174,3 +174,64 @@ class TestNewScene:
         (scene_book / "videos" / "shot-0001.mp4").write_bytes(b"v")
         with pytest.raises(PlanError, match="already has clips"):
             direction.new_scene({**self.base, "prompt": "p", "narration": "n"})
+
+
+class TestAnimaticStep:
+    def test_builds_the_command_and_caps_the_range(self, book):
+        s = direction.animatic_step({"project": "demo", "start": 3, "end": 9000, "keyframes": "flux1_schnell"})
+        assert s["argv"][5:11] == ["make_animatic.py", "--project", "demo", "--start", "3", "--end"] and s["argv"][11:15] == ["202", "--out", "animatic_3-202.mp4", "--keyframes"]
+        assert s["argv"][:5] == ["uv", "run", "--with", "imageio-ffmpeg", "python"] and s["argv"][-2:] == ["--keyframes", "flux1_schnell"] and "rows 3-202" in s["label"]
+
+    def test_defaults_and_refusals(self, book):
+        assert direction.animatic_step({"project": "demo"})["argv"][-2:] == ["--out", "animatic_1-24.mp4"]
+        for body in ({"project": "ghost"}, {"project": "Bad Name"}, {"project": "demo", "start": 5, "end": 2}, {"project": "demo", "keyframes": "Bad Name"}):
+            with pytest.raises(PlanError):
+                direction.animatic_step(body)
+
+
+class TestUpscaleStep:
+    @pytest.fixture()
+    def clips(self, book):
+        for sub, rows in (("ltx_video", (1, 2, 3)), ("ltx_video_x2", (1,)), ("ltx_video_lipsync", (1,))):
+            (book / "videos" / sub).mkdir(parents=True)
+            for n in rows:
+                (book / "videos" / sub / f"shot-{n:04d}.mp4").write_bytes(b"x")
+        return book
+
+    BASE = {"project": "demo", "source": "videos/ltx_video", "start": 1, "end": 2}
+
+    def test_kaggle(self, clips):
+        s = direction.upscale_step({**self.BASE, "kaggle_user": "pat"})
+        assert s["argv"] == ["scripts/run_kaggle_model.sh", "upscale_x2", "1", "2"] and s["env"]["UPSCALE_SOURCE"] == "ltx_video" and s["env"]["KAGGLE_USER"] == "pat"
+        assert s["label"].endswith("on Kaggle") and s["env"]["KAGGLE_ACCELERATOR"] == "NvidiaTeslaT4"
+
+    @pytest.fixture(autouse=True)
+    def a_gpu_this_computer_could_use(self, monkeypatch):
+        monkeypatch.setattr(direction, "gpu_blocker", lambda service, gpu: None)
+        monkeypatch.setattr(direction, "model_blocker", lambda model, service, gpu: None)
+
+    def test_this_computer(self, clips):
+        s = direction.upscale_step({**self.BASE, "service": "computer"})
+        assert s["argv"] == ["python3", "scripts/run_local_model.py", "upscale_x2", "1", "2"] and s["label"].endswith("on this computer") and "KAGGLE_USER" not in s["env"]
+
+    def test_lipsync_needs_narration(self, clips):
+        body = {**self.BASE, "model": "upscale_lipsync", "service": "computer"}
+        with pytest.raises(PlanError, match="have none yet"):
+            direction.upscale_step(body)
+        (clips / "audio" / "kokoro").mkdir(parents=True)
+        (clips / "audio" / "kokoro" / "narration-0001.wav").write_bytes(b"x")
+        assert direction.upscale_step(body)["label"].startswith("Lip-sync ltx_video rows 1-2")
+
+    @pytest.mark.parametrize("change,msg", [
+        ({"project": "ghost"}, "pick a book"), ({"model": "nope"}, "choose an upscaler"), ({"source": "videos/missing"}, "choose the video folder"),
+        ({"source": "videos/ltx_video_x2"}, "already upscaled"), ({"model": "upscale_lipsync", "source": "videos/ltx_video_lipsync"}, "already lip-synced"),
+        ({"start": 3, "end": 1}, "end is before start"), ({"end": 5}, "no clip in ltx_video for row\\(s\\) 4, 5"), ({"service": "colab"}, "Kaggle or this computer"),
+        ({"gpu": "Tpu1"}, "choose a GPU"), ({"kaggle_user": "x"}, "Kaggle username"),
+    ])
+    def test_refusals(self, clips, change, msg):
+        with pytest.raises(PlanError, match=msg):
+            direction.upscale_step({**self.BASE, "kaggle_user": "pat", **change})
+
+    def test_many_missing_rows_are_abbreviated(self, clips):
+        with pytest.raises(PlanError, match=r"\.\.\."):
+            direction.upscale_step({**self.BASE, "end": 40, "kaggle_user": "pat"})

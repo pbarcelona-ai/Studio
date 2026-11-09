@@ -91,7 +91,7 @@ def make(out_dir):
 
     letters = build()
     scale = min(SIZE * 0.62 / letters.width, SIZE * 0.62 / letters.height)
-    letters = letters.resize((int(letters.width * scale), int(letters.height * scale)), Image.LANCZOS)
+    letters = letters.resize((int(letters.width * scale), int(letters.height * scale)), Image.Resampling.LANCZOS)
     pos = ((SIZE - letters.width) // 2, (SIZE - letters.height) // 2)
     shadow = Image.new("RGBA", icon.size, (0, 0, 0, 0))
     shadow.paste((0, 0, 0, 150), (pos[0] + 10, pos[1] + 14), letters.split()[3])
@@ -106,14 +106,14 @@ def make(out_dir):
     for base in (16, 32, 128, 256, 512):
         for factor in (1, 2):
             px = base * factor
-            icon.resize((px, px), Image.LANCZOS).save(iconset / f"icon_{base}x{base}{'@2x' if factor == 2 else ''}.png")
+            icon.resize((px, px), Image.Resampling.LANCZOS).save(iconset / f"icon_{base}x{base}{'@2x' if factor == 2 else ''}.png")
     subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(out / "icon.icns")], check=True)
     return png, out / "icon.icns"
 
 
 def data_uri(img, px):
     buf = io.BytesIO()
-    img.resize((px, px), Image.LANCZOS).save(buf, "PNG", optimize=True)
+    img.resize((px, px), Image.Resampling.LANCZOS).save(buf, "PNG", optimize=True)
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 

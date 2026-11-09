@@ -40,6 +40,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import NoReturn
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import layout  # noqa: E402  (project-local: finds projects/books/<book>)
@@ -53,7 +54,7 @@ BASE_PACKAGES = ["numpy", "pillow", "scipy", "pandas", "imageio", "imageio-ffmpe
 OUTPUT_GLOBS = ("shot-*.mp4", "*.wav", "image-*.png")
 
 
-def die(msg):
+def die(msg: str) -> NoReturn:
     print("!! " + msg, flush=True)
     sys.exit(1)
 
@@ -96,7 +97,7 @@ def rocm_info():
         name = str(info.get("Card Series") or info.get("Card series") or info.get("Card Model") or "AMD GPU").strip()
         vram = info.get("VRAM Total Memory (B)") or info.get("vram Total Memory (B)")
         try:
-            gb = round(int(vram) / 2**30, 1)
+            gb = round(int(str(vram)) / 2**30, 1)
         except (TypeError, ValueError):
             gb = None
         m = re.search(r"\[([^\]]+)\]", name)                    # "Navi 31 [Radeon RX 7900 XTX]" -> "Radeon RX 7900 XTX"
@@ -287,6 +288,7 @@ def pip_argv(cmd):
 def run_logged(argv, log, **kw):
     """Run, printing and logging each line as it comes. Returns the exit code."""
     with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **kw) as p:
+        assert p.stdout is not None
         for line in p.stdout:
             sys.stdout.write(line)
             sys.stdout.flush()
@@ -357,11 +359,11 @@ def main(argv=None):
     args = (argv if argv is not None else sys.argv[1:])
     if len(args) != 3:
         sys.exit(__doc__)
-    model, start, end = args[0], args[1], args[2]
+    model = args[0]
     if not MODEL_RE.match(model):
         die(f"bad model name {model!r}")
     try:
-        start, end = int(start), int(end)
+        start, end = int(args[1]), int(args[2])
     except ValueError:
         die("START and END must be row numbers")
     if not 1 <= start <= end:
@@ -412,8 +414,8 @@ def main(argv=None):
             kfdir = pd / "images" / f"{kfm}_keyframes"
         else:
             sets = sorted((pd / "images").glob("*_keyframes"), key=lambda p: p.stat().st_mtime, reverse=True)
-            kfdir = sets[0] if sets else None
-        if not kfdir or not kfdir.is_dir():
+            kfdir = sets[0] if sets else pd / "images" / "none_keyframes"       # a name that does not exist: the check below says what to do
+        if not kfdir.is_dir():
             die(f"{model} needs keyframes: make them first (no images/<model>_keyframes folder in {pd})")
         missing = [n for n in rows if not (kfdir / f"image-{n:04d}.png").is_file()]
         if missing:
@@ -441,14 +443,14 @@ def main(argv=None):
     slug = f"{project.replace('_', '-')}-{model.replace('_', '-')}{mode}-{start}-{end}"
     (pd / "logs").mkdir(exist_ok=True)
     log_path = pd / "logs" / f"local-{slug}.log"
-    with tempfile.TemporaryDirectory(prefix="studio-run-") as tmp, open(log_path, "w", encoding="utf-8") as log:
-        tmp = Path(tmp)
+    with tempfile.TemporaryDirectory(prefix="studio-run-") as tmp_name, open(log_path, "w", encoding="utf-8") as log:
+        tmp = Path(tmp_name)
         inp, work = tmp / "input" / "dataset", tmp / "working"
         inp.mkdir(parents=True)
         work.mkdir()
-        for f in ("all_shots.csv", "all_chapters.csv", "audio_shots.csv", "audio_chapters.csv", "all_images.csv", "keyframes.csv"):
-            if (pd / f).is_file():
-                shutil.copyfile(pd / f, inp / f)
+        for csv_file in ("all_shots.csv", "all_chapters.csv", "audio_shots.csv", "audio_chapters.csv", "all_images.csv", "keyframes.csv"):
+            if (pd / csv_file).is_file():
+                shutil.copyfile(pd / csv_file, inp / csv_file)
         if shots_csv in ("keyframes.csv", "all_images.csv") and (pd / "keyframe_refs").is_dir():      # character pictures (make_keyframes_csv.py --refs; the Characters tab)
             for p in (pd / "keyframe_refs").glob("ref-*.png"):
                 shutil.copyfile(p, inp / p.name)

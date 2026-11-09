@@ -44,5 +44,5 @@ scripts and event handlers (`tests/test_web.py` enforces it). Notebook templates
 `web/index.html` (markup), `web/static/css/*.css`, `web/static/js/*.js` (classic scripts sharing globals, loaded in order with `defer`). The token reaches the JS through `<meta name="studio-token">`.
 
 ## Quality gates (CI: `.github/workflows/ci.yml`)
-`ruff check .` · `mypy` · `pytest --cov=scripts`. Locally: `uv venv .venv-dev && uv pip install --python .venv-dev/bin/python -e '.[dev]'`.
+`ruff check .` · `mypy` (every function body in `scripts/` is type-checked) · `pytest --cov=scripts` (CI fails below 90% for `scripts/` and 85% for `scripts/studio_app/`). Locally: `uv venv .venv-dev && uv pip install --python .venv-dev/bin/python -e '.[dev]'`.
 Tests cover auth and file-serving security, the planner, the job runner, media readers, schemas and catalog.

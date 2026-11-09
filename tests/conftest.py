@@ -134,3 +134,22 @@ def book(fake_root):
     (d / "demo.json").write_text(json.dumps({"title": "Demo", "setting": "s", "visual_style": "v", "music_theme": "m",
                                               "characters": [{"name": "Eve", "token": "a woman with long hair", "voice": "female"}], "locations": []}))
     return d
+
+
+@pytest.fixture()
+def run_script(monkeypatch, capsys):
+    """Run one of the command-line scripts in scripts/ as `python scripts/<name> <args>` inside this process.
+    Returns (exit code or None, stdout). Modules the script imports (bookkit, layout...) are the ones fake_root already redirected."""
+    import runpy
+
+    scripts = Path(__file__).resolve().parent.parent / "scripts"
+
+    def run(name, *args):
+        monkeypatch.setattr(sys, "argv", [name, *args])
+        code = None
+        try:
+            runpy.run_path(str(scripts / name), run_name="__main__")
+        except SystemExit as e:
+            code = e.code if e.code is not None else 0
+        return code, capsys.readouterr().out
+    return run

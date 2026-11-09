@@ -446,7 +446,7 @@ def notebook(key, m, platform):
         paths = ("from pathlib import Path\nCSV_NAME = 'all_images.csv'\nCSV_PATH = next(Path('/kaggle/input').rglob(CSV_NAME))\n"
                  f"OUT = Path('/kaggle/working/images') / '{key}'")
     cfg = paths + "\nSTART, END = 1, 10   # CSV row numbers (1-based)\nMAKE_TAR = False"
-    meta = {"accelerator": "GPU"} if platform == "colab" else {}
+    meta: dict = {"accelerator": "GPU"} if platform == "colab" else {}
     meta["kernelspec"] = {"display_name": "Python 3", "name": "python3"}
     return {"cells": [md(intro), code(m.get("pip", PIP))] + setup + [code(secret), code(cfg), code(script(key, m))],
             "metadata": meta, "nbformat": 4, "nbformat_minor": 0}

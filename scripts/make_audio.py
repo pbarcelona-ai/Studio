@@ -257,7 +257,7 @@ def notebook(k, m, platform):
         paths = ("from pathlib import Path\nCSV_NAME = 'audio_shots.csv'   # or 'audio_chapters.csv'\n"
                  "CSV_PATH = next(Path('/kaggle/input').rglob(CSV_NAME))\n" + SUF + f"\nOUT = Path('/kaggle/working/audio') / ('{k}' + SUFFIX)")
     cfg = paths + "\nSTART, END = 1, 10   # CSV row numbers (1-based)\nMAKE_TAR = False"
-    meta = {"accelerator": "GPU"} if platform == "colab" else {}
+    meta: dict = {"accelerator": "GPU"} if platform == "colab" else {}
     meta["kernelspec"] = {"display_name": "Python 3", "name": "python3"}
     return notebook_dict([md(intro)] + setup + [code(cfg), code(script(k, m))], meta)
 

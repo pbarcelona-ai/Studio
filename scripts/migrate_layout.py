@@ -133,11 +133,11 @@ def main():
     if stray.is_dir():
         for proj in sorted(p for p in stray.iterdir() if p.is_dir()):
             slug = proj.name
-            kind = kinds.get(slug) or ("book" if (books / slug).is_dir() else "character-set" if (chars / slug).is_dir() else "prompts" if (prompts / slug).is_dir() else None)
-            if kind is None:
+            stray_kind: str | None = kinds.get(slug) or ("book" if (books / slug).is_dir() else "character-set" if (chars / slug).is_dir() else "prompts" if (prompts / slug).is_dir() else None)
+            if stray_kind is None:
                 m.notes.append(f"left alone (no matching project): scripts/projects/{slug}")
                 continue
-            base = {"book": books, "character-set": chars, "prompts": prompts}[kind]
+            base = {"book": books, "character-set": chars, "prompts": prompts}[stray_kind]
             for child in sorted(proj.iterdir()):
                 if child.name != ".DS_Store":
                     m.move(child, base / slug / child.name)
@@ -151,12 +151,12 @@ def main():
         if new:
             rules.append((f"projects/{slug}/", f"projects/{new}/{slug}/"))
     changed_files = []
-    token_roots = [chars] if args.apply else [chars, old_chars]
+    token_roots: list[Path] = [chars] if args.apply else [chars, old_chars]
     for tr in token_roots:
         if not tr.is_dir():
             continue
-        for series in sorted(p for p in tr.iterdir() if p.is_dir() and not (p / "promptset.json").exists()):
-            for f in sorted(series.glob("*.json")):
+        for series_dir in sorted(p for p in tr.iterdir() if p.is_dir() and not (p / "promptset.json").exists()):
+            for f in sorted(series_dir.glob("*.json")):
                 try:
                     text = f.read_text()
                 except OSError:

@@ -159,3 +159,64 @@ class TestExpandIdea:
         save_global_params("demo", "35mm film", "blurry")
         out = sp.expand_idea({"kind": "image", "idea": "rain", "project": "demo", "count": 3})
         assert "35mm film" in llm["prompt"] and all("35mm film" in p for p in out)
+
+
+class TestSizeRules:
+    """prompt_rows snaps width, height and length to what each model accepts."""
+    O = {"width": 777, "height": 333, "frames": 50, "steps": 20, "guidance": 4, "negative": "ugly", "seed": 5}
+
+    def rows(self, kind, model, **o):
+        return sp.prompt_rows({"prompts": "a\nb", "opts": {**self.O, **o}}, "myset", kind, model, 1)
+
+    @pytest.mark.parametrize("model,w,h,frames", [("ltx_video", 768, 320, 49), ("wan", 784, 336, 49), ("wan22_ti2v_5b", 768, 320, 49), ("hunyuan_video", 784, 336, 49)])
+    def test_video_models(self, model, w, h, frames):
+        r = self.rows("video", model)[0]
+        assert (r["width"], r["height"], r["frames"]) == (w, h, frames) and r["steps"] == 20 and r["seed"] == 5
+
+    def test_hunyuan_has_no_negative_and_cogvideox_has_fixed_sizes(self):
+        assert self.rows("video", "hunyuan_video")[0]["negative"] == ""
+        r = self.rows("video", "cogvideox")[0]
+        assert (r["width"], r["height"], r["frames"]) == ("", "", "")
+
+    def test_images(self):
+        r = self.rows("image", "flux2_klein_4b")[0]
+        assert (r["width"], r["height"]) == (784, 336) and r["negative"] == "ugly"
+        assert self.rows("image", "tpu_flux_jax")[0]["negative"] == ""
+        mage = self.rows("image", "tpu_mage_flow")[0]
+        assert mage["width"] == mage["height"] == 768 and mage["steps"] == "" and mage["guidance"] == ""
+
+    def test_variations_get_consecutive_seeds_and_rows(self):
+        rs = self.rows("image", "flux2_klein_4b", variations=3)
+        assert [r["shot"] for r in rs] == [1, 2, 3, 4, 5, 6] and [r["seed"] for r in rs[:3]] == [5, 6, 7] and rs[3]["prompt"] == "b"
+
+    def test_blank_boxes_stay_blank(self):
+        r = sp.prompt_rows({"prompts": "a", "opts": {}}, "myset", "image", "flux2_klein_4b", 1)[0]
+        assert (r["width"], r["height"], r["steps"], r["guidance"], r["seed"]) == ("", "", "", "", "")
+
+    @pytest.mark.parametrize("prompts,msg", [("", "type at least one prompt"), ("\n".join(["x"] * 101), "up to 100 prompts"), ("y" * 2001, "up to 100 prompts")])
+    def test_prompt_limits(self, prompts, msg):
+        with pytest.raises(PlanError, match=msg):
+            sp.prompt_rows({"prompts": prompts}, "myset", "image", "flux2_klein_4b", 1)
+
+
+class TestPlanRefusals:
+    @pytest.mark.parametrize("change,msg", [
+        ({"kind": "film"}, "choose video or image"), ({"model": "nope"}, "unknown model"), ({"model": "ltx_video_i2v", "kind": "video"}, "animates a book's keyframes"),
+        ({"service": "azure"}, "choose where the models run"), ({"gpu": "Quantum"}, "is not an option for kaggle"), ({"kaggle_user": "x"}, "Kaggle username"),
+    ])
+    def test_refused(self, fake_root, change, msg):
+        with pytest.raises(PlanError, match=msg):
+            sp.prompt_plan(opt(**change), False)
+
+    def test_a_blocked_gpu_is_explained(self, fake_root, monkeypatch):
+        monkeypatch.setattr(sp, "gpu_blocker", lambda service, gpu: "no suitable GPU")
+        with pytest.raises(PlanError, match="no suitable GPU"):
+            sp.prompt_plan(opt(), False)
+
+    def test_a_book_cannot_be_used_as_a_prompt_set(self, book):
+        with pytest.raises(PlanError, match="is a book"):
+            sp.prompt_plan(opt(set="demo"), False)
+
+    def test_a_bad_series_is_refused(self, fake_root):
+        with pytest.raises(PlanError, match="bad series name"):
+            sp.character_reference(opt(opts={"reference": {"series": "Bad Name", "name": "Eve"}}), "flux2_klein_4b", "kaggle")

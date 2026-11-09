@@ -87,7 +87,7 @@ def lane_dir(lane):
 def make_opt(kind, model, lane, user, gpu):
     d = S.MODEL_DEFAULTS.get(model, {})
     steps = d.get("steps")
-    o = {"variations": 1}
+    o: dict = {"variations": 1}
     if steps and "steps" not in d.get("locked", []):
         o["steps"] = str(min(int(steps), STEPS_CAP) if STEPS_CAP else int(steps))
     return {"mode": "prompts", "set": f"regtest_{lane}", "kind": kind, "model": model, "prompts": PROMPT[kind], "opts": o,
@@ -218,7 +218,7 @@ def main():
                 print(f"  {model}: REFUSED by the planner: {e}")
         return
 
-    q = queue.Queue()
+    q: queue.Queue = queue.Queue()
     for t in todo:
         q.put(t)
 

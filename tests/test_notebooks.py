@@ -1,8 +1,7 @@
 """Every generated notebook is valid nbformat 4 and each code cell is valid Python once notebook-only lines (! and %) are removed."""
 import ast
 import json
-import os
-import subprocess
+import runpy
 import sys
 from pathlib import Path
 
@@ -13,9 +12,12 @@ SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 
 @pytest.fixture(scope="module")
 def generated(tmp_path_factory):
+    """Runs make_all.py inside this process (so the coverage report sees the notebook writers) with the output folder redirected."""
     out = tmp_path_factory.mktemp("gen")
-    r = subprocess.run([sys.executable, str(SCRIPTS / "make_all.py")], env={**os.environ, "STUDIO_GEN_DIR": str(out)}, capture_output=True, text=True, timeout=300)
-    assert r.returncode == 0, r.stderr[-2000:]
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("STUDIO_GEN_DIR", str(out))
+        mp.setattr(sys, "argv", ["make_all.py"])
+        runpy.run_path(str(SCRIPTS / "make_all.py"), run_name="__main__")
     return sorted(out.glob("*.ipynb"))
 
 

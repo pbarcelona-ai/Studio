@@ -87,7 +87,7 @@ _UP_CLEAN = [("upscale_seedvr2_3b", "diffusion upscaler: real detail for camera 
 _UP_STYLISED = [("upscale_x2", "Real-ESRGAN keeps flat colour and clean edges as they are (tested on a T4)", None),
                 ("upscale_seedvr2_3b", "more detail, but a diffusion upscaler may add photo-like texture to a stylised look", 22)]
 
-SUGGEST = {
+SUGGEST: dict[str, dict[str, list[tuple]]] = {
     "live_action": {
         "image": [_FLUX2, ("z_image_turbo", "strong photographic detail (tested on a T4, about 16 minutes)", None),
                   ("realvisxl_v5", "photoreal SDXL, about 3 minutes on a T4", None)],
@@ -174,9 +174,10 @@ def suggest(look, blocker=None, gpu_gb=None):
     """{step: {"title", "where", "pick": {model, why} or None, "alternatives": [{model, why, blocked}]}} for this look.
     blocker(model) -> reason or None (from the Studio's model_blocker for the chosen service and GPU); gpu_gb: that GPU's memory, or None."""
     blocker = blocker or (lambda m: None)
-    out = {}
+    out: dict = {}
     for step, (title, where) in STEPS.items():
-        pick, alts = None, []
+        pick: dict | None = None
+        alts: list[dict] = []
         for model, why, least in SUGGEST[look_or_default(look)][step]:
             why_not = blocker(model)
             small = least is not None and gpu_gb is not None and gpu_gb < least

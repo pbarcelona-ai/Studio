@@ -92,7 +92,7 @@ def build_refs(d, shots, series, max_refs, look=""):
     out_dir.mkdir()
     picked, tried, missing, per_row = {}, set(), set(), []
     for row in shots:
-        names = []
+        names: list[str] = []
         for name in shot_characters(row, labels):
             if len(names) >= max_refs:           # the first characters named are the ones the shot is about
                 break
@@ -101,7 +101,7 @@ def build_refs(d, shots, series, max_refs, look=""):
             if key not in tried:
                 tried.add(key)
                 src = ct.first_reference(series, name, stage["label"] if stage else "")
-                aged = bool(src) and bool(stage) and src.parent.name == ct.slugify(str(stage["label"]))
+                aged = src is not None and bool(stage) and src.parent.name == ct.slugify(str(stage["label"]))
                 if src is None:
                     missing.add(name)
                 else:

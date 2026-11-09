@@ -197,12 +197,14 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
         model = "sonnet"
     if image and family in ("hf", "local"):
         raise RuntimeError("pictures go to the hf and local engines through hf_json, not llm_json")
-    feedback, last = "", None
+    feedback = ""
+    last: Exception | None = None
     img_dir = tempfile.TemporaryDirectory() if image else None
-    img_name = None
+    img_path = Path(img_dir.name) if img_dir else Path()
+    img_name = ""
     if image:
         img_name = "picture" + (Path(image).suffix.lower() or ".jpg")
-        shutil.copyfile(image, Path(img_dir.name) / img_name)
+        shutil.copyfile(image, img_path / img_name)
         if family == "claude":
             prompt = f"First use the Read tool to look at the picture file {img_name} in the current folder. Then do this:\n\n{prompt}"
     for _ in range(retries + 1):
@@ -210,7 +212,7 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
             cmd = [exe, "-p"] + (["--model", model] if model else []) + [
                 "--tools", "Read" if image else "", "--no-session-persistence"] + (["--allowedTools", "Read"] if image else []) + [ "--output-format", "json", "--system-prompt", system,
                 "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", "", "--disable-slash-commands"]
-            r = subprocess.run(cmd, input=prompt + feedback, text=True, capture_output=True, env=_env(), timeout=900, cwd=img_dir.name if image else None)
+            r = subprocess.run(cmd, input=prompt + feedback, text=True, capture_output=True, env=_env(), timeout=900, cwd=str(img_path) if image else None)
             if r.returncode != 0:
                 last = RuntimeError(f"{cmd_name} exited {r.returncode}: {(r.stderr or r.stdout)[:300]}")
                 feedback = ""
@@ -236,7 +238,7 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
             with tempfile.TemporaryDirectory() as tmp:
                 out = Path(tmp) / "last.txt"
                 cmd = [exe, "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-o", str(out)] + \
-                      (["-m", model] if model else []) + (["-i", str(Path(img_dir.name) / img_name)] if image else []) + ["-"]
+                      (["-m", model] if model else []) + (["-i", str(img_path / img_name)] if image else []) + ["-"]
                 r = subprocess.run(cmd, input=f"{system}\n\n{prompt}{feedback}", text=True, capture_output=True,
                                    env=_env(), cwd=tmp, timeout=900)
                 text = out.read_text() if out.exists() else ""
@@ -297,7 +299,9 @@ def slice_text(text, n):
     sents = sentences(text)
     n = max(1, min(n, len(sents)))
     total = sum(words(s) for s in sents)
-    out, cur, acc, target = [], [], 0, total / n
+    out: list[str] = []
+    cur: list[str] = []
+    acc, target = 0, total / n
     for i, s in enumerate(sents):
         cur.append(s); acc += words(s)
         left_sents = len(sents) - i - 1
@@ -421,6 +425,7 @@ def group_chapters(chapters, target_seconds):
             if total > target_seconds * 1.25:
                 break
             j += 1
+        assert best is not None          # the loop above always runs once
         movies.append(chapters[i:best[0] + 1])
         i = best[0] + 1
     if len(movies) > 1 and sum(c["seconds"] for c in movies[-1]) < 0.4 * target_seconds:
@@ -438,7 +443,8 @@ def build_movies(pdir, minutes=10.0):
         prompts, audio = read_csv(pdir / shots_csv), read_csv(pdir / audio_csv)
         if not prompts:
             continue
-        chapters, order = {}, []
+        chapters: dict = {}
+        order: list = []
         for i, row in enumerate(prompts, start=1):
             narr = audio[i - 1]["narration"] if i - 1 < len(audio) else ""
             c = chapters.setdefault(row["chapter"], {"label": row["chapter"], "rows": [i, i], "seconds": 0.0})
@@ -572,7 +578,7 @@ def apply_voice_cast(pdir, cast=None):
     pdir = Path(pdir)
     cast = read_voice_cast(pdir) if cast is None else cast
     by_speaker = {k.strip().lower(): v for k, v in cast.items() if v}
-    changed_rows = []
+    changed_rows: list = []
     if not by_speaker:
         return changed_rows
     for name in ("audio_shots.csv", "audio_chapters.csv"):

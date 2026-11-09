@@ -82,7 +82,7 @@ STEMS = [  # (name, dir, filename pattern, volume)
     ("music", ROOT / "audio" / f"musicgen{suffix}", "music-{:04d}.wav", args.vol_music),
 ]
 
-ffmpeg = shutil.which("ffmpeg")
+ffmpeg: str = shutil.which("ffmpeg") or ""
 if not ffmpeg:
     try:
         import imageio_ffmpeg
@@ -129,7 +129,7 @@ def colour_nudges(plan):
             chapter_of = [r.get("chapter", "") for r in csv.DictReader(fh)]
     except OSError:
         chapter_of = []
-    groups = {}
+    groups: dict = {}
     for n, video, _, _ in plan:
         c = colour_of(video)
         if c:
@@ -250,7 +250,7 @@ def chapter_spans(timed):
             cue_row = {r.get("chapter", ""): i for i, r in enumerate(csv.DictReader(fh), 1)}
     except OSError:
         return []
-    spans = []
+    spans: list = []
     for n, start, secs in timed:
         cue = cue_row.get(chapter_of[n - 1]) if 0 < n <= len(chapter_of) else None
         if spans and spans[-1][0] == cue:

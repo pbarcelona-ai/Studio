@@ -21,7 +21,7 @@ ap.add_argument("--start", type=int, default=1)
 ap.add_argument("--end", type=int, default=10**9)
 args = ap.parse_args()
 
-ffmpeg = shutil.which("ffmpeg")
+ffmpeg: str = shutil.which("ffmpeg") or ""
 if not ffmpeg:
     try:
         import imageio_ffmpeg

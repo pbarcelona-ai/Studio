@@ -10,7 +10,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install pytest pytest-cov ruff mypy pillow imageio-ffmpeg
+      - run: pip install pytest pytest-cov ruff mypy pillow imageio-ffmpeg pypdf numpy opencv-python-headless
       - run: ruff check .
       - run: mypy
       - uses: actions/setup-node@v4
@@ -21,3 +21,4 @@ jobs:
         working-directory: tests/js
       - run: pytest --cov=scripts
       - run: coverage report --include='scripts/studio_app/*' --fail-under=85
+      - run: coverage report --fail-under=90

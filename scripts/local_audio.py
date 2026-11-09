@@ -43,7 +43,7 @@ def narration(d):
 
 def spans(rows):
     """[1, 2, 3, 7] -> [(1, 3), (7, 7)]"""
-    out = []
+    out: list[list[int]] = []
     for n in rows:
         if out and out[-1][1] == n - 1:
             out[-1][1] = n

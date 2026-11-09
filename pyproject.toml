@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-cov", "ruff>=0.6", "mypy>=1.10", "imageio-ffmpeg"]
+dev = ["pytest>=8", "pytest-cov", "ruff>=0.6", "mypy>=1.10", "imageio-ffmpeg", "pypdf", "pillow", "numpy", "opencv-python-headless"]
 depth3d = ["numpy", "opencv-python-headless", "transformers", "torch", "timm"]
 
 [tool.pytest.ini_options]
@@ -42,10 +42,6 @@ ignore = [
 python_version = "3.11"
 mypy_path = "scripts"
 ignore_missing_imports = true
-check_untyped_defs = false
+check_untyped_defs = true         # every function body is checked, typed or not
 warn_unused_ignores = true
 files = ["scripts"]
-
-[[tool.mypy.overrides]]
-module = ["studio_app.*"]
-check_untyped_defs = true       # the server package is checked inside untyped functions too

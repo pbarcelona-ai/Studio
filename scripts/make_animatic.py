@@ -43,7 +43,7 @@ except ValueError as e:
 if root is None:
     sys.exit(f"no such book: {a.project}")
 
-ffmpeg = shutil.which("ffmpeg")
+ffmpeg: str = shutil.which("ffmpeg") or ""
 if not ffmpeg:
     try:
         import imageio_ffmpeg

@@ -98,8 +98,9 @@ QUOTE_OPEN, QUOTE_CLOSE, QUOTE_MAX_WORDS = "\u201c", "\u201d", 400
 def quotes_by_slice(slices):
     """The words inside double quotes (straight "..." or curly), exactly as written, for each slice. A quote belongs to the slice where it
     starts, even if it ends in a later one. A quote that never closes within QUOTE_MAX_WORDS is dropped (it was a stray mark, not speech)."""
-    out = [[] for _ in slices]
-    cur, start, is_open = [], 0, False
+    out: list[list[str]] = [[] for _ in slices]
+    cur: list[str] = []
+    start, is_open = 0, False
     for i, sl in enumerate(slices):
         for ch in sl:
             if not is_open:
@@ -198,7 +199,7 @@ def outline(c, text):
         scenes = d.get("scenes")
         if not isinstance(scenes, list) or not scenes:
             raise ValueError("'scenes' must be a list with at least one scene")
-        firsts = [s.get("first") if isinstance(s, dict) else None for s in scenes]
+        firsts: list = [s.get("first") if isinstance(s, dict) else None for s in scenes]
         if not all(isinstance(f, int) and 1 <= f <= len(sents) for f in firsts) or firsts != sorted(set(firsts)) or firsts[0] != 1:
             raise ValueError(f"each 'first' must be a whole sentence number from 1 to {len(sents)}, in rising order, and the first scene must start at 1")
 
@@ -281,7 +282,7 @@ def build_prompt(c, slices, quotes=None, owner=None):
 
     scene_section = ""
     if owner:
-        spans = []
+        spans: list = []
         for i, sc in enumerate(owner, 1):
             if spans and spans[-1][2] is sc:
                 spans[-1][1] = i

@@ -134,8 +134,8 @@ def main(argv=None):
     for n in range(max(1, a.start), last + 1):
         row = shots[n - 1]
         names = [x.strip() for x in (row.get("characters") or "").split("|") if x.strip()]
-        chapter = re.search(r"(\d+)$", str(row.get("chapter") or ""))
-        chapter = int(chapter.group(1)) if chapter else None
+        chapter_match = re.search(r"(\d+)$", str(row.get("chapter") or ""))
+        chapter = int(chapter_match.group(1)) if chapter_match else None
         wanted = {}
         for name in names:
             stage = bookkit.stage_for(book.get(name.lower(), {}), chapter, a.look)

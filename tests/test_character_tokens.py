@@ -185,3 +185,110 @@ class TestSendToBook:
 
 def test_prompt_constants_are_nonempty():
     assert ct.get_prompt_suffix() and ct.get_negative_prompt()
+
+
+FULL = {"name": "Eve", "series": "main", "visual_token": "EVE: a woman", "physical_traits": {"hair": "long", "eyes": ""}, "clothing": "a red robe",
+        "consistency_notes": "always sad", "voice": "af_bella"}
+
+
+class TestPromptText:
+    def test_tokens_for_prompt_lists_traits_clothing_and_notes(self, chars):
+        ct.save_character(FULL)
+        ct.save_character(make("Adam", "main"))
+        text = ct.get_character_tokens_for_prompt("main", ["Eve", "Adam", "Ghost"])
+        assert text.startswith("\n\nCHARACTER TOKENS:\n") and "EVE: a woman | hair: long | wearing a red robe | always sad" in text and "adam token" in text and "Ghost" not in text
+        assert ct.get_character_tokens_for_prompt("main", ["Ghost"]) == ""
+
+    def test_all_tokens_of_a_series(self, chars):
+        assert ct.get_all_character_tokens("empty") == ""
+        ct.save_character(FULL)
+        text = ct.get_all_character_tokens("main")
+        assert "### Eve\nEVE: a woman | hair: long | wearing a red robe | always sad" in text
+
+    def test_build_character_prompt_order(self, chars):
+        text = ct.build_character_prompt(FULL, "she weeps")
+        parts = text.split(", ")
+        assert parts[0] == "EVE: a woman" and "she weeps" in text and text.index("wearing a red robe") < text.index("she weeps") < text.index("always sad") and text.endswith(ct.PHOTOREAL_TAIL)
+        assert ct.build_character_prompt({}) == ct.PHOTOREAL_TAIL
+
+
+class TestReferences:
+    @pytest.fixture()
+    def eve(self, chars):
+        ct.save_character(FULL)
+        folder = ct.ensure_reference_dir("main", "Eve")
+        for n in ("ref_02.png", "ref_01.png"):
+            (folder / n).write_bytes(b"x")
+        (folder / "notes.txt").write_text("not a picture")
+        return folder
+
+    def test_first_reference_falls_back_to_the_folder(self, eve):
+        assert ct.first_reference("main", "Eve").name == "ref_01.png"
+        assert ct.first_reference("main", "Nobody") is None
+
+    def test_stage_folder_wins_and_listed_pictures_come_before_the_folder(self, eve, chars):
+        stage = eve / "old"
+        stage.mkdir()
+        (stage / "a.png").write_bytes(b"x")
+        assert ct.first_reference("main", "Eve", "Old").parent.name == "old"
+        listed = chars / "elsewhere.png"
+        listed.write_bytes(b"x")
+        ct.add_reference_image("main", "Eve", str(listed))
+        assert ct.first_reference("main", "Eve") == listed
+
+    def test_reference_pictures_for_the_page(self, eve, chars):
+        ct.add_reference_image("main", "Eve", "projects/characters/main/references/eve/ref_02.png")
+        ct.add_reference_image("main", "Eve", "projects/characters/main/references/eve/gone.png")
+        pics = ct.reference_pictures("main", "Eve")
+        assert [p["name"] for p in pics] == ["ref_02.png", "gone.png", "ref_01.png"] and pics[0]["listed"] and not pics[2]["listed"]
+        assert [p["exists"] for p in pics] == [True, False, True] and pics[0]["used"] and pics[0]["file"] == "main/references/eve/ref_02.png" and pics[1]["file"] == ""
+
+    def test_use_reference_moves_a_picture_to_the_front(self, eve):
+        path = "projects/characters/main/references/eve/ref_02.png"
+        assert ct.use_reference("main", "Eve", path) and ct.load_character("main", "Eve")["reference_images"][0] == path
+        assert ct.use_reference("main", "Eve", "projects/characters/main/references/eve/ref_01.png")
+        assert ct.load_character("main", "Eve")["reference_images"] == ["projects/characters/main/references/eve/ref_01.png", path]
+        assert not ct.use_reference("main", "Eve", "projects/elsewhere.png") and not ct.use_reference("main", "Ghost", path)
+
+    def test_add_reference_is_idempotent_and_unknown_characters_fail(self, eve):
+        assert ct.add_reference_image("main", "Eve", "a.png") and ct.add_reference_image("main", "Eve", "a.png")
+        assert ct.load_character("main", "Eve")["reference_images"].count("a.png") == 1 and not ct.add_reference_image("main", "Ghost", "a.png")
+
+
+class TestMisc:
+    def test_lora_info_and_delete(self, chars):
+        ct.save_character(FULL)
+        assert ct.update_lora_info("main", "Eve", "me/eve-lora", "eve_tok", "flux") and ct.load_character("main", "Eve")["lora"]["trained"] is True
+        assert not ct.update_lora_info("main", "Ghost", "r", "t", "b")
+        assert ct.delete_character("main", "Eve") and not ct.delete_character("main", "Eve") and ct.list_characters("main") == []
+
+    def test_index_of_a_series_that_does_not_exist_is_left_alone(self, chars):
+        ct.update_index("nowhere")
+        assert not (chars / "projects" / "characters" / "nowhere").exists()
+
+    def test_series_listing_when_the_folder_is_missing(self, chars, monkeypatch):
+        monkeypatch.setattr(ct, "CHARACTERS_ROOT", chars / "no" / "such")
+        assert ct.list_series() == []
+
+    def test_stages_travel_to_the_book(self, saga):
+        stages = [{"label": "young", "chapters": "1-3", "token": "young woman"}]
+        ct.save_character(make("Eve", "series1", stages=stages))
+        assert ct.send_to_book("saga", "series1", ["Eve"])["updated"] == 1
+        assert json.loads((saga / "saga.json").read_text())["characters"][0]["stages"] == stages
+
+    def test_a_trait_with_a_wrong_value_is_reported_by_validate(self):
+        errs = ct.validate_character({"archetype": "human", "physical_traits": {"age": "x"}, "name": "A"})
+        assert isinstance(errs, list)
+
+
+class TestCommandLine:
+    def test_every_command(self, chars, run_script):
+        ct.save_character(FULL)
+        assert "Usage:" in run_script("character_tokens.py")[1] and run_script("character_tokens.py")[0] == 1
+        assert '"main"' in run_script("character_tokens.py", "list-series")[1]
+        assert '"Eve"' in run_script("character_tokens.py", "list", "main")[1]
+        assert '"visual_token": "EVE: a woman"' in run_script("character_tokens.py", "get", "main", "Eve")[1]
+        assert "### Eve" in run_script("character_tokens.py", "tokens", "main")[1]
+        assert "Synced 0 characters from nobook" in run_script("character_tokens.py", "sync", "nobook")[1]
+        assert "Unknown command: zap" in run_script("character_tokens.py", "zap")[1]
+        assert "Deleted: True" in run_script("character_tokens.py", "delete", "main", "Eve")[1]

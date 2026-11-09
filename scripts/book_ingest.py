@@ -85,7 +85,9 @@ def best_run(pattern):
     ms = list(re.finditer(pattern, text))
     if len(ms) < 3:
         return []
-    runs, cur, prev = [], [], 0
+    runs: list = []
+    cur: list = []
+    prev = 0
     for m in ms:
         n = to_int(m.group(1))
         if cur and n <= prev:

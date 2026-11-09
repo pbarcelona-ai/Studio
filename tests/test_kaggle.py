@@ -153,3 +153,103 @@ class TestCleanup:
         kc.AUTO_CLEAN_OFF.unlink()
         kc.auto_cleanup(force=True)
         assert not (fake_root / "Studio_Kaggle_x.ipynb").exists()
+
+
+class TestMoreRuns:
+    def test_a_failing_kaggle_command_and_a_listing_without_a_header(self, kaggle, monkeypatch):
+        monkeypatch.setattr(kr.subprocess, "run", lambda argv, **kw: SimpleNamespace(returncode=1, stdout="", stderr="401 Unauthorized"))
+        with pytest.raises(PlanError, match="Kaggle said: 401"):
+            kr.kaggle_runs()
+        monkeypatch.setattr(kr.subprocess, "run", lambda argv, **kw: SimpleNamespace(returncode=0, stdout="nothing useful\n", stderr=""))
+        assert kr.kaggle_runs() == []
+
+    def test_long_listings_ask_for_status_one_at_a_time(self, kaggle, monkeypatch):
+        kaggle.listing = [(slug("ltx-video", i, i), f"2999-01-{i:02d} 10:00:00") for i in range(1, 15)]
+        pauses = []
+        monkeypatch.setattr(kr.time, "sleep", pauses.append)
+        runs = kr.kaggle_runs()
+        assert len(runs) == 14 and len(pauses) == 14 and all(r["status"] == "COMPLETE" for r in runs)
+
+    def test_status_and_output_without_the_kaggle_program(self, kaggle, monkeypatch):
+        monkeypatch.setattr(kr.shutil, "which", lambda *a, **k: None)
+        for fn in (kr.kernel_status, kr.kernel_output):
+            with pytest.raises(PlanError, match="not installed"):
+                fn("pat/demo-x-1-2")
+
+    def test_an_unreadable_status_is_unknown(self, kaggle, monkeypatch):
+        monkeypatch.setattr(kr.subprocess, "run", lambda argv, **kw: SimpleNamespace(returncode=1, stdout="", stderr="weird"))
+        assert kr.kernel_status("pat/demo-x-1-2")["status"] == "UNKNOWN"
+
+
+class TestMoreCleanup:
+    def test_results_here_for_audio_images_and_upscales(self, kaggle, book):
+        (book / "audio" / "kokoro_chapters").mkdir(parents=True)
+        (book / "audio" / "kokoro_chapters" / "narration-0001.wav").write_bytes(b"x")
+        (book / "images" / "flux").mkdir(parents=True)
+        (book / "images" / "flux" / "image-0001.png").write_bytes(b"x")
+        assert kc.run_results_here("demo-audio-kokoro-chapters-1-1") and kc.run_results_here("demo-image-flux-1-1")
+        assert not kc.run_results_here("demo-image-flux-1-2") and not kc.run_results_here("demo-upscale-x2-1-1") and not kc.run_results_here("demo-ltx-video-3-1")
+
+    def test_delete_without_the_kaggle_program(self, kaggle, monkeypatch):
+        monkeypatch.setattr(kc.shutil, "which", lambda *a, **k: None)
+        with pytest.raises(PlanError, match="not installed"):
+            kc.delete_kaggle_runs([{"ref": "pat/demo-x-1-1"}])
+
+    def test_auto_plan_keeps_busy_and_unfinished_runs_and_removes_failed_ones(self, kaggle, book):
+        kaggle.listing = [(slug("ltx-video", i, i), f"2000-01-0{i} 00:00:00") for i in range(1, 7)]      # 6-6, 5-5 and 4-4 are the newest three
+        for i, st in enumerate(["RUNNING", "QUEUED", "ERROR", "COMPLETE"], 1):
+            kaggle.status[slug("ltx-video", i, i)] = st
+        plan = kc.auto_cleanup_plan()
+        assert "3-3" in {r["slug"][-3:] for r in plan["remove"]}                      # the failed run is removed
+        assert all(r["status"] not in ("RUNNING", "QUEUED") for r in plan["remove"] + plan["kept_not_downloaded"])
+
+    def test_auto_cleanup_is_throttled_and_needs_a_kaggle_login(self, kaggle, fake_root, monkeypatch, tmp_path):
+        logs = []
+        monkeypatch.setattr(kc.JOB, "log", logs.append, raising=False)
+        monkeypatch.setattr(kc.shutil, "which", lambda *a, **k: "/usr/bin/kaggle")
+        plans = []
+        monkeypatch.setattr(kc, "auto_cleanup_plan", lambda: plans.append(1) or {"remove": [], "kept_not_downloaded": []})
+        kc._AUTO_CLEAN["last"] = 0
+        kc.auto_cleanup()                                                     # no ~/.kaggle folder: nothing asked of Kaggle
+        assert plans == []
+        (tmp_path / "home" / ".kaggle").mkdir(parents=True)
+        kc._AUTO_CLEAN["last"] = 0
+        kc.auto_cleanup()
+        assert plans == [1]
+        kc.auto_cleanup()                                                     # just ran: throttled
+        assert plans == [1]
+
+    def test_auto_cleanup_reports_what_it_deleted_and_survives_errors(self, kaggle, fake_root, monkeypatch, tmp_path):
+        logs = []
+        monkeypatch.setattr(kc.JOB, "log", logs.append, raising=False)
+        (tmp_path / "home" / ".kaggle").mkdir(parents=True)
+        (fake_root / "Studio_Kaggle_x.ipynb").write_text("{}")
+        monkeypatch.setattr(kc.shutil, "which", lambda *a, **k: "/usr/bin/kaggle")
+        monkeypatch.setattr(kc, "auto_cleanup_plan", lambda: {"remove": [{"ref": "pat/a"}], "kept_not_downloaded": [{"ref": "pat/b"}]})
+        monkeypatch.setattr(kc, "delete_kaggle_runs", lambda runs: (["pat/a"], [{"ref": "pat/c", "error": "x"}]))
+        kc.auto_cleanup(force=True)
+        text = "\n".join(logs)
+        assert "deleted 1 old local notebook" in text and "deleted 1 old notebook(s), 1 could not be deleted; kept 1 whose results" in text
+        logs.clear()
+        monkeypatch.setattr(kc, "auto_cleanup_plan", lambda: (_ for _ in ()).throw(PlanError("kaggle is down")))
+        kc.auto_cleanup(force=True)
+        assert "clean-up skipped: kaggle is down" in logs[-1]
+        kc.JOB.running = False
+
+    def test_the_background_start_runs_it(self, kaggle, monkeypatch):
+        ran = []
+        monkeypatch.setattr(kc, "auto_cleanup", lambda force=False: ran.append(1))
+        kc.start_auto_cleanup()
+        import threading
+        for t in threading.enumerate():
+            if t is not threading.current_thread() and t.daemon:
+                t.join(2)
+        assert ran == [1]
+
+    def test_recreating_the_notebooks_can_fail(self, kaggle, fake_root, monkeypatch):
+        monkeypatch.setattr(kc.subprocess, "run", lambda argv, **kw: SimpleNamespace(returncode=1, stdout="", stderr="boom"))
+        with pytest.raises(PlanError, match="could not re-create the notebooks: boom"):
+            kc.recreate_notebooks()
+        monkeypatch.setattr(kc.subprocess, "run", lambda argv, **kw: SimpleNamespace(returncode=0, stdout="", stderr=""))
+        (fake_root / "Studio_Kaggle_a.ipynb").write_text("{}")
+        assert kc.recreate_notebooks() == {"notebooks": 1, "scripts": 0}

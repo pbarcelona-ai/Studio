@@ -58,7 +58,8 @@ def shot_numbers(header):
 
 def parse_narration(body):
     """-> {shot: [(speaker, text), ...]}"""
-    out, current = {}, []
+    out: dict[int, list] = {}
+    current: list[int] = []
     for line in body.splitlines():
         stripped = line.strip().lstrip("- ").strip()
         if not stripped:
@@ -78,7 +79,7 @@ def parse_narration(body):
         quotes = QUOTE.findall(rest)
         if not quotes or not current:
             continue
-        first_quote = QUOTE.search(rest).start()
+        first_quote = QUOTE.search(rest).start()  # type: ignore[union-attr]   # quotes is not empty, so QUOTE matches
         spk = speaker_of(header + " " + rest[:first_quote])
         text = clean(" ".join(quotes))
         if text:
@@ -89,7 +90,8 @@ def parse_narration(body):
 
 def parse_sound(body):
     """-> ({shot: text}, chapter_level_text)"""
-    per, chapter = {}, []
+    per: dict[int, str] = {}
+    chapter: list[str] = []
     for line in body.splitlines():
         if not line.startswith("- "):
             continue
@@ -141,7 +143,9 @@ FIELDS = ["chapter", "shot", "lines_json", "narration", "sfx", "music"]
 
 
 def adam_rows():
-    prompts, audio, first_narrated = [], [], {}
+    prompts: list = []
+    audio: list = []
+    first_narrated: dict = {}
     for label, path in adam_eve_chapters():
         text = path.read_text()
         shots = adam_shots(path)
