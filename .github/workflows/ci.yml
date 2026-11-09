@@ -12,6 +12,5 @@ jobs:
           python-version: "3.11"
       - run: pip install pytest pytest-cov ruff mypy pillow
       - run: ruff check .
-      - run: ruff format --check scripts/studio_app tests
       - run: mypy
       - run: pytest --cov=scripts

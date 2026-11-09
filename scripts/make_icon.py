@@ -2,7 +2,7 @@
 """Draw the Pistachio's Studio app icon: a bright P and S on a dark rounded square, placed so the top-left of the S touches the bottom-right of the P's curve.
 
   python3 scripts/make_icon.py [OUT_DIR]            writes icon_1024.png and icon.icns into OUT_DIR (default: a temp folder, printed)
-  python3 scripts/make_icon.py --favicon studio.html  also (re)writes the favicon <link> tags between the favicon markers in that page
+  python3 scripts/make_icon.py --favicon web/index.html  also (re)writes the favicon <link> tags between the favicon markers in that page
 
 create_app_bundle.sh runs this and copies icon.icns into the app. Needs Pillow and macOS (iconutil) for the .icns step.
 """
