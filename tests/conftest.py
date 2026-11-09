@@ -69,3 +69,68 @@ def project_tree(tmp_path, monkeypatch):
     (tmp_path / "demo" / "notes.txt").write_text("secret")
     (tmp_path / "outside.png").write_bytes(b"png")
     return tmp_path
+
+
+# ---- a complete throw-away Studio folder: every module's ROOT/PROJECTS/... points into tmp_path
+KEEP = {"SESSION_FILE", "LOG_FILE", "WEB", "CATALOG_FILE", "AUTO_CLEAN_OFF"}
+
+
+@pytest.fixture()
+def fake_root(tmp_path, monkeypatch):
+    import importlib
+
+    import bookkit
+    import character_tokens
+    import layout
+    from studio_app import config
+
+    for name in ("studio_app.cleanup", "studio_app.generation", "studio_app.media", "studio_app.gallery", "studio_app.llm", "studio_app.direction",
+                 "studio_app.planner", "studio_app.projects", "studio_app.scenes", "studio_app.steps", "studio_app.takes", "studio_app.kaggle_cleanup",
+                 "studio_app.kaggle_runs", "studio_app.overview", "studio_app.single_prompts", "studio_app.common", "studio_app.gpus", "studio_app.jobs"):
+        importlib.import_module(name)
+    real = config.ROOT
+    root = tmp_path / "studio"
+    (root / "projects" / "books").mkdir(parents=True)
+    (root / "projects" / "prompts").mkdir()
+    (root / "projects" / "characters").mkdir()
+    (root / "books").mkdir()
+    for mod in list(sys.modules.values()):
+        mname = getattr(mod, "__name__", "")
+        if not (mname.startswith("studio_app") or mname in ("layout", "bookkit", "character_tokens", "setup_check")):
+            continue
+        for attr, val in list(vars(mod).items()):
+            if attr in KEEP or not isinstance(val, Path):
+                continue
+            try:
+                rel = val.relative_to(real)
+            except ValueError:
+                continue
+            monkeypatch.setattr(mod, attr, root / rel)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    assert layout.BOOKS == root / "projects" / "books" and bookkit.ROOT == root and character_tokens.ROOT == root
+    return root
+
+
+def write_csv(path, rows):
+    import csv
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+
+
+@pytest.fixture()
+def book(fake_root):
+    """books/demo with 4 shots in one movie, chapters and a continuity book."""
+    d = fake_root / "projects" / "books" / "demo"
+    shots = [{"chapter": "1", "shot": i, "prompt": p, "negative": "", "width": 768, "height": 512, "frames": 49, "steps": 30, "guidance": 5, "seed": 1}
+             for i, p in enumerate(["a woman walks in a garden", "a mountain at dawn", "he raises his hand", "a river at night"], 1)]
+    write_csv(d / "all_shots.csv", shots)
+    write_csv(d / "audio_shots.csv", [{"chapter": "1", "shot": i, "narration": f"line {i}", "sfx": "wind", "music": "calm"} for i in range(1, 5)])
+    write_csv(d / "audio_chapters.csv", [{"chapter": "1", "music": "calm"}])
+    (d / "movies.json").write_text(json.dumps({"shots": [{"id": 1, "rows": [1, 4]}]}))
+    (d / "chapters.json").write_text(json.dumps({"chapters": [{"n": 1, "title": "One"}]}))
+    (d / "demo.json").write_text(json.dumps({"title": "Demo", "setting": "s", "visual_style": "v", "music_theme": "m",
+                                              "characters": [{"name": "Eve", "token": "a woman with long hair", "voice": "female"}], "locations": []}))
+    return d
