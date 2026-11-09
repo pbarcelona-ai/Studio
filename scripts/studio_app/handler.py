@@ -5,7 +5,7 @@ import json
 import mimetypes
 import re
 from http.cookies import SimpleCookie
-from http.server import BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -39,6 +39,7 @@ def safe_project_file(prefix: str, path: str, allowed: tuple[str, ...]) -> Path 
 
 
 class Handler(BaseHTTPRequestHandler):
+    server: ThreadingHTTPServer
     server_version = "PistachiosStudio"
     protocol_version = "HTTP/1.0"
 
@@ -47,7 +48,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------ checks
     def _host_ok(self) -> bool:
-        host, origin, port = self.headers.get("Host", ""), self.headers.get("Origin"), int(self.server.server_address[1])
+        host, origin, port = self.headers.get("Host", ""), self.headers.get("Origin"), self.server.server_port
         return host in (f"127.0.0.1:{port}", f"localhost:{port}") and (
             origin is None or origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"))
 
