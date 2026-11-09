@@ -120,3 +120,11 @@ tested yet; Real-ESRGAN has.
 | A run on this computer fails while installing | Read `projects/<book>/logs/local-*.log`; delete the folder in `.gpu_envs/` it names to start that environment again |
 
 Licence: see `LICENSE`.
+
+## For developers
+* Layout and rules: [ARCHITECTURE.md](ARCHITECTURE.md); decisions: [adr/](adr/).
+* One-time: `uv venv .venv-dev && uv pip install --python .venv-dev/bin/python -e '.[dev]'`
+* Checks (the same ones CI runs): `.venv-dev/bin/ruff check . && .venv-dev/bin/mypy && .venv-dev/bin/pytest`
+* The page is `web/index.html` plus `web/static/{css,js}`; the server is `scripts/studio_app/`. Edit the model/GPU lists in `scripts/studio_app/catalog.json`.
+* Dependencies are locked in `uv.lock`; `constraints.txt` (made with `uv export`) is what `install.sh` pins to.
+
