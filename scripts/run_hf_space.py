@@ -9,7 +9,7 @@ HF_TOKEN is optional: with it the free daily ZeroGPU quota is the one of your ac
 shared by network address and runs out sooner. The token is read from the environment only and is never printed or written anywhere.
 When the quota is used up the run stops and says so; the rows already made are kept.
 """
-import csv
+import re, csv
 import inspect
 import os
 import random
@@ -150,8 +150,9 @@ def main():
             failed += 1
             print(f"[{i}/{end}] FAILED: {msg[:400]}", flush=True)
             if "quota" in msg.lower() or "zerogpu" in msg.lower():
-                print("!! The free Hugging Face GPU quota is used up (it comes back after a while). Set HF_TOKEN to use your account's own quota, or try later. "
-                      "Rows already made are kept.", flush=True)
+                wait = re.search(r"Try again in ([\d:]+)", msg)
+                print("!! The Hugging Face GPU quota is used up" + (f"; it comes back in {wait.group(1)}" if wait else " for now") + ". "
+                      + ("A paid Hugging Face PRO account has a larger daily quota." if token else "Set HF_TOKEN to use your own account's quota.") + " Rows already made are kept.", flush=True)
                 break
     print(f"✅ {len(list(out.glob('*.png' if spec['kind'] == 'image' else '*.mp4')))} files now in {out}", flush=True)
     if made == 0 and failed:

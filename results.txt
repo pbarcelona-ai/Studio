@@ -372,3 +372,4 @@ Update (2026-11-08, more models from keyframes): reviewed make_video.py, run_hf_
 Checks run: real runs on the same 3 keyframes: Pika H3 Flex on its Space (36-46 s a clip, 832x480, 5 s) and Wan 2.2 5B on a Kaggle T4 (739-845 s a clip, 704x384, 1.4 s). Kokoro on this Intel Mac's CPU: 12 lines in about 2 minutes.
 Not run: SkyReels-V2, SVD, SVD-XT, LTX-2.5: Kaggle's weekly 30-hour GPU quota ran out. They stay unlisted.
 Status: PASS
+Update (2026-11-08, quota message): reviewed scripts/run_hf_space.py. Real quota refusal seen: 138 s requested, 29 s left, back in about 23 hours, with a token. Status: PASS
