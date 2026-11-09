@@ -33,7 +33,8 @@ fi
 .venv/bin/python -m pip install --quiet --upgrade pip
 
 echo "== Installing the Studio's requirements"
-.venv/bin/python -m pip install --quiet -r requirements.txt
+# constraints.txt pins the versions that were tested together (made with: uv lock && uv export ... -o constraints.txt)
+.venv/bin/python -m pip install --quiet -r requirements.txt -c constraints.txt
 
 if [ "${1:-}" = "--3d" ]; then
   echo "== Installing the optional 3D depth view (large; this can take several minutes)"
