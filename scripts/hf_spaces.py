@@ -20,6 +20,9 @@ SPACES = {
     # The Space you used: uncensored Qwen-Image-2.1 (the 4-bit GGUF) with optional LoRAs; "None (Base Uncensored)" is the same model as qwen_image_21_uc.
     "qwen_image_21_uc": {"kind": "image", "space": "Guaryn/qwen-image-2.1-uncensored-aio-loras", "style": "qwen_aio", "api": "/generate",
                          "defaults": {"width": 1024, "height": 1024, "steps": 30}, "status": "checked"},
+    # Pika H3 Flex (a post-training of MiniMax-H3; MiniMax H3 Community Licence, ask MiniMax if you are in the USA, EU, UK or South Korea): far too big for a free GPU,
+    # but the public Space animates a keyframe, about 33 s of GPU for a 5 s clip at 832x480.
+    "pika_h3_flex_i2v": {"kind": "video", "space": "Pika-Labs/pika-h3-flex", "style": "pika", "api": "/generate", "defaults": {"seconds": 5, "resolution": "480p"}, "status": "checked"},
     "cogvideox_5b": {"kind": "video", "space": "zai-org/CogVideoX-5B-Space", "style": "cogvideox", "api": "/generate",
                      "defaults": {}, "status": "api"},
 }

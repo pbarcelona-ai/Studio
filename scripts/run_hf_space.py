@@ -33,6 +33,18 @@ def num(row, key, default, cast=float):
     return cast(v) if v else default
 
 
+PIKA_ASPECTS = ("21:9", "16:9", "3:2", "4:3", "5:4", "1:1", "4:5", "3:4", "2:3", "9:16", "9:21")
+
+
+def keyframe_folder(pd):
+    """The keyframes to animate: KEYFRAME_MODEL's, or the newest set."""
+    named = os.environ.get("KEYFRAME_MODEL", "").strip()
+    if named:
+        return pd / "images" / f"{named}_keyframes"
+    sets = sorted((p for p in (pd / "images").glob("*_keyframes") if p.is_dir()), key=lambda p: p.stat().st_mtime) if (pd / "images").is_dir() else []
+    return sets[-1] if sets else pd / "images" / "none_keyframes"
+
+
 def build_call(model, spec, row):
     """(api_name, kwargs) for this model and CSV row."""
     d = spec["defaults"]
@@ -61,6 +73,11 @@ def build_call(model, spec, row):
         return spec["api"], {"prompt": prompt, "mode": "Text to Image", "lora_adapter": "None (Base Uncensored)", "lora_strength": 1.0,
                              "custom_repo": "", "custom_file": "",
                              "aspect_ratio": size, "steps": max(4, min(40, steps or 30)), "seed": base_seed["seed"], "randomize_seed": False}
+    if style == "pika":                    # Frames mode: starts from the shot's keyframe (main() finds it)
+        from gradio_client import handle_file
+        return spec["api"], {"prompt": prompt, "mode": "Frames", "first_image": handle_file(row["_keyframe"]), "last_image": None, "reference_files": [],
+                             "resolution": d["resolution"], "aspect": row.get("aspect") if row.get("aspect") in PIKA_ASPECTS else "16:9",
+                             "seconds": num(row, "seconds", d["seconds"], float), "seed": base_seed["seed"], "randomize": False}
     if style == "cogvideox":
         return spec["api"], {"prompt": prompt, "seed_value": base_seed["seed"], "scale_status": False, "rife_status": False}
     raise SystemExit(f"no call style {style!r} for {model}")
@@ -114,6 +131,10 @@ def main():
             continue
         t0 = time.time()
         try:
+            if spec["style"] == "pika":
+                row = dict(row, _keyframe=str(keyframe_folder(pd) / f"image-{i:04d}.png"))
+                if not Path(row["_keyframe"]).is_file():
+                    raise FileNotFoundError(f"no keyframe {row['_keyframe']}: make keyframes for this row first")
             api, kwargs = build_call(model, spec, row)
             res = client.predict(**kwargs, api_name=api)
             src = as_path(res[0] if isinstance(res, (list, tuple)) else res)

@@ -368,3 +368,7 @@ Errors found and fixed: ltx_video_fast_i2v could not run (`mu` must be passed).
 Checks run: real Kaggle T4: 3 clips, 10.5 min with loading, 106-120 s each. Faces in shots 2-3 clean by eye; shot 1 (about 24 px) garbled. Scores 0.18-0.49: the score marked clean bowed faces low, so it is a screen, not a verdict.
 Warnings: one comparison only; framing rule not yet tried end to end.
 Status: PASS
+Update (2026-11-08, more models from keyframes): reviewed make_video.py, run_hf_space.py, hf_spaces.py, studio.py, model_advisor.py, book_write.py, studio.html.
+Checks run: real runs on the same 3 keyframes: Pika H3 Flex on its Space (36-46 s a clip, 832x480, 5 s) and Wan 2.2 5B on a Kaggle T4 (739-845 s a clip, 704x384, 1.4 s). Kokoro on this Intel Mac's CPU: 12 lines in about 2 minutes.
+Not run: SkyReels-V2, SVD, SVD-XT, LTX-2.5: Kaggle's weekly 30-hour GPU quota ran out. They stay unlisted.
+Status: PASS

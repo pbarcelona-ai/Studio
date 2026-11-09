@@ -3302,7 +3302,9 @@ function loadPGallery() {
 let promptTpuMode = false;
 const onTpu = () => $("gpu").value.startsWith("Tpu");
 // One line per model, shown under the model list on the Single Prompts tab and (first sentence) on the Models tab.
-const MODEL_NOTES = { cogvideox: "Size and length are fixed by the model (720x480, 6 s, choppy 8 fps).",
+const MODEL_NOTES = {
+  pika_h3_flex_i2v: "Runs on its public Hugging Face Space, within the free daily quota: 5 s clips at 832x480 from your keyframes. Choose Hugging Face under Where to run after making the keyframes on Kaggle.",
+  cogvideox: "Size and length are fixed by the model (720x480, 6 s, choppy 8 fps).",
                   qwen_image_21_uc: "Experimental, adult content, no filter. Base Qwen-Image-2.1 plus the abenzerps uncensored LoRA (the quantized GGUF files in that repo are ComfyUI-only and not used). Clearly adult, fictional subjects only. Kaggle recommended.",
                   moss_image_sft_lora: "Experimental, adult content, no filter. MOSS-Image-SFT plus the axiomofmind NSFW LoRA (scale 0.8, 30 steps). Trigger moss_xvstyle is added for you. Clearly adult, fictional subjects only. 25 GB: Kaggle only, realistically.",
                   qwen_image_21: "Experimental. Qwen-Image-2.1 (7B, Qwen Research License): strong text and portraits; 40 steps, no negative prompt. Kaggle recommended.",

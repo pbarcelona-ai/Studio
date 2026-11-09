@@ -304,7 +304,7 @@ MODELS["ltx_video_fast_i2v"] = dict(
 
 MODELS["wan22_ti2v_5b_i2v"] = dict(
   title="Wan 2.2 (TI2V 5B), from keyframes", repo="Wan-AI/Wan2.2-TI2V-5B-Diffusers", fps=24,
-  note="Wan 2.2's 5B model in its image-to-video mode (Apache-2.0): each shot starts from its keyframe, which keeps faces, costumes and sets the same from clip to clip. Better motion than LTX. Default 704x384, 33 frames at 24 fps (sizes are multiples of 32); slow on a T4. Needs keyframes for the rows first. Kaggle or this computer. EXPERIMENTAL: not run on a GPU yet.",
+  note="Wan 2.2's 5B model in its image-to-video mode (Apache-2.0): each shot starts from its keyframe, which keeps faces, costumes and sets the same from clip to clip. Default 704x384, 33 frames at 24 fps, so clips last only about 1.4 s (sizes are multiples of 32). Tested on a Kaggle T4: about 13 minutes a clip, and small faces smeared more than with LTX-Video 0.9.8 distilled. Needs keyframes for the rows first. Kaggle or this computer.",
   config=MODELS["wan22_ti2v_5b"]["config"],
   load="""from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
 
@@ -462,6 +462,56 @@ MODELS["upscale_seedvr2_7b"] = dict(_SEEDVR2,
   config=_SEEDVR2_CFG + '# (GPU memory GB at least, model, transformer blocks moved to system RAM): the first that fits this GPU is used\n'
          'MODEL_BY_MEMORY = [(38, "seedvr2_ema_7b_fp16.safetensors", 0), (22, "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors", 0),\n'
          '                   (14, "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors", 36), (0, "seedvr2_ema_7b-Q4_K_M.gguf", 36)]')
+
+MODELS["skyreels_v2_i2v"] = dict(
+  title="SkyReels-V2 1.3B 540P, from keyframes", repo="Skywork/SkyReels-V2-I2V-1.3B-540P-Diffusers", fps=24,
+  note="SkyReels-V2 (Skywork licence; April 2025), a Wan-family model trained on film and television shots, animating each shot's keyframe. 1.3B, about 30 GB of downloads because its text encoder is large. Default 480x272, 33 frames, about 1.4 s, sized to fit a T4. Needs keyframes for the rows first. Kaggle or this computer. EXPERIMENTAL: not run on a GPU yet.",
+  config='MODEL_ID = "Skywork/SkyReels-V2-I2V-1.3B-540P-Diffusers"\nWIDTH, HEIGHT = 480, 272   # multiples of 16, small enough for a T4\nNUM_FRAMES = 33            # 4*k+1, about 1.4 s\nFPS = 24\nSTEPS = 30\nGUIDANCE = 5.0\nFLOW_SHIFT = 3.0',
+  load="""from diffusers import AutoModel, SkyReelsV2ImageToVideoPipeline, UniPCMultistepScheduler
+
+vae = AutoModel.from_pretrained(MODEL_ID, subfolder="vae", torch_dtype=torch.float32)     # a float32 VAE decodes cleanly
+pipe = SkyReelsV2ImageToVideoPipeline.from_pretrained(MODEL_ID, vae=vae, torch_dtype=torch.bfloat16)
+pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config, flow_shift=FLOW_SHIFT)
+pipe.enable_model_cpu_offload()""",
+  gen=OPT + _KEYFRAME + '''def generate(row, seed):
+    w, h = opt(row, "width", WIDTH), opt(row, "height", HEIGHT)
+    return remember(row, pipe(image=keyframe(row, w, h), prompt=row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
+                width=w, height=h, num_frames=opt(row, "frames", NUM_FRAMES),
+                num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
+                generator=torch.Generator("cuda").manual_seed(seed)).frames[0])''')
+
+MODELS["svd_xt_i2v"] = dict(
+  title="Stable Video Diffusion XT 1.1, from keyframes", repo="stabilityai/stable-video-diffusion-img2vid-xt-1-1", fps=7,
+  note="Stability AI's SVD-XT 1.1 (2024; Stability AI Community Licence). Its repository is gated: accept the licence on its Hugging Face page once and give the notebook your HF_TOKEN (Kaggle: Add-ons > Secrets). An older model: it takes no prompt, so it only moves what is in the keyframe, as it chooses. 1024x576, 25 frames, about 3.5 s at 7 fps. Needs keyframes for the rows first. Kaggle or this computer. EXPERIMENTAL: not run on a GPU yet.",
+  config='MODEL_ID = "stabilityai/stable-video-diffusion-img2vid-xt-1-1"\nWIDTH, HEIGHT = 1024, 576\nNUM_FRAMES = 25\nFPS = 7\nMOTION = 127            # 1-255: how much moves\nDECODE_CHUNK = 4        # frames decoded together; lower it if the GPU runs out of memory',
+  load='from diffusers import StableVideoDiffusionPipeline\n\npipe = StableVideoDiffusionPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.float16, variant="fp16")\npipe.enable_model_cpu_offload()\npipe.unet.enable_forward_chunking()',
+  gen=OPT + _KEYFRAME + '''def generate(row, seed):
+    w, h = opt(row, "width", WIDTH), opt(row, "height", HEIGHT)
+    return remember(row, pipe(keyframe(row, w, h), width=w, height=h, num_frames=opt(row, "frames", NUM_FRAMES), decode_chunk_size=DECODE_CHUNK,
+                motion_bucket_id=MOTION, noise_aug_strength=0.02, generator=torch.Generator("cuda").manual_seed(seed)).frames[0])''')
+
+MODELS["svd_i2v"] = dict(MODELS["svd_xt_i2v"],
+  title="Stable Video Diffusion, from keyframes", repo="stabilityai/stable-video-diffusion-img2vid",
+  note="Stability AI's first SVD (2023; Stability AI Community Licence; no login needed). An older model: it takes no prompt, so it only moves what is in the keyframe, as it chooses. 1024x576, 14 frames, about 2 s at 7 fps. Needs keyframes for the rows first. Kaggle or this computer. EXPERIMENTAL: not run on a GPU yet.",
+  config='MODEL_ID = "stabilityai/stable-video-diffusion-img2vid"\nWIDTH, HEIGHT = 1024, 576\nNUM_FRAMES = 14\nFPS = 7\nMOTION = 127            # 1-255: how much moves\nDECODE_CHUNK = 4        # frames decoded together; lower it if the GPU runs out of memory')
+
+MODELS["ltx25_i2v"] = dict(
+  title="LTX-2.5 distilled (GGUF), from keyframes", repo="Lightricks/LTX-2.5-Diffusers", fps=24, pip=PIP_GGUF,
+  note="LTX-2.5 (22B; LTX licence) as a 3-bit GGUF, animating each shot's keyframe. Its repository is gated: accept the licence on its Hugging Face page and give the notebook your HF_TOKEN. Its text encoder and connectors alone are about 34 GB, more than a free Kaggle machine's memory, so this is expected to need a larger machine. EXPERIMENTAL: not proven on any GPU.",
+  config='MODEL_ID = "Lightricks/LTX-2.5-Diffusers"\nGGUF_REPO = "unsloth/LTX-2.5-GGUF"\nGGUF_FILE = "distilled/ltx-2.5-22b-distilled-Q3_K_M.gguf"\nWIDTH, HEIGHT = 672, 384\nNUM_FRAMES = 97\nFPS = 24\nSTEPS = 8\nGUIDANCE = 1.0',
+  load="""from diffusers import GGUFQuantizationConfig, LTX2ImageToVideoPipeline, LTX2VideoTransformer3DModel
+from huggingface_hub import hf_hub_download
+
+transformer = LTX2VideoTransformer3DModel.from_single_file(hf_hub_download(GGUF_REPO, GGUF_FILE), config=MODEL_ID, subfolder="transformer",
+                                                           quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16), torch_dtype=torch.bfloat16)
+pipe = LTX2ImageToVideoPipeline.from_pretrained(MODEL_ID, transformer=transformer, torch_dtype=torch.bfloat16)
+pipe.enable_model_cpu_offload()
+pipe.vae.enable_tiling()""",
+  gen=OPT + _KEYFRAME + '''def generate(row, seed):
+    w, h = opt(row, "width", WIDTH), opt(row, "height", HEIGHT)
+    video, _audio = pipe(image=keyframe(row, w, h), prompt=row["prompt"], negative_prompt=row.get("negative") or NEGATIVE, width=w, height=h, num_frames=opt(row, "frames", NUM_FRAMES),
+                         frame_rate=FPS, num_inference_steps=STEPS, guidance_scale=GUIDANCE, generator=torch.Generator("cuda").manual_seed(seed), output_type="pil", return_dict=False)
+    return remember(row, video[0])''')
 
 # Lip-sync: travels the upscalers' road (clips go up as in-NNNN.mp4, come back as videos/<source>_lipsync), with each row's narration as a-NNNN.wav.
 MODELS["upscale_lipsync"] = dict(

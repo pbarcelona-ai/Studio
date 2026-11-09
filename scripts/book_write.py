@@ -206,7 +206,7 @@ The sentences of the chapter, numbered (each is cut to its first words):
 {shown}
 
 A new scene begins when the place or the time changes, or when the story moves to different people. Return ONE JSON object:
-{{"scenes": [{{"first": 1, "title": "a few words", "location": "exact name from this list, or \"\": {location_names}",
+{{"scenes": [{{"first": 1, "title": "a few words", "location": "exact name from this list only if the scene truly happens there, or \"\" if none truly fits, never the nearest: {location_names}",
  "state": "at most 30 words of what must stay the same in every shot of the scene: time of day, weather, what people wear and carry, injuries, who is present"}}]}}""",
                     OUTLINE_SYSTEM, model=args.model, engine=args.engine, validate=check)
     scenes = [{"first": s["first"], "title": str(s.get("title") or "").strip()[:80], "location": str(s.get("location") or "").strip(), "state": str(s.get("state") or "").strip()[:300]}
@@ -303,7 +303,7 @@ Rules:
   Video models garble small faces: when a face shows, frame the person from a medium shot to a close-up, so the head is at least a fifth of the picture's
   height. In a wide shot show people from behind, in silhouette or too far away to see a face, or show the place alone. Keep movement of the head and hands slow.
 - characters: exact names from this list who appear in the shot, or []: {char_names}
-- location: exact name from this list if the shot happens there, otherwise "": {location_names}
+- location: exact name from this list only if the shot truly happens there, otherwise "", never the nearest: {location_names}. Its description is pasted into the prompt, so it must not contradict your visual.
 - continues: true only if this shot carries on the same action in the same place from the shot before it, as an unbroken moment (a continuous
   walk, a fall, a fight). A cut to another angle, place or time is false. The first shot of the chapter is false.
 {narr_rule}- sfx: at most 25 words of ambience and sound effects to hear in the shot (no speech, no music).
@@ -359,7 +359,7 @@ def write_chapter(c):
                     "negative": shot_negative(global_negatives), "location": str(s.get("location") or "").strip(), "continues": i > 1 and s.get("continues") is True and not (owner and owner[i - 1] is not owner[i - 2]),
                     **({"scene": owner[i - 1]["title"]} if owner else {}),
                     "prompt": compose_prompt(s["visual"], s.get("characters", []), continuity, global_positives=global_positives, global_negatives=global_negatives,
-                                             chapter=c["n"], look=args.look, location=s.get("location") or (owner[i - 1]["location"] if owner else "")), "slice": sl,
+                                             chapter=c["n"], look=args.look, location=s.get("location") or ""), "slice": sl,
                     **({"lines": lines} if lines is not None else {})})
     write_json(pdir / "scripts" / f"chapter-{c['n']:03d}.json",
                {"chapter": c["n"], "title": c["title"], "narration_mode": args.narration, "shots": out})

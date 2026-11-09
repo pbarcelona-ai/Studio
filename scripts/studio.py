@@ -51,8 +51,9 @@ TOKEN, SESSION_PORT = load_or_create_session()
 
 VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_video", "cogvideox", "cogvideox_5b",
                 "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan",     # tpu_wan = Kaggle TPU experiment
-                "ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v"]          # image-to-video: animate each shot's keyframe
-I2V_MODELS = {"ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v"}
+                "ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "pika_h3_flex_i2v"]          # image-to-video: animate each shot's keyframe
+I2V_MODELS = {"ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "pika_h3_flex_i2v"}     # a model joins these lists once it has really run: skyreels_v2_i2v, svd_i2v, svd_xt_i2v and ltx25_i2v are in make_video.py, untested
+SPACE_ONLY_MODELS = {"pika_h3_flex_i2v"}     # too big for any GPU here: only a Hugging Face Space runs them
 # Upscalers: enlarge clips already made (make_video.py); Kaggle or this computer. name -> (label, GPU memory it needs, least GPU GB, needs Ampere or newer)
 UPSCALE_MODELS = {
     "upscale_x2": ("Real-ESRGAN x2", "about 2-4 GB of GPU memory, any NVIDIA GPU. Tested on a Kaggle T4: about 40 s per clip", 3, False),
@@ -72,7 +73,7 @@ REF_IMAGE_MODELS = {"flux2_klein_4b"}                                    # keyfr
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
 VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
                 ("CogVideoX", ["cogvideox", "cogvideox_5b"]), ("Uncensored (adult content)", ["wan22_t2v_a14b_lora", "hunyuan_video_lora"]),
-                ("TPU (Kaggle only)", ["tpu_wan"]), ("From keyframes (image-to-video, Kaggle or this computer)", ["ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "ltx_video_i2v"])]
+                ("TPU (Kaggle only)", ["tpu_wan"]), ("From keyframes (image-to-video, Kaggle or this computer)", ["pika_h3_flex_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "ltx_video_i2v"])]
 # Audio models: name -> (role, label, short note). The role decides which sound it makes (narration / sfx / music) and the file prefix it writes.
 AUDIO_MODELS = {
     "kokoro": ("narration", "Kokoro", "fast, light narration voices"),
@@ -104,6 +105,7 @@ MODEL_DEFAULTS = {
     "ltx_video_i2v": {"width": 768, "height": 320, "frames": 97, "steps": 40, "guidance": 3.0},
     "ltx_video_fast_i2v": {"width": 768, "height": 320, "frames": 97, "guidance": 1.0, "locked": ["steps"]},       # fixed 8-step schedule
     "wan22_ti2v_5b_i2v": {"width": 704, "height": 384, "frames": 33, "steps": 30, "guidance": 5.0},
+    "pika_h3_flex_i2v": {"width": 832, "height": 480, "frames": 121, "locked": ["width", "height", "frames", "negative", "steps", "guidance"]},
     "wan22_t2v_a14b": {"width": 448, "height": 256, "frames": 25, "steps": 30, "guidance": 4.0},
     "wan22_t2v_a14b_lora": {"width": 448, "height": 256, "frames": 25, "steps": 30, "guidance": 4.0},
     "wan22_t2v_a14b_lightning": {"width": 448, "height": 256, "frames": 25, "steps": 4, "guidance": 1.0, "locked": ["negative", "steps", "guidance"]},
@@ -537,7 +539,9 @@ BIG_RAM_MODELS = {"wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lora", "wan
 
 def model_blocker(name, service, gpu):
     """Why this video/image/audio model cannot run with this service and GPU, or None if it can (it may still be untested)."""
-    if service == "huggingface" and name not in I2V_MODELS:
+    if name in SPACE_ONLY_MODELS and service != "huggingface":
+        return "far too big for this GPU: it runs on its public Hugging Face Space (Models tab, Where to run: Hugging Face). Make the keyframes on Kaggle first"
+    if service == "huggingface" and (name not in I2V_MODELS or name in hf_spaces.SPACES):
         return None if name in hf_spaces.SPACES else "no public Hugging Face Space is set up for this model (see scripts/hf_spaces.py)"
     if service == "computer" and name in run_local_model.NVIDIA_ONLY and local_is_amd():
         return "cannot run on this AMD GPU: " + run_local_model.NVIDIA_ONLY[name]
