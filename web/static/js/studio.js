@@ -2357,50 +2357,6 @@ async function loadCharAllTokens() {
   }
 }
 
-async function loadCharacter(series, name) {
-  if (!series || !name) return;
-  charCurrentSeries = series;
-  charCurrentCharacter = name;
-  try {
-    const j = await api(`/api/characters?action=get&series=${encodeURIComponent(series)}&name=${encodeURIComponent(name)}`);
-    const c = j.character;
-    if (c) {
-      $("charName").value = c.name || "";
-      $("charVisualToken").value = c.visual_token || "";
-      $("charTriggerWords").value = (c.trigger_words || []).join(", ");
-      // Populate physical traits dropdowns/inputs
-      const physicalFields = ["age", "height", "build", "skin", "hair", "facial_hair", "eyes", "expression", "ethnicity", "distinguishing_features"];
-      for (const field of physicalFields) {
-        const el = $(`trait_${field}`);
-        if (el && c.physical_traits && c.physical_traits[field]) {
-          el.value = c.physical_traits[field];
-        }
-      }
-      $("charClothing").value = c.clothing || "";
-      $("charVoice").value = c.voice || "";
-      // Populate LoRA fields
-      const loraFields = ["repo", "trigger_word", "base_model", "trained"];
-      for (const field of loraFields) {
-        const el = $(`lora_${field}`);
-        if (el && c.lora && c.lora[field] !== undefined) {
-          if (el.type === "checkbox") {
-            el.checked = Boolean(c.lora[field]);
-          } else {
-            el.value = c.lora[field] || "";
-          }
-        }
-      }
-      $("charRefImages").value = (c.reference_images || []).join("\n");
-      $("charConsistency").value = c.consistency_notes || "";
-      $("charStages").value = stagesToText(c.stages);
-      loadCharRefs();
-      updateRefDir();
-    }
-    updateCharButtons();
-  } catch (e) {
-    showCharStatus(e.message, true);
-  }
-}
 
 function updateRefDir() {
   const series = $("charSeries").value;

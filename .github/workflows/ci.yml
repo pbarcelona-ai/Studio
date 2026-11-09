@@ -13,4 +13,8 @@ jobs:
       - run: pip install pytest pytest-cov ruff mypy pillow imageio-ffmpeg
       - run: ruff check .
       - run: mypy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: for f in web/static/js/*.js; do node --check "$f"; done
       - run: pytest --cov=scripts
