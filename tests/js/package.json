@@ -1,0 +1,1 @@
+{ "name": "studio-js-tests", "private": true, "version": "1.0.0", "description": "jsdom smoke test of the Studio page", "dependencies": { "jsdom": "24.1.0" } }

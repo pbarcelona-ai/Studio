@@ -17,4 +17,6 @@ jobs:
         with:
           node-version: 20
       - run: for f in web/static/js/*.js; do node --check "$f"; done
+      - run: npm install --silent
+        working-directory: tests/js
       - run: pytest --cov=scripts
