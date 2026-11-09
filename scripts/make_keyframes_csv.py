@@ -48,7 +48,7 @@ def save_small(src, dst):
         img = Image.open(src).convert("RGB")
         img.thumbnail((REF_SIDE, REF_SIDE))
         img.save(dst, "PNG")
-    except Exception:          # no Pillow, or a picture Pillow cannot read: the run resizes it instead
+    except (ImportError, OSError, ValueError):          # no Pillow, or a picture Pillow cannot read: the run resizes it instead
         shutil.copyfile(src, dst)
 
 

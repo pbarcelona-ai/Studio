@@ -170,7 +170,7 @@ def save_small_picture(src, dst, side=448):
         img = Image.open(src).convert("RGB")
         img.thumbnail((side, side))
         img.save(dst, "PNG")
-    except Exception:
+    except (ImportError, OSError, ValueError):
         shutil.copyfile(src, dst)
 
 

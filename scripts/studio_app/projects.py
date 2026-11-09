@@ -107,7 +107,7 @@ def load_global_params(project):
     try:
         import json
         return json.loads(path.read_text())
-    except Exception:
+    except (OSError, ValueError):
         return {"positives": "", "negatives": ""}
 
 def save_global_params(project, positives, negatives):

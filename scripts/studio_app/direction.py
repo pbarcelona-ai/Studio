@@ -151,7 +151,7 @@ def voice_cast(opt):
         if series:
             try:
                 ch = character_tokens.load_character(series, sp["name"]) if character_tokens.get_character_path(series, sp["name"]).exists() else None
-            except Exception:
+            except (OSError, ValueError):
                 ch = None
             suggest = voice_id((ch or {}).get("voice"))
         out.append({"name": sp["name"], "lines": sp["lines"], "voice": now, "cast": cast_lc.get(key, ""),

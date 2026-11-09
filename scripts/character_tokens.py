@@ -505,7 +505,8 @@ def list_characters(series: str) -> list[dict]:
         return []
     try:
         return json.loads(index_path.read_text()).get("characters", [])
-    except Exception:
+    except (OSError, ValueError, AttributeError) as e:
+        log.warning("character index %s is unreadable: %s", index_path, e)
         return []
 
 
@@ -569,7 +570,8 @@ def extract_characters_from_book(book_path: Path) -> list[dict]:
 
     try:
         continuity = json.loads(book_path.read_text())
-    except Exception:
+    except (OSError, ValueError) as e:
+        log.warning("continuity book %s is unreadable: %s", book_path, e)
         return []
 
     chars = continuity.get("characters", [])

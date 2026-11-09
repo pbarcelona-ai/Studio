@@ -146,7 +146,7 @@ def main():
                 shutil.copy(src, dest)
             made += 1
             print(f"[{i}/{end}] ok ({time.time() - t0:.0f}s) -> {dest.name}", flush=True)
-        except Exception as e:
+        except Exception as e:      # the Space client raises many kinds of error; one failed shot must not stop the others
             msg = str(e)
             failed += 1
             print(f"[{i}/{end}] FAILED: {msg[:400]}", flush=True)

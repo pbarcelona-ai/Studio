@@ -4,7 +4,7 @@ import hashlib
 import json
 import mimetypes
 import re
-from http.cookies import SimpleCookie
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -56,7 +56,7 @@ class Handler(BaseHTTPRequestHandler):
         jar = SimpleCookie()
         try:
             jar.load(self.headers.get("Cookie", ""))
-        except Exception:
+        except CookieError:
             return ""
         return jar[COOKIE].value if COOKIE in jar else ""
 

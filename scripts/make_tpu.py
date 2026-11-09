@@ -6,14 +6,10 @@ Facts used (from MaxDiffusion's README / config / generate_wan.py): config base_
 Wan-AI/Wan2.1-T2V-14B-Diffusers, there is no 1.3B config), prompt_file = one prompt per line, videos are written as
 <output_dir>/<run_name>_<seed>_<index>.mp4, setup.sh wants Python 3.12 and builds a venv when it is older.
 """
-import json
-from pathlib import Path
-import os as _os
-root = Path(_os.environ["STUDIO_GEN_DIR"]) if _os.environ.get("STUDIO_GEN_DIR") else Path(__file__).resolve().parent.parent   # STUDIO_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
+from nbkit import code, md, notebook_dict, output_root, write_notebook
+root = output_root()
 
 
-def md(t): return {"cell_type": "markdown", "metadata": {}, "source": t.strip().splitlines(True)}
-def code(t): return {"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [], "source": t.strip().splitlines(True)}
 
 
 INTRO = """
@@ -117,10 +113,10 @@ assert made, 'no videos were produced; read the output above'
 
 def notebook():
     cells = [md(INTRO), code(DIAG), code(CONFIG), code(INSTALL), code(RUN)]
-    return {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "name": "python3"}}, "nbformat": 4, "nbformat_minor": 0}
+    return notebook_dict(cells, {"kernelspec": {"display_name": "Python 3", "name": "python3"}})
 
 
-json.dump(notebook(), open(root / "Studio_Kaggle_tpu_wan.ipynb", "w"), indent=1)
+write_notebook(root / "Studio_Kaggle_tpu_wan.ipynb", notebook())
 print("wrote Studio_Kaggle_tpu_wan.ipynb")
 
 
@@ -321,11 +317,9 @@ assert saved > 0, 'no images were produced; read the output above'
 
 def image_notebook(intro, cells):
     body = [md(intro), code(DIAG)] + [code(c) for c in cells]
-    return {"cells": body, "metadata": {"kernelspec": {"display_name": "Python 3", "name": "python3"}}, "nbformat": 4, "nbformat_minor": 0}
+    return notebook_dict(body, {"kernelspec": {"display_name": "Python 3", "name": "python3"}})
 
 
-json.dump(image_notebook(MAGE_INTRO, [MAGE_CONFIG, MAGE_DOWNLOAD, MAGE_SETUP, MAGE_RUN]),
-          open(root / "Studio_Kaggle_image_tpu_mage_flow.ipynb", "w"), indent=1)
-json.dump(image_notebook(FLUX_INTRO, [FLUX_CONFIG, FLUX_INSTALL, FLUX_LOAD, FLUX_RUN]),
-          open(root / "Studio_Kaggle_image_tpu_flux_jax.ipynb", "w"), indent=1)
+write_notebook(root / "Studio_Kaggle_image_tpu_mage_flow.ipynb", image_notebook(MAGE_INTRO, [MAGE_CONFIG, MAGE_DOWNLOAD, MAGE_SETUP, MAGE_RUN]))
+write_notebook(root / "Studio_Kaggle_image_tpu_flux_jax.ipynb", image_notebook(FLUX_INTRO, [FLUX_CONFIG, FLUX_INSTALL, FLUX_LOAD, FLUX_RUN]))
 print("wrote Studio_Kaggle_image_tpu_mage_flow.ipynb, Studio_Kaggle_image_tpu_flux_jax.ipynb")

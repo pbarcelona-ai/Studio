@@ -53,7 +53,7 @@ def local_llm_status(force=False):
                 models = [m.get("id") for m in json.loads(r.read()).get("data", []) if m.get("id")]
             if not models:
                 reasons.append("the local model server has no models yet (for Ollama: ollama pull <model>)")
-        except Exception:
+        except (OSError, ValueError, AttributeError):
             reasons.append(f"no local model server answered at {LOCAL_LLM_URL.rsplit('/chat/completions', 1)[0]} (install Ollama or LM Studio and start it)")
     value = {"ready": not reasons, "reason": "; ".join(reasons), "url": LOCAL_LLM_URL, "models": models, "memory_gb": round(gb)}
     _LOCAL_CACHE.update(at=time.time(), value=value)

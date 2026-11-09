@@ -5,10 +5,8 @@ For each model below this writes   colab_generate_image_<key>.py      (runs on t
 Rows come from a CSV with columns  chapter,shot,prompt  plus optional  negative,width,height,steps,guidance,seed.
 Output: image-NNNN.png (NNNN = CSV row number).
 """
-import json
-from pathlib import Path
-import os as _os
-root = Path(_os.environ["STUDIO_GEN_DIR"]) if _os.environ.get("STUDIO_GEN_DIR") else Path(__file__).resolve().parent.parent   # STUDIO_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
+from nbkit import code, md, output_root, write_notebook
+root = output_root()
 
 HEADER = '''import csv, os, tarfile, time
 from pathlib import Path
@@ -203,8 +201,6 @@ _slider["gen"] = MODELS["moss_image_base"]["gen"]
 MODELS["moss_sharpness_slider"] = _slider
 
 
-def md(t): return {"cell_type": "markdown", "metadata": {}, "source": t.strip().splitlines(True)}
-def code(t): return {"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [], "source": t.strip().splitlines(True)}
 
 
 # ---------------------------------------------------------------------------------------------------------------------------
@@ -458,6 +454,6 @@ def notebook(key, m, platform):
 
 for key, m in MODELS.items():
     (root / f"colab_generate_image_{key}.py").write_text(script(key, m))
-    json.dump(notebook(key, m, "colab"), open(root / f"Studio_Colab_image_{key}.ipynb", "w"), indent=1)
-    json.dump(notebook(key, m, "kaggle"), open(root / f"Studio_Kaggle_image_{key}.ipynb", "w"), indent=1)
+    write_notebook(root / f"Studio_Colab_image_{key}.ipynb", notebook(key, m, "colab"))
+    write_notebook(root / f"Studio_Kaggle_image_{key}.ipynb", notebook(key, m, "kaggle"))
 print("wrote", ", ".join(MODELS))

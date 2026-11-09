@@ -68,7 +68,7 @@ if global_params_path.exists():
         global_params = json.loads(global_params_path.read_text())
         global_positives = global_params.get("positives", "")
         global_negatives = global_params.get("negatives", "")
-    except Exception:
+    except (OSError, ValueError, AttributeError):
         global_positives = ""
         global_negatives = ""
 else:
@@ -378,7 +378,7 @@ with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
         try:
             n, shots = f.result()
             print(f"chapter {n}: {shots} shots written ({COST['calls']} calls{cost_note()} so far)", flush=True)
-        except Exception as e:
+        except Exception as e:      # a worker thread's failure must not stop the other chapters
             failed.append(c["n"])
             print(f"chapter {c['n']}: FAILED - {e}", flush=True)
 print(f"done. failed chapters: {sorted(failed) or 'none'}")

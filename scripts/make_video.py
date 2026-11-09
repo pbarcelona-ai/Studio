@@ -1,7 +1,5 @@
-import json
-from pathlib import Path
-import os as _os
-root = Path(_os.environ["STUDIO_GEN_DIR"]) if _os.environ.get("STUDIO_GEN_DIR") else Path(__file__).resolve().parent.parent   # STUDIO_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
+from nbkit import code, md, notebook_dict, output_root, write_notebook
+root = output_root()
 
 NEG = "worst quality, inconsistent motion, blurry, jittery, distorted, text, subtitles, watermark, logo"
 # The Studio's film shape: an "aspect" column turns this model's size into the same number of pixels at that shape, so memory use stays about the same.
@@ -658,8 +656,6 @@ with tarfile.open(tar, "w") as tf:
 print("failed:", failed or "none"); print("tar:", tar)
 '''
 
-def md(t): return {"cell_type":"markdown","metadata":{},"source":t.strip().splitlines(True)}
-def code(t): return {"cell_type":"code","metadata":{},"execution_count":None,"outputs":[],"source":t.strip().splitlines(True)}
 
 PIP = "!pip install -q -U diffusers transformers accelerate sentencepiece imageio imageio-ffmpeg ftfy"
 SUFFIX = "SUFFIX = '' if CSV_NAME == 'all_shots.csv' else '_chapters'   # keeps per-shot and per-chapter clips apart"
@@ -711,9 +707,9 @@ def notebook(name, m, platform):
         code(m["load"]), code(m["gen"]), code(LOOP)]
     meta = {"accelerator": "GPU", "colab": {"gpuType": "T4"}} if platform == "colab" else {}
     meta["kernelspec"] = {"display_name": "Python 3", "name": "python3"}
-    return {"cells": cells, "metadata": meta, "nbformat": 4, "nbformat_minor": 0}
+    return notebook_dict(cells, meta)
 
 for name, m in MODELS.items():
     (root / f"colab_generate_{name}.py").write_text(script(name, m))
-    json.dump(notebook(name, m, "colab"), open(root / f"Studio_Colab_{name}.ipynb", "w"), indent=1)
-    json.dump(notebook(name, m, "kaggle"), open(root / f"Studio_Kaggle_{name}.ipynb", "w"), indent=1)
+    write_notebook(root / f"Studio_Colab_{name}.ipynb", notebook(name, m, "colab"))
+    write_notebook(root / f"Studio_Kaggle_{name}.ipynb", notebook(name, m, "kaggle"))

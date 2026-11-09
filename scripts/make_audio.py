@@ -1,7 +1,5 @@
-import json
-from pathlib import Path
-import os as _os
-root = Path(_os.environ["STUDIO_GEN_DIR"]) if _os.environ.get("STUDIO_GEN_DIR") else Path(__file__).resolve().parent.parent   # STUDIO_GEN_DIR: write somewhere else (the run scripts use a throw-away folder)
+from nbkit import code, md, notebook_dict, output_root, write_notebook
+root = output_root()
 
 HEADER = '''import csv, os, subprocess, sys, tarfile, time
 from pathlib import Path
@@ -244,8 +242,6 @@ KINDS["mmaudio"]["body"] = "import shlex\njson_q = shlex.quote\n" + KINDS["mmaud
 def script(k, m):
     return f'"""{m["title"]}. Runs ON the Colab/Kaggle VM. {m["note"]}\n\nReads {m["csv_hint"]} (or the chapters variant) rows START..END and writes {m["prefix"]}-NNNN.wav files.\n"""\n' + HEADER + m["body"] + FOOTER
 
-def md(t): return {"cell_type": "markdown", "metadata": {}, "source": t.strip().splitlines(True)}
-def code(t): return {"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [], "source": t.strip().splitlines(True)}
 
 def notebook(k, m, platform):
     SUF = "SUFFIX = '_chapters' if 'chapters' in CSV_NAME else ''"
@@ -263,9 +259,9 @@ def notebook(k, m, platform):
     cfg = paths + "\nSTART, END = 1, 10   # CSV row numbers (1-based)\nMAKE_TAR = False"
     meta = {"accelerator": "GPU"} if platform == "colab" else {}
     meta["kernelspec"] = {"display_name": "Python 3", "name": "python3"}
-    return {"cells": [md(intro)] + setup + [code(cfg), code(script(k, m))], "metadata": meta, "nbformat": 4, "nbformat_minor": 0}
+    return notebook_dict([md(intro)] + setup + [code(cfg), code(script(k, m))], meta)
 
 for k, m in KINDS.items():
     (root / f"colab_generate_audio_{k}.py").write_text(script(k, m))
-    json.dump(notebook(k, m, "colab"), open(root / f"Studio_Colab_audio_{k}.ipynb", "w"), indent=1)
-    json.dump(notebook(k, m, "kaggle"), open(root / f"Studio_Kaggle_audio_{k}.ipynb", "w"), indent=1)
+    write_notebook(root / f"Studio_Colab_audio_{k}.ipynb", notebook(k, m, "colab"))
+    write_notebook(root / f"Studio_Kaggle_audio_{k}.ipynb", notebook(k, m, "kaggle"))
