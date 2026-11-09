@@ -7,6 +7,8 @@ import character_tokens
 import layout
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
+from schemas import clean_global_params
+
 from .config import AUDIO_KINDS, BOOK_EXTS, IMAGE_MODELS, LEGACY, LIBRARY, MODEL_RE, VIDEO_MODELS, get_character_series
 
 
@@ -100,19 +102,15 @@ def read_csv_rows(path):
 GLOBAL_PARAMS_FILE = "global_params.json"
 
 def load_global_params(project):
-    """Load global parameters for a project."""
+    """Load global parameters for a project ({"schema_version", "positives", "negatives"}; empty text when missing or unreadable)."""
     path = pdir(project) / GLOBAL_PARAMS_FILE
-    if not path.exists():
-        return {"positives": "", "negatives": ""}
     try:
-        import json
-        return json.loads(path.read_text())
+        return clean_global_params(json.loads(path.read_text()))
     except (OSError, ValueError):
-        return {"positives": "", "negatives": ""}
+        return clean_global_params({})
 
 def save_global_params(project, positives, negatives):
     """Save global parameters for a project."""
     path = pdir(project) / GLOBAL_PARAMS_FILE
     pdir(project).mkdir(parents=True, exist_ok=True)
-    import json
-    path.write_text(json.dumps({"positives": positives, "negatives": negatives}, indent=1))
+    path.write_text(json.dumps(clean_global_params({"positives": positives, "negatives": negatives}), indent=1))

@@ -49,7 +49,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true")
     a = ap.parse_args(argv)
-    bad = problems_in_catalog(CATALOG)
+    bad: list[str] = problems_in_catalog(CATALOG)
     for p in bad:
         print("CATALOG:", p)
     if not a.offline:
@@ -58,9 +58,10 @@ def main(argv=None) -> int:
             print(("ok   " if ok else "GONE ") + "model " + model)
             bad += [] if ok else [model]
         for key, sp in hf_spaces.SPACES.items():
-            ok = exists(f"https://huggingface.co/api/spaces/{sp['space']}")
-            print(("ok   " if ok else "GONE ") + f"space {sp['space']} ({key})")
-            bad += [] if ok else [sp["space"]]
+            space = str(sp["space"])
+            ok = exists(f"https://huggingface.co/api/spaces/{space}")
+            print(("ok   " if ok else "GONE ") + f"space {space} ({key})")
+            bad += [] if ok else [space]
     return 1 if bad else 0
 
 

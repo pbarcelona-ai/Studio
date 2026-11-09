@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-cov", "ruff>=0.6", "mypy>=1.10"]
+dev = ["pytest>=8", "pytest-cov", "ruff>=0.6", "mypy>=1.10", "imageio-ffmpeg"]
 depth3d = ["numpy", "opencv-python-headless", "transformers", "torch", "timm"]
 
 [tool.pytest.ini_options]

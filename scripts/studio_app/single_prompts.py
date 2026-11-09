@@ -11,6 +11,8 @@ import prompt_guides
 import model_advisor
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
+from schemas import IMAGE_COLS, VIDEO_COLS
+
 from .common import PlanError, num
 from .config import GPUS, I2V_MODELS, IMAGE_MODELS, MODEL_DEFAULTS, REF_IMAGE_MODELS, ROOT, VIDEO_MODELS
 from .gpus import check_models, gpu_blocker, local_gpu_label
@@ -19,8 +21,6 @@ from .steps import chunks, engine_args, make_runner
 
 
 # ---------------------------------------------------------------- single prompts (text to video / text to image)
-VIDEO_COLS = ["chapter", "shot", "prompt", "negative", "width", "height", "frames", "steps", "guidance", "seed"]
-IMAGE_COLS = ["chapter", "shot", "prompt", "negative", "width", "height", "steps", "guidance", "seed"]
 
 
 def snap(value, multiple, lo, hi):

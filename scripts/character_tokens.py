@@ -45,6 +45,8 @@ import json
 import logging
 from typing import Any
 from pathlib import Path
+
+from schemas import validate_continuity
 from datetime import datetime
 from enum import Enum
 
@@ -573,6 +575,8 @@ def extract_characters_from_book(book_path: Path) -> list[dict]:
     except (OSError, ValueError) as e:
         log.warning("continuity book %s is unreadable: %s", book_path, e)
         return []
+    for problem in validate_continuity(continuity):
+        log.warning("continuity book %s: %s", book_path.name, problem)
 
     chars = continuity.get("characters", [])
     characters = []
