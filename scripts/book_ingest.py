@@ -8,7 +8,10 @@ Chapters are found from headings ("CHAPTER 5", "Psalm 23", "BOOK II", a lone rom
 headings exist the text is cut into sections of about 2,500 words. Check chapters.json afterwards; you can edit or
 re-split it by hand and then rerun the later steps.
 """
-import argparse, re, shutil, sys
+import argparse
+import re
+import shutil
+import sys
 from collections import Counter
 from pathlib import Path
 from pypdf import PdfReader

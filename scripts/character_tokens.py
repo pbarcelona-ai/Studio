@@ -42,11 +42,8 @@ Each character token:
 }
 """
 import json
-import re
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Set, Union
-from dataclasses import dataclass, asdict, field
 from enum import Enum
 
 # Import bookkit for project structure
@@ -246,7 +243,7 @@ VALID_VALUES = {
 }
 
 
-def validate_trait(field: str, value: str, archetype: Optional[CharacterArchetype] = None) -> tuple[bool, str]:
+def validate_trait(field: str, value: str, archetype: CharacterArchetype | None = None) -> tuple[bool, str]:
     """Validate a trait value against allowed values.
     Returns (is_valid, error_message).
 
@@ -279,7 +276,7 @@ def validate_trait(field: str, value: str, archetype: Optional[CharacterArchetyp
     return True, ""
 
 
-def validate_character(character: Dict, archetype: Optional[CharacterArchetype] = None) -> List[str]:
+def validate_character(character: dict, archetype: CharacterArchetype | None = None) -> list[str]:
     """Validate a character token against its archetype requirements.
     Returns list of error messages (empty if valid)."""
     errors = []
@@ -327,17 +324,17 @@ def validate_character(character: Dict, archetype: Optional[CharacterArchetype] 
     return errors
 
 
-def get_archetype_fields(archetype: CharacterArchetype) -> Dict[str, List[str]]:
+def get_archetype_fields(archetype: CharacterArchetype) -> dict[str, list[str]]:
     """Get the field configuration for an archetype."""
     return ARCHETYPE_CONFIG.get(archetype, ARCHETYPE_CONFIG[CharacterArchetype.HUMAN])
 
 
-def get_valid_values(field: str) -> List[str]:
+def get_valid_values(field: str) -> list[str]:
     """Get valid values for a field (for dropdowns)."""
     return VALID_VALUES.get(field, [])
 
 
-def create_character_template(archetype: CharacterArchetype, name: str, series: str) -> Dict:
+def create_character_template(archetype: CharacterArchetype, name: str, series: str) -> dict:
     """Create a character template with default values for an archetype."""
     config = ARCHETYPE_CONFIG.get(archetype, ARCHETYPE_CONFIG[CharacterArchetype.HUMAN])
 
@@ -441,7 +438,7 @@ def get_index_path(series: str) -> Path:
     return get_series_dir(series) / "character_index.json"
 
 
-def load_character(series: str, character_name: str) -> Optional[Dict]:
+def load_character(series: str, character_name: str) -> dict | None:
     """Load a character token from file."""
     path = get_character_path(series, character_name)
     if not path.exists():
@@ -452,7 +449,7 @@ def load_character(series: str, character_name: str) -> Optional[Dict]:
         return None
 
 
-def save_character(character: Dict) -> Path:
+def save_character(character: dict) -> Path:
     """Save a character token to file."""
     ensure_characters_dir()
     series = character.get("series", "unknown")
@@ -498,7 +495,7 @@ def update_index(series: str):
     (series_dir / "character_index.json").write_text(json.dumps(index, indent=2))
 
 
-def list_characters(series: str) -> List[Dict]:
+def list_characters(series: str) -> list[dict]:
     """List all characters in a series."""
     index_path = get_index_path(series)
     if not index_path.exists():
@@ -509,7 +506,7 @@ def list_characters(series: str) -> List[Dict]:
         return []
 
 
-def list_series() -> List[str]:
+def list_series() -> list[str]:
     """List all book series with character tokens."""
     if not CHARACTERS_ROOT.exists():
         return []
@@ -517,7 +514,7 @@ def list_series() -> List[str]:
     return sorted(d.name for d in CHARACTERS_ROOT.iterdir() if d.is_dir() and d.name != "_schema" and not (d / "promptset.json").exists())
 
 
-def get_character_tokens_for_prompt(series: str, characters: List[str]) -> str:
+def get_character_tokens_for_prompt(series: str, characters: list[str]) -> str:
     """Generate a character token string for inclusion in prompts."""
     tokens = []
     for char_name in characters:
@@ -542,7 +539,7 @@ BOOK_VOICES = {"narrator": "bm_george", "male": "am_michael", "female": "af_bell
                 "deity": "bm_lewis", "child": "af_sky", "villain": "am_adam"}
 
 
-def _character_from_book_entry(name: str, data: Dict) -> Dict:
+def _character_from_book_entry(name: str, data: dict) -> dict:
     """One <book>.json character -> a character token. Handles both shapes:
        list form written by book_continuity.py : {"name", "token", "voice": "male"}
        older dict form                    : {"visual_token", "physical_traits", "clothing", "voice", "aliases", "notes"}"""
@@ -562,7 +559,7 @@ def _character_from_book_entry(name: str, data: Dict) -> Dict:
     }
 
 
-def extract_characters_from_book(book_path: Path) -> List[Dict]:
+def extract_characters_from_book(book_path: Path) -> list[dict]:
     """Extract character definitions from a <book>.json file."""
     if not book_path.exists():
         return []
@@ -589,7 +586,7 @@ def extract_characters_from_book(book_path: Path) -> List[Dict]:
 BOOK_FIELDS = ("visual_token", "physical_traits", "clothing", "voice", "consistency_notes", "stages")
 
 
-def sync_from_book(project_slug: str, series: Optional[str] = None, overwrite: bool = False, dry_run: bool = False) -> Dict:
+def sync_from_book(project_slug: str, series: str | None = None, overwrite: bool = False, dry_run: bool = False) -> dict:
     """Copy a project's <book>.json characters into a series.
     overwrite=False : characters already in the series are left alone (they may have been edited by hand).
     overwrite=True  : an existing character gets the continuity book's visual token, voice, clothing, traits and notes (each only if the continuity book
@@ -630,7 +627,7 @@ for _w, _v in BOOK_VOICES.items():
     VOICE_WORD_OF.setdefault(_v, _w)
 
 
-def send_to_book(project_slug: str, series: str, names: List[str], dry_run: bool = False) -> Dict:
+def send_to_book(project_slug: str, series: str, names: list[str], dry_run: bool = False) -> dict:
     """The other direction of sync_from_book: copy the chosen series characters INTO the book's continuity book (<book>.json).
     A character already in the book gets the series' visual token (and its voice, when the series voice maps to one of the book's voice
     words); a character the book does not have is added. Other fields in the book's file are kept. Chapters that are already written
@@ -695,7 +692,7 @@ def sync_characters_from_project(project_slug: str) -> int:
 
 
 def create_character_from_description(series: str, name: str, description: str,
-                                       visual_token: str = "") -> Dict:
+                                       visual_token: str = "") -> dict:
     """Create a character token from a natural language description.
     Uses AI to parse the description into structured fields."""
     # This would call an LLM to parse the description
@@ -743,7 +740,7 @@ def get_negative_prompt() -> str:
     return NEGATIVE_PROMPT
 
 
-def build_character_prompt(character: Dict, action: str = "") -> str:
+def build_character_prompt(character: dict, action: str = "") -> str:
     """Build a complete prompt for a character including visual token, traits, and constants."""
     parts = []
 
@@ -816,7 +813,7 @@ def _listed_path(path) -> Path:
     return p if p.is_absolute() else ROOT / p
 
 
-def first_reference(series: str, character_name: str, stage: str = "") -> Optional[Path]:
+def first_reference(series: str, character_name: str, stage: str = "") -> Path | None:
     """The picture that stands for this character: for a life stage, the first in its references/<stage>/ folder; else the first file in the
     saved list that exists, else the first picture in the character's references/ folder. None if there is none."""
     folder = get_reference_dir(series, character_name)
@@ -834,7 +831,7 @@ def first_reference(series: str, character_name: str, stage: str = "") -> Option
     return pics[0] if pics else None
 
 
-def reference_pictures(series: str, character_name: str) -> List[Dict]:
+def reference_pictures(series: str, character_name: str) -> list[dict]:
     """Every picture of a character for the page: the list's files in order, then the folder's other files. {"path" (from the repository root),
     "name", "listed", "exists", "used" (this is the one that stands for the character), "file" (<series folder>/<path inside it>, for /thumb and /file)}."""
     used, base, out, seen = first_reference(series, character_name), get_series_dir(series).resolve(), [], set()

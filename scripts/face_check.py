@@ -14,7 +14,11 @@ Writes face_check.json in the book's folder: {"threshold", "source", "rows": {"1
 This is a screening aid: the recogniser was trained on photographs. Use it for realistic films; for claymation or cartoons most shots will be no_face or
 low. A low score on a side view, in shadow or at a small size can be a false alarm, so look at the flagged shots before remaking them.
 """
-import argparse, csv, json, re, sys, urllib.request
+import argparse
+import csv
+import re
+import sys
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

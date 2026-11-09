@@ -251,7 +251,10 @@ _os.chdir({work.as_posix()!r})
 
 
 def _studio_sh(cmd):
-    _subprocess.run(cmd, shell=True, check=True)
+    """Run a notebook shell line. Plain commands run without a shell; one that needs a shell (pipes, &&, redirects) goes to bash -c explicitly."""
+    import re as _re, shlex as _shlex
+    needs_shell = _re.search(r"[;&|<>`$()\n]", cmd)
+    _subprocess.run(["bash", "-c", cmd] if needs_shell else _shlex.split(cmd), check=True)
 
 
 def _studio_apt(cmd):
@@ -267,6 +270,18 @@ if not _torch.cuda.is_available():
     raise SystemExit("PyTorch in this environment cannot see the GPU (check the NVIDIA driver or ROCm, or set STUDIO_TORCH_INDEX to the PyTorch build for your CUDA / ROCm version)")
 '''
     return prelude + "\n".join(lines) + "\n", pip
+
+
+def pip_argv(cmd):
+    """The words of a notebook's `pip install ...` line, as `pip ...` (it is run as `<python> -m pip ...`; `pip3` becomes `pip`).
+    No shell is involved, so a line that needs one (pipes, `&&`, redirects) is refused rather than guessed at. Quoted words such as
+    "numpy<2" are fine."""
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+    lex.whitespace_split = True
+    words = list(lex)
+    if any(w and not w.strip(";&|<>()") for w in words) or "`" in cmd or "$(" in cmd:
+        die(f"this install line needs a shell, which the Studio does not use: {cmd}")
+    return ["pip", *words[1:]] if words and words[0] == "pip3" else words
 
 
 def run_logged(argv, log, **kw):
@@ -297,7 +312,7 @@ def make_env(pip_lines, log):
         if not py.is_file():
             die(f"STUDIO_GPU_PYTHON={own} does not exist")
         for cmd in pip_lines:
-            if run_logged(f"{shlex_quote(py)} -m {cmd}", log, shell=True) != 0:
+            if run_logged([str(py), "-m", *pip_argv(cmd)], log) != 0:
                 die(f"failed: {cmd}")
         return py
     index = os.environ.get("STUDIO_TORCH_INDEX", "").strip()
@@ -326,7 +341,7 @@ def make_env(pip_lines, log):
             die("could not make the environment: " + " ".join(argv[:4]))
     for cmd in pip_lines:                      # the notebook's own installs, as Kaggle would run them
         print("== " + cmd, flush=True)
-        if run_logged(f"{shlex_quote(py)} -m {cmd}", log, shell=True) != 0:
+        if run_logged([str(py), "-m", *pip_argv(cmd)], log) != 0:
             die(f"failed: {cmd}")
     (env / "recipe.json").write_text(recipe)
     (env / ".studio_ready").write_text(time.strftime("%Y-%m-%d %H:%M"))

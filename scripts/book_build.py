@@ -7,7 +7,10 @@ Reads projects/<project>/scripts/chapter-NNN.json and writes all_shots.csv, all_
 audio_chapters.csv (same row order, row N of audio = row N of video) and movies.json (movies of about --minutes
 minutes; each movie ends at the end of a chapter). Chapters without a script yet are left out.
 """
-import argparse, csv, json, sys
+import argparse
+import csv
+import json
+import sys
 from bookkit import apply_film_format, apply_prompt_edits, apply_voice_cast, continuity_file, build_movies, project_dir, read_json
 
 ap = argparse.ArgumentParser()

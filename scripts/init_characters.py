@@ -6,8 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from character_tokens import (
-    save_character, get_reference_dir, ensure_reference_dir,
-    PHOTOREAL_TAIL, NEGATIVE_PROMPT
+    save_character, ensure_reference_dir
 )
 from pathlib import Path
 

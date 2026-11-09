@@ -6,7 +6,8 @@
 Saved in film_format.json and written into all_shots.csv and all_chapters.csv (aspect and chain columns), which the video notebooks read. "model" means
 each video model's own shape. An option left out stays as it was.
 """
-import argparse, sys
+import argparse
+import sys
 from bookkit import ASPECTS, apply_film_format, project_dir
 
 ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])

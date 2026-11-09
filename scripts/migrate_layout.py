@@ -20,7 +20,6 @@ the destination (a duplicate). A file that differs from the one at the destinati
 import argparse
 import filecmp
 import json
-import os
 import re
 import shutil
 import sys

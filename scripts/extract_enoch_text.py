@@ -8,7 +8,8 @@ Charles reorders chapters 91-93 (order in the book: 90, 92, 91 part 1, 93, 91 pa
 are joined under chapter 91. The editor's critical marks (⌈ ⌉ [ ] < > †) are removed and ALL-CAPS divine
 names (GOD, HE, THE LORD) become normal capitalisation so a speech model does not spell them out.
 """
-import json, re
+import json
+import re
 from pathlib import Path
 from pypdf import PdfReader
 

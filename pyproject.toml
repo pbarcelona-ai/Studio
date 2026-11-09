@@ -1,0 +1,47 @@
+[project]
+name = "pistachios-studio"
+version = "0.1.0"
+description = "Local control page that turns a book into a film (prompts, keyframes, clips, narration, mix)."
+requires-python = ">=3.11"
+dependencies = [
+    "kaggle>=2.0",
+    "uv",
+    "pillow",
+    "pypdf",
+    "imageio-ffmpeg",
+    "gradio_client",
+    "six",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov", "ruff>=0.6", "mypy>=1.10"]
+depth3d = ["numpy", "opencv-python-headless", "transformers", "torch", "timm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["scripts"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 160          # the code base uses long lines; tighten gradually
+target-version = "py311"
+extend-exclude = [".venv", ".venv-dev", "projects", "books", "my_downloads", "graphify-out"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "S", "UP", "C4", "SIM", "PTH"]
+ignore = [
+    "E501", "E701", "E702", "E731", "E741",     # long lines / compact one-liners: style choices for now
+    "S101", "S603", "S607", "S310",             # asserts in tests; argv-list subprocess is the intended pattern
+    "C408", "SIM115", "PTH105", "B905", "B007", "S324", "S311", "UP035", "SIM105", "SIM401", "E402", "S105", "UP031", "UP042", "SIM108", "SIM102", "UP015", "PTH123", "PTH118", "PTH120", "PTH110", "PTH103", "PTH100", "PTH101", "PTH113", "PTH208", "PTH119", "PTH122", "PTH107", "PTH109",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "B011"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "scripts"
+ignore_missing_imports = true
+check_untyped_defs = false
+warn_unused_ignores = true
+files = ["scripts"]

@@ -9,7 +9,8 @@ HF_TOKEN is optional: with it the free daily ZeroGPU quota is the one of your ac
 shared by network address and runs out sooner. The token is read from the environment only and is never printed or written anywhere.
 When the quota is used up the run stops and says so; the rows already made are kept.
 """
-import re, csv
+import re
+import csv
 import inspect
 import os
 import random

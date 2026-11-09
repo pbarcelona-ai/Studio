@@ -10,9 +10,24 @@ merge_videos.py / mix_film.py (one film per ~10-minute movie).
 Safety: listens on 127.0.0.1 only, every API call needs the random token printed at start-up, and only whitelisted
 scripts with validated arguments can run (no shell, no free-form commands).
 """
-import argparse, csv, hashlib, io, json, mimetypes, os, re, secrets, shutil, signal, struct, subprocess, sys, threading, time, webbrowser
+import argparse
+import csv
+import hashlib
+import io
+import json
+import os
+import re
+import secrets
+import shutil
+import signal
+import struct
+import subprocess
+import sys
+import threading
+import time
+import webbrowser
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -1221,14 +1236,14 @@ def new_scene(opt):
     if not text or len(text) > 1000 or len(narr) > 1000:
         raise PlanError("preview the scene first")
     at = idxs[0] if pos == "before" else idxs[-1] + 1
-    row = {k: "" for k in shots[0]}
+    row = dict.fromkeys(shots[0], "")
     row.update(chapter=chapter, prompt=text)
     shots.insert(at, row)
     for n, i in enumerate((i for i, r in enumerate(shots) if r["chapter"] == chapter), 1):
         shots[i]["shot"] = str(n)
     _write_rows(d / "all_shots.csv", shots)
     if audio:
-        arow = {k: "" for k in audio[0]}
+        arow = dict.fromkeys(audio[0], "")
         arow.update(chapter=chapter, narration=narr)
         a_at = next((i for i, r in enumerate(audio) if r["chapter"] == chapter), len(audio)) if pos == "before" else \
             (max((i for i, r in enumerate(audio) if r["chapter"] == chapter), default=len(audio) - 1) + 1)
@@ -2795,10 +2810,10 @@ FAILED_RUN_KEEP_DAYS = 7
 def run_older_than(run, days):
     """Was this run last started more than this many days ago? A date that cannot be read counts as recent."""
     try:
-        when = datetime.strptime(run["last_run"][:16], "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        when = datetime.strptime(run["last_run"][:16], "%Y-%m-%d %H:%M").replace(tzinfo=UTC)
     except (KeyError, TypeError, ValueError):
         return False
-    return datetime.now(timezone.utc) - when > timedelta(days=days)
+    return datetime.now(UTC) - when > timedelta(days=days)
 
 
 def auto_cleanup_plan():

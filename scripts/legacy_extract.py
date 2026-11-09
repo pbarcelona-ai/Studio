@@ -9,8 +9,10 @@ row N of the matching video file. Adam & Eve text comes from each chapter's 'Nar
 'Sound & music' sections; Enoch narrates the Charles verse text in enoch_verses.json (extract_enoch_text.py).
 New books go through book_*.py instead.
 """
-import argparse, csv, json, re
-from pathlib import Path
+import argparse
+import csv
+import json
+import re
 from bookkit import apply_prompt_edits
 from prompts import BOOKS, ENOCH, adam_eve_chapters, adam_shots, chapter_files, enoch_prompt
 

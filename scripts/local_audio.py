@@ -8,7 +8,12 @@ kokoro:   every row of audio_shots.csv -> audio/kokoro/narration-NNNN.wav. Measu
 musicgen: one 28 s cue for every row of audio_chapters.csv -> audio/musicgen_chapters/music-NNNN.wav. Measured on an Intel Mac: about 7 minutes for each.
 Files already there are kept, so running it again carries on. The same voices and music as the GPU runs (make_audio.py holds the Kokoro worker).
 """
-import ast, csv, subprocess, sys, tempfile, time
+import ast
+import csv
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

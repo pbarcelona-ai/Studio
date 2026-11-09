@@ -8,7 +8,14 @@ audio/kokoro/narration-NNNN.wav if it exists. A shot holds for its narration plu
 estimated from the words in audio_shots.csv (about 2.6 words a second, at least 2.5 s). Shots with no keyframe are skipped.
 The result is written to projects/<book>/films/<out>. Use it to judge pacing before spending GPU time on video clips.
 """
-import argparse, csv, re, shutil, subprocess, sys, tempfile, wave
+import argparse
+import csv
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

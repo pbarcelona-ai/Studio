@@ -37,7 +37,12 @@ video, with peaks kept under -1.5 dB (--no-loudnorm turns that off).
 --music-bed  one continuous score instead of a new piece of music for every shot: each chapter's cue from audio/musicgen_chapters/music-NNNN.wav
              (NNNN = the chapter's row in audio_chapters.csv) loops with soft joins under all of that chapter's shots. The shots' own music is not used.
 """
-import argparse, re, shutil, subprocess, sys, tempfile
+import argparse
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 ap = argparse.ArgumentParser()
@@ -117,7 +122,8 @@ def colour_of(path):
 
 def colour_nudges(plan):
     """{row: lutyuv filter} moving each clip halfway towards its chapter's median colour, limited to 15 steps of brightness and 8 of colour."""
-    import csv, statistics
+    import csv
+    import statistics
     try:
         with open(ROOT / "audio_shots.csv", newline="", encoding="utf-8") as fh:
             chapter_of = [r.get("chapter", "") for r in csv.DictReader(fh)]
@@ -188,7 +194,7 @@ def build_segment(i, video, stems, out, trim_start=0.0, trim_end=0.0):
     music_input = next((k for k, (n, _, _) in enumerate(stems, start=2) if n == "music"), None)
     for k, (name, path, _) in enumerate(stems, start=2):
         vol = {"narration": args.vol_narration, "sfx": args.vol_sfx, "music": args.vol_music}[name]
-        chain = [f"aformat=sample_rates=44100:channel_layouts=stereo", f"volume={vol}"]
+        chain = ["aformat=sample_rates=44100:channel_layouts=stereo", f"volume={vol}"]
         if name == "narration" and narr_tempo:
             chain.append(atempo_chain(narr_tempo))
         if name in ("sfx", "music"):

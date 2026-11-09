@@ -82,3 +82,14 @@ __pycache__/
 
 # Python environments and tools for running models on this computer (scripts/run_local_model.py)
 .gpu_envs/
+
+# Review output, run locks, dev tooling environments, stray local files
+/results.txt
+.claude/scheduled_tasks.lock
+/.venv-dev/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+/htmlcov/
+.coverage
+/ChatGPT*.pdf

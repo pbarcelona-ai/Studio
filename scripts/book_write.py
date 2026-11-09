@@ -18,7 +18,8 @@ One resumable Claude call per chapter; finished chapters (scripts/chapter-NNN.js
 --scenes: one more call per chapter finds where its scenes begin (scripts/outline-NNN.json) and what stays true in each: place, time of day, weather, what
 people wear, injuries. Shots are then shared out scene by scene, so no shot straddles two scenes and a new scene never "continues" the shot before it.
 """
-import argparse, sys
+import argparse
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from bookkit import (sentences, character_token, continuity_file, shot_negative, CLIP_SECONDS, COST, cost_note, voice_id, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
                      project_dir, read_json, shot_count, slice_text, strip_verse_numbers, words, write_json)

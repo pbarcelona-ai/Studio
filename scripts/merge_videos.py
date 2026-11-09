@@ -7,8 +7,11 @@ Usage:  uv run --with imageio-ffmpeg python merge_videos.py [CLIP_DIR] [OUTPUT.m
 Uses system ffmpeg if present, otherwise the binary bundled with imageio-ffmpeg.
 Clips are re-encoded (H.264) so mixed sizes/frame rates still join cleanly.
 """
-import argparse, shutil, subprocess, sys, tempfile
-from pathlib import Path
+import argparse
+import shutil
+import subprocess
+import sys
+import tempfile
 
 ap = argparse.ArgumentParser()
 ap.add_argument("clip_dir", nargs="?", default="videos/ltx_video")

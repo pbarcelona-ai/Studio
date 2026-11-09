@@ -10,7 +10,14 @@ Everything for a book lives in projects/<slug>/ :
   all_shots.csv, all_chapters.csv, audio_shots.csv, audio_chapters.csv, movies.json   (built from the above)
   videos/, audio/, films/
 """
-import csv, json, math, os, re, shutil, subprocess, tempfile
+import csv
+import json
+import math
+import os
+import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent

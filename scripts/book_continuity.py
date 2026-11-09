@@ -6,7 +6,9 @@
 <book name>.json holds the visual style, the recurring characters (each with one exact visual description that is pasted
 into every shot prompt, plus a narration voice) and key locations. You can edit it by hand; later steps reuse it.
 """
-import argparse, re, sys
+import argparse
+import re
+import sys
 from bookkit import COST, VOICE_MAP, continuity_file, cost_note, llm_json, project_dir, read_json, write_json
 
 ap = argparse.ArgumentParser()
