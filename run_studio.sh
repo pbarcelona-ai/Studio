@@ -7,7 +7,9 @@ echo "Starting studio.py..."
 
 # Run studio.py and capture its output to extract the URL
 PYBIN=python3; [ -x .venv/bin/python ] && PYBIN=.venv/bin/python      # install.sh makes .venv with everything the Studio needs
-"$PYBIN" scripts/studio.py > >(tee /tmp/studio_output.txt) &
+# --no-open: this script opens the browser itself below (without it studio.py opens a second tab)
+: > /tmp/studio_output.txt
+"$PYBIN" scripts/studio.py --no-open > >(tee /tmp/studio_output.txt) &
 PID=$!
 
 # Give it a moment to start and print the URL
