@@ -1,0 +1,123 @@
+{
+ "schema_version": 1,
+ "_about": "Model and GPU tables the Studio offers. Edit here, not in the code. scripts/check_catalog.py checks that the Hugging Face ids still exist.",
+ "kaggle_gpu_gb": {
+  "NvidiaTeslaT4": 15,
+  "NvidiaL4": 22,
+  "NvidiaTeslaA100": 40,
+  "NvidiaH100": 80
+ },
+ "kaggle_pre_ampere": [
+  "NvidiaTeslaT4"
+ ],
+ "colab_gpu_gb": {
+  "T4": 15,
+  "L4": 22,
+  "A100": 40,
+  "H100": 80
+ },
+ "claude_models": [
+  "sonnet",
+  "opus",
+  "haiku",
+  "claude-fable-5-1",
+  "claude-opus-5-5",
+  "claude-sonnet-5-5",
+  "claude-haiku-5-5"
+ ],
+ "hf_models": [
+  "Qwen/Qwen3.8-27B",
+  "zai-org/GLM-5.3-Flash",
+  "deepseek-ai/DeepSeek-V4.1-Flash",
+  "MiniMaxAI/MiniMax-M3.1-Flash",
+  "Qwen/Qwen3.8-2.4T-A95B",
+  "moonshotai/Kimi-K3"
+ ],
+ "hf_vision_models": [
+  "Qwen/Qwen3.8-27B"
+ ],
+ "gpus": {
+  "colab": [
+   [
+    "T4",
+    "T4 (free tier, often unavailable)"
+   ],
+   [
+    "L4",
+    "L4 (paid)"
+   ],
+   [
+    "A100",
+    "A100 (paid)"
+   ],
+   [
+    "H100",
+    "H100 (paid)"
+   ]
+  ],
+  "kaggle": [
+   [
+    "NvidiaTeslaT4",
+    "T4 x2 (free)"
+   ],
+   [
+    "NvidiaL4",
+    "L4 (may be restricted)"
+   ],
+   [
+    "NvidiaTeslaA100",
+    "A100 (may be restricted)"
+   ],
+   [
+    "NvidiaH100",
+    "H100 (may be restricted)"
+   ],
+   [
+    "TpuV5E8",
+    "TPU v5e-8 (experimental; only for tpu_wan)"
+   ]
+  ],
+  "huggingface": [
+   [
+    "ZeroGPU",
+    "ZeroGPU: Hugging Face's shared GPUs (free daily quota)"
+   ]
+  ],
+  "computer": [
+   [
+    "local",
+    "This computer's GPU"
+   ]
+  ]
+ },
+ "upscale_models": {
+  "upscale_x2": {
+   "label": "Real-ESRGAN x2",
+   "memory": "about 2-4 GB of GPU memory, any NVIDIA GPU. Tested on a Kaggle T4: about 40 s per clip",
+   "least_gb": 3,
+   "ampere": false,
+   "short": "2-4 GB, any NVIDIA GPU"
+  },
+  "upscale_flashvsr": {
+   "label": "FlashVSR v1.1",
+   "memory": "8 GB minimum (it tiles), 16 GB+ recommended. Ampere or newer GPU only (RTX 30/40/50, A100, L4; not a T4); the first run builds a CUDA kernel: 20-60 minutes, about 32 GB of system RAM and the CUDA compiler. Not tested yet",
+   "least_gb": 8,
+   "ampere": true,
+   "short": "8 GB min, 16 GB+ best; RTX 30 or newer"
+  },
+  "upscale_seedvr2_3b": {
+   "label": "SeedVR2 3B",
+   "memory": "24 GB for full speed; 8-16 GB works with block swap (slower) and wants 32 GB of system RAM. Not tested yet",
+   "least_gb": 8,
+   "ampere": false,
+   "short": "8-16 GB slow, 24 GB full speed"
+  },
+  "upscale_seedvr2_7b": {
+   "label": "SeedVR2 7B",
+   "memory": "40 GB+ for full speed, 24 GB with its fp8 model; 12-16 GB works with block swap (very slow) and wants 32-64 GB of system RAM. Not tested yet",
+   "least_gb": 12,
+   "ampere": false,
+   "short": "12-16 GB very slow, 24-40 GB+ full speed"
+  }
+ }
+}

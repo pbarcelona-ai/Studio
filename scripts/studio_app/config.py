@@ -1,4 +1,5 @@
 """studio_app.config"""
+import json
 import os
 import re
 from pathlib import Path
@@ -9,26 +10,28 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 PROJECTS = ROOT / "projects"
 LIBRARY = ROOT / "books"          # every book PDF lives here; the page lists them
 
+# ---- model and GPU tables: studio_app/catalog.json (see scripts/check_catalog.py)
+CATALOG_FILE = Path(__file__).with_name("catalog.json")
+CATALOG = json.loads(CATALOG_FILE.read_text(encoding="utf-8"))
+if CATALOG.get("schema_version") != 1:
+    raise RuntimeError(f"{CATALOG_FILE.name}: unsupported schema_version {CATALOG.get('schema_version')!r}")
+# Upscalers: enlarge clips already made (make_video.py); Kaggle or this computer. name -> (label, GPU memory it needs, least GPU GB, needs Ampere or newer)
+UPSCALE_MODELS = {k: (v["label"], v["memory"], v["least_gb"], v["ampere"]) for k, v in CATALOG["upscale_models"].items()}
+UPSCALE_SHORT = {k: v["short"] for k, v in CATALOG["upscale_models"].items()}        # beside each choice on the page
+KAGGLE_GPU_GB = CATALOG["kaggle_gpu_gb"]               # memory per GPU, and which are older than Ampere
+KAGGLE_PRE_AMPERE = set(CATALOG["kaggle_pre_ampere"])
+COLAB_GPU_GB = CATALOG["colab_gpu_gb"]
+CLAUDE_MODELS = CATALOG["claude_models"]
+# "paid"/"restricted" are warnings only; Kaggle's own docs say some accelerators are not open to everyone
+GPUS = {k: [tuple(x) for x in v] for k, v in CATALOG["gpus"].items()}
+
+
 VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_video", "cogvideox", "cogvideox_5b",
                 "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan",     # tpu_wan = Kaggle TPU experiment
                 "ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "pika_h3_flex_i2v"]          # image-to-video: animate each shot's keyframe
 I2V_MODELS = {"ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "pika_h3_flex_i2v"}     # a model joins these lists once it has really run: skyreels_v2_i2v, svd_i2v, svd_xt_i2v and ltx25_i2v are in make_video.py, untested
 SPACE_ONLY_MODELS = {"pika_h3_flex_i2v"}     # too big for any GPU here: only a Hugging Face Space runs them
-# Upscalers: enlarge clips already made (make_video.py); Kaggle or this computer. name -> (label, GPU memory it needs, least GPU GB, needs Ampere or newer)
-UPSCALE_MODELS = {
-    "upscale_x2": ("Real-ESRGAN x2", "about 2-4 GB of GPU memory, any NVIDIA GPU. Tested on a Kaggle T4: about 40 s per clip", 3, False),
-    "upscale_flashvsr": ("FlashVSR v1.1", "8 GB minimum (it tiles), 16 GB+ recommended. Ampere or newer GPU only (RTX 30/40/50, A100, L4; not a T4); "
-                         "the first run builds a CUDA kernel: 20-60 minutes, about 32 GB of system RAM and the CUDA compiler. Not tested yet", 8, True),
-    "upscale_seedvr2_3b": ("SeedVR2 3B", "24 GB for full speed; 8-16 GB works with block swap (slower) and wants 32 GB of system RAM. Not tested yet", 8, False),
-    "upscale_seedvr2_7b": ("SeedVR2 7B", "40 GB+ for full speed, 24 GB with its fp8 model; 12-16 GB works with block swap (very slow) and wants 32-64 GB "
-                           "of system RAM. Not tested yet", 12, False),
-}
-UPSCALE_SHORT = {"upscale_x2": "2-4 GB, any NVIDIA GPU", "upscale_flashvsr": "8 GB min, 16 GB+ best; RTX 30 or newer",
-                 "upscale_seedvr2_3b": "8-16 GB slow, 24 GB full speed", "upscale_seedvr2_7b": "12-16 GB very slow, 24-40 GB+ full speed"}   # beside each choice on the page
 UPSCALE_SUFFIXES = tuple("_" + m.removeprefix("upscale_") for m in UPSCALE_MODELS)      # videos/<source>_x2, _flashvsr, ...: already upscaled
-KAGGLE_GPU_GB = {"NvidiaTeslaT4": 15, "NvidiaL4": 22, "NvidiaTeslaA100": 40, "NvidiaH100": 80}      # memory per GPU, and which are older than Ampere
-KAGGLE_PRE_AMPERE = {"NvidiaTeslaT4"}
-COLAB_GPU_GB = {"T4": 15, "L4": 22, "A100": 40, "H100": 80}
 REF_IMAGE_MODELS = {"flux2_klein_4b"}                                    # keyframe models that take character reference pictures                      # need keyframes (images/<model>_keyframes) for every row they make
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
 VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
@@ -99,8 +102,6 @@ MODEL_DEFAULTS = {
     "moss_sharpness_slider": {"width": 1024, "height": 1024, "steps": 50, "guidance": 3.0},
 }
 LEGACY = {"adam_eve", "enoch"}        # imported production notes; rebuilt with legacy_extract.py
-# Suggestions only: the page lets you type ANY model name that `claude --model` accepts (aliases or full IDs).
-CLAUDE_MODELS = ["sonnet", "opus", "haiku", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
 
 # Character series mapping: project slug -> character series name
 # This determines which character token set to use for a project
@@ -116,14 +117,6 @@ def get_character_series(slug):
     """Get the character series for a project slug."""
     return CHARACTER_SERIES.get(slug, slug)  # default to project slug if not mapped
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{1,79}$")
-GPUS = {  # "paid"/"restricted" are warnings only; Kaggle's own docs say some accelerators are not open to everyone
-    "colab": [("T4", "T4 (free tier, often unavailable)"), ("L4", "L4 (paid)"), ("A100", "A100 (paid)"), ("H100", "H100 (paid)")],
-    "kaggle": [("NvidiaTeslaT4", "T4 x2 (free)"), ("NvidiaL4", "L4 (may be restricted)"),
-               ("NvidiaTeslaA100", "A100 (may be restricted)"), ("NvidiaH100", "H100 (may be restricted)"),
-               ("TpuV5E8", "TPU v5e-8 (experimental; only for tpu_wan)")],
-    "huggingface": [("ZeroGPU", "ZeroGPU: Hugging Face's shared GPUs (free daily quota)")],     # runs a public Space, only for the models in hf_spaces.py
-    "computer": [("local", "This computer's GPU")],       # scripts/run_local_model.py: no website; the label is the GPU found (any maker)
-}
 MAX_UPLOAD = 300 * 1024 * 1024
 MAX_JSON_BODY = 8 * 1024 * 1024                        # the largest JSON request the page may send
 WEB = ROOT / "web"                                       # the page: index.html and static/ (CSS, JS)

@@ -7,7 +7,7 @@ import model_advisor
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
 from .common import PlanError, num
-from .config import BOOK_EXTS, LEGACY, MODEL_RE, ROOT
+from .config import CATALOG, BOOK_EXTS, LEGACY, MODEL_RE, ROOT
 
 
 def script_argv(argv):
@@ -28,10 +28,9 @@ def shell_form(step):
 
 
 ENGINES = ["claude", "fcc-claude", "codex", "fcc-codex", "hf", "local"]
-# Open models served by Hugging Face Inference Providers (newest first); any other model id the service lists can be typed in the model box.
-HF_MODELS = ["Qwen/Qwen3.8-27B", "zai-org/GLM-5.3-Flash", "deepseek-ai/DeepSeek-V4.1-Flash", "MiniMaxAI/MiniMax-M3.1-Flash",
-             "Qwen/Qwen3.8-2.4T-A95B", "moonshotai/Kimi-K3"]
-HF_VISION_MODELS = ["Qwen/Qwen3.8-27B"]            # models that also read pictures (for "describe a picture" and "review a result")
+# Open models served by Hugging Face Inference Providers (newest first; any other model id can be typed in the model box): studio_app/catalog.json
+HF_MODELS = CATALOG["hf_models"]
+HF_VISION_MODELS = CATALOG["hf_vision_models"]            # models that also read pictures (for "describe a picture" and "review a result")
 
 
 def engine_args(opt):
