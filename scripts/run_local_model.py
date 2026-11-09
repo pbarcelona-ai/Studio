@@ -253,7 +253,7 @@ _os.chdir({work.as_posix()!r})
 def _studio_sh(cmd):
     """Run a notebook shell line. Plain commands run without a shell; one that needs a shell (pipes, &&, redirects) goes to bash -c explicitly."""
     import re as _re, shlex as _shlex
-    needs_shell = _re.search(r"[;&|<>`$()\n]", cmd)
+    needs_shell = _re.search(r"[;&|<>`$()\\n]", cmd)
     _subprocess.run(["bash", "-c", cmd] if needs_shell else _shlex.split(cmd), check=True)
 
 

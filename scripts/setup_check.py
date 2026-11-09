@@ -109,7 +109,7 @@ def check(path=None, home=None, environ=None, local_llm_ready=False, local_gpu="
         items.append({"id": id_, "title": title, "level": level, "ok": bool(ok), "detail": detail, "fix": "" if ok else fix})
 
     v = sys.version_info
-    add("python", "Python 3.9 or newer", "required", v >= (3, 9), f"Python {v.major}.{v.minor}.{v.micro}",
+    add("python", "Python 3.11 or newer", "required", v >= (3, 11), f"Python {v.major}.{v.minor}.{v.micro}",
         "Install a current Python from python.org (or: brew install python), then run install.sh again.")
     add("local_gpu", "A GPU in this computer (NVIDIA, or AMD with ROCm; Linux or Windows WSL 2)", "optional" if not local_gpu else "recommended", bool(local_gpu),
         local_gpu or gpu_seen or "none found: the models run on Kaggle, Colab or Hugging Face instead",
