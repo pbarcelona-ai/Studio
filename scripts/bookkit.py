@@ -142,13 +142,13 @@ def _chat(url, headers, messages, model, max_tokens, temperature, timeout, who):
         hint = {401: "the token was refused (check HF_TOKEN)", 402: "no Inference Providers credit left on this account",
                 403: "the token lacks the 'Make calls to Inference Providers' permission", 404: "that model is not served",
                 429: "rate limit: wait a moment and try again"}.get(e.code, "") if who == "Hugging Face" else ""
-        raise RuntimeError(f"{who} answered {e.code}" + (f" ({hint})" if hint else "") + f": {detail}")
+        raise RuntimeError(f"{who} answered {e.code}" + (f" ({hint})" if hint else "") + f": {detail}") from e
     except (urllib.error.URLError, TimeoutError) as e:
-        raise RuntimeError(f"could not reach {who}: {getattr(e, 'reason', e)}")
+        raise RuntimeError(f"could not reach {who}: {getattr(e, 'reason', e)}") from e
     try:
         text = data["choices"][0]["message"]["content"] or ""
     except (KeyError, IndexError, TypeError):
-        raise RuntimeError(f"unexpected answer from {who}: {str(data)[:200]}")
+        raise RuntimeError(f"unexpected answer from {who}: {str(data)[:200]}") from None
     return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
 
 

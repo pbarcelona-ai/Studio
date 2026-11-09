@@ -357,7 +357,7 @@ if args.selection:
         plan.append((int(it["row"]), inside_project(it["video"]), files, trims))
 else:
     folders = [ROOT / "videos" / f"{m.strip()}{suffix}" for m in args.models.split(",") if m.strip()] if args.models else [VIDEO_DIR]
-    found = {}
+    found: dict = {}
     for folder in folders:                       # best first: a shot keeps the first clip found for it
         for p in folder.glob("shot-*.mp4"):
             found.setdefault(int(p.stem.split("-")[1]), p)
@@ -399,8 +399,9 @@ NUDGES = colour_nudges(plan) if args.match_colour else {}
 if args.match_colour:
     print(f"colour: {len(NUDGES)} clip(s) nudged towards their chapter's typical clip", flush=True)
 segments, seg_lens, used = [], [], {"narration": 0, "sfx": 0, "music": 0}
-timed = []                      # (row, index of its segment, seconds), for the music bed
-captions, lines = [], narration_lines()
+timed: list[tuple] = []        # (row, index of its segment, seconds), for the music bed
+captions: list[tuple] = []
+lines = narration_lines()
 shape = video_shape(plan[0][1]) if any(titles) else None
 if titles[0]:
     card = build_card(titles[0], shape, tmp / "card-open.mp4")
@@ -453,7 +454,7 @@ captions = [(starts[s], starts[s] + secs, t) for s, secs, t in captions]
 timed = [(n, starts[s], secs) for n, s, secs in timed]
 srt_text = "".join(f"{i}\n{srt_time(a)} --> {srt_time(b)}\n{t}\n\n" for i, (a, b, t) in enumerate(captions, 1))
 if finishing:
-    beds = []
+    beds: list = []
     if args.music_bed:
         for cue, start, secs in chapter_spans(timed):
             cue_file = ROOT / "audio" / "musicgen_chapters" / f"music-{cue:04d}.wav"

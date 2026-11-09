@@ -434,7 +434,6 @@ PIP = "!pip install -q -U diffusers transformers accelerate sentencepiece protob
 
 
 def notebook(key, m, platform):
-    suffix = "SUFFIX = ''"
     if platform == "colab":
         intro = f"# Pistachio's Studio: {m['title']} images on Colab\n\n{m['note']}\n\nRuntime → Change runtime type → **T4 GPU**. Put `all_images.csv` in `MyDrive/PistachioStudio/`."
         secret = ("import os\ntry:\n    from google.colab import userdata\n    os.environ['HF_TOKEN'] = userdata.get('HF_TOKEN')   # only needed for gated models\n"

@@ -648,7 +648,7 @@ if __name__ == "__main__":
         print(f"Saved {char['name']} to {path}")
 
         # Ensure reference directories exist
-        ref_dir = ensure_reference_dir("main", char["name"])
+        ref_dir = ensure_reference_dir("main", str(char["name"]))
         print(f"  Reference dir: {ref_dir}")
 
     print("\nDone! Character tokens initialized.")

@@ -45,7 +45,7 @@ def make_thumb(src, dest):
 
 
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"      # Apache-2.0, about 100 MB; downloaded once on first use
-_DEPTH = {}
+_DEPTH: dict = {}
 DEPTH_LOCK = threading.Lock()
 
 

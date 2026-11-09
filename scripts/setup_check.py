@@ -21,7 +21,7 @@ SETTINGS_DIR = ".pistachios_studio"
 SAVED_KEYS = ("HF_TOKEN",)                      # keys kept in settings.json and loaded into the environment
 USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,59}$")
 SECRET_RE = re.compile(r"^[A-Za-z0-9_.\-]{10,200}$")
-_loaded = set()                                  # environment variables this module set from settings.json (so "remove" only unsets those)
+_loaded: set[str] = set()                                  # environment variables this module set from settings.json (so "remove" only unsets those)
 
 
 def _home(home):

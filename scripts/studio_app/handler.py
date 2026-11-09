@@ -47,7 +47,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------ checks
     def _host_ok(self) -> bool:
-        host, origin, port = self.headers.get("Host", ""), self.headers.get("Origin"), self.server.server_port
+        host, origin, port = self.headers.get("Host", ""), self.headers.get("Origin"), int(self.server.server_address[1])
         return host in (f"127.0.0.1:{port}", f"localhost:{port}") and (
             origin is None or origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"))
 

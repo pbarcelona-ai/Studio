@@ -21,7 +21,7 @@ text = "\n".join((p.extract_text() or "") for p in PdfReader(PDF).pages)
 text = re.sub(r"(?m)^\s*\d{1,3}\s*$", "", text)                 # bare page numbers
 
 heads = list(re.finditer(r"(?im)^CHAPTER\s+(\d+)\b\.?[^\n]*$", text))
-chapters = {}
+chapters: dict = {}
 for i, m in enumerate(heads):
     n = int(m.group(1))
     body = text[m.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)]

@@ -100,7 +100,8 @@ def best_run(pattern):
     return run if len(run) >= 3 else []
 
 
-method, heads = "sections", []
+heads: list = []
+method = "sections"
 for name, pat in PATTERNS.items():
     run = best_run(pat)
     if len(run) > len(heads) and (len(text) / len(run)) > 400:      # skip patterns that match tiny scraps

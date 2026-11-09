@@ -52,7 +52,7 @@ def media_inventory(slug):
     return inv
 
 
-_SECONDS = {}      # (path, size, mtime) -> seconds
+_SECONDS: dict = {}      # (path, size, mtime) -> seconds
 
 
 def _mp4_seconds(fh, size):

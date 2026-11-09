@@ -42,17 +42,20 @@ Each character token:
 }
 """
 import json
+import logging
+from typing import Any
 from pathlib import Path
 from datetime import datetime
 from enum import Enum
 
 # Import bookkit for project structure
 try:
-    from bookkit import ROOT, PROJECTS, SLUG_RE, slugify
+    from bookkit import ROOT, PROJECTS, slugify
 except ImportError:
     ROOT = Path(__file__).resolve().parent.parent
     PROJECTS = ROOT / "projects"
 
+log = logging.getLogger("studio.characters")
 CHARACTERS_ROOT = PROJECTS / "characters"      # shared between books: <series>/<character>.json and <series>/references/<character>/
 
 # ===== COMPREHENSIVE TRAIT SYSTEM =====
@@ -344,7 +347,7 @@ def create_character_template(archetype: CharacterArchetype, name: str, series: 
     for opt in config.get("optional_physical", []):
         physical_traits[opt] = ""
 
-    template = {
+    template: dict[str, Any] = {
         "name": name,
         "series": series,
         "archetype": archetype.value,
@@ -476,7 +479,7 @@ def update_index(series: str):
     if not series_dir.exists():
         return
 
-    index = {"series": series, "characters": []}
+    index: dict[str, Any] = {"series": series, "characters": []}
     for path in sorted(series_dir.glob("*.json")):
         if path.name == "character_index.json":
             continue
@@ -489,8 +492,8 @@ def update_index(series: str):
                 "has_lora": char.get("lora", {}).get("trained", False),
                 "updated": char.get("updated", "")
             })
-        except Exception:
-            pass
+        except (OSError, ValueError, AttributeError) as e:     # an unreadable or malformed character file is left out of the index
+            log.warning("character index: skipped %s: %s", path.name, e)
 
     (series_dir / "character_index.json").write_text(json.dumps(index, indent=2))
 
@@ -596,7 +599,7 @@ def sync_from_book(project_slug: str, series: str | None = None, overwrite: bool
     Returns {"series", "continuity" (was there a <book>.json), "total", "added", "updated", "skipped", "dry_run"}."""
     book_path = PROJECTS / "books" / project_slug / f"{project_slug}.json"
     series = series or project_slug
-    report = {"series": series, "continuity": book_path.exists(), "total": 0, "added": 0, "updated": 0, "skipped": 0, "dry_run": dry_run}
+    report: dict[str, Any] = {"series": series, "continuity": book_path.exists(), "total": 0, "added": 0, "updated": 0, "skipped": 0, "dry_run": dry_run}
     if not report["continuity"]:
         return report
     for char in extract_characters_from_book(book_path):
@@ -622,7 +625,7 @@ def sync_from_book(project_slug: str, series: str | None = None, overwrite: bool
     return report
 
 
-VOICE_WORD_OF = {}           # Kokoro voice id -> the book's voice word; the first word listed for an id wins
+VOICE_WORD_OF: dict[str, str] = {}           # Kokoro voice id -> the book's voice word; the first word listed for an id wins
 for _w, _v in BOOK_VOICES.items():
     VOICE_WORD_OF.setdefault(_v, _w)
 
@@ -634,7 +637,7 @@ def send_to_book(project_slug: str, series: str, names: list[str], dry_run: bool
     keep the old wording; only chapters written (or rebuilt) afterwards use the new tokens.
     Returns {"book", "found" (is there a <book>.json), "updated", "added", "unchanged", "missing" (names not in the series), "dry_run"}."""
     path = PROJECTS / "books" / project_slug / f"{project_slug}.json"
-    report = {"book": project_slug, "found": path.exists(), "updated": 0, "added": 0, "unchanged": 0, "missing": [], "dry_run": dry_run}
+    report: dict[str, Any] = {"book": project_slug, "found": path.exists(), "updated": 0, "added": 0, "unchanged": 0, "missing": [], "dry_run": dry_run}
     if not report["found"]:
         return report
     continuity = json.loads(path.read_text())
@@ -661,7 +664,7 @@ def send_to_book(project_slug: str, series: str, names: list[str], dry_run: bool
             changed = True
             if not dry_run:
                 cur["token"] = token
-        if word and cur.get("voice") != word and BOOK_VOICES.get(cur.get("voice")) != src.get("voice"):
+        if word and cur.get("voice") != word and BOOK_VOICES.get(str(cur.get("voice"))) != src.get("voice"):
             changed = True
             if not dry_run:
                 cur["voice"] = word
@@ -846,7 +849,7 @@ def reference_pictures(series: str, character_name: str) -> list[dict]:
         seen.add(rp)
         inside = base in rp.parents
         out.append({"path": rp.relative_to(ROOT.resolve()).as_posix() if ROOT.resolve() in rp.parents else str(p), "name": p.name, "listed": listed, "exists": p.is_file(),
-                    "used": bool(used) and rp == used.resolve(), "file": f"{base.name}/{rp.relative_to(base).as_posix()}" if inside and p.is_file() else ""})
+                    "used": used is not None and rp == used.resolve(), "file": f"{base.name}/{rp.relative_to(base).as_posix()}" if inside and p.is_file() else ""})
     return out
 
 

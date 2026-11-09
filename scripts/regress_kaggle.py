@@ -148,7 +148,7 @@ def run_one(kind, model, lane, user, gpu, timeout_min):
     log = logp / f"regress_{model}.txt"
     try:
         with open(log, "w") as lf:
-            p = subprocess.run(argv, cwd=ROOT, env={**S.clean_env(), **env}, stdout=lf, stderr=subprocess.STDOUT, timeout=timeout_min * 60)
+            subprocess.run(argv, cwd=ROOT, env={**S.clean_env(), **env}, stdout=lf, stderr=subprocess.STDOUT, timeout=timeout_min * 60)
         text = log.read_text(errors="replace")
     except subprocess.TimeoutExpired:
         return {"kind": kind, "result": "TIMEOUT", "minutes": round((time.time() - t0) / 60), "note": f"no result after {timeout_min} min (the run may still be going on Kaggle)"}

@@ -74,8 +74,9 @@ for n in range(max(1, a.start), a.end + 1):
     img = kdir / f"image-{n:04d}.png"
     if not img.is_file():
         continue
-    wav = root / "audio" / "kokoro" / f"narration-{n:04d}.wav"
-    secs = wav_seconds(wav) if wav.is_file() else None
+    wav_file = root / "audio" / "kokoro" / f"narration-{n:04d}.wav"
+    wav: Path | None = wav_file
+    secs = wav_seconds(wav_file) if wav_file.is_file() else None
     if secs is None:
         words = len((narr[n - 1] if n <= len(narr) else "").split())
         secs, wav = max(2.5, words / 2.6), None
@@ -114,7 +115,7 @@ try:
     if r.returncode:
         sys.exit("joining failed: " + r.stderr.strip()[-400:])
     t, cues = 0.0, []                          # subtitles next to the video (same name, .srt)
-    for n, _, _, dur in shots:
+    for n, _img, _wav, dur in shots:
         text = (narr[n - 1] if n <= len(narr) else "").strip()
         if text:
             cues.append((t, t + dur - a.pause, text))
