@@ -87,7 +87,7 @@ class TestFilm:
         labels = [s["label"] for s in steps]
         assert labels[0].startswith("Film format") and "keyframes: rows 1-4" in labels[2]
         assert any("narration: rows 1-4" in x for x in labels) and labels[-1].endswith("final film")
-        assert {"expand": "film_video"} == {"expand": next(s for s in steps if "expand" in s)["expand"]}
+        assert {"expand": next(s for s in steps if "expand" in s)["expand"]} == {"expand": "film_video"}
 
     def test_existing_files_are_skipped(self, book):
         kf = book / "images" / "flux2_klein_4b_keyframes"

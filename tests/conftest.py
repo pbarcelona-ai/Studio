@@ -107,7 +107,7 @@ def fake_root(tmp_path, monkeypatch):
                 continue
             monkeypatch.setattr(mod, attr, root / rel)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
-    assert layout.BOOKS == root / "projects" / "books" and bookkit.ROOT == root and character_tokens.ROOT == root
+    assert root / "projects" / "books" == layout.BOOKS and root == bookkit.ROOT and root == character_tokens.ROOT
     return root
 
 
