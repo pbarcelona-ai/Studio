@@ -1,4 +1,4 @@
-"""studio_app.kaggle_runs"""
+"""Kaggle runs: list them, read their status, fetch their results."""
 import csv
 import io
 import re

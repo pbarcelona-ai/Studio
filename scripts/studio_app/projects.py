@@ -1,6 +1,7 @@
-"""studio_app.projects"""
+"""Project discovery: book list, project info, prompt sets, global (positive/negative) parameters."""
 import csv
 import json
+from typing import Any
 from pathlib import Path
 from bookkit import continuity_file, build_movies, read_json, slugify
 import character_tokens
@@ -90,7 +91,7 @@ def promptset_info(slug):
                      **{f"images/{m}": count_files(d / "images" / m, "image-*.png") for m in IMAGE_MODELS}}}
 
 
-def read_csv_rows(path):
+def read_csv_rows(path: str | Path) -> list[dict[str, str]]:
     try:
         with open(path, newline="") as f:
             return list(csv.DictReader(f))
@@ -101,7 +102,7 @@ def read_csv_rows(path):
 # ---- Global Parameters ----
 GLOBAL_PARAMS_FILE = "global_params.json"
 
-def load_global_params(project):
+def load_global_params(project: str) -> dict[str, Any]:
     """Load global parameters for a project ({"schema_version", "positives", "negatives"}; empty text when missing or unreadable)."""
     path = pdir(project) / GLOBAL_PARAMS_FILE
     try:
@@ -109,7 +110,7 @@ def load_global_params(project):
     except (OSError, ValueError):
         return clean_global_params({})
 
-def save_global_params(project, positives, negatives):
+def save_global_params(project: str, positives: str, negatives: str) -> None:
     """Save global parameters for a project."""
     path = pdir(project) / GLOBAL_PARAMS_FILE
     pdir(project).mkdir(parents=True, exist_ok=True)

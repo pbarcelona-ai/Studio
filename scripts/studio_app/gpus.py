@@ -1,4 +1,4 @@
-"""studio_app.gpus"""
+"""What each GPU/service can run: memory checks, blockers, suggestions."""
 import os
 import sys
 import hf_spaces

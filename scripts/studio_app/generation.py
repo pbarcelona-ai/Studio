@@ -1,4 +1,4 @@
-"""studio_app.generation"""
+"""Turns the chosen options into the generation steps (keyframes, video, audio, merge, mix) and the "Make my film" plan."""
 import os
 import re
 import sys

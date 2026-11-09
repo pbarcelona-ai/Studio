@@ -1,4 +1,4 @@
-"""studio_app.config"""
+"""Constants and tables: paths, model lists, limits. The model/GPU tables are loaded from catalog.json."""
 import json
 import os
 import re
@@ -130,7 +130,7 @@ ENV_PATH = ":".join(_VENV_BIN + [f"{Path.home()}/.local/bin", "/usr/local/bin", 
 DROP_ENV = ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "PYTHONSTARTUP", "VIRTUAL_ENV", "__PYVENV_LAUNCHER__")
 
 
-def clean_env():
+def clean_env() -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if k not in DROP_ENV and "OSS_CAD" not in k}
     env.update({"PATH": ENV_PATH, "PYTHONUNBUFFERED": "1"})
     return env

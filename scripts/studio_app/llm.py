@@ -1,4 +1,4 @@
-"""studio_app.llm"""
+"""Language-model features: local model status, describing and reviewing pictures, clip prompts, prompt enhancement."""
 import csv
 import io
 import json

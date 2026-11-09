@@ -1,4 +1,4 @@
-"""studio_app.takes"""
+"""Storyboard and takes: re-take a shot, pick the take to keep."""
 import csv
 import os
 import re

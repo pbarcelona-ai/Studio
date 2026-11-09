@@ -1,4 +1,4 @@
-"""studio_app.cleanup"""
+"""Clean-up: find old generated files (caches, notebooks, results) and move them to the Trash; list and trash downloaded files of one book."""
 import os
 import re
 import shutil

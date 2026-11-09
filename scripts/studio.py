@@ -11,7 +11,12 @@ scripts with validated arguments can run (no shell, no free-form commands).
 The code lives in the studio_app package. This file stays as the command (run_studio.sh and the app call it) and re-exports
 the names other scripts use (regress_kaggle.py imports them as `studio`).
 """
-from studio_app.common import PlanError  # noqa: F401
+import sys
+
+if sys.version_info < (3, 11):  # noqa: UP036  (a runtime guard for people who start it with an old python3)
+    sys.exit("Pistachio's Studio needs Python 3.11 or newer (run ./install.sh, which makes .venv with a suitable Python).")
+
+from studio_app.common import PlanError  # noqa: E402, F401
 from studio_app.config import AUDIO_MODELS, IMAGE_MODELS, MODEL_DEFAULTS, VIDEO_MODELS, clean_env  # noqa: F401
 from studio_app.server import main
 from studio_app.single_prompts import prompt_plan  # noqa: F401

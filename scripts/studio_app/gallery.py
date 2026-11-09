@@ -1,4 +1,4 @@
-"""studio_app.gallery"""
+"""Pictures of the results: thumbnails, depth maps, ratings, the Compare wall, the showcase and the prompt library."""
 import re
 import threading
 from bookkit import read_json, write_json

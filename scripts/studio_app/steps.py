@@ -1,5 +1,6 @@
-"""studio_app.steps"""
+"""Step building blocks: script argv, engine arguments, book steps, runner commands."""
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from bookkit import SLUG_RE
 import layout
@@ -10,7 +11,7 @@ from .common import PlanError, num
 from .config import CATALOG, BOOK_EXTS, LEGACY, MODEL_RE, ROOT
 
 
-def script_argv(argv):
+def script_argv(argv: list[str]) -> list[str]:
     """Steps name their Python scripts bare ("book_continuity.py") but the job runs from the repository root and the scripts live in scripts/."""
     out = []
     for a in argv:
@@ -20,7 +21,7 @@ def script_argv(argv):
     return out
 
 
-def shell_form(step):
+def shell_form(step: dict) -> str:
     if "expand" in step:
         return "(chosen when the earlier steps finish: " + step["label"] + ")"
     env = " ".join(f"{k}={v}" for k, v in step["env"].items())
@@ -107,7 +108,7 @@ def book_steps(opt, slug):
     return steps
 
 
-def chunks(lo, hi, batch):
+def chunks(lo: int, hi: int, batch: int) -> Iterator[tuple[int, int]]:
     if batch <= 0:
         yield lo, hi
         return

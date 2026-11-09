@@ -1,4 +1,4 @@
-"""studio_app.planner"""
+"""build_plan: the options ticked on the page -> validated steps; chapter shots and the cost estimate."""
 import os
 import subprocess
 from bookkit import SLUG_RE, read_json, write_json

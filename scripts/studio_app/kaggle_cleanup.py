@@ -1,4 +1,4 @@
-"""studio_app.kaggle_cleanup"""
+"""Automatic and manual clean-up of old Kaggle notebooks and local notebook files."""
 import re
 import shutil
 import subprocess

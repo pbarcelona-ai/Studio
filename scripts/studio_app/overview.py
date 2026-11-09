@@ -1,4 +1,4 @@
-"""studio_app.overview"""
+"""The status the page loads first (projects, models, services, setup)."""
 import os
 import shutil
 from pathlib import Path

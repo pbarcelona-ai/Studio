@@ -1,4 +1,4 @@
-"""studio_app.direction"""
+"""Creative direction, voice casting, new scenes, the animatic and the upscale step."""
 import csv
 import json
 import os

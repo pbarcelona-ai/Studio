@@ -1,4 +1,4 @@
-"""studio_app.single_prompts"""
+"""Single prompts (text to video / text to image): rows, size checks, reference pictures, face check, idea expansion."""
 import csv
 import json
 import re
@@ -23,7 +23,7 @@ from .steps import chunks, engine_args, make_runner
 # ---------------------------------------------------------------- single prompts (text to video / text to image)
 
 
-def snap(value, multiple, lo, hi):
+def snap(value: float, multiple: int, lo: int, hi: int) -> int:
     """Round a size/frame count to what the model accepts and keep it in range."""
     v = int(round(value / multiple)) * multiple
     return max(lo, min(hi, v))

@@ -1,4 +1,4 @@
-"""studio_app.media"""
+"""Lengths of clips and narration (mp4/wav readers), the inventory of downloaded files, and the film made from the ones you tick."""
 import re
 import struct
 from bookkit import SLUG_RE

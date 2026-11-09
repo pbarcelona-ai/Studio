@@ -1,4 +1,4 @@
-"""studio_app.scenes"""
+"""Scene prompts: look at them, add details, get suggestions, save and revert."""
 import re
 import time
 from bookkit import EDIT_FIELDS, continuity_file, SLUG_RE, llm_json, read_json, set_scene_field, write_json
