@@ -50,6 +50,7 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D7 | 2026-11-15 | Package Studio as installers for **Windows and macOS** with progress bars that name each task (Section 2, rule 12; milestone MI) | owner |
 | D8 | 2026-11-15 | MW: the shell scripts keep their names in steps and saved jobs; `steps.script_argv` runs their Python ports (`scripts/*.py`) on every system, so Mac and Windows run the same code. The `.sh` files stay as 4-line wrappers for old terminal commands. `kaggle_names.sh` is gone (Python `cksum` gives the same names, so old runs are still recognised). The remote GPU scripts (`make_*.py`) stay Linux-only: they run on Kaggle/Colab | assumed — not answered |
 | D9 | 2026-11-15 | MW: Windows install is `install.bat` → `install.ps1` (a progress bar naming each task) until the MI installers exist; `run_studio.bat` starts it | assumed — not answered |
+| D10 | 2026-11-15 | MW: the Studio always runs in Python's UTF-8 mode (studio.py restarts itself with -X utf8 on Windows; job steps get PYTHONUTF8=1), so text files read the same on every system. Paths sent to the page use forward slashes | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1009,7 +1010,7 @@ saying what's left.
         providers, crew role files, project rules, recipes, gates,
         the studio_index.db index + reindex, rev checks (Section 8.0).
         README.
-[x] MW (2026-11-15, 11ec094; Windows CI result not yet checked) Windows support (rule 11): port the shell scripts the Studio
+[x] MW (2026-11-15, 11ec094..7c78839; CI green on Windows, macOS, Linux) Windows support (rule 11): port the shell scripts the Studio
         calls (run_kaggle_model.sh, run_colab_model.sh, run_hf_space.sh,
         fetch_kaggle_run.sh, kaggle_names.sh) to Python; run_studio.bat and
         install.ps1; .venv\Scripts on the tool path; CI on windows-latest
