@@ -105,6 +105,7 @@ function updateStepper(project) {
 }
 function goToStep(el) {
     if (el.dataset.step === 'film') { loadFilm(true); return; }       // opens the Results tab and the Make film panel with the downloaded files
+    if (window.flowGoTo && window.flowGoTo(el.dataset.target)) return;      // the guided flow shows the screen that has this card
     const tab = document.querySelector(`.tab-btn[data-tab="${el.dataset.go}"]`);
     if (tab) tab.click();
     const target = el.dataset.target && $(el.dataset.target);

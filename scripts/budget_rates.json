@@ -1,0 +1,15 @@
+{
+ "_about": "Rates the budget preview (scripts/budget.py) multiplies by. Only the first number was measured; everything else is an assumption: change it when you have measured your own run.",
+ "clip_minutes_on_t4": {
+  "_measured": "ltx_video_fast_i2v: 106 s for one 4 s clip on a Kaggle T4, genesis_film run (see ROADMAP). ltx_video_i2v: about 10 min at 40 steps (note in make_video.py). The others are guesses.",
+  "ltx_video_fast_i2v": 1.8, "ltx_video_i2v": 10, "ltx_video": 6, "wan22_ti2v_5b_i2v": 14, "wan22_ti2v_5b": 14, "wan": 12, "wan22_t2v_a14b": 40,
+  "wan22_t2v_a14b_lightning": 15, "hunyuan_video": 30, "hunyuan_video_15": 25, "cogvideox": 15, "cogvideox_5b": 12, "pika_h3_flex_i2v": 0.5,
+  "default": 6
+ },
+ "keyframe_minutes_on_t4": 0.4,
+ "gpu_speed_vs_t4": {"NvidiaTeslaT4": 1.0, "T4": 1.0, "NvidiaL4": 1.5, "L4": 1.5, "NvidiaTeslaA100": 4.0, "A100": 4.0, "NvidiaH100": 7.0, "H100": 7.0, "local": 1.0, "ZeroGPU": 3.0, "default": 1.0},
+ "gpu_usd_per_hour": {"NvidiaTeslaT4": 0.35, "T4": 0.35, "NvidiaL4": 0.8, "L4": 0.8, "NvidiaTeslaA100": 2.0, "A100": 2.0, "NvidiaH100": 4.0, "H100": 4.0, "default": 1.0},
+ "free_weekly_gpu_hours": {"kaggle": 30, "colab": null, "huggingface": null, "computer": null},
+ "paid_services": ["cloud"],
+ "llm_usd_per_call": 0.04
+}

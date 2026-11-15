@@ -49,14 +49,18 @@ def main(argv=None):
     log.info("listening on 127.0.0.1:%s", srv.server_port)
     JOB.on_finish = start_auto_cleanup
     start_auto_cleanup()
+    from .resume import on_startup
+    on_startup()                                 # a job from the last session that is still running: follow it
     if not a.no_open:
         webbrowser.open(url)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
-        JOB.stop()
         SESSION.remove()
-        print("\nstopped")
+        if JOB.running:                          # the job keeps going on its own; the next Studio follows it (jobs.py, resume.py)
+            print("\nstopped. A job is still running on its own: start the Studio again to follow it, or stop it there.")
+        else:
+            print("\nstopped")
 
 
 if __name__ == "__main__":

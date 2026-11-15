@@ -14,6 +14,8 @@ character's token label (for example "ADAM:") found in the shot's prompt.
 
 Life stages: in a realistic film (--look live_action or none) a character with stages in the continuity book uses the pictures for the stage the
 shot's chapter falls in: references/<character>/<stage label>/ in the series, else the character's usual pictures.
+Locked scenes: when the book has a film plan and a cast lock (cast_lock.py; the Film plan card), the picture locked for a character or the place in the
+shot's scene is used instead of the usual one.
 Locations: a picture at <book>/location_refs/<location name>.png (any picture type, name in lower case with underscores) steers the shots at that
 location, when the character pictures leave room within --max-refs.
 
@@ -29,7 +31,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import adaptation  # noqa: E402  (project-local: which scene a shot belongs to)
 import bookkit  # noqa: E402  (project-local: life stages and the continuity book)
+import cast_lock  # noqa: E402  (project-local: pictures locked for a scene)
 import layout  # noqa: E402  (project-local: finds projects/books/<book>)
 import model_advisor  # noqa: E402  (project-local: the looks and their style words)
 
@@ -91,29 +95,40 @@ def build_refs(d, shots, series, max_refs, look=""):
         shutil.rmtree(out_dir)                # only this run's pictures, so a renamed or removed character leaves nothing stale
     out_dir.mkdir()
     picked, tried, missing, per_row = {}, set(), set(), []
+    plan, lock = adaptation.load(d), cast_lock.load(d)           # a picture locked for a scene beats the character's usual one
+    if plan and plan.get("stale"):
+        plan = None
+    in_chapter: dict = {}
+    for r in shots:
+        in_chapter[r.get("chapter")] = in_chapter.get(r.get("chapter"), 0) + 1
     for row in shots:
         names: list[str] = []
+        scene = None
+        if plan and lock and chapter_number(row) is not None and str(row.get("shot", "")).isdigit():
+            scene = adaptation.shot_scene(plan, chapter_number(row), int(row["shot"]), in_chapter[row.get("chapter")])
         for name in shot_characters(row, labels):
             if len(names) >= max_refs:           # the first characters named are the ones the shot is about
                 break
             stage = bookkit.stage_for(book.get(name.lower(), {}), chapter_number(row), look)
-            key = (name, stage["label"]) if stage else (name, "")
+            locked = cast_lock.reference_for(lock, scene, name)
+            key = (name, stage["label"] if stage else "", scene if locked else "")
             if key not in tried:
                 tried.add(key)
-                src = ct.first_reference(series, name, stage["label"] if stage else "")
-                aged = src is not None and bool(stage) and src.parent.name == ct.slugify(str(stage["label"]))
+                src = locked or ct.first_reference(series, name, stage["label"] if stage else "")
+                aged = src is not None and not locked and bool(stage) and src.parent.name == ct.slugify(str(stage["label"]))
                 if src is None:
                     missing.add(name)
                 else:
-                    fname = f"ref-{ct.slugify(name)}" + (f"-{ct.slugify(str(stage['label']))}" if aged else "") + ".png"
+                    fname = f"ref-{ct.slugify(name)}" + (f"-{ct.slugify(str(stage['label']))}" if aged else "") + (f"-{(scene or '').lower()}" if locked else "") + ".png"
                     save_small(src, out_dir / fname)
                     picked[key] = fname
             if key in picked and picked[key] not in names:
                 names.append(picked[key])
         if len(names) < max_refs:                # a place fits only after the people
-            src = location_picture(d, row.get("location"))
+            locked_place = cast_lock.reference_for(lock, scene)
+            src = locked_place or location_picture(d, row.get("location"))
             if src:
-                fname = f"ref-place-{src.stem.lower()}.png"
+                fname = f"ref-place-{(scene or '').lower() + '-' if locked_place else ''}{src.stem.lower()}.png"
                 if not (out_dir / fname).exists():
                     save_small(src, out_dir / fname)
                 names.append(fname)

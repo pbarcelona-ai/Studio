@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from bookkit import KOKORO_VOICE_RE, KOKORO_VOICES, VOICE_CAST_FILE, apply_voice_cast, read_voice_cast, voice_id, continuity_file, SLUG_RE, llm_json, read_json, write_json
 import character_tokens
+import voices
 import layout
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
@@ -120,15 +121,28 @@ def voice_cast(opt):
                 clean[k] = v
         write_json(d / VOICE_CAST_FILE, {"cast": clean})
         result["changed"] = apply_voice_cast(d, clean)
-        if opt.get("move_old") and result["changed"]:
-            rel = layout.rel(d.name)
-            old = [f"{rel}/audio/kokoro/narration-{n:04d}.wav" for n in result["changed"] if (d / "audio" / "kokoro" / f"narration-{n:04d}.wav").exists()]
-            result["moved"] = move_to_trash(old, "pistachio-old-voice")["moved"] if old else 0
+    if opt.get("direction") is not None:               # how each speaker delivers lines: {speaker: {emotion, speed, pause}} (voices.py)
+        given = opt["direction"]
+        if not isinstance(given, dict) or len(given) > 200:
+            raise PlanError("direction must be {speaker: {emotion, speed, pause}}")
+        try:
+            voices.save_direction(d, speakers=given)
+        except ValueError as e:
+            raise PlanError(str(e)) from e
+        result["changed"] = sorted(set(result["changed"]) | set(voices.apply_direction(d)))
+    if opt.get("move_old") and result["changed"]:
+        rel = layout.rel(d.name)
+        old = [f"{rel}/audio/kokoro/narration-{n:04d}.wav" for n in result["changed"] if (d / "audio" / "kokoro" / f"narration-{n:04d}.wav").exists()]
+        result["moved"] = move_to_trash(old, "pistachio-old-voice")["moved"] if old else 0
+    if opt.get("auto"):                                 # a different voice for every character of the continuity book (not saved until you save the cast)
+        cont = (read_json(continuity_file(d), {}) or {}).get("characters", []) or []
+        result["auto"] = voices.auto_cast([c for c in cont if isinstance(c, dict)], keep=read_voice_cast(d))
     series = str(opt.get("series") or "")
     if series and not SLUG_RE.match(series):
         raise PlanError("bad series name")
     cast = read_voice_cast(d)
     cast_lc = {k.lower(): v for k, v in cast.items()}
+    direction = {k.lower(): v for k, v in voices.read_direction(d)["speakers"].items()}
     book_voice = {str(c.get("name", "")).lower(): voice_id(c.get("voice")) for c in (read_json(continuity_file(d), {}) or {}).get("characters", []) or []
                   if isinstance(c, dict)}
     speakers: dict = {}
@@ -156,9 +170,9 @@ def voice_cast(opt):
                 ch = None
             suggest = voice_id((ch or {}).get("voice"))
         out.append({"name": sp["name"], "lines": sp["lines"], "voice": now, "cast": cast_lc.get(key, ""),
-                    "book": book_voice.get(key, ""), "suggest": suggest})
+                    "book": book_voice.get(key, ""), "suggest": suggest, "direction": direction.get(key, {})})
     out.sort(key=lambda x: (x["name"].upper() != "NARRATOR", -x["lines"], x["name"].lower()))
-    result.update({"speakers": out, "voices": KOKORO_VOICES})
+    result.update({"speakers": out, "voices": KOKORO_VOICES, "emotions": list(voices.EMOTIONS)})
     return result
 
 

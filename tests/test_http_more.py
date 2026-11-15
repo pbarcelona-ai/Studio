@@ -22,6 +22,21 @@ class TestUpload:
     def test_text_is_saved(self, server, fake_root):
         assert upload(server, "story.txt", TEXT)[0] == 200
 
+    def test_epub_docx_and_html_are_checked_by_content(self, server, fake_root, tmp_path):
+        import zipfile
+        epub, docx = tmp_path / "b.epub", tmp_path / "d.docx"
+        with zipfile.ZipFile(epub, "w") as z:
+            z.writestr("META-INF/container.xml", "<container/>")
+        with zipfile.ZipFile(docx, "w") as z:
+            z.writestr("word/document.xml", "<w:document/>")
+        assert upload(server, "novel.epub", epub.read_bytes())[0] == 200
+        assert upload(server, "memo.docx", docx.read_bytes())[0] == 200
+        assert upload(server, "page.html", b"<html><body><p>Once upon a time there was a small green dragon.</p></body></html>")[0] == 200
+        assert upload(server, "fake.epub", b"PK not really a zip file at all")[0] == 400
+        assert upload(server, "wrong.docx", epub.read_bytes())[0] == 400           # a zip, but not a Word document
+        assert upload(server, "x.rtf", TEXT)[0] == 400
+        assert not list((fake_root / "books").glob("*.part"))
+
     def test_text_needs_real_words(self, server, fake_root):
         assert upload(server, "story.txt", b"too few")[0] == 400
         assert upload(server, "story.txt", b"binary \x00 data with enough words in it to pass the count")[0] == 400

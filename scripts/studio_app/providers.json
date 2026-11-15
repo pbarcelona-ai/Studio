@@ -1,0 +1,31 @@
+{
+ "schema_version": 1,
+ "_about": "Where the Studio can run its models, shown on the Models tab. 'proven' means the Studio has really run a job there. Paid providers are a research list: nothing here has been connected or tried. No prices are listed because they change; check each site.",
+ "computer": [
+  {"id": "computer", "name": "This computer", "proven": true, "note": "Already there: its own NVIDIA (or AMD with ROCm) graphics card, no account, models download once."}
+ ],
+ "free": [
+  {"id": "kaggle", "name": "Kaggle", "proven": true, "url": "https://www.kaggle.com", "note": "Free weekly GPU quota. Needs a phone-verified account."},
+  {"id": "colab", "name": "Colab (free)", "proven": true, "url": "https://colab.research.google.com", "note": "Free T4, often unavailable."},
+  {"id": "huggingface", "name": "Hugging Face Spaces", "proven": true, "url": "https://huggingface.co/spaces", "note": "Free shared GPUs with a daily quota, only for models with a public Space."}
+ ],
+ "paid": [
+  {"id": "colab_pro", "name": "Google Colab Pro / Pro+", "kind": "notebook", "url": "https://colab.research.google.com/signup", "note": "The same Colab runner with L4, A100 or H100 GPUs. The GPU choices are in the Studio already; no paid run has been tried."},
+  {"id": "runpod", "name": "RunPod", "kind": "rented GPU machine or serverless", "url": "https://www.runpod.io", "note": "Billed by the hour or second. Route to try: start a pod, run the Studio on it, and use it as 'This computer'."},
+  {"id": "vast", "name": "Vast.ai", "kind": "marketplace of rented GPU machines", "url": "https://vast.ai", "note": "Cheapest listings vary by host; machines differ in speed and reliability."},
+  {"id": "lambda", "name": "Lambda", "kind": "rented GPU machine", "url": "https://lambda.ai", "note": "On-demand A100 and H100 machines."},
+  {"id": "paperspace", "name": "Paperspace (DigitalOcean)", "kind": "rented GPU machine and notebooks", "url": "https://www.paperspace.com", "note": "Hourly GPU machines."},
+  {"id": "tensordock", "name": "TensorDock", "kind": "marketplace of rented GPU machines", "url": "https://tensordock.com", "note": "Hourly GPU machines."},
+  {"id": "hyperstack", "name": "Hyperstack", "kind": "rented GPU machine", "url": "https://www.hyperstack.cloud", "note": "On-demand GPU virtual machines."},
+  {"id": "lightning", "name": "Lightning AI", "kind": "notebooks and GPU studios", "url": "https://lightning.ai", "note": "Pay-as-you-go GPU studios; a small free monthly allowance."},
+  {"id": "coreweave", "name": "CoreWeave", "kind": "GPU cloud", "url": "https://www.coreweave.com", "note": "Aimed at larger customers."},
+  {"id": "modal", "name": "Modal", "kind": "serverless GPU functions", "url": "https://modal.com", "note": "Billed per second; the Studio's scripts would need a Modal wrapper."},
+  {"id": "replicate", "name": "Replicate", "kind": "hosted model API", "url": "https://replicate.com", "note": "Pay per run. Uses the provider's version of a model, not the Studio's own scripts."},
+  {"id": "fal", "name": "fal", "kind": "hosted model API", "url": "https://fal.ai", "note": "Pay per image or video. Uses the provider's version of a model."},
+  {"id": "together", "name": "Together AI", "kind": "hosted model API and GPU clusters", "url": "https://www.together.ai", "note": "Pay per use."},
+  {"id": "hf_endpoints", "name": "Hugging Face Inference Endpoints", "kind": "dedicated hosted model", "url": "https://huggingface.co/inference-endpoints", "note": "Billed per hour while the endpoint runs."},
+  {"id": "sagemaker", "name": "Amazon SageMaker", "kind": "big cloud", "url": "https://aws.amazon.com/sagemaker/", "note": "Needs an AWS account and a role; heavy setup."},
+  {"id": "vertex", "name": "Google Vertex AI", "kind": "big cloud", "url": "https://cloud.google.com/vertex-ai", "note": "Needs a Google Cloud project; heavy setup."},
+  {"id": "azure_ml", "name": "Azure Machine Learning", "kind": "big cloud", "url": "https://azure.microsoft.com/products/machine-learning", "note": "Needs an Azure subscription; heavy setup."}
+ ]
+}

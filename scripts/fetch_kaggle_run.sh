@@ -60,12 +60,25 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 kaggle kernels output "$REF" -p "$TMP" -o -q
 mkdir -p "$PD/logs"
 for f in "$TMP"/*.log; do [ -f "$f" ] && cp "$f" "$PD/logs/"; done
+# The notebooks save to videos/<model>, audio/<kind>, images/<model>. A run of keyframes, of one clip per chapter or of one music cue per scene goes into
+# <folder>_keyframes, <folder>_chapters or <folder>_scenes, as run_kaggle_model.sh does when it brings the results home itself.
+SUFFIX=""
+case "$SLUG" in *-keyframes-[0-9]*) SUFFIX="_keyframes" ;; *-chapters-[0-9]*) SUFFIX="_chapters" ;; *-scenes-[0-9]*) SUFFIX="_scenes" ;; esac
 n=0
-for d in videos audio images; do                       # the notebooks save to videos/<model>, audio/<kind>, images/<model>
-  if [ -d "$TMP/$d" ]; then
-    mkdir -p "$PD/$d"; cp -R "$TMP/$d/." "$PD/$d/"
-    n=$((n + $(find "$TMP/$d" -type f | wc -l)))
-  fi
+for d in videos audio images; do
+  [ -d "$TMP/$d" ] || continue
+  mkdir -p "$PD/$d"
+  for sub in "$TMP/$d"/*; do
+    if [ -d "$sub" ]; then
+      name=$(basename "$sub")
+      case "$name" in *"$SUFFIX") target="$PD/$d/$name" ;; *) target="$PD/$d/$name$SUFFIX" ;; esac
+      [ -n "$SUFFIX" ] || target="$PD/$d/$name"
+      mkdir -p "$target"; cp -R "$sub/." "$target/"
+    else
+      cp "$sub" "$PD/$d/"
+    fi
+  done
+  n=$((n + $(find "$TMP/$d" -type f | wc -l)))
 done
 echo "✅ $n file(s) copied into $PD/   (log saved in $PD/logs/)"
 if [ "$S" != "COMPLETE" ]; then

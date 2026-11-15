@@ -10,9 +10,12 @@ from bookkit import SLUG_RE
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
 from .api import HttpError, Request, route
+from .adapt import adaptation_edit, budget_data, cast_lock_edit, grading_edit, screenplay_edit
+from .chapters import chapter_edit_action
+from .export import credits_set, export_step, share_create, share_revoke
 from .cleanup import cleanup_delete, trash_files
 from .common import PlanError, resolve_project_file
-from .config import ENV_PATH, PROJECTS, ROOT
+from .config import ADULT_FLAG, ENV_PATH, PROJECTS, ROOT
 from .direction import animatic_step, creative_direction, creative_direction_get, new_scene, upscale_step, voice_cast
 from .gallery import save_rating
 from .generation import clean_stages
@@ -27,9 +30,20 @@ from .projects import save_global_params
 from .scenes import prompt_revert, prompt_save, prompt_suggest
 from .single_prompts import expand_idea, face_check_step, open_folder
 from .steps import shell_form
-from .takes import pick_take, retake
+from .path import feedback_keep, path_confirm, shot_move_action
+from .takes import critic_action, pick_take, reset_storyboard, retake, review_action
 
 STARTED = {"started": 1}
+
+
+def _start(steps, body):
+    """Start a job, or queue it behind the running one when the page asks (queue: true). Returns the answer for the page."""
+    from .resume import busy_elsewhere
+    why = busy_elsewhere()
+    if why:
+        raise PlanError(why)
+    ahead = JOB.start(steps, body, queue=bool(body.get("queue")))
+    return {"started": len(steps), "queued": ahead}
 
 
 def _need_idle():
@@ -45,8 +59,7 @@ def _plan(r: Request):
 @route("POST", "/api/run")
 def _run(r: Request):
     steps = build_plan(r.body, commit=True)       # prompt mode writes its rows here, not when previewing
-    JOB.start(steps, r.body)
-    return {"started": len(steps)}
+    return _start(steps, r.body)
 
 
 @route("POST", "/api/stop")
@@ -60,9 +73,75 @@ def _chapter_shots(r: Request):
     return chapter_shots(r.body.get("project", ""), r.body)
 
 
+@route("POST", "/api/adaptation_edit")
+def _adaptation_edit(r: Request):
+    _need_idle()
+    return adaptation_edit(r.body)
+
+
+@route("POST", "/api/cast_lock")
+def _cast_lock(r: Request):
+    _need_idle()
+    return cast_lock_edit(r.body)
+
+
+@route("POST", "/api/export")
+def _export(r: Request):
+    return _start([export_step(r.body)], r.body)
+
+
+@route("POST", "/api/share")
+def _share(r: Request):
+    return share_create(r.body)
+
+
+@route("POST", "/api/share_revoke")
+def _share_revoke(r: Request):
+    return share_revoke(r.body)
+
+
+@route("POST", "/api/credits")
+def _credits(r: Request):
+    _need_idle()
+    return credits_set(r.body)
+
+
+@route("POST", "/api/grading")
+def _grading(r: Request):
+    _need_idle()
+    return grading_edit(r.body)
+
+
+@route("POST", "/api/screenplay_edit")
+def _screenplay_edit(r: Request):
+    _need_idle()
+    return screenplay_edit(r.body)
+
+
+@route("POST", "/api/budget")
+def _budget(r: Request):
+    return budget_data(r.body)
+
+
+@route("POST", "/api/chapter_edit")
+def _chapter_edit(r: Request):
+    _need_idle()                        # a running step reads the chapter files
+    return chapter_edit_action(r.body)
+
+
 @route("POST", "/api/retake")
 def _retake(r: Request):
     return retake(r.body)
+
+
+@route("POST", "/api/review")
+def _review(r: Request):
+    return review_action(r.body)
+
+
+@route("POST", "/api/critic")
+def _critic(r: Request):
+    return critic_action(r.body)
 
 
 @route("POST", "/api/pick_take")
@@ -94,6 +173,64 @@ def _prompt_suggest(r: Request):
     return {"suggestions": prompt_suggest(r.body)}
 
 
+@route("POST", "/api/clip_length")
+def _clip_length(r: Request):
+    from .cliplen import clip_length_action
+    return clip_length_action(r.body)
+
+
+@route("POST", "/api/get_results")
+def _get_results(r: Request):
+    from .results import results_steps
+    steps, opt = results_steps(r.body)
+    out = _start(steps, opt)
+    return {**out, "runs": [s["label"] for s in steps]}
+
+
+@route("POST", "/api/match_pictures")
+def _match_pictures(r: Request):
+    from .old_pictures import match_all
+    return match_all(r.body)
+
+
+@route("POST", "/api/auto_assign_pictures")
+def _auto_assign(r: Request):
+    from .old_pictures import auto_assign
+    return auto_assign(r.body)
+
+
+@route("POST", "/api/assign_picture")
+def _assign_picture(r: Request):
+    from .old_pictures import assign_picture
+    return assign_picture(r.body)
+
+
+@route("POST", "/api/sessions")
+def _sessions_post(r: Request):
+    from .resume import sessions_action
+    return sessions_action(r.body)
+
+
+@route("POST", "/api/path_confirm")
+def _path_confirm(r: Request):
+    return path_confirm(r.body)
+
+
+@route("POST", "/api/shot_move")
+def _shot_move(r: Request):
+    return shot_move_action(r.body)
+
+
+@route("POST", "/api/feedback_keep")
+def _feedback_keep(r: Request):
+    return feedback_keep(r.body)
+
+
+@route("POST", "/api/storyboard_reset")
+def _storyboard_reset(r: Request):
+    return reset_storyboard(r.body)
+
+
 @route("POST", "/api/prompt_save")
 def _prompt_save(r: Request):
     return prompt_save(r.body)
@@ -120,6 +257,16 @@ def _cleanup_delete(r: Request):
 @route("POST", "/api/kaggle_cleanup_delete")
 def _kaggle_cleanup_delete(r: Request):
     return kaggle_cleanup_delete()
+
+
+@route("POST", "/api/adult_models")
+def _adult_models(r: Request):
+    """Show (and allow) or hide (and refuse) the adult-content models. Kept in a flag file next to the Studio so it survives a restart."""
+    if r.body.get("enabled"):
+        ADULT_FLAG.touch()
+    else:
+        ADULT_FLAG.unlink(missing_ok=True)
+    return {"enabled": ADULT_FLAG.exists()}
 
 
 @route("POST", "/api/auto_cleanup")
@@ -180,26 +327,22 @@ def _voice_cast(r: Request):
 
 @route("POST", "/api/upscale")
 def _upscale(r: Request):
-    JOB.start([upscale_step(r.body)], r.body)
-    return STARTED
+    return _start([upscale_step(r.body)], r.body)
 
 
 @route("POST", "/api/face_check")
 def _face_check(r: Request):
-    JOB.start([face_check_step(r.body)], r.body)
-    return STARTED
+    return _start([face_check_step(r.body)], r.body)
 
 
 @route("POST", "/api/make_animatic")
 def _make_animatic(r: Request):
-    JOB.start([animatic_step(r.body)], r.body)
-    return STARTED
+    return _start([animatic_step(r.body)], r.body)
 
 
 @route("POST", "/api/fetch")
 def _fetch(r: Request):
-    JOB.start([fetch_step(r.body)], r.body)
-    return STARTED
+    return _start([fetch_step(r.body)], r.body)
 
 
 @route("POST", "/api/open_reference_folder")

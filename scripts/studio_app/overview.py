@@ -7,7 +7,7 @@ import setup_check
 import layout
 import model_advisor
 
-from .config import AUDIO_KINDS, AUDIO_MODELS, AUDIO_ROLE_TITLES, CLAUDE_MODELS, ENV_PATH, GPUS, IMAGE_GROUPS, IMAGE_MODELS, MODEL_DEFAULTS, ROOT, UPSCALE_MODELS, UPSCALE_SHORT, VIDEO_GROUPS, VIDEO_MODELS
+from .config import ADULT_GROUP, ADULT_MODELS, AUDIO_KINDS, AUDIO_MODELS, AUDIO_ROLE_TITLES, CLAUDE_MODELS, ENV_PATH, GPUS, IMAGE_GROUPS, IMAGE_MODELS, MODEL_DEFAULTS, ROOT, UPSCALE_MODELS, UPSCALE_SHORT, VIDEO_GROUPS, VIDEO_MODELS, adult_enabled
 from .gpus import blockers, gpu_blocker, local_gpu_label
 from .kaggle_cleanup import AUTO_CLEAN_OFF
 from .llm import local_llm_status
@@ -16,6 +16,11 @@ from .steps import HF_MODELS, HF_VISION_MODELS
 
 
 def status():
+    adult = adult_enabled()
+    video_models = VIDEO_MODELS if adult else [m for m in VIDEO_MODELS if m not in ADULT_MODELS]
+    image_models = IMAGE_MODELS if adult else [m for m in IMAGE_MODELS if m not in ADULT_MODELS]
+    video_groups = VIDEO_GROUPS if adult else [g for g in VIDEO_GROUPS if g[0] != ADULT_GROUP]
+    image_groups = IMAGE_GROUPS if adult else [g for g in IMAGE_GROUPS if g[0] != ADULT_GROUP]
     for base in (layout.BOOKS, layout.CHARACTERS, layout.PROMPTS, layout.REGRESSION):
         base.mkdir(parents=True, exist_ok=True)
     sets = layout.promptset_slugs()               # Single Prompts sets and character image sets
@@ -26,10 +31,10 @@ def status():
         "tools": {**{t: bool(shutil.which(t, path=ENV_PATH)) for t in ("claude", "fcc-claude", "codex", "fcc-codex", "colab", "kaggle", "uv")},
                   "hf": True, "huggingface": True, "computer": not gpu_blocker("computer", "local"), "local": local_llm_status()["ready"]},     # hf needs no program (its token is checked when it is used); local needs a capable computer and a model server
         "projects": [project_info(s) for s in names], "library": library_files(),
-        "promptsets": [promptset_info(x) for x in sets], "image_models": IMAGE_MODELS, "model_defaults": MODEL_DEFAULTS,
+        "promptsets": [promptset_info(x) for x in sets], "image_models": image_models, "model_defaults": MODEL_DEFAULTS,
         "blockers": blockers(),
         "gpu_blockers": {svc: {g: gpu_blocker(svc, g) for g, _ in gl if gpu_blocker(svc, g)} for svc, gl in GPUS.items()},
-        "video_models": VIDEO_MODELS, "video_groups": VIDEO_GROUPS, "image_groups": IMAGE_GROUPS, "audio_kinds": AUDIO_KINDS, "audio_models": {k: {"role": r, "label": l, "note": n} for k, (r, l, n) in AUDIO_MODELS.items()}, "audio_roles": AUDIO_ROLE_TITLES, "gpus": {**GPUS, "computer": [("local", local_gpu_label())]}, "computer_why": gpu_blocker("computer", "local"),
+        "video_models": video_models, "video_groups": video_groups, "image_groups": image_groups, "adult_models": {"enabled": adult, "count": len(ADULT_MODELS)}, "audio_kinds": AUDIO_KINDS, "audio_models": {k: {"role": r, "label": l, "note": n} for k, (r, l, n) in AUDIO_MODELS.items()}, "audio_roles": AUDIO_ROLE_TITLES, "gpus": {**GPUS, "computer": [("local", local_gpu_label())]}, "computer_why": gpu_blocker("computer", "local"),
         "upscale_models": {k: {"label": l, "short": UPSCALE_SHORT[k], "memory": m, "least_gb": g, "ampere": a} for k, (l, m, g, a) in UPSCALE_MODELS.items()}, "claude_models": CLAUDE_MODELS, "hf_models": HF_MODELS, "hf_vision_models": HF_VISION_MODELS, "hf_token_set": bool(os.environ.get("HF_TOKEN", "").strip()), "local_llm": local_llm_status(),
         "codex_models": codex_models(), "auto_cleanup": not AUTO_CLEAN_OFF.exists(),
         "looks": [{"id": k, "label": l, "about": a, **model_advisor.STYLE[k]} for k, (l, a) in model_advisor.LOOKS.items()],

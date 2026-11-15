@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Step 1 of a new book: read a PDF and split it into chapters.
+"""Step 1 of a new book: read the book file and split it into chapters.
 
-  uv run --with pypdf python book_ingest.py <project_name> <path/to/book.pdf>
+  uv run --with pypdf --with pillow python book_ingest.py <project_name> <path/to/book>
 
-Creates projects/<project_name>/ with source/<pdf>, source_text.txt, chapters/chapter-NNN.txt and chapters.json.
-Chapters are found from headings ("CHAPTER 5", "Psalm 23", "BOOK II", a lone roman numeral ...). If no usable
-headings exist the text is cut into sections of about 2,500 words. Check chapters.json afterwards; you can edit or
-re-split it by hand and then rerun the later steps.
+The book can be a .pdf (scans are read with OCR), .epub, .docx, .html or a .txt / .md text file (see book_formats.py).
+Creates projects/<project_name>/ with source/<file>, source_text.txt, chapters/chapter-NNN.txt and chapters.json.
+EPUB, DOCX and HTML files are split on their own chapter divisions. Otherwise chapters are found from headings
+("CHAPTER 5", "Psalm 23", "BOOK II", a lone roman numeral ...). If no usable headings exist the text is cut into sections
+of about 2,500 words. Cover, copyright and contents pages go to front_matter.txt, notes and licences to back_matter.txt.
+Check chapters.json afterwards; the Chapters card in the Studio can merge, split, rename and drop chapters, and you can
+also edit it by hand and then rerun the later steps.
 """
 import argparse
 import re
@@ -14,37 +17,33 @@ import shutil
 import sys
 from collections import Counter
 from pathlib import Path
-from pypdf import PdfReader
+from book_formats import BookReadError, read_book
 from bookkit import project_dir, slugify, words, write_json
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
-ap.add_argument("pdf", help="the book: a .pdf, or a .txt / .md text file")
+ap.add_argument("pdf", help="the book: a .pdf, .epub, .docx, .html, or a .txt / .md text file")
 ap.add_argument("--section-words", type=int, default=2500, help="size of sections when no headings are found")
+ap.add_argument("--no-ocr", action="store_true", help="do not read scanned PDF pages with OCR")
 args = ap.parse_args()
 
 pdir = project_dir(slugify(args.project))
 src = Path(args.pdf).expanduser()
 if not src.exists():
-    sys.exit(f"PDF not found: {src}")      # (also said for text files; studio.py looks for this text)
+    sys.exit(f"PDF not found: {src}")      # (also said for other book files; studio.py looks for this text)
 (pdir / "source").mkdir(parents=True, exist_ok=True)
 dest = pdir / "source" / src.name
 if src.resolve() != dest.resolve():
     shutil.copy2(src, dest)
 
-is_text = dest.suffix.lower() in (".txt", ".md")
-if is_text:                                                      # plain text: one "page" per form feed, else the whole text
-    raw = dest.read_text(encoding="utf-8-sig", errors="replace")
-    pages = [p for p in raw.split("\f") if p.strip()] or [raw]
-else:
-    pages = [(p.extract_text() or "") for p in PdfReader(dest).pages]
-chars = sum(len(p) for p in pages)
-if is_text:
-    if len(raw.split()) < 5:
-        sys.exit("That text is too short to use: write or paste at least a few words.")
-elif chars < 200 * max(len(pages), 1) * 0.2 or chars < 2000:
-    sys.exit(f"Almost no text was extracted ({chars} characters from {len(pages)} pages). This looks like a scanned "
-             "PDF; it needs OCR first (for example with ocrmypdf) before it can be used.")
+try:
+    book = read_book(dest, ocr=not args.no_ocr, progress=lambda m: print(m, flush=True))
+except BookReadError as e:
+    sys.exit(str(e))
+pages = book.pages
+is_text = book.kind != "pdf"                                     # only a PDF has running headers and page numbers to strip
+for note in book.notes:
+    print("note:", note)
 
 # running headers/footers: short lines that repeat on many pages
 line_counts = Counter(l.strip() for p in pages for l in set(p.splitlines()) if 0 < len(l.strip()) < 70)
@@ -109,8 +108,15 @@ for name, pat in PATTERNS.items():
     if len(run) > len(heads) and (len(text) / len(run)) > 400:      # skip patterns that match tiny scraps
         method, heads = name, run
 
+for stale in ("front_matter.txt", "back_matter.txt"):                # from an earlier run
+    (pdir / stale).unlink(missing_ok=True)
 chapters = []
-if heads:
+if book.sections and len(book.sections) >= 3:                        # the file's own divisions (EPUB files, Word styles, HTML headings)
+    method = "structure"
+    if book.front:
+        (pdir / "front_matter.txt").write_text(book.front)
+    chapters = [(t, b) for t, b in book.sections]
+elif heads:
     front = text[: heads[0].start()].strip()
     if front:
         (pdir / "front_matter.txt").write_text(front)
@@ -136,7 +142,9 @@ for n, (title, body) in enumerate(chapters, start=1):
     body = re.sub(r"\s*\n\s*", " ", re.sub(r"\n\s*\n", "\n\n", body)).strip()      # unwrap lines, keep paragraph gaps as spaces
     (cdir / f"chapter-{n:03d}.txt").write_text(body)
     index.append({"n": n, "title": title[:80], "words": words(body), "chars": len(body)})
-write_json(pdir / "chapters.json", {"method": method, "pdf": dest.name, "pages": len(pages), "chapters": index})
+if book.back:
+    (pdir / "back_matter.txt").write_text(book.back)
+write_json(pdir / "chapters.json", {"method": method, "pdf": dest.name, "format": book.kind, "ocr_pages": book.ocr_pages, "pages": len(pages), "chapters": index})
 
 tiny = [c["n"] for c in index if c["words"] < 40]
 print(f"{dest.name}: {len(pages)} pages, {words(text):,} words -> {len(index)} chapters (split by: {method})")

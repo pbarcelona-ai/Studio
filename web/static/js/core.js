@@ -74,6 +74,14 @@ const textToStages = text => text.split("\n").map(l => l.trim()).filter(Boolean)
 });
 const cur = () => ST ? ST.projects.find(p => p.slug === $("proj").value) : undefined;   // ST is null until the first /api/status answer
 
+// "Run only this step" buttons (flow.js) set pendingOnly = {steps: ["write"], force: false}; the next run takes it (once) and runs just those steps.
+let pendingOnly = null;
+function takeOnly() { const o = pendingOnly; pendingOnly = null; return o; }
+function onlySteps(o, only) {
+  if (only && o.steps) { for (const k of Object.keys(o.steps)) o.steps[k] = only.steps.includes(k); if (only.force) o.force_write = true; }
+  return o;
+}
+
 function options() {
   if (radio("mode") === "prompts") return promptOptions();
   const p = cur(), sel = radio("msel");
@@ -81,13 +89,14 @@ function options() {
     project: $("proj").value, pdf: $("pdf").value, granularity: radio("gran"),
     video_models: checked("vmodel"), audio: checked("audio"), service: radio("svc"), gpu: $("gpu").value,
     kaggle_user: $("kuser").value, batch: $("batch").value, range_start: $("rs").value, range_end: $("re").value,
-    sync: $("sync").value, aspect: $("aspect").value, chain: $("chain").checked, music_bed: $("musicBed").checked, duck: $("duck").checked, loudnorm: $("loudnorm").checked, clip_seconds: $("clipsecs").value, scenes: $("b_scenes").checked,
+    sync: $("sync").value, aspect: $("aspect").value, chain: $("chain").checked, music_bed: $("musicBed").checked, music_scenes: $("musicScenes").checked, grade: $("fgrade").checked, credits: $("fcredits").checked, duck: $("duck").checked, loudnorm: $("loudnorm").checked, clip_seconds: $("clipsecs").value, scenes: $("b_scenes").checked,
     keep_going: $("keep").checked, vol: { narration: $("vn").value, sfx: $("vs").value, music: $("vm").value },
     narration: $("narration").value, engine: $("engine").value, force_write: $("b_force").checked, claude_model: $("cmodel").value, chapters: $("chs").value, words_per_shot: $("wps").value,
     min_shots: $("minshots").value, max_shots: $("maxshots").value, movie_minutes: $("mmin").value, workers: $("workers").value,
     enoch_chars: $("echars").value, look: radio("look") || "", keyframe_model: $("kfmodel").value, keyframe_refs: $("kfrefs").checked && !$("kfrefs").disabled, keyframe_series: $("kfseries").value,
     movies: sel === "ids" ? { mode: "ids", ids: checked("movie") } : sel === "first" ? { mode: "first", n: $("mfirst").value } : { mode: "all" },
-    steps: { ingest: $("b_ingest").checked, continuity: $("b_continuity").checked, write: $("b_write").checked, build: $("b_build").checked,
+    recompose: $("b_recompose").checked && !$("b_recompose").disabled, film_minutes: $("film_minutes").value, adapt_focus: $("adapt_focus").value, adapt_fit_only: $("adapt_fit_only").checked, force_screenplay: $("force_screenplay").checked,
+    steps: { ingest: $("b_ingest").checked, adapt: $("b_adapt").checked, screenplay: $("b_screenplay").checked, continuity: $("b_continuity").checked, write: $("b_write").checked, build: $("b_build").checked,
              extract: $("s_extract").checked, keyframes: $("s_keyframes").checked, video: $("s_video").checked, audio: $("s_audio").checked, merge: $("s_merge").checked, mix: $("s_mix").checked },
   };
 }
@@ -183,9 +192,12 @@ function applyDefaults(p) {
     document.querySelector('input[name=gran][value=shots]').checked = true;     // new books: shots are allotted by chapter length
     const needIngest = p.not_started || !p.chapters;
     const needContinuity = needIngest || !p.continuity;
-    const needWrite = needContinuity || p.scripts < p.chapters;
-    const needBuild = needWrite || !p.built;
-    set("b_ingest", needIngest); set("b_continuity", needContinuity); set("b_write", needWrite); set("b_build", needBuild);
+    const ad = p.adaptation || {};
+    const toWrite = ad.exists ? ad.chapters : p.chapters;                         // chapters the film plan leaves out are never written
+    const planning = ad.exists && (!ad.approved || ad.stale);                                    // shots wait for the approved screenplay
+    const needWrite = !planning && (needContinuity || p.scripts < toWrite);
+    const needBuild = !planning && (needWrite || !p.built);
+    set("b_ingest", needIngest); set("b_adapt", false); set("b_screenplay", planning && ad.written < ad.total); set("b_continuity", needContinuity); set("b_write", needWrite); set("b_build", needBuild);
     set("s_video", !needBuild); set("s_audio", !needBuild);                      // generate only once the prompts exist
   }
   renderMovies();
@@ -207,10 +219,13 @@ function renderProject(applyDef) {
   if (!p) { $("chips").innerHTML = ""; $("movies").innerHTML = ""; $("have").innerHTML = ""; return; }
   const chip = (t, d) => `<span class="chip ${d ? "done" : ""}">${d ? "✓ " : ""}${t}</span>`;
   $("chips").innerHTML = p.legacy ? chip("imported book", true) + chip(`${p.movies.shots.length} movies planned`, p.movies.shots.length) :
-    (p.not_started ? chip("not started: tick 'Read the PDF' below and run it", false) : chip("PDF read", p.pdfs.length)) + chip(p.chapters ? `${p.chapters} chapters (split by ${p.split_method})` : "not split", p.chapters) +
+    (p.not_started ? chip("not started: tick 'Read the book' below and run it", false) : chip("book file read", p.pdfs.length)) + chip(p.chapters ? `${p.chapters} chapters (split by ${p.split_method})` : "not split", p.chapters) +
     chip("continuity book", p.continuity) + chip(`${p.scripts} chapters scripted`, p.scripts) + chip("CSVs built", p.built);
-  $("pdf").innerHTML = p.pdf_choices.map(c => `<option value="${c.value}">${c.label}</option>`).join("") || "<option value=''>(put a PDF in the books folder)</option>";
+  $("pdf").innerHTML = p.pdf_choices.map(c => `<option value="${c.value}">${c.label}</option>`).join("") || "<option value=''>(put a book file in the books folder)</option>";
   if (applyDef) applyDefaults(p);
+  if (typeof loadChapters === "function") loadChapters(p);
+  if (typeof loadAdaptation === "function") loadAdaptation(p);
+  if (typeof loadExports === "function") loadExports(p);
   renderMovies();
   const rows = Object.entries(p.have).filter(([, n]) => n);
   $("have").innerHTML = "<tr><th>folder</th><th>files</th></tr>" + (rows.map(([k, n]) => `<tr><td>${k}</td><td>${n}</td></tr>`).join("") || "<tr><td>nothing yet</td><td></td></tr>");
@@ -229,9 +244,9 @@ async function loadStatus(applyDef) {
   const prev = $("proj").value;
   ST = await api("/api/status");
   $("tools").innerHTML = Object.entries(ST.tools).map(([t, ok]) => `<span class="${ok ? "ok" : "bad"}">${ok ? "✓" : "✗"} ${t}</span>`).join("") +
-    `<span class="warn">${ST.tools.claude ? "" : "Claude Code missing (the default prompt writer). "}${ST.tools.colab ? "" : "Colab CLI missing. "}${ST.tools.kaggle ? "" : "Kaggle CLI missing. "}${ST.tools.uv ? "" : "uv missing (needed to read PDFs and merge)."}</span>`;
+    `<span class="warn">${ST.tools.claude ? "" : "Claude Code missing (the default prompt writer). "}${ST.tools.colab ? "" : "Colab CLI missing. "}${ST.tools.kaggle ? "" : "Kaggle CLI missing. "}${ST.tools.uv ? "" : "uv missing (needed to read books and merge)."}</span>`;
   $("proj").innerHTML = ST.projects.map(p => `<option value="${p.slug}">${p.slug}${p.legacy ? " (imported)" : p.not_started ? " (new, from books/)" : ""}</option>`).join("");
-  $("libcount").textContent = `· ${ST.library.length} PDF(s) in books/`;
+  $("libcount").textContent = `· ${ST.library.length} book file(s) in books/`;
   if (prev && [...$("proj").options].some(o => o.value === prev)) $("proj").value = prev;
   if (!$("models").children.length) {
     fillModels();
@@ -257,20 +272,21 @@ async function loadStatus(applyDef) {
   }
 }
 
-async function preview() {
+async function preview(o) {
   $("msg").textContent = ""; $("msg").className = "warn";
   try {
-    const { steps } = await api("/api/plan", options());
+    const { steps } = await api("/api/plan", o || options());
     $("plan").innerHTML = `<p class="warn">${steps.length} step(s), run in this order:</p>` + steps.map(s => `<div class="step"><b>${s.label}</b><code>${s.cmd.replace(/</g, "&lt;")}</code></div>`).join("");
     return true;
   } catch (e) { $("plan").innerHTML = ""; $("msg").textContent = e.message; $("msg").className = "err"; return false; }
 }
 
 async function run() {
-  if (!(await preview())) return;
+  const o = onlySteps(options(), takeOnly());
+  if (!(await preview(o))) return false;
   await deleteNotebooks();
   building = true;
-  try { await api("/api/run", options()); since = 0; $("log").textContent = ""; poll(); } catch (e) { $("msg").textContent = e.message; $("msg").className = "err"; }
+  try { await api("/api/run", o); since = 0; $("log").textContent = ""; poll(); return true; } catch (e) { $("msg").textContent = e.message; $("msg").className = "err"; return false; }
 }
 
 async function poll() {

@@ -92,3 +92,68 @@ def test_internal_error_does_not_leave_the_job_running(monkeypatch):
     j.on_finish = lambda: done.append(1)
     j.start([step("print(1)")], {})
     assert j.wait(20) and not j.running and done == [1] and any("internal error" in line for line in j.lines)
+
+
+class TestQueue:
+    def test_a_queued_job_waits_and_then_runs_with_one_shared_log(self):
+        j = Job()
+        assert j.start([step("import time; time.sleep(0.4); print('first')", "a")], {}) == 0
+        assert j.start([step("print('second')", "b")], {}, queue=True) == 1
+        assert j.start([step("print('third')", "c")], {}, queue=True) == 2
+        assert j.running and len(j.queue) == 2
+        assert j.wait(30)
+        text = "\n".join(j.lines)
+        assert text.index("first") < text.index("second") < text.index("third")
+        assert text.count("job finished") == 3 and "next queued job starts" in text and j.queue == [] and not j.running
+
+    def test_without_queue_a_second_job_is_still_refused(self):
+        j = Job()
+        j.start([step("import time; time.sleep(0.5)")], {})
+        with pytest.raises(PlanError, match="already running"):
+            j.start([step("print(1)")], {})
+        assert j.wait(20)
+
+    def test_the_queue_has_a_limit(self):
+        j = Job()
+        j.start([step("import time; time.sleep(2)")], {})
+        for _ in range(jobs.MAX_QUEUE):
+            j.start([step("print(1)")], {}, queue=True)
+        with pytest.raises(PlanError, match="already waiting"):
+            j.start([step("print(1)")], {}, queue=True)
+        j.stop()
+        assert j.queue == [] and j.wait(30)
+
+    def test_stopping_drops_the_queue(self):
+        j = Job()
+        j.start([step("import time; time.sleep(30)", "long")], {})
+        j.start([step("print('never')", "later")], {}, queue=True)
+        time.sleep(0.3)
+        j.stop()
+        assert j.wait(30) and "never" not in "\n".join(j.lines) and j.queue == []
+
+    def test_a_failed_job_does_not_stop_the_queue(self):
+        j = Job()
+        j.start([step("import sys; sys.exit(2)", "bad")], {})
+        j.start([step("print('still ran')", "next")], {}, queue=True)
+        assert j.wait(30) and "still ran" in "\n".join(j.lines)
+
+    def test_on_finish_runs_once_after_the_last_job(self):
+        j, calls = Job(), []
+        j.on_finish = lambda: calls.append(1)
+        j.start([step("print(1)")], {})
+        j.start([step("print(2)")], {}, queue=True)
+        assert j.wait(30) and calls == [1]
+
+
+class TestQueueRoutes:
+    def test_run_queues_when_asked(self, server, book, monkeypatch):
+        from studio_app.jobs import JOB
+        started = []
+        monkeypatch.setattr(JOB, "start", lambda steps, opt, queue=False: (started.append((len(steps), queue)), 2 if queue else 0)[1])
+        st, out = server.api("POST", "/api/run", {"project": "demo", "queue": True, "steps": {"continuity": True}})
+        assert st == 200 and out["queued"] == 2 and started == [(1, True)]
+        st, out = server.api("POST", "/api/run", {"project": "demo", "steps": {"continuity": True}})
+        assert out["queued"] == 0 and started[-1][1] is False
+
+    def test_the_log_reports_the_queue(self, server):
+        assert server.api("GET", "/api/log?since=0")[1]["queued"] == 0

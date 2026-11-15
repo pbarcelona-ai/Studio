@@ -3,12 +3,14 @@ The JSON API itself lives in api.py + routes_get.py / routes_post.py."""
 import hashlib
 import json
 import mimetypes
+import os
 import re
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import shares
 from bookkit import SLUG_RE, slugify
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
@@ -104,6 +106,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         query = parse_qs(url.query)
+        if url.path.startswith("/watch/"):
+            return self._watch(url)
         if url.path == "/":
             return self._index(query)
         if url.path.startswith("/static/"):
@@ -158,9 +162,11 @@ class Handler(BaseHTTPRequestHandler):
         base = pdir(url.path.split("/")[2]).resolve()
         ext, make, ctype = (".jpg", make_thumb, "image/jpeg") if kind == "thumb" else (".png", make_depth, "image/png")
         dest = base / f".{kind}s" if kind == "thumb" else base / ".depth"
-        dest = dest / (hashlib.sha1(target.relative_to(base).as_posix().encode()).hexdigest()[:24] + ext)
         try:
-            if not dest.exists() or dest.stat().st_mtime < target.stat().st_mtime:
+            # keyed by the file's size and time too: a take swapped in (os.replace keeps its older time) gets its own thumbnail, not the last one's
+            st = target.stat()
+            dest = dest / (hashlib.sha1(f"{target.relative_to(base).as_posix()}:{st.st_size}:{st.st_mtime_ns}".encode()).hexdigest()[:24] + ext)
+            if not dest.exists():
                 make(target, dest)
             data = dest.read_bytes()
         except Exception as e:                       # no PIL/torch, no internet for the first model download, or an unreadable picture
@@ -174,6 +180,10 @@ class Handler(BaseHTTPRequestHandler):
         target = safe_project_file("/file/", url.path, tuple(MEDIA))
         if target is None:
             return self._json(404, {"error": "not found"})
+        self._serve(target, MEDIA[target.suffix.lower()])
+
+    def _serve(self, target: Path, ctype: str, extra_headers: dict | None = None):
+        """Send a file with Range support (a 206 for a partial request)."""
         size = target.stat().st_size
         start, end, code = 0, size - 1, 200
         rng = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
@@ -187,10 +197,10 @@ class Handler(BaseHTTPRequestHandler):
             if start > end:
                 return self._headers(416, "text/plain", 0, extra={"Content-Range": f"bytes */{size}"})
             code = 206
-        extra = {"Accept-Ranges": "bytes"}
+        extra = {"Accept-Ranges": "bytes", **(extra_headers or {})}
         if code == 206:
             extra["Content-Range"] = f"bytes {start}-{end}/{size}"
-        self._headers(code, MEDIA[target.suffix.lower()], end - start + 1, extra=extra)
+        self._headers(code, ctype, end - start + 1, extra=extra)
         if self.command == "HEAD":
             return
         with open(target, "rb") as f:
@@ -202,6 +212,46 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
                 left -= len(chunk)
+
+    # ------------------------------------------------------------ private preview links (shares.py)
+    def _watch_host_ok(self) -> bool:
+        """A watch link works for the Studio's own address and for the hosts named in STUDIO_WATCH_HOSTS (comma separated, e.g. a tunnel's name)."""
+        host, port = self.headers.get("Host", ""), self.server.server_port
+        allowed = {f"127.0.0.1:{port}", f"localhost:{port}"} | {h.strip().lower() for h in os.environ.get("STUDIO_WATCH_HOSTS", "").split(",") if h.strip()}
+        return host.lower() in allowed
+
+    def _watch(self, url):
+        """/watch/<book>/<token> (the page), /watch/<book>/<token>/film.mp4 and /captions.vtt. No Studio token; only the film the link names is reachable."""
+        parts = url.path.split("/")                       # ['', 'watch', book, token, (what)]
+        gone = lambda: self._send(404, "This link does not work any more.", "text/plain; charset=utf-8", extra={"X-Robots-Tag": "noindex"})   # noqa: E731
+        if not self._watch_host_ok() or len(parts) not in (4, 5) or not SLUG_RE.match(parts[2]) or not re.fullmatch(r"[A-Za-z0-9_-]{20,80}", parts[3]):
+            return gone()
+        base = pdir(parts[2])
+        info = shares.lookup(base, parts[3], count_view=len(parts) == 4)
+        if info is None:
+            return gone()
+        film = (base / "films" / info["film"]).resolve()
+        if (base / "films").resolve() not in film.parents:
+            return gone()
+        what = parts[4] if len(parts) == 5 else ""
+        noindex = {"X-Robots-Tag": "noindex"}
+        if what == "film.mp4":
+            return self._serve(film, "video/mp4", noindex)
+        if what == "captions.vtt":
+            srt = film.with_suffix(".srt")
+            return self._send(200, shares.srt_to_vtt(srt.read_text(encoding="utf-8")) if srt.is_file() else "WEBVTT\n", "text/vtt; charset=utf-8", extra=noindex) if film.exists() else gone()
+        if what:
+            return gone()
+        title = info["title"] or film.stem.replace("_", " ")
+        esc = lambda s: s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")   # noqa: E731
+        base_url = f"/watch/{parts[2]}/{parts[3]}"
+        track = f'<track kind="captions" src="{base_url}/captions.vtt" srclang="en" label="Captions" default>' if film.with_suffix(".srt").is_file() else ""
+        page = (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">'
+                f'<title>{esc(title)}</title><style>body{{margin:0;background:#111;color:#eee;font:16px system-ui,sans-serif}}main{{max-width:1100px;margin:0 auto;padding:1rem}}'
+                f'video{{width:100%;max-height:80vh;background:#000}}h1{{font-size:1.2rem;font-weight:600}}</style></head><body><main><h1>{esc(title)}</h1>'
+                f'<video controls preload="metadata" src="{base_url}/film.mp4">{track}Your browser cannot play this video.</video>'
+                f'<p>A private preview. Please do not share the link.</p></main></body></html>')
+        self._send(200, page, "text/html; charset=utf-8", extra=noindex)
 
     # ------------------------------------------------------------ POST
     def _content_length(self) -> int | None:
@@ -233,11 +283,34 @@ class Handler(BaseHTTPRequestHandler):
         code, obj = dispatch("POST", url.path, Request(query=parse_qs(url.query), body=body))
         self._json(code, obj)
 
+    @staticmethod
+    def _check_book_file(path: Path, fname: str) -> tuple[bool, str]:
+        """Is the saved upload really the kind of file its name says? (ok, description for the error message)"""
+        ext = Path(fname).suffix.lower()
+        if ext == ".pdf":
+            with open(path, "rb") as f:
+                return f.read(5) == b"%PDF-", "a complete PDF file"
+        if ext in (".epub", ".docx"):
+            import zipfile
+            want = "META-INF/container.xml" if ext == ".epub" else "word/document.xml"
+            try:
+                with zipfile.ZipFile(path) as z:
+                    return want in z.namelist(), f"a valid {ext[1:].upper()} file"
+            except (zipfile.BadZipFile, OSError):
+                return False, f"a valid {ext[1:].upper()} file"
+        try:                                                         # text and HTML: must be readable with real words in it
+            from book_formats import decode
+            text = decode(path.read_bytes())
+            ok = "\x00" not in text and len(text.split()) >= 5
+        except OSError:
+            ok = False
+        return ok, "readable text of at least a few words"
+
     def _upload(self, url):
         q = parse_qs(url.query)
         fname = re.sub(r"[^A-Za-z0-9._ -]", "_", Path(q.get("filename", ["book.pdf"])[0]).name).strip()
         if not fname.lower().endswith(BOOK_EXTS) or len(fname) < 5:
-            return self._json(400, {"error": "only .pdf, .txt or .md files"})
+            return self._json(400, {"error": "only .pdf, .epub, .docx, .html, .txt or .md files"})
         if not SLUG_RE.match(slugify(Path(fname).stem)):
             return self._json(400, {"error": "that file name has no letters or digits to name the book from"})
         size = self._content_length() or 0
@@ -253,16 +326,7 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 f.write(chunk)
                 left -= len(chunk)
-        if fname.lower().endswith(".pdf"):
-            with open(tmp, "rb") as f:
-                ok, what = f.read(5) == b"%PDF-", "a complete PDF file"
-        else:
-            try:                                                     # text: must be readable UTF-8 with real words in it
-                text = tmp.read_bytes().decode("utf-8-sig")
-                ok = "\x00" not in text and len(text.split()) >= 5
-            except (UnicodeDecodeError, OSError):
-                ok = False
-            what = "readable text of at least a few words (UTF-8)"
+        ok, what = self._check_book_file(tmp, fname)
         if left or not ok:
             tmp.unlink(missing_ok=True)
             return self._json(400, {"error": f"that is not {what}"})

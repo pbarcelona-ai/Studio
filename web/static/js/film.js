@@ -38,7 +38,10 @@ async function runFilm() {
   finally { if (timer) clearInterval(timer); $("bFilmStop").disabled = true; btn.disabled = false; await loadStatus(true).catch(() => {}); }
 }
 
+let lastImportOk = false;          // did the last runImport finish without a failed step (the storyboard update waits for it)
 async function runImport() {
+  const only = takeOnly();
+  lastImportOk = false;
   const btn = $("bImport");
   btn.disabled = true;
   $("importLog").textContent = ""; $("importLog").dataset.empty = "0";
@@ -52,18 +55,19 @@ async function runImport() {
     const p = cur();
     if (!p) return fail("Pick a book above, choose a file to upload, or paste some text.");
     const o = options();
+    if (only && only.force) o.force_write = true;
     // The steps ticked in the Read book, Continuity book, Write shots and Build CSVs cards; never video or audio, so nothing goes to Kaggle or Colab
-    const tick = id => $(id).checked && !$(id).disabled;
+    const tick = id => only ? only.steps.includes(id.slice(2)) : $(id).checked && !$(id).disabled;
     o.steps = p.legacy ? { extract: true, video: false, audio: false, merge: false, mix: false }
-      : { ingest: tick("b_ingest") || !!uploaded, continuity: tick("b_continuity"), write: tick("b_write"), build: tick("b_build"), video: false, audio: false, merge: false, mix: false };
+      : { ingest: tick("b_ingest") || !!uploaded, adapt: tick("b_adapt"), screenplay: tick("b_screenplay"), continuity: tick("b_continuity"), write: tick("b_write"), build: tick("b_build"), video: false, audio: false, merge: false, mix: false };
     if (uploaded && !tick("b_ingest")) impLog("A new book was uploaded, so Read book runs too (its chapters are needed by every later step).");
-    if (!p.legacy && !["ingest", "continuity", "write", "build"].some(k => o.steps[k]))
-      return fail("Tick at least one step: Read book, Continuity book, Write shots or Build CSVs.");
+    if (!p.legacy && !["ingest", "adapt", "screenplay", "continuity", "write", "build"].some(k => o.steps[k]))
+      return fail("Tick at least one step: Read book, Film plan, Screenplay, Continuity book, Write shots or Build CSVs.");
     if (!p.legacy) {
       if (uploaded) { const opt = [...$("pdf").options].find(x => x.value.endsWith("/" + uploaded)); if (opt) $("pdf").value = opt.value; }
       o.pdf = $("pdf").value;
       if (!o.pdf && o.steps.ingest) return fail("No book file found for this book. Choose one in Read book and press Import again.");
-      if (p.chapters && !uploaded && (o.steps.ingest || o.steps.continuity) && !confirm(`${p.slug} is already imported (${p.chapters} chapters). This will ${[o.steps.ingest ? "split the book into chapters again (hand edits to chapters.json are lost)" : "", o.steps.continuity ? "write the continuity book again (the AI is called)" : ""].filter(Boolean).join(" and ")}. Continue?`)) {
+      if (p.chapters && !uploaded && (o.steps.ingest || o.steps.continuity || (o.steps.adapt && !o.adapt_fit_only && p.adaptation && p.adaptation.exists)) && !confirm(`${p.slug} is already imported (${p.chapters} chapters). This will ${[o.steps.ingest ? "split the book into chapters again (hand edits to chapters.json are lost)" : "", o.steps.continuity ? "write the continuity book again (the AI is called)" : "", o.steps.adapt && p.adaptation && p.adaptation.exists ? "replace the film plan and delete its screenplay (your edits too)" : ""].filter(Boolean).join(" and ")}. Continue?`)) {
         impLog("Cancelled: nothing was changed."); impStatus("Cancelled."); btn.disabled = false; return;
       }
     }
@@ -71,7 +75,9 @@ async function runImport() {
     const plan = await api("/api/plan", o);
     impLog(`✓ Plan: ${plan.steps.length} step(s)`);
     plan.steps.forEach(s => { impLog(`  ${s.label}`); impLog(`    $ ${s.cmd}`); });
-    await api("/api/run", o);
+    o.queue = true;                                   // pressed while another job runs: wait for it instead of refusing
+    const run = await api("/api/run", o);
+    if (run.queued) impLog(`Queued: ${run.queued} job(s) wait for the running one. It starts by itself when that one finishes, and this log carries on.`);
     $("bImportStop").disabled = false;
     impStatus("Importing... (the AI is working; the log below updates as it goes)");
     const lines = await followJob(impLog, 1500);
@@ -83,6 +89,7 @@ async function runImport() {
     else if (q && !q.legacy && q.chapters) impLog(`✓ ${q.slug}: ${q.chapters} chapters (split by ${q.split_method}), continuity book ${q.continuity ? "written" : "missing"}, ${q.scripts} chapters scripted, CSVs ${q.built ? "built" : "not built"}.`);
     else if (q && q.legacy) impLog(`✓ ${q.slug}: prompt CSVs rebuilt, ${q.movies.shots.length} movies planned.`);
     impStatus(bad ? "Finished with errors. See the log." : "Done.", bad ? "err" : "chip done");
+    lastImportOk = !bad;
   } catch (e) {
     impLog(`✗ ${e.message}`, true); impStatus(e.message, "err");
     $("bImportStop").disabled = true;
@@ -424,8 +431,8 @@ function applyConstraints() {
   // 4. book steps that need an earlier step first
   if (p && !p.legacy && !prompts) {
     const hasCh = p.chapters > 0;
-    setOff($("b_ingest"), !tools.uv ? "uv is not installed (needed to read PDFs)" : (!p.pdf_choices.length ? "no PDF in the books folder" : null));
-    setOff($("b_continuity"), (hasCh || $("b_ingest").checked) ? null : "read the PDF first (tick the step above)");
+    setOff($("b_ingest"), !tools.uv ? "uv is not installed (needed to read books)" : (!p.pdf_choices.length ? "no book file in the books folder" : null));
+    setOff($("b_continuity"), (hasCh || $("b_ingest").checked) ? null : "read the book first (tick the step above)");
     setOff($("b_write"), (p.continuity || $("b_continuity").checked) ? null : "needs the continuity book first");
     setOff($("b_force"), $("b_write").checked ? null : "only applies when writing chapters");
     setOff($("b_build"), (p.scripts > 0 || $("b_write").checked) ? null : "needs written chapters first");

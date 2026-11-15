@@ -173,7 +173,7 @@ def film_step(opt):
     fade = num(opt, "fade", 0.5, float, 0.1, 1.5)
     titles = {k: re.sub(r"[\x00-\x1f\x7f]", " ", str(opt.get(k) or "")).strip()[:120] for k in ("title", "end_title")}   # one line of plain text each
     (pdir(slug) / "films").mkdir(exist_ok=True)
-    extra = ["--transition", transition, "--fade", str(fade)] + (["--burn-captions"] if opt.get("burn_captions") else []) + (["--match-colour"] if opt.get("match_colour") else []) + sound_flags(opt, bool(opt.get("music_bed")) and not vsrc.endswith("_chapters"))   # rows of a per-chapter film are chapters, and each already has its own music
+    extra = ["--transition", transition, "--fade", str(fade)] + (["--burn-captions"] if opt.get("burn_captions") else []) + (["--match-colour"] if opt.get("match_colour") else []) + sound_flags(opt, bool(opt.get("music_bed")) and not vsrc.endswith("_chapters"), bool(opt.get("music_scenes")) and not vsrc.endswith("_chapters"))   # rows of a per-chapter film are chapters, and each already has its own music
     return slug, {"clips": clips, **titles}, {"label": f"Make film {name}.mp4 from {len(clips)} clip(s)", "env": {},
         "argv": ["uv", "run", "--with", "imageio-ffmpeg", "python", "mix_film.py", "--project", slug, "--selection", "films/_selection.json",
                  "--sync", sync, "--out", f"{name}.mp4", "--vol-narration", str(vols["narration"]), "--vol-sfx", str(vols["sfx"]),

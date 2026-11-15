@@ -34,6 +34,8 @@ Everything is inside projects/<project>/. Looks for, per CSV row N:  videos/<mod
 
 Sound: music dips under the narration (--no-duck turns that off), and the finished film is brought to -16 LUFS, the usual level for online
 video, with peaks kept under -1.5 dB (--no-loudnorm turns that off).
+--music-scenes  music that follows the story: each scene of the film plan has its own cue (audio/musicgen_scenes/music-NNNN.wav, made from audio_scenes.csv); the cues
+             overlap by a few seconds where the scene changes. Looped only inside a scene longer than one cue.
 --music-bed  one continuous score instead of a new piece of music for every shot: each chapter's cue from audio/musicgen_chapters/music-NNNN.wav
              (NNNN = the chapter's row in audio_chapters.csv) loops with soft joins under all of that chapter's shots. The shots' own music is not used.
 """
@@ -61,17 +63,24 @@ ap.add_argument("--selection", default=None, help="JSON file listing exactly whi
 ap.add_argument("--pad", type=float, default=0.4, help="seconds of silence after narration in stretch mode")
 ap.add_argument("--transition", choices=["cut", "fade", "dissolve"], default="cut")
 ap.add_argument("--match-colour", action="store_true", help="nudge each clip's brightness and colour towards the chapter's typical clip")
+ap.add_argument("--credits", action="store_true", help="roll the credits (credits.json: source book, cast, crew, the AI models used, rating) after the end title")
+ap.add_argument("--tracks", default=None, help="JSON file with extra audio tracks laid over the finished film: [{file, start, seconds, volume, fade}] (see below)")
+ap.add_argument("--grade", action="store_true", help="apply the colour grades of grading.json (per scene, with a default) to each shot")
 ap.add_argument("--fade", type=float, default=0.5, help="fade length in seconds with --transition fade (0.1-1.5)")
 ap.add_argument("--burn-captions", action="store_true", help="draw the captions into the picture")
 ap.add_argument("--no-duck", action="store_true", help="leave the music at the same level under narration")
 ap.add_argument("--no-loudnorm", action="store_true", help="leave the film's overall loudness as mixed")
 ap.add_argument("--music-bed", action="store_true", help="one continuous cue per chapter under the shots, instead of each shot's own music")
+ap.add_argument("--music-scenes", action="store_true", help="music that follows the story: one cue per scene of the film plan (audio/musicgen_scenes), crossfaded where the scene changes")
 args = ap.parse_args()
-if args.music_bed and args.chapters:
-    sys.exit("--music-bed is for films made shot by shot; with --chapters each chapter already has its own music")
+if (args.music_bed or args.music_scenes) and args.chapters:
+    sys.exit("--music-bed is for films made shot by shot (so is --music-scenes); with --chapters each chapter already has its own music")
+if args.music_bed and args.music_scenes:
+    sys.exit("choose --music-bed or --music-scenes, not both")
 if not 0.1 <= args.fade <= 1.5:
     sys.exit("--fade must be 0.1-1.5 seconds")
 
+import grade
 import layout
 ROOT = layout.project_dir(args.project)  # clips, audio and films live per project: projects/books/<book>/ (see layout.py)
 suffix = "_chapters" if args.chapters else ""
@@ -186,7 +195,7 @@ def build_segment(i, video, stems, out, trim_start=0.0, trim_end=0.0):
         cmd += ["-i", str(path)]
     fade = min(args.fade, total / 3) if args.transition == "fade" else 0.0
     vfade = f",fade=t=in:st=0:d={fade:.3f},fade=t=out:st={total - fade:.3f}:d={fade:.3f}" if fade else ""
-    fc = [f"[0:v]{NUDGES.get(i, '')}trim=start={trim_start:.3f}:duration={vd:.3f},setpts=PTS-STARTPTS,{video_filter},trim=0:{total:.3f},setpts=PTS-STARTPTS{SAME_SHAPE}{vfade}[v]",
+    fc = [f"[0:v]{NUDGES.get(i, '')}{GRADES.get(i, '')}trim=start={trim_start:.3f}:duration={vd:.3f},setpts=PTS-STARTPTS,{video_filter},trim=0:{total:.3f},setpts=PTS-STARTPTS{SAME_SHAPE}{vfade}[v]",
           "[1:a]aformat=sample_rates=44100:channel_layouts=stereo[a0]"]
     labels = ["[a0]"]
     duck = not args.no_duck and {"narration", "music"} <= {n for n, _, _ in stems}
@@ -218,7 +227,10 @@ def build_segment(i, video, stems, out, trim_start=0.0, trim_end=0.0):
 DUCK = "sidechaincompress=threshold=0.015:ratio=6:attack=30:release=500"
 
 
-def looped(cue, seconds, out, overlap=2.0):
+SCENE_CROSSFADE = 3.0        # seconds of overlap between the music of two scenes
+
+
+def looped(cue, seconds, out, overlap=2.0, fade=None):
     """A cue repeated with soft joins until it lasts `seconds`, faded at both ends. Returns False if the cue is too short or ffmpeg fails."""
     length = duration(cue)
     if length <= overlap * 2:
@@ -234,19 +246,20 @@ def looped(cue, seconds, out, overlap=2.0):
     for i in range(1, copies):
         chain.append(f"{last}[c{i}]acrossfade=d={overlap}[x{i}]")
         last = f"[x{i}]"
-    fade = min(1.5, seconds / 4)
+    fade = min(1.5 if fade is None else fade, seconds / 4)
     chain.append(f"{last}atrim=0:{seconds:.3f},afade=t=in:d={fade:.3f},afade=t=out:st={seconds - fade:.3f}:d={fade:.3f}[out]")
     r = subprocess.run(cmd + ["-filter_complex", ";".join(chain), "-map", "[out]", str(out)], capture_output=True, text=True)
     return r.returncode == 0
 
 
-def chapter_spans(timed):
-    """[(chapter row in audio_chapters.csv, start, seconds)] for the film, from its [(row, start, seconds)] in film order: one span per run of shots of a chapter."""
+def chapter_spans(timed, column="chapter", cues="audio_chapters.csv"):
+    """[(cue row in audio_chapters.csv, start, seconds)] for the film, from its [(row, start, seconds)] in film order: one span per run of shots of a chapter.
+    With column="scene" and cues="audio_scenes.csv" the spans follow the scenes of the film plan instead."""
     import csv
     try:
         with open(ROOT / "audio_shots.csv", newline="", encoding="utf-8") as fh:
-            chapter_of = [r.get("chapter", "") for r in csv.DictReader(fh)]
-        with open(ROOT / "audio_chapters.csv", newline="", encoding="utf-8") as fh:
+            chapter_of = [r.get(column, "") for r in csv.DictReader(fh)]
+        with open(ROOT / cues, newline="", encoding="utf-8") as fh:
             cue_row = {r.get("chapter", ""): i for i, r in enumerate(csv.DictReader(fh), 1)}
     except OSError:
         return []
@@ -264,10 +277,12 @@ def finish_audio(src, dst, spans):
     """The film with its music bed laid under the sound, ducked, and its loudness set; the picture is copied. Returns False if ffmpeg fails."""
     cmd, fc, beds = [ffmpeg, "-y", "-loglevel", "error", "-i", str(src)], [], []
     k = 1
-    for cue_file, start, secs in spans:
+    for item in spans:
+        cue_file, start = item[0], item[1]
+        vol = item[3] if len(item) > 3 else args.vol_music
         cmd += ["-i", str(cue_file)]
         ms = round(start * 1000)
-        fc.append(f"[{k}:a]volume={args.vol_music},adelay={ms}|{ms}[b{k}]")
+        fc.append(f"[{k}:a]volume={vol},adelay={ms}|{ms}[b{k}]")
         beds.append(f"[b{k}]")
         k += 1
     last = "[0:a]"
@@ -335,6 +350,35 @@ def build_card(text, shape, out):
     return out
 
 
+CREDIT_SECONDS_PER_LINE = 0.75
+
+
+def build_credits(lines, shape, out):
+    """A rolling credits segment: white text on black, scrolling upwards, with silence. Returns the path and its length, or (None, 0)."""
+    font = next((f for f in FONTS if Path(f).is_file()), None)
+    if not font or not lines:
+        print("  credits skipped: " + ("no font found" if not font else "nothing to show"))
+        return None, 0.0
+    w, h, fps = shape
+    size = max(14, h // 22)
+    spacing = int(size * 0.5)
+    seconds = max(6.0, len(lines) * CREDIT_SECONDS_PER_LINE + h / size * 0.6)
+    tf = out.with_suffix(".txt")
+    tf.write_text("\n".join(lines), encoding="utf-8")
+    travel = h + (size + spacing) * len(lines)                        # from just below the picture to just above it
+    vf = (f"drawtext=fontfile={filter_path(font)}:textfile={tf.name}:fontcolor=white:fontsize={size}:line_spacing={spacing}:"
+          f"x=(w-text_w)/2:y=h-t*{travel / seconds:.3f},format=yuv420p")
+    cmd = [ffmpeg, "-y", "-f", "lavfi", "-i", f"color=c=black:s={w}x{h}:r={fps:g}:d={seconds:.2f}",
+           "-f", "lavfi", "-t", f"{seconds:.2f}", "-i", "anullsrc=r=44100:cl=stereo", "-vf", vf, "-t", f"{seconds:.2f}",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-c:a", "aac", "-b:a", "192k", str(out)]
+    try:
+        subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL, cwd=out.parent)
+    except subprocess.CalledProcessError:
+        print("  credits skipped: ffmpeg could not draw the text")
+        return None, 0.0
+    return out, seconds
+
+
 def inside_project(rel):
     """Resolve a path from the selection file; it must be an existing file inside projects/<project>/."""
     p = (ROOT / rel).resolve()
@@ -343,12 +387,40 @@ def inside_project(rel):
     return p
 
 
+def length_of(path):
+    return duration(path)
+
+
+extra_tracks: list = []        # audio laid over the finished film at film time: ambience across a cut, a sting, a voice-over that spans shots
+
+
+def load_extra_tracks(raw):
+    """Check the tracks given in --tracks or the selection: [{file, start, seconds?, volume?, fade?}] -> [(file path, start, seconds or None, volume, fade)]."""
+    out = []
+    for t in raw or []:
+        if not isinstance(t, dict) or not t.get("file"):
+            sys.exit("each extra track needs a file")
+        start = float(t.get("start") or 0)
+        secs = float(t["seconds"]) if t.get("seconds") else None
+        vol = 0.5 if t.get("volume") is None else float(t["volume"])
+        fade = 1.0 if t.get("fade") is None else float(t["fade"])
+        if not (0 <= start <= 36000 and (secs is None or 0.5 <= secs <= 36000) and 0 <= vol <= 3 and 0 <= fade <= 10):
+            sys.exit("extra track numbers out of range (start 0-36000, seconds 0.5-36000, volume 0-3, fade 0-10)")
+        out.append((inside_project(t["file"]), start, secs, vol, fade))
+    return out
+
+
+if args.tracks:
+    import json as _json
+    tp = Path(args.tracks) if Path(args.tracks).is_absolute() else ROOT / args.tracks
+    extra_tracks += load_extra_tracks(_json.load(open(tp)))
 if args.selection:
     import json
     sel_path = Path(args.selection)
     if not sel_path.is_absolute():
         sel_path = ROOT / sel_path                  # relative paths are inside projects/<project>/ (the studio page passes films/_selection.json)
     selection = json.load(open(sel_path))
+    extra_tracks += load_extra_tracks(selection.get("tracks"))
     titles = (str(selection.get("title") or "").strip()[:120], str(selection.get("end_title") or "").strip()[:120])
     plan = []
     for it in selection["clips"]:                     # in the order listed: the page lets you reorder the clips
@@ -396,13 +468,16 @@ def narration_lines():
 
 tmp = Path(tempfile.mkdtemp(prefix="mix_"))
 NUDGES = colour_nudges(plan) if args.match_colour else {}
+GRADES = grade.row_filters(ROOT) if args.grade else {}
+if args.grade:
+    print(f"grade: {len(GRADES)} shot(s) graded", flush=True)
 if args.match_colour:
     print(f"colour: {len(NUDGES)} clip(s) nudged towards their chapter's typical clip", flush=True)
 segments, seg_lens, used = [], [], {"narration": 0, "sfx": 0, "music": 0}
 timed: list[tuple] = []        # (row, index of its segment, seconds), for the music bed
 captions: list[tuple] = []
 lines = narration_lines()
-shape = video_shape(plan[0][1]) if any(titles) else None
+shape = video_shape(plan[0][1]) if any(titles) or args.credits else None
 if titles[0]:
     card = build_card(titles[0], shape, tmp / "card-open.mp4")
     if card:
@@ -410,7 +485,7 @@ if titles[0]:
 for k, (n, video, files, trims) in enumerate(plan):
     stems = []
     for name, f in files:
-        if name == "music" and args.music_bed:      # the chapter's cue plays instead
+        if name == "music" and (args.music_bed or args.music_scenes):      # the chapter's (or scene's) cue plays instead
             continue
         stems.append((name, f, duration(f))); used[name] += 1
     seg = tmp / f"seg-{k:04d}-{n:04d}.mp4"
@@ -429,12 +504,18 @@ if titles[1]:
     card = build_card(titles[1], shape, tmp / "card-end.mp4")
     if card:
         segments.append(card); seg_lens.append(CARD_SECONDS)
+if args.credits:
+    import credits
+    rolled, roll_secs = build_credits(credits.lines(ROOT), shape, tmp / "credits.mp4")
+    if rolled:
+        segments.append(rolled); seg_lens.append(roll_secs)
+        print(f"credits: {len(credits.lines(ROOT))} line(s), {roll_secs:.0f} s", flush=True)
 listfile = tmp / "list.txt"
 listfile.write_text("".join(f"file '{s}'\n" for s in segments))
 (ROOT / "films").mkdir(exist_ok=True)
 out = (ROOT / "films" / (args.out or ("selected_film.mp4" if args.selection else f"{args.model}{suffix}_mixed.mp4"))).resolve()
 burn = args.burn_captions and bool(captions)
-finishing = args.music_bed or not args.no_loudnorm
+finishing = args.music_bed or args.music_scenes or not args.no_loudnorm or bool(extra_tracks)
 joined = tmp / "joined.mp4" if burn or finishing else out
 overlap = 0.0
 if args.transition == "dissolve" and len(segments) > 1:
@@ -455,15 +536,32 @@ timed = [(n, starts[s], secs) for n, s, secs in timed]
 srt_text = "".join(f"{i}\n{srt_time(a)} --> {srt_time(b)}\n{t}\n\n" for i, (a, b, t) in enumerate(captions, 1))
 if finishing:
     beds: list = []
-    if args.music_bed:
-        for cue, start, secs in chapter_spans(timed):
-            cue_file = ROOT / "audio" / "musicgen_chapters" / f"music-{cue:04d}.wav"
+    if args.music_bed or args.music_scenes:
+        spans = chapter_spans(timed, "scene", "audio_scenes.csv") if args.music_scenes else chapter_spans(timed)
+        cue_dir = "musicgen_scenes" if args.music_scenes else "musicgen_chapters"
+        for cue, start, secs in spans:
+            cue_file = ROOT / "audio" / cue_dir / f"music-{cue:04d}.wav"
             bed = tmp / f"bed-{len(beds):03d}.wav"
-            if cue_file.is_file() and looped(cue_file, secs, bed):
+            if args.music_scenes:                    # let neighbouring scenes' music overlap: each cue starts a little early and ends a little late
+                start, secs = max(0.0, start - SCENE_CROSSFADE / 2), secs + SCENE_CROSSFADE
+            if cue_file.is_file() and looped(cue_file, secs, bed, fade=SCENE_CROSSFADE / 2 if args.music_scenes else None):
                 beds.append((bed, start, secs))
                 used["music"] += 1
             else:
                 print(f"  no usable music cue for chapter row {cue} ({cue_file.name}): that part has no music")
+    for k, (tfile, tstart, tsecs, tvol, tfade) in enumerate(extra_tracks):
+        length = tsecs or length_of(tfile)
+        if tstart >= total_len:
+            print(f"  extra track {tfile.name} starts after the film ends: skipped")
+            continue
+        bed = tmp / f"track-{k:03d}.wav"
+        if tsecs and looped(tfile, tsecs, bed, overlap=min(2.0, length_of(tfile) / 4), fade=tfade):
+            beds.append((bed, tstart, tsecs, tvol))
+        elif not tsecs:
+            beds.append((tfile, tstart, length, tvol))
+        else:
+            print(f"  extra track {tfile.name} is too short to repeat to {tsecs:g} s: skipped")
+        used["music"] += 0
     finished = tmp / "finished.mp4"
     if finish_audio(joined, finished, beds):
         joined = finished

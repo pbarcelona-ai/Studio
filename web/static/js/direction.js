@@ -130,10 +130,13 @@ function renderCast() {
   }
   const opts = v => `<option value="">(leave as is)</option>` + castData.voices.map(x => `<option value="${x}"${x === v ? " selected" : ""}>${x}</option>`).join("")
     + (v && !castData.voices.includes(v) ? `<option value="${escapeHtml(v)}" selected>${escapeHtml(v)}</option>` : "");
-  t.innerHTML = `<tr><th>Speaker</th><th>Lines</th><th>Voice now</th><th>Suggested</th><th>Cast voice</th></tr>` + castData.speakers.map((sp, i) =>
+  const emo = d => `<option value="">neutral</option>` + (castData.emotions || []).filter(x => x !== "neutral").map(x => `<option value="${x}"${x === (d && d.emotion) ? " selected" : ""}>${x}</option>`).join("");
+  t.innerHTML = `<tr><th>Speaker</th><th>Lines</th><th>Voice now</th><th>Suggested</th><th>Cast voice</th><th>Delivery</th><th>Speed</th></tr>` + castData.speakers.map((sp, i) =>
     `<tr><td>${escapeHtml(sp.name)}</td><td>${sp.lines}</td><td>${escapeHtml(sp.voice || "default")}</td>` +
     `<td>${escapeHtml(sp.suggest || sp.book || "")}</td>` +
-    `<td><select data-cast="${i}" aria-label="Voice for ${escapeHtml(sp.name)}">${opts(sp.cast)}</select></td></tr>`).join("");
+    `<td><select data-cast="${i}" aria-label="Voice for ${escapeHtml(sp.name)}">${opts(sp.cast)}</select></td>` +
+    `<td><select data-emo="${i}" aria-label="Delivery of ${escapeHtml(sp.name)}">${emo(sp.direction)}</select></td>` +
+    `<td><input type="number" data-speed="${i}" min="0.6" max="1.3" step="0.05" style="width:70px" value="${sp.direction && sp.direction.speed ? sp.direction.speed : ""}" placeholder="auto" aria-label="Speed for ${escapeHtml(sp.name)}"></td></tr>`).join("");
 }
 async function loadCast(body) {
   const proj = $("proj").value;
@@ -163,9 +166,27 @@ $("bCastSuggest").addEventListener("click", () => {
 });
 $("bCastSave").addEventListener("click", () => {
   if (!castData) return;
-  const cast = {};
-  castData.speakers.forEach((sp, i) => { const sel = document.querySelector(`#castTable select[data-cast="${i}"]`); if (sel && sel.value) cast[sp.name] = sel.value; });
-  loadCast({ cast, move_old: $("castMoveOld").checked });
+  const cast = {}, direction = {};
+  castData.speakers.forEach((sp, i) => {
+    const sel = document.querySelector(`#castTable select[data-cast="${i}"]`); if (sel && sel.value) cast[sp.name] = sel.value;
+    const emo = document.querySelector(`#castTable select[data-emo="${i}"]`), spd = document.querySelector(`#castTable input[data-speed="${i}"]`);
+    const d = {}; if (emo && emo.value) d.emotion = emo.value; if (spd && spd.value) d.speed = Number(spd.value);
+    if (Object.keys(d).length) direction[sp.name] = d;
+  });
+  loadCast({ cast, direction, move_old: $("castMoveOld").checked });
+});
+$("bCastAuto").addEventListener("click", async () => {      // a different voice for each character; shown in the table, saved with "Save voice cast"
+  if (!castData) { await loadCast(); }
+  if (!castData) return;
+  try {
+    const j = await api("/api/voice_cast", { project: $("proj").value, series: $("castSeries").value, auto: true });
+    castData.speakers.forEach((sp, i) => {
+      const sel = document.querySelector(`#castTable select[data-cast="${i}"]`);
+      const v = Object.entries(j.auto).find(([n]) => n.toLowerCase() === sp.name.toLowerCase());
+      if (sel && v && castData.voices.includes(v[1])) sel.value = v[1];
+    });
+    $("castStatus").textContent = "Voices filled in for the characters. Check them, then Save voice cast.";
+  } catch (e) { $("castStatus").textContent = e.message; }
 });
 $("proj").addEventListener("change", () => { castData = null; renderCast(); $("castStatus").textContent = ""; });
 

@@ -400,6 +400,8 @@ def main(argv=None):
     outdir, mode = base, ""
     if "chapters" in shots_csv:
         outdir, mode = Path(f"{base}_chapters"), "-chapters"
+    elif "scenes" in shots_csv:
+        outdir, mode = Path(f"{base}_scenes"), "-scenes"
     elif shots_csv.startswith("keyframes"):
         outdir, mode = Path(f"{base}_keyframes"), "-keyframes"
     rows = range(start, end + 1)
@@ -448,7 +450,7 @@ def main(argv=None):
         inp, work = tmp / "input" / "dataset", tmp / "working"
         inp.mkdir(parents=True)
         work.mkdir()
-        for csv_file in ("all_shots.csv", "all_chapters.csv", "audio_shots.csv", "audio_chapters.csv", "all_images.csv", "keyframes.csv"):
+        for csv_file in ("all_shots.csv", "all_chapters.csv", "audio_shots.csv", "audio_chapters.csv", "audio_scenes.csv", "all_images.csv", "keyframes.csv"):
             if (pd / csv_file).is_file():
                 shutil.copyfile(pd / csv_file, inp / csv_file)
         if shots_csv in ("keyframes.csv", "all_images.csv") and (pd / "keyframe_refs").is_dir():      # character pictures (make_keyframes_csv.py --refs; the Characters tab)

@@ -21,9 +21,11 @@ people wear, injuries. Shots are then shared out scene by scene, so no shot stra
 import argparse
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from bookkit import (sentences, character_token, continuity_file, shot_negative, CLIP_SECONDS, COST, cost_note, voice_id, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
+from bookkit import (global_texts, sentences, character_token, continuity_file, shot_negative, CLIP_SECONDS, COST, cost_note, voice_id, WORDS_PER_SECOND, llm_json, compose_prompt, group_chapters,
                      project_dir, read_json, shot_count, slice_text, strip_verse_numbers, words, write_json)
-import json
+import adaptation
+import cast_lock
+import screenplay
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
@@ -61,25 +63,7 @@ if not continuity and not args.dry_run:
 overrides = read_json(pdir / "overrides.json", {})
 wps = args.words_per_shot or (25 if args.narration == "verbatim" else 60)
 
-# Load global parameters for the project
-global_params_path = pdir / "global_params.json"
-if global_params_path.exists():
-    try:
-        global_params = json.loads(global_params_path.read_text())
-        global_positives = global_params.get("positives", "")
-        global_negatives = global_params.get("negatives", "")
-    except (OSError, ValueError, AttributeError):
-        global_positives = ""
-        global_negatives = ""
-else:
-    global_positives = ""
-    global_negatives = ""
-
-if args.look and not global_positives and not global_negatives:      # no Global Parameters saved: the film's look still decides the style words
-    import model_advisor
-    if args.look in model_advisor.STYLE:
-        global_positives = model_advisor.STYLE[args.look]["positives"]
-        global_negatives = model_advisor.STYLE[args.look]["negatives"]
+global_positives, global_negatives = global_texts(pdir, args.look)      # saved Global Parameters, else the film's look
 
 chapters = index["chapters"]
 if args.chapters != "all":
@@ -87,9 +71,21 @@ if args.chapters != "all":
     lo, hi = int(a), int(b or a)
     chapters = [c for c in chapters if lo <= c["n"] <= hi]
 
+# An adaptation plan (book_adapt.py) decides how long the film is: each chapter gets the clips its scenes were given, and chapters the plan leaves out
+# are not written. A hand-set shot count in overrides.json still wins. A plan marked stale (the chapters changed afterwards) is not used.
+PLAN = adaptation.load(pdir)
+PLAN = None if PLAN is not None and PLAN.get("stale") else PLAN
+PLAN_CLIPS = adaptation.chapter_clips(PLAN) if PLAN else {}
+CAST_LOCK = cast_lock.load(pdir) if PLAN else {}          # costumes locked per scene (cast_lock.py)
+if PLAN:
+    chapters = [c for c in chapters if c["n"] in PLAN_CLIPS]
+    if abs(float(PLAN["clip_seconds"]) - CLIP_SECONDS) > 0.01:
+        print(f"note: the plan was made for {PLAN['clip_seconds']:g} s clips but --clip-seconds is {CLIP_SECONDS:g}; the film will run "
+              f"{CLIP_SECONDS / float(PLAN['clip_seconds']):.2f} times as long as planned.", flush=True)
+
 
 def plan_for(c):
-    return shot_count(c["words"], wps, args.min_shots, args.max_shots, (overrides.get(str(c["n"])) or {}).get("shots"))
+    return shot_count(c["words"], wps, args.min_shots, args.max_shots, (overrides.get(str(c["n"])) or {}).get("shots") or PLAN_CLIPS.get(c["n"]))
 
 
 QUOTE_OPEN, QUOTE_CLOSE, QUOTE_MAX_WORDS = "\u201c", "\u201d", 400
@@ -291,8 +287,11 @@ def build_prompt(c, slices, quotes=None, owner=None):
         scene_section = "\nSCENES (keep what each says in every shot of that scene):\n" + "\n".join(
             f"  slices {a}-{b}: {sc['title']}; location: {sc['location'] or 'not named'}; {sc['state']}" for a, b, sc in spans) + "\n"
 
+    play = screenplay.chapter_brief(pdir, PLAN, c["n"]) if PLAN else ""
+    play_section = (f"\nSCREENPLAY for the scenes taken from this chapter (follow its events and dialogue; the slices below are the book text it comes from):\n{play}\n"
+                    if play else "")
     return f"""CONTINUITY BOOK (fixed for the whole book): {brief}
-{global_section}{scene_section}
+{global_section}{scene_section}{play_section}
 CHAPTER {c['n']}: {c['title']}
 The chapter is cut into {len(slices)} consecutive slices. Each slice becomes ONE {CLIP_SECONDS:g}-second video clip:
 {shown}
@@ -342,6 +341,7 @@ def write_chapter(c):
 
     data = llm_json(build_prompt(c, slices, quotes, owner), SYSTEM, model=args.model, engine=args.engine, validate=check)
     out = []
+    scene_ids = [adaptation.shot_scene(PLAN, c["n"], i, n) if PLAN else None for i in range(1, n + 1)]
     for i, (s, sl) in enumerate(zip(data["shots"], slices), start=1):
         lines = None
         if quotes is not None:
@@ -360,8 +360,10 @@ def write_chapter(c):
                     "music": (s.get("music") or continuity["music_theme"]).strip()[:300],
                     "negative": shot_negative(global_negatives), "location": str(s.get("location") or "").strip(), "continues": i > 1 and s.get("continues") is True and not (owner and owner[i - 1] is not owner[i - 2]),
                     **({"scene": owner[i - 1]["title"]} if owner else {}),
+                    **({"scene_id": scene_ids[i - 1]} if scene_ids[i - 1] else {}),
                     "prompt": compose_prompt(s["visual"], s.get("characters", []), continuity, global_positives=global_positives, global_negatives=global_negatives,
-                                             chapter=c["n"], look=args.look, location=s.get("location") or ""), "slice": sl,
+                                             chapter=c["n"], look=args.look, location=s.get("location") or "",
+                                             token_overrides=cast_lock.token_overrides(CAST_LOCK, scene_ids[i - 1])), "slice": sl,
                     **({"lines": lines} if lines is not None else {})})
     write_json(pdir / "scripts" / f"chapter-{c['n']:03d}.json",
                {"chapter": c["n"], "title": c["title"], "narration_mode": args.narration, "shots": out})

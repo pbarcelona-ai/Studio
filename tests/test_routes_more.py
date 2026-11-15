@@ -12,7 +12,7 @@ def post(server, path, body=None):
 def started(monkeypatch):
     """Record JOB.start instead of running anything."""
     calls = []
-    monkeypatch.setattr(JOB, "start", lambda steps, opt: calls.append(steps))
+    monkeypatch.setattr(JOB, "start", lambda steps, opt, queue=False: calls.append(steps) or 0)
     return calls
 
 

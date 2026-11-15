@@ -1,13 +1,17 @@
 """Shared fixtures: a real Studio HTTP server on a free port with a known token, and a tiny HTTP client for it."""
 import http.client
 import json
+import os
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+os.environ.setdefault("STUDIO_NO_BUSY_CHECK", "1")        # a real run on this computer must not block the tests that start jobs
+os.environ.setdefault("STUDIO_JOB_DIR", tempfile.mkdtemp(prefix="studio-jobs-"))      # job logs and state of the tests stay out of the project
 
 from studio_app import handler  # noqa: E402
 from studio_app.server import make_server  # noqa: E402
@@ -153,3 +157,23 @@ def run_script(monkeypatch, capsys):
             code = e.code if e.code is not None else 0
         return code, capsys.readouterr().out
     return run
+
+
+@pytest.fixture()
+def film(book):
+    """The demo book with chapters, a plan, an approved screenplay, a continuity book and a written chapter: ready for keyframes."""
+    chs = [{"n": n, "title": f"C{n}", "words": 100} for n in range(1, 7)]
+    (book / "chapters.json").write_text(json.dumps({"chapters": chs}))
+    import adaptation as ad
+    import screenplay as sp
+    from test_adaptation import GOOD, make_plan
+    ad.save(book, make_plan())
+    for s in ad.load(book)["scenes"]:
+        sp.save_scene(book, s["id"], GOOD, edited=False)
+    sp.approve(book, ad.load(book))
+    sp.stamp_shots(book)
+    (book / "scripts").mkdir(exist_ok=True)
+    for n in range(1, 7):
+        shots = [{"n": i, "prompt": f"p{i}", "narration": f"line {i}"} for i in range(1, 5)] if n == 1 else []
+        (book / "scripts" / f"chapter-{n:03d}.json").write_text(json.dumps({"chapter": n, "shots": shots}))
+    return book

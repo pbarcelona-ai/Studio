@@ -3,7 +3,9 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 from bookkit import SLUG_RE
+import book_formats
 import layout
+import screenplay
 import model_advisor
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
@@ -79,6 +81,25 @@ def project_slug(opt):
     return slug
 
 
+READ_LABELS = {".pdf": "PDF", ".epub": "EPUB", ".docx": "Word document", ".html": "web page", ".htm": "web page"}
+
+
+GATED_STEPS = ("write", "build", "keyframes", "video", "audio", "merge", "mix")
+
+
+def check_screenplay_gate(opt, slug):
+    """A book with an adaptation plan may not write shots or make pictures until its screenplay is approved (see screenplay.gate)."""
+    st = opt.get("steps", {})
+    wanted = [k for k in GATED_STEPS if st.get(k)]
+    if not wanted or slug in LEGACY:
+        return
+    if st.get("adapt") or st.get("screenplay"):
+        raise PlanError("Plan the film and write its screenplay first, read and approve the screenplay on the Adapt card, then run the shots and pictures.")
+    reason = screenplay.gate(pdir(slug)) if pdir(slug).is_dir() else None
+    if reason:
+        raise PlanError(reason)
+
+
 def book_steps(opt, slug):
     st = opt.get("steps", {})
     minutes = str(num(opt, "movie_minutes", 10, float, 1, 120))
@@ -94,17 +115,35 @@ def book_steps(opt, slug):
         name = Path(raw).name
         path = f"books/{name}" if raw.startswith("books/") else f"{layout.rel(slug)}/source/{name}"
         if not name.lower().endswith(BOOK_EXTS) or not (ROOT / path).exists():
-            raise PlanError("choose a book to read: a PDF or a text file (put them in the books folder)")
-        steps.append({"label": f"Read {'text' if not name.lower().endswith('.pdf') else 'PDF'} and split chapters ({name})", "env": {},
-                      "argv": ["uv", "run", "--with", "pypdf", "python", "book_ingest.py", slug, path]})
+            raise PlanError("choose a book to read: a PDF, EPUB, Word, HTML or text file (put them in the books folder)")
+        kind = READ_LABELS.get(Path(name).suffix.lower(), "text")
+        pkgs = book_formats.ocr_packages(ROOT / path)           # Pillow for PDFs, plus the OCR packages for a scanned one
+        withs = [a for pkg in ["pypdf", *pkgs] for a in ("--with", pkg)]
+        python = ["--python", ">=3.11,<3.14"] if "onnxruntime" in pkgs else []      # onnxruntime has no wheels for the newest Python (uv's default) on every Mac
+        steps.append({"label": f"Read {kind} and split chapters ({name})", "env": {},
+                      "argv": ["uv", "run", *python, *withs, "python", "book_ingest.py", slug, path]})
+    if st.get("adapt"):
+        argv = ["python3", "book_adapt.py", slug, "--minutes", str(num(opt, "film_minutes", 10, float, 0.5, 180)),
+                "--clip-seconds", str(num(opt, "clip_seconds", 4, float, 1, 30)), "--workers", str(num(opt, "workers", 2, int, 1, 6))] + engine_args(opt)
+        focus = " ".join(str(opt.get("adapt_focus") or "").split())[:300]
+        if focus:
+            argv += ["--focus", focus]
+        if opt.get("adapt_fit_only"):
+            argv.append("--fit-only")
+        steps.append({"label": f"Adapt the book into a plan for a {argv[4]}-minute film", "argv": argv, "env": {}})
     if st.get("continuity"):
         steps.append({"label": "Write the continuity book", "env": {},
                       "argv": ["python3", "book_continuity.py", slug] + engine_args(opt) + ["--force"]})
+    if st.get("screenplay"):
+        steps.append({"label": "Write the screenplay, scene by scene", "env": {},
+                      "argv": ["python3", "book_screenplay.py", slug, "--workers", str(num(opt, "workers", 2, int, 1, 6))] + engine_args(opt)
+                      + (["--force"] if opt.get("force_screenplay") else [])})
     if st.get("write"):
         steps.append({"label": "Write shots, narration, sound and music", "env": {},
                       "argv": ["python3", "book_write.py", slug] + book_args(opt)})
     if st.get("build"):
-        steps.append({"label": "Build CSVs and plan movies", "argv": ["python3", "book_build.py", slug, "--minutes", minutes], "env": {}})
+        recompose = (["--recompose"] + (["--look", opt["look"]] if opt.get("look") in model_advisor.LOOKS else [])) if opt.get("recompose") else []
+        steps.append({"label": "Build CSVs and plan movies", "argv": ["python3", "book_build.py", slug, "--minutes", minutes] + recompose, "env": {}})
     return steps
 
 

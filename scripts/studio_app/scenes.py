@@ -93,7 +93,7 @@ def prompt_save(opt):
     edits = read_json(d / "prompt_edits.json", {})
     key = f"{chapter}#{shot}"
     entry = edits.setdefault(key, {"chapter": chapter, "shot": shot, "fields": {}})
-    saved, reverted = [], []
+    saved, reverted, changed = [], [], []
     for field, new in fields.items():
         if field not in EDIT_FIELDS:
             raise PlanError(f"unknown field {field!r}")
@@ -109,11 +109,18 @@ def prompt_save(opt):
         else:
             entry["fields"][field] = {"original": orig, "edited": new}; saved.append(field)
         set_scene_field(d, chapter, shot, field, new)
+        if new != cur:                                       # tell the screenplay (feedback.py): its scene is flagged for a look
+            changed.append((field, cur, new))
     if not entry["fields"]:
         edits.pop(key, None)
     else:
         entry["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
     write_json(d / "prompt_edits.json", edits)
+    if changed:
+        import feedback
+        rows = read_csv_rows(d / "all_shots.csv")
+        for field, old, new in changed:
+            feedback.record(d, rows, idx + 1, "edited", field, old, new)
     return {"saved": saved, "reverted": reverted, "row": idx + 1}
 
 

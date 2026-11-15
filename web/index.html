@@ -39,12 +39,35 @@
 
     <div id="toast-container"></div>
 
+    <section class="session-banner hidden" id="sessionBanner" role="alert" aria-live="polite"></section>
+
+    <!-- Guided flow: seven screens, one per stage of the film. "All tabs" shows the classic tab layout. -->
+    <nav class="flow-nav" id="flowNav" aria-label="Film stages">
+      <ol class="flow-nav__list" id="flowList"></ol>
+      <button type="button" class="flow-nav__toggle" id="flowToggle" title="Switch between the seven guided screens and the classic tabs">All tabs</button>
+    </nav>
+    <p class="flow-about" id="flowAbout" role="status"></p>
+
     <!-- Tab Navigation -->
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
         <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-project" data-tab="project">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-            Import
+            Book and Script
         </button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-characters" data-tab="characters">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Cast and Look
+        </button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-movies" data-tab="movies">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            Storyboard and Shoot
+        </button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-results" data-tab="results">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Cut and Premiere
+        </button>
+        <button type="button" class="adv-toggle" id="advToggle" aria-expanded="false" aria-controls="advTabs" title="Models, Single Prompts, Library and Compare: for when you want to choose things yourself">Advanced <span aria-hidden="true">▾</span></button>
+        <span class="adv-tabs hidden" id="advTabs">
         <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-models" data-tab="models">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
             Models
@@ -52,14 +75,6 @@
         <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-prompts" data-tab="prompts">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
             Single Prompts
-        </button>
-        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-characters" data-tab="characters">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            Characters
-        </button>
-        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-movies" data-tab="movies">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-            Movies
         </button>
         <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-library" data-tab="library">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
@@ -69,10 +84,7 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             Compare
         </button>
-        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-results" data-tab="results">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Results
-        </button>
+        </span>
     </nav>
 
     <section class="lookbar" id="lookbar" aria-labelledby="lookTitle">
@@ -94,7 +106,7 @@
       <button type="button" class="stepper__step optional" data-step="board" data-go="movies" data-target="storyboardCard"><span class="stepper__circle">6</span><span class="stepper__label">Storyboard (optional)</span></button>
       <button type="button" class="stepper__step" data-step="video" data-go="movies" data-target="videoAudioCard"><span class="stepper__circle">7</span><span class="stepper__label">Video</span></button>
       <button type="button" class="stepper__step" data-step="audio" data-go="movies" data-target="videoAudioCard"><span class="stepper__circle">8</span><span class="stepper__label">Audio</span></button>
-      <button type="button" class="stepper__step" data-step="film" data-go="results" data-target="filmCard"><span class="stepper__circle">9</span><span class="stepper__label">Final film</span></button>
+      <button type="button" class="stepper__step" data-step="film" data-go="results" data-target="finalFilmCard"><span class="stepper__circle">9</span><span class="stepper__label">Final film</span></button>
     </nav>
     <p id="stepperHint" class="warn" aria-live="polite"></p>
 
@@ -155,7 +167,7 @@
         <div class="card" id="stepRead">
             <div class="card__header">
                 <h2 class="card__title">Read book</h2>
-                <p class="card__subtitle">Choose a book (PDF), a text file, or paste text, and split it into chapters. Nothing is sent to Kaggle or Colab.</p>
+                <p class="card__subtitle">Choose a book (PDF, EPUB, Word, web page or text file), or paste text, and split it into chapters. Scanned PDFs are read with OCR. Nothing is sent to Kaggle or Colab.</p>
             </div>
             <div class="card__body">
                 <section id="whatoimplement" class="bookonly">
@@ -166,8 +178,8 @@
       <div><label class="f" for="proj">Book</label><select id="proj"></select></div>
       <div id="chips"></div>
       <div class="upload-block">
-        <label class="f">Add a PDF or a text file (.txt, .md): drag it onto the box below (or click the box). It is uploaded to the <code>books</code> folder when you press Import. You can also drop files into that folder yourself and reload this page.</label>
-        <input type="file" id="file" accept="application/pdf,.pdf,text/plain,.txt,.md,text/markdown">
+        <label class="f">Add a book file (.pdf, .epub, .docx, .html, .txt, .md): drag it onto the box below (or click the box). It is uploaded to the <code>books</code> folder when you press Import. You can also drop files into that folder yourself and reload this page.</label>
+        <input type="file" id="file" accept="application/pdf,.pdf,.epub,application/epub+zip,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.html,.htm,text/html,text/plain,.txt,.md,text/markdown">
       </div>
       <div class="text-block">
         <label class="f" for="impTitle">Or paste text (a story, a scene, a few paragraphs: only the part you paste is used)</label>
@@ -178,9 +190,90 @@
     </div>
   </section>
                 <section class="bookonly bookstep" style="margin-top:12px">
-        <label class="opt"><input type="checkbox" id="b_ingest"><span>Read the PDF and split it into chapters</span></label>
+        <label class="opt"><input type="checkbox" id="b_ingest"><span>Read the book and split it into chapters<small>PDF (scans are read with OCR, which can take minutes per hundred pages), EPUB, Word, web page or text.</small></span></label>
         <div style="margin:0 0 6px 26px"><select id="pdf"></select></div>
                 </section>
+            </div>
+        </div>
+
+        <div class="card bookonly" id="stepChapters">
+            <div class="card__header">
+                <h2 class="card__title">Chapters</h2>
+                <p class="card__subtitle">Check the split before anything is written: rename, join, cut or drop chapters (cover, contents, notes)</p>
+            </div>
+            <div class="card__body">
+                <p class="warn" id="chapNote" aria-live="polite">Pick a book that has been read to see its chapters.</p>
+                <div id="chapBar" class="row hidden" style="gap:8px;margin:8px 0;flex-wrap:wrap">
+                    <button type="button" class="btn btn--secondary" id="chapDrop" disabled>Drop ticked</button>
+                    <span class="warn" id="chapSummary"></span>
+                </div>
+                <div style="max-height:360px;overflow:auto">
+                    <table class="data-table" id="chapTable" aria-label="Chapters of the chosen book"></table>
+                </div>
+                <div id="chapEditor" class="hidden" style="margin-top:12px">
+                    <label class="f" for="chapText" id="chapTextLabel">Chapter text</label>
+                    <textarea id="chapText" class="caret-box" rows="10" aria-readonly="true" spellcheck="false" autocomplete="off" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit"></textarea>
+                    <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
+                        <input type="text" id="chapSplitTitle" maxlength="80" aria-label="Title for the second half" placeholder="Title for the second half (optional)" autocomplete="off" style="flex:1;min-width:200px">
+                        <button type="button" class="btn btn--secondary" id="chapSplit">Split at the cursor</button>
+                        <button type="button" class="btn btn--ghost" id="chapClose">Close</button>
+                    </div>
+                    <small class="warn">Click in the text where the new chapter should start, then press Split. The cut moves back to the start of that word.</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bookonly" id="stepAdapt">
+            <div class="card__header">
+                <h2 class="card__title">Film plan and screenplay</h2>
+                <p class="card__subtitle">Optional: decide what the film is before any GPU time is spent. Plan a film of a chosen length, read and fix its screenplay, check the cost, approve</p>
+            </div>
+            <div class="card__body">
+                <section class="bookonly bookstep sec-plan">
+                    <div class="row" style="gap:12px;flex-wrap:wrap;align-items:flex-end">
+                        <div><label class="f" for="film_minutes">Film length (minutes)</label><input type="number" id="film_minutes" min="0.5" max="180" step="0.5" value="10" style="width:110px" autocomplete="off"></div>
+                        <div style="flex:1;min-width:220px"><label class="f" for="adapt_focus">Follow (optional: a character, a thread, chapters 5-12)</label><input type="text" id="adapt_focus" maxlength="300" style="width:100%" autocomplete="off"></div>
+                    </div>
+                    <label class="opt"><input type="checkbox" id="b_adapt"><span>Plan the film: logline, acts and scenes<small>One AI call per chapter, one for the structure and one per act. Replaces an earlier plan and its screenplay.</small></span></label>
+                    <label class="opt" style="margin-left:26px"><input type="checkbox" id="adapt_fit_only"><span>Only fit the saved scenes to this length<small>No AI calls. Use after changing the length.</small></span></label>
+                    <label class="opt"><input type="checkbox" id="b_screenplay"><span>Write the screenplay, scene by scene<small>One AI call per scene. Scenes you edited are never overwritten.</small></span></label>
+                    <label class="opt" style="margin-left:26px"><input type="checkbox" id="force_screenplay"><span>Rewrite scenes that already have a screenplay</span></label>
+                    <small class="warn">Press Import (at the bottom of the Import tab) to run the ticked steps. Once a book has a plan, shots and pictures are only made after you approve its screenplay below.</small>
+                </section>
+                <p class="warn" id="adaptNote" aria-live="polite">Pick a book that has been read to plan a film.</p>
+                <div id="adaptPlan" class="hidden">
+                    <div class="sec-plan">
+                    <h3 style="font-size:var(--text-sm);margin:12px 0 4px">The plan</h3>
+                    <p id="adaptLogline"></p>
+                    <p class="warn" id="adaptRuntime"></p>
+                    <div style="max-height:min(60vh,520px);overflow:auto"><table class="data-table" id="adaptScenes" aria-label="Scenes of the film plan"></table></div>
+                    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+                        <div><label class="f" for="pilotKind">Try a smaller film first</label>
+                            <select id="pilotKind"><option value="none">Whole film</option><option value="trailer">Trailer (the strongest scenes)</option><option value="chapters">Only some chapters</option></select></div>
+                        <div id="pilotSecBox" class="hidden"><label class="f" for="pilotSeconds">Seconds</label><input type="number" id="pilotSeconds" min="4" max="600" value="90" style="width:90px" autocomplete="off"></div>
+                        <div id="pilotChBox" class="hidden"><label class="f" for="pilotFirst">Chapters</label><input type="number" id="pilotFirst" min="1" value="1" style="width:70px" autocomplete="off"> to <input type="number" id="pilotLast" aria-label="Last chapter" min="1" value="1" style="width:70px" autocomplete="off"></div>
+                        <button type="button" class="btn btn--secondary" id="pilotApply">Use this</button>
+                        <button type="button" class="btn btn--ghost" id="adaptDiscard">Discard the plan</button>
+                    </div>
+                    <h3 style="font-size:var(--text-sm);margin:16px 0 4px">What it will cost</h3>
+                    <pre id="adaptBudget" class="warn" style="white-space:pre-wrap"></pre>
+                    </div>
+                    <div class="sec-screenplay">
+                    <h3 style="font-size:var(--text-sm);margin:16px 0 4px">The screenplay <span class="chip" id="spState"></span></h3>
+                    <p class="err hidden sp-flag-note" id="spFlagNote" role="status"></p>
+                    <p class="warn">One scene per box. Lines: <code>A: what we see</code> &nbsp; <code>D NAME (how it is said): the words</code> &nbsp; <code>T: CUT TO:</code>. Saving a scene takes the approval away.</p>
+                    <div id="spScenes"></div>
+                    <div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn--primary" id="spApprove">Approve the screenplay</button><button type="button" class="btn btn--ghost" id="spUnapprove">Take the approval back</button></div>
+                    </div>
+                    <div class="sec-plan">
+                    <h3 style="font-size:var(--text-sm);margin:16px 0 4px">Locked cast, costume and place <span class="chip" id="lockState"></span></h3>
+                    <p class="warn">Fix how a character looks, or which picture steers the keyframes, for one scene. A locked description replaces the character's usual one in that scene's prompts; run "Build the CSV files" with the rewrite option ticked to apply it.</p>
+                    <div id="lockScenes"></div>
+                    <h3 style="font-size:var(--text-sm);margin:16px 0 4px">Colour grade per scene</h3>
+                    <p class="warn">A look for each scene (warm, night, noir ...) and, if you like, a default for the whole film. It is applied when the film is made, with "Apply the colour grades" ticked (Make film, or Movies tab).</p>
+                    <div id="gradeScenes"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -240,6 +333,7 @@
             <div class="card__body">
                 <section class="bookonly bookstep">
         <label class="opt"><input type="checkbox" id="b_build"><span>Build the CSV files and plan the movies</span></label>
+        <label class="opt" style="margin-left:26px"><input type="checkbox" id="b_recompose"><span>First rewrite every prompt with the current rules and locked costumes<small>No AI call. Puts each shot's own description first so the model's 256-token window never cuts it, and applies the costumes locked in the Film plan card.</small></span></label>
         <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Movie minutes</label><input type="number" id="mmin" value="10" min="1" autocomplete="off"></div></div>
                 </section>
             </div>
@@ -285,17 +379,35 @@
     <!-- MODELS TAB -->
     <div class="tab-panel" id="panel-models" role="tabpanel" aria-labelledby="tab-models">
         <div class="card">
+            <div class="card__body">
+                <label class="opt"><input type="checkbox" id="adultToggle"><span>Show adult-content models<small>Off by default. Switches on the "Uncensored (adult content)" groups of picture and video models (for clearly adult, fictional work only). While it is off they are hidden here and the Studio refuses to run them.</small></span></label>
+            </div>
+        </div>
+        <div class="card">
             <div class="card__header">
                 <h2 class="card__title">Where to Run</h2>
             </div>
             <div class="card__body">
                 <section>
     <div class="stack">
-      <div class="svc-row">
-        <label class="opt svc-opt"><input type="radio" name="svc" value="kaggle" checked><span>Kaggle<small>Free weekly GPU. Needs sign-in and a phone-verified account.</small></span></label>
-        <label class="opt svc-opt"><input type="radio" name="svc" value="colab"><span>Colab<small>Free T4 is often unavailable.</small></span></label>
-        <label class="opt svc-opt"><input type="radio" name="svc" value="huggingface"><span>Hugging Face<small>Free shared GPUs (daily quota). Only models with a public Space; the Space's own version of the model.</small></span></label>
-        <label class="opt svc-opt"><input type="radio" name="svc" value="computer"><span>This computer<small>This computer's own graphics card: NVIDIA, or AMD with ROCm (experimental), on Linux or Windows WSL 2. No website or account; models download once, then work offline.</small></span></label>
+      <div class="svc-group">
+        <h3 class="svc-group__title">On this computer <small>already there</small></h3>
+        <div class="svc-row">
+          <label class="opt svc-opt"><input type="radio" name="svc" value="computer"><span>This computer<small>This computer's own graphics card: NVIDIA, or AMD with ROCm (experimental), on Linux or Windows WSL 2. No website or account; models download once, then work offline.</small></span></label>
+        </div>
+      </div>
+      <div class="svc-group">
+        <h3 class="svc-group__title">Free, external <small>someone else's computer, no charge</small></h3>
+        <div class="svc-row">
+          <label class="opt svc-opt"><input type="radio" name="svc" value="kaggle" checked><span>Kaggle<small>Free weekly GPU. Needs sign-in and a phone-verified account.</small></span></label>
+          <label class="opt svc-opt"><input type="radio" name="svc" value="colab"><span>Colab<small>Free T4 is often unavailable.</small></span></label>
+          <label class="opt svc-opt"><input type="radio" name="svc" value="huggingface"><span>Hugging Face<small>Free shared GPUs (daily quota). Only models with a public Space; the Space's own version of the model.</small></span></label>
+        </div>
+      </div>
+      <div class="svc-group">
+        <h3 class="svc-group__title">Paid, external <small>unproven: listed, not connected</small></h3>
+        <p class="warn" id="paidNote">Nothing here has been tried with the Studio. These cannot be picked yet.</p>
+        <ul class="paid-list" id="paidProviders" aria-label="Paid GPU providers (unproven)"></ul>
       </div>
       <div><label class="f" for="gpu">GPU</label><select id="gpu"></select></div>
       <div id="userbox"><label class="f" for="kuser">Kaggle username</label><input type="text" id="kuser" name="kaggle_account_slug" placeholder="the part after kaggle.com/" spellcheck="false" autocapitalize="off" autocomplete="nope" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
@@ -661,6 +773,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
     <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
       <div><label class="f" for="castSeries">Suggest voices from character series</label><select id="castSeries"><option value="">(none)</option></select></div>
       <button type="button" id="bCastLoad">Load speakers</button>
+      <button type="button" id="bCastAuto" title="Give every character of the continuity book a different voice, by sex and age. Voices you already cast stay.">Give everyone a different voice</button>
       <button type="button" id="bCastSuggest" title="Fill each blank voice with the character series' voice, else the continuity book's">Fill blanks with suggestions</button>
     </div>
     <div class="movies" style="margin-top:8px;max-height:320px"><table id="castTable"><tr><td class="warn">Pick a book, then Load speakers.</td></tr></table></div>
@@ -769,6 +882,45 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
             </div>
         </div>
         
+        <div class="card" id="exportCard">
+            <div class="card__header">
+                <h2 class="card__title">Export and credits</h2>
+                <p class="card__subtitle">Make a copy of a finished film for YouTube, a festival or a master, with subtitles in other languages, and fill in its credits</p>
+            </div>
+            <div class="card__body">
+                <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+                    <div><label class="f" for="exFilm">Film</label><select id="exFilm"></select></div>
+                    <div><label class="f" for="exPreset">For</label><select id="exPreset"></select></div>
+                    <div style="flex:1;min-width:160px"><label class="f" for="exLangs">Extra subtitle languages (es, fr, pt-BR ...)</label><input type="text" id="exLangs" style="width:100%" autocomplete="off" placeholder="none"></div>
+                    <button type="button" class="btn btn--primary" id="exGo">Export</button>
+                    <button type="button" class="btn btn--ghost" id="exRefresh">Refresh films</button>
+                </div>
+                <p class="warn" id="exNote" aria-live="polite"></p>
+                <h3 style="font-size:var(--text-sm);margin:14px 0 4px">Private preview link</h3>
+                <p class="warn">A web address that plays the chosen film for anyone who has it, until it runs out or you revoke it. Nothing else in the Studio is reachable through it. It works from this computer's address; to let other people open it, run a tunnel to this port and start the Studio with <code>STUDIO_WATCH_HOSTS=your-tunnel-name</code>.</p>
+                <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+                    <div><label class="f" for="shHours">Lasts</label><select id="shHours"><option value="24">1 day</option><option value="168" selected>7 days</option><option value="720">30 days</option><option value="0">until revoked</option></select></div>
+                    <div style="flex:1;min-width:160px"><label class="f" for="shTitle">Title on the page (optional)</label><input type="text" id="shTitle" maxlength="120" style="width:100%" autocomplete="off"></div>
+                    <button type="button" class="btn btn--secondary" id="shMake">Make a link for the chosen film</button>
+                </div>
+                <ul id="shList" style="margin:8px 0 0 18px"></ul>
+                <h3 style="font-size:var(--text-sm);margin:14px 0 4px">Credits</h3>
+                <p class="warn">Shown after the end title when "Roll the credits" is ticked in Make film. The AI models used in this book are added for you.</p>
+                <div class="row" style="gap:8px;flex-wrap:wrap">
+                    <div><label class="f" for="crBased">Based on</label><input type="text" id="crBased" maxlength="160" autocomplete="off"></div>
+                    <div><label class="f" for="crAuthor">Author / translator</label><input type="text" id="crAuthor" maxlength="160" autocomplete="off"></div>
+                    <div><label class="f" for="crWritten">Written by</label><input type="text" id="crWritten" maxlength="160" autocomplete="off"></div>
+                    <div><label class="f" for="crDirected">Directed by</label><input type="text" id="crDirected" maxlength="160" autocomplete="off"></div>
+                    <div><label class="f" for="crRating">Rating</label><select id="crRating"></select></div>
+                </div>
+                <label class="f" for="crNotes">Content notes</label><input type="text" id="crNotes" maxlength="300" style="width:100%" autocomplete="off" placeholder="for example: mild peril">
+                <label class="f" for="crRights">Rights note</label><input type="text" id="crRights" maxlength="300" style="width:100%" autocomplete="off" placeholder="for example: the source text is in the public domain">
+                <label class="f" for="crCrew">Crew (one per line: Role | Name)</label><textarea id="crCrew" rows="3" style="width:100%" autocomplete="off"></textarea>
+                <div class="row" style="gap:8px;margin-top:6px"><button type="button" class="btn btn--secondary" id="crSave">Save credits</button><span class="warn" id="crMsg" aria-live="polite"></span></div>
+                <pre id="crPreview" class="warn" style="white-space:pre-wrap;margin-top:6px"></pre>
+            </div>
+        </div>
+
         <div class="card" id="storyboardCard">
             <div class="card__header">
                 <h2 class="card__title">Storyboard (optional)</h2>
@@ -776,15 +928,37 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
             </div>
             <div class="card__body">
                 <section class="bookonly">
-    <p class="warn" style="margin-bottom:8px">Make keyframes first (tick "Make keyframe stills first" below), check them here, then animate them with a "From keyframes" video model on the Models tab. Click a picture or clip to see it full size.</p>
+    <p class="warn" style="margin-bottom:8px">Make the keyframe stills (the button just below), check them here, approve or reject each one, then animate them with a "From keyframes" video model. Click a picture or clip to see it full size.</p>
+    <div class="sb-update" id="sbUpdateBox">
+      <p class="err hidden" id="sbStoryWarn" role="status">The storyline changed after these shots were made. Update the storyboard so it matches.</p>
+      <div class="row" style="align-items:flex-end;gap:8px;flex-wrap:wrap">
+        <div><label class="f" for="sbMakeModel">Keyframe model</label><select id="sbMakeModel"></select></div>
+        <button type="button" class="btn btn--primary" id="sbUpdate" title="Rewrites the shots from the approved screenplay, rebuilds the shot list, puts the old stills and clips aside (nothing is deleted) and, if ticked, makes new stills">Update storyboard from the storyline</button>
+        <label class="opt" style="margin:0"><input type="checkbox" id="sbUpdMake" checked><span>then make the new stills</span></label>
+        <button type="button" class="btn btn--secondary" id="sbAutoMatch" title="Check every shot: each gets the picture that shows it best (pictures on the wrong shot move, old pictures come back for shots without one). No GPU.">Match old pictures</button>
+      </div>
+      <p class="warn" id="sbUpdNote" role="status" aria-live="polite"></p>
+    </div>
+    <div class="sb-movielen" id="sbMovieLen">
+      <div><label class="f" for="sbMovieSecs">Movie length (seconds)</label><input type="number" id="sbMovieSecs" min="1" max="7200" step="1" autocomplete="off"></div>
+      <button type="button" class="btn btn--secondary" id="sbMovieSet" title="Share this length out over the movie's clips, in proportion to their length now; no clip is made shorter than its words take to say">Set movie length</button>
+      <button type="button" class="btn btn--secondary" id="sbMatchAll" title="Make every clip of this movie as long as its words take to say">Match all clips to narration</button>
+      <span class="warn" id="sbMovieNote" role="status" aria-live="polite"></span>
+    </div>
     <div class="row" style="align-items:flex-end;gap:8px">
       <div><label class="f" for="sbMovie">Movie</label><select id="sbMovie"></select></div>
       <div><label class="f" for="sbKf">Keyframes from</label><select id="sbKf"><option value="">(newest)</option></select></div>
       <button type="button" id="sbLoad">Show storyboard</button>
       <button type="button" id="sbAnimatic" title="Play the stills in order, each as long as its narration, as one video in the films folder">Make animatic</button>
+      <label class="opt" style="margin:0"><input type="checkbox" id="sbShowPrompts"><span>Show prompts</span></label>
+      <button type="button" id="sbApproveRest" title="Approve every shot in this movie that has no verdict yet">Approve the rest</button>
+      <button type="button" id="sbCritic" title="Check pacing, shot variety, continuity, runtime and finished clips, and list the shots that probably need redoing. No AI, no GPU.">Run critic</button>
+      <button type="button" id="sbCriticFlag" title="Reject, in this review, every shot the critic found a serious problem in (shots you already decided on are left alone)" disabled>Reject flagged</button>
+      <button type="button" id="sbReroll" title="Keep each rejected shot's current keyframe as a take and clear it, so the next run makes a new one with a new seed">Re-roll rejected</button>
       <button type="button" id="sbFaces" title="Compare the faces in the keyframes with each character's reference picture, on this computer. For realistic films.">Check faces</button>
       <span id="sbStatus" class="warn" role="status" aria-live="polite"></span>
     </div>
+    <ul id="sbCriticList" class="warn" style="margin:8px 0 0 18px" aria-live="polite"></ul>
     <div class="pz-grid" id="sbGrid" style="margin-top:12px"></div>
   </section>
             </div>
@@ -824,6 +998,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <label class="f" for="aspect" style="margin-top:8px">Film shape</label>
         <select id="aspect"><option value="">Each model's own shape</option><option value="16:9">16:9 widescreen</option><option value="2.39:1">2.39:1 cinema</option><option value="4:3">4:3 classic</option><option value="1:1">1:1 square</option><option value="9:16">9:16 vertical</option></select>
         <label class="opt" style="margin-top:8px"><input type="checkbox" id="chain"><span>Continue unbroken action from the shot before<small>A "from keyframes" clip marked as continuing starts from the last frame of the previous clip instead of its keyframe. Not yet tested on a GPU. Off by default.</small></span></label>
+        <label class="opt"><input type="checkbox" id="musicScenes"><span>Music that follows the scenes<small>Needs a film plan. One MusicGen cue per scene (from the scene's mood and its shots), crossfaded where the scene changes, instead of one cue per chapter. Run "Build CSVs" after planning the film so audio_scenes.csv exists.</small></span></label>
         <label class="opt"><input type="checkbox" id="musicBed"><span>One continuous music cue per chapter<small>MusicGen makes one piece per chapter, looped softly under all its shots, instead of new music for every shot.</small></span></label>
         <label class="opt"><input type="checkbox" id="duck" checked><span>Lower the music under narration</span></label>
         <label class="opt"><input type="checkbox" id="loudnorm" checked><span>Set the film's loudness for online video (-16 LUFS)</span></label>
@@ -917,7 +1092,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
             </div>
         </div>
         
-        <div class="card" id="filmCard">
+        <div class="card" id="finalFilmCard">
             <div class="card__header">
                 <h2 class="card__title">Final film</h2>
             </div>
@@ -945,6 +1120,9 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <div><label class="f" for="fendtitle">End card (optional)</label><input type="text" id="fendtitle" maxlength="120" autocomplete="off" placeholder="e.g. The End"></div>
         <label class="opt"><input type="checkbox" id="fburn"><span>Draw captions into the picture<small>The .srt caption file is written either way.</small></span></label>
         <label class="opt"><input type="checkbox" id="fcolour"><span>Even out colour within each chapter<small>Nudges each clip's brightness and colour halfway towards the chapter's typical clip.</small></span></label>
+        <label class="opt"><input type="checkbox" id="fcredits"><span>Roll the credits<small>After the end title: the source book, cast, crew, the AI models used and the rating, from the Export and credits card.</small></span></label>
+        <label class="opt"><input type="checkbox" id="fgrade"><span>Apply the colour grades<small>The per-scene looks set in the Film plan card (grading.json), on top of "Even out colour" if that is ticked too.</small></span></label>
+        <label class="opt"><input type="checkbox" id="fscenes"><span>Music that follows the scenes<small>Uses audio/musicgen_scenes (one cue per scene of the film plan, crossfaded) instead of the Music column or a chapter cue.</small></span></label>
         <label class="opt"><input type="checkbox" id="fbed"><span>One continuous music cue per chapter<small>Uses audio/musicgen_chapters instead of the Music column above.</small></span></label>
         <label class="opt"><input type="checkbox" id="fduck" checked><span>Lower the music under narration</span></label>
         <label class="opt"><input type="checkbox" id="fln" checked><span>Set the film's loudness for online video (-16 LUFS)</span></label>
@@ -959,6 +1137,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
       <div class="row" style="margin-top:8px;align-items:flex-end;flex-wrap:wrap;gap:8px">
         <div><label class="f" for="fupmodel">Upscaler (GPU memory it needs)</label><select id="fupmodel"></select></div>
         <button type="button" id="bUpscale">Upscale the ticked clips 2x</button>
+        <button type="button" id="bTickSpeech" title="Untick every clip, then tick only the close-ups where a character (not the narrator) speaks: the shots that are worth lip-syncing">Tick close-ups with speech</button>
         <button type="button" id="bLipsync" title="Moves the mouth in each ticked clip to its Kokoro narration with MuseTalk. For close-ups of someone speaking. Upscale first if the face is small.">Lip-sync the ticked clips</button>
       </div>
       <p class="warn" id="fupnote" style="margin:4px 0 0"></p>
@@ -1021,7 +1200,16 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <input type="text" placeholder="Type a command or search…" aria-label="Command search" autocomplete="off">
         <div class="cmd-list"></div>
     </div>
-</main></main>
+    <section class="flow-activity hidden" id="flowActivity" aria-label="What is running">
+      <div class="row" style="align-items:center;gap:8px"><strong id="flowState" role="status"></strong><button type="button" id="flowStop" disabled>Stop</button></div>
+      <pre id="flowLog" aria-live="polite"></pre>
+    </section>
+    <div class="flow-foot" id="flowFoot">
+      <button type="button" id="flowBack">Back</button>
+      <span id="flowPos" role="status"></span>
+      <button type="button" id="flowNext" class="primary">Next</button>
+    </div>
+</main>
 
 <div class="modal-overlay" id="warnModal" role="alertdialog" aria-modal="true" aria-labelledby="warnTitle" aria-describedby="warnBody">
     <div class="modal">
@@ -1036,6 +1224,16 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/core.js" defer></script>
 <script src="/static/js/prompts.js" defer></script>
 <script src="/static/js/film.js" defer></script>
+<script src="/static/js/chapters.js" defer></script>
+<script src="/static/js/adapt.js" defer></script>
+<script src="/static/js/export.js" defer></script>
+<script src="/static/js/nav.js" defer></script>
+<script src="/static/js/providers.js" defer></script>
+<script src="/static/js/flow.js" defer></script>
+<script src="/static/js/storyboard_update.js" defer></script>
+<script src="/static/js/sessions.js" defer></script>
+<script src="/static/js/oldpics.js" defer></script>
+<script src="/static/js/results.js" defer></script>
 <script src="/static/js/models.js" defer></script>
 <script src="/static/js/direction.js" defer></script>
 <script src="/static/js/characters.js" defer></script>

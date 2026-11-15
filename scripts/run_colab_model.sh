@@ -13,7 +13,7 @@ case "$MODEL" in audio_*) SHOTS_CSV=${SHOTS_CSV:-audio_shots.csv} ;; image_*) SH
 case "$MODEL" in tpu_*|image_tpu_*) echo "$MODEL is Kaggle-only (TPU): use run_kaggle_model.sh"; exit 1 ;; esac
 SCRIPT="colab_generate_${MODEL}.py"
 case "$MODEL" in audio_*) OUTDIR="$PD/audio/${MODEL#audio_}" ;; image_*) OUTDIR="$PD/images/${MODEL#image_}" ;; *) OUTDIR="$PD/videos/$MODEL" ;; esac
-case "$SHOTS_CSV" in *chapters*) OUTDIR="${OUTDIR}_chapters" ;; esac
+case "$SHOTS_CSV" in *chapters*) OUTDIR="${OUTDIR}_chapters" ;; *scenes*) OUTDIR="${OUTDIR}_scenes" ;; esac
 GEN=""
 if [ ! -f "$SCRIPT" ]; then      # generated files can be deleted by the clean-up: re-create them in a throw-away folder, so the project folder stays clean
   GEN=$(mktemp -d)

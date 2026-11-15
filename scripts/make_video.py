@@ -15,11 +15,26 @@ def shaped(row):
     return w, max(256, round(w / ratio / 32) * 32)
 
 
+def frames_for(seconds, default):
+    """Frames for a clip of `seconds` (the "seconds" column, set per shot on the storyboard) at this model's FPS. LTX makes 8*k+1 frames, most
+    others 4*k+1; models with a fixed length keep it. There is no longest clip, but a clip much longer than the model's own needs more GPU memory and
+    time (only the model's own length has been tested)."""
+    mid = str(globals().get("MODEL_ID", ""))
+    if any(x in mid for x in ("CogVideoX", "stable-video-diffusion")):
+        return default
+    step = 8 if "LTX" in mid else 4
+    n = round(float(seconds) * float(globals().get("FPS", 24)))
+    return max(step + 1, (n - 1 + step // 2) // step * step + 1)        # the nearest step*k+1
+
+
 def opt(row, key, default, cast=int):
-    """Per-row setting from the CSV (blank/missing -> the default above). An explicit width or height wins over the aspect column."""
+    """Per-row setting from the CSV (blank/missing -> the default above). An explicit width or height wins over the aspect column; a shot's
+    "seconds" gives its number of frames when it has no "frames" of its own."""
     v = row.get(key)
     if v not in (None, ""):
         return cast(v)
+    if key == "frames" and row.get("seconds") not in (None, ""):
+        return frames_for(row["seconds"], default)
     if key in ("width", "height") and shaped(row):
         return shaped(row)[key == "height"]
     return default

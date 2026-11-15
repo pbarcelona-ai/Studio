@@ -6,6 +6,7 @@
 
 kokoro:   every row of audio_shots.csv -> audio/kokoro/narration-NNNN.wav. Measured on an Intel Mac: about 3 s for each line.
 musicgen: one 28 s cue for every row of audio_chapters.csv -> audio/musicgen_chapters/music-NNNN.wav. Measured on an Intel Mac: about 7 minutes for each.
+musicgen_scenes: the same for audio_scenes.csv (one cue per scene of the film plan) -> audio/musicgen_scenes/music-NNNN.wav.
 Files already there are kept, so running it again carries on. The same voices and music as the GPU runs (make_audio.py holds the Kokoro worker).
 """
 import ast
@@ -52,9 +53,9 @@ def spans(rows):
     return [tuple(x) for x in out]
 
 
-def music(d):
-    rows = list(csv.DictReader(open(d / "audio_chapters.csv", newline="", encoding="utf-8")))
-    out = d / "audio" / "musicgen_chapters"
+def music(d, scenes=False):
+    rows = list(csv.DictReader(open(d / ("audio_scenes.csv" if scenes else "audio_chapters.csv"), newline="", encoding="utf-8")))
+    out = d / "audio" / ("musicgen_scenes" if scenes else "musicgen_chapters")
     out.mkdir(parents=True, exist_ok=True)
     todo = [(i, r) for i, r in enumerate(rows, 1) if not (out / f"music-{i:04d}.wav").is_file()]
     if not todo:
@@ -76,7 +77,7 @@ def music(d):
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[2] not in ("kokoro", "musicgen"):
+    if len(sys.argv) != 3 or sys.argv[2] not in ("kokoro", "musicgen", "musicgen_scenes"):
         sys.exit(__doc__)
     try:
         d = layout.find_dir(sys.argv[1])
@@ -84,7 +85,10 @@ def main():
         sys.exit(str(e))
     if d is None:
         sys.exit(f"no such book: {sys.argv[1]}")
-    (narration if sys.argv[2] == "kokoro" else music)(d)
+    if sys.argv[2] == "kokoro":
+        narration(d)
+    else:
+        music(d, scenes=sys.argv[2] == "musicgen_scenes")
 
 
 if __name__ == "__main__":

@@ -50,14 +50,18 @@ pipes = {"a": KPipeline(lang_code="a"), "b": KPipeline(lang_code="b")}
 SR = 24000
 
 
-def speak(speaker, text, voice=None):
-    """voice (third item of a line, set for new books) wins over the table; its first letter is the language (a/b)."""
+def speak(speaker, text, voice=None, direction=None):
+    """voice (third item of a line, set for new books) wins over the table; its first letter is the language (a/b). direction (fourth item) is
+    {"speed": 0.9, "pause": 0.5} from voices.py: the words are spoken at that speed (times the table's) and the line is followed by that pause."""
     if voice:
         lang, speed = voice[0], 1.0
     else:
         lang, voice, speed = VOICES.get(speaker, ("a", "af_bella" if speaker in FEMALE else "am_michael", 1.0))
+    direction = direction if isinstance(direction, dict) else {}
+    speed = max(0.5, min(1.4, speed * float(direction.get("speed", 1.0))))
     parts = [np.asarray(a, dtype=np.float32) for _, _, a in pipes[lang](text, voice=voice, speed=speed)]
-    return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+    audio = np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+    return np.concatenate([audio, np.zeros(int(SR * max(0.0, min(2.0, float(direction.get("pause", 0.35))))), dtype=np.float32)])
 
 
 failed, tried = [], 0
@@ -69,8 +73,7 @@ for i in range(start, end + 1):
     tried += 1
     t = time.time()
     try:
-        gap = np.zeros(int(SR * 0.35), dtype=np.float32)
-        audio = np.concatenate([np.concatenate([speak(*item), gap]) for item in lines])   # item = [speaker, text, (voice)]
+        audio = np.concatenate([speak(*item) for item in lines])   # item = [speaker, text, (voice), ({"speed", "pause"})]; speak() ends each line with its pause
         sf.write(str(out), audio, SR)
         print(f"[{i}/{end}] {rows[i-1]['chapter']} ok ({len(audio)/SR:.1f}s audio, {time.time()-t:.0f}s)", flush=True)
     except Exception as e:
@@ -136,7 +139,7 @@ sh(f"{sys.executable} -m pip install -q -U transformers accelerate scipy")
 import numpy as np, scipy.io.wavfile as wavfile, torch
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
 
-SECONDS = 28 if "chapters" in str(CSV_PATH) else 15     # length of each clip (about 50 tokens per second): a chapter's cue is long enough to loop gently
+SECONDS = 28 if ("chapters" in str(CSV_PATH) or "scenes" in str(CSV_PATH)) else 15     # length of each clip (about 50 tokens per second): a chapter's or scene's cue is long enough to loop gently
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 processor = AutoProcessor.from_pretrained("facebook/musicgen-small")
 model = MusicgenForConditionalGeneration.from_pretrained("facebook/musicgen-small").to(dev)
@@ -191,6 +194,31 @@ for i in range(START, END + 1):
     except Exception as e:
         failed.append(i); print(f"[{i}/{END}] FAILED: {e}", flush=True)
 '''),
+"audioldm2": dict(title="AudioLDM 2 sound effects", prefix="sfx", csv_hint="audio_shots.csv",
+ note="Sound effects and ambience from the `sfx` column with AudioLDM 2 (diffusers AudioLDM2Pipeline, cvssp/audioldm2, 16 kHz, 8 s per row). The call follows the diffusers documentation and was run once on a CPU here (diffusers 0.30.3, 10 steps, 3 s of sound); it has not been run on a GPU. LICENCE: CC BY-NC-SA 4.0, so for non-commercial use only. It does not look at the video.",
+ body='''
+sh(f"{sys.executable} -m pip install -q -U diffusers transformers accelerate scipy")
+import numpy as np, scipy.io.wavfile as wavfile, torch
+from diffusers import AudioLDM2Pipeline
+
+SECONDS = 8
+dev = "cuda" if torch.cuda.is_available() else "cpu"
+pipe = AudioLDM2Pipeline.from_pretrained("cvssp/audioldm2", torch_dtype=torch.float16 if dev == "cuda" else torch.float32).to(dev)
+
+for i in range(START, END + 1):
+    out = OUT / f"sfx-{i:04d}.wav"
+    if out.exists():
+        continue
+    t = time.time()
+    try:
+        prompt = " ".join(rows[i - 1]["sfx"].split())[:300] or "quiet ambient room tone"
+        audio = pipe(prompt, negative_prompt="Low quality, music, speech, voice.", num_inference_steps=100, audio_length_in_s=SECONDS,
+                     num_waveforms_per_prompt=1, generator=torch.Generator(dev).manual_seed(i)).audios[0]
+        wavfile.write(str(out), 16000, audio.astype(np.float32))
+        print(f"[{i}/{END}] {rows[i-1]['chapter']} ok ({time.time()-t:.0f}s)", flush=True)
+    except Exception as e:
+        torch.cuda.empty_cache(); failed.append(i); print(f"[{i}/{END}] FAILED: {e}", flush=True)
+'''),
 "qwen3_tts": dict(title="Qwen3-TTS narration", prefix="narration", csv_hint="audio_shots.csv",
  note="Text-to-speech for the narrator and speaking characters with Qwen3-TTS 1.7B (Apache-2.0, Jan 2026), a newer and more natural voice than Kokoro (24 kHz wav). Needs a GPU. Speakers named in FEMALE get the female voice, everyone else the male voice; the language is detected from the text.",
  body='''
@@ -244,7 +272,7 @@ def script(k, m):
 
 
 def notebook(k, m, platform):
-    SUF = "SUFFIX = '_chapters' if 'chapters' in CSV_NAME else ''"
+    SUF = "SUFFIX = '_chapters' if 'chapters' in CSV_NAME else '_scenes' if 'scenes' in CSV_NAME else ''"
     if platform == "colab":
         intro = f"# Pistachio's Studio audio: {m['title']} on Colab\n\n{m['note']}\n\nPut `audio_shots.csv` / `audio_chapters.csv` in `MyDrive/PistachioStudio/`."
         setup = [code("from google.colab import drive\ndrive.mount('/content/drive')")]

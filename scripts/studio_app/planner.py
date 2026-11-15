@@ -8,7 +8,7 @@ from .common import PlanError
 from .config import LEGACY, ROOT, clean_env
 from .generation import film_options, generation_steps
 from .single_prompts import prompt_plan
-from .steps import book_args, book_steps, project_slug, script_argv
+from .steps import book_args, book_steps, check_screenplay_gate, project_slug, script_argv
 
 
 def build_plan(opt, commit=False):
@@ -18,6 +18,10 @@ def build_plan(opt, commit=False):
         film_options(opt)
     slug = project_slug(opt)
     st = opt.get("steps", {})
+    check_screenplay_gate(opt, slug)
+    if st.get("keyframes") and slug not in LEGACY and not any(st.get(k) for k in ("video", "audio", "merge", "mix")):   # with more to do, the other steps go ahead
+        from .path import check_pictures_reviewed
+        check_pictures_reviewed(slug)
     steps = book_steps(opt, slug)
     if any(st.get(k) for k in ("keyframes", "video", "audio", "merge", "mix")):
         if any(s["label"].startswith(("Build CSVs", "Rebuild", "Plan movies")) for s in steps):

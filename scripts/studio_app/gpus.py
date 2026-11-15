@@ -6,7 +6,7 @@ import model_advisor
 import run_local_model
 
 from .common import PlanError
-from .config import AUDIO_KINDS, COLAB_GPU_GB, GPUS, I2V_MODELS, IMAGE_MODELS, KAGGLE_GPU_GB, KAGGLE_PRE_AMPERE, SPACE_ONLY_MODELS, UPSCALE_MODELS, VIDEO_MODELS
+from .config import ADULT_MODELS, AUDIO_KINDS, COLAB_GPU_GB, GPUS, I2V_MODELS, IMAGE_MODELS, KAGGLE_GPU_GB, KAGGLE_PRE_AMPERE, SPACE_ONLY_MODELS, UPSCALE_MODELS, VIDEO_MODELS, adult_enabled
 
 
 # Set to True once a TPU notebook started from the command line really gets a TPU. On Oct 27, 2026 two such runs were
@@ -94,6 +94,8 @@ BIG_RAM_MODELS = {"wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lora", "wan
 
 def model_blocker(name, service, gpu):
     """Why this video/image/audio model cannot run with this service and GPU, or None if it can (it may still be untested)."""
+    if name in ADULT_MODELS and not adult_enabled():
+        return "adult-content models are switched off: tick \"Show adult-content models\" in the Models tab (Advanced) to use them"
     if name in SPACE_ONLY_MODELS and service != "huggingface":
         return "far too big for this GPU: it runs on its public Hugging Face Space (Models tab, Where to run: Hugging Face). Make the keyframes on Kaggle first"
     if service == "huggingface" and (name not in I2V_MODELS or name in hf_spaces.SPACES):

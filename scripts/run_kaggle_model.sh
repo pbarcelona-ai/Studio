@@ -37,7 +37,7 @@ command -v kaggle >/dev/null || { echo "kaggle CLI not found: uv tool install ka
 
 case "$MODEL" in audio_*) BASEDIR="$PD/audio/${MODEL#audio_}" ;; image_*) BASEDIR="$PD/images/${MODEL#image_}" ;; *) BASEDIR="$PD/videos/$MODEL" ;; esac
 OUTDIR="$BASEDIR"; MODE=""
-case "$SHOTS_CSV" in *chapters*) OUTDIR="${BASEDIR}_chapters"; MODE="-chapters" ;; keyframes*) OUTDIR="${BASEDIR}_keyframes"; MODE="-keyframes" ;; esac
+case "$SHOTS_CSV" in *chapters*) OUTDIR="${BASEDIR}_chapters"; MODE="-chapters" ;; *scenes*) OUTDIR="${BASEDIR}_scenes"; MODE="-scenes" ;; keyframes*) OUTDIR="${BASEDIR}_keyframes"; MODE="-keyframes" ;; esac
 # Image-to-video models (*_i2v) start each clip from its keyframe: images/<KEYFRAME_MODEL>_keyframes/image-NNNN.png, uploaded as kf-NNNN.png.
 KFDIR=""
 case "$MODEL" in *_i2v)
@@ -65,12 +65,13 @@ case "$MODEL" in upscale_*)
   echo "== upscaling clips from $UPDIR into $OUTDIR" ;;
 esac
 KPREFIX=${KAGGLE_PREFIX:-}                                   # no prefix unless you set KAGGLE_PREFIX (for example KAGGLE_PREFIX=mine-)
-DS="${KPREFIX}${PROJECT//_/-}-prompts"                      # one Kaggle dataset per project (Kaggle wants 3+ characters in the name and 6+ in the title, so a short set name like xv gets "-prompts")
-SLUG="${KPREFIX}${PROJECT//_/-}-${MODEL//_/-}${MODE}-${START}-${END}"        # slug must equal the lower-cased, dashed title
+. "$(dirname "$0")/kaggle_names.sh"                          # kaggle_fit: names of at most 50 characters (a long book name made Kaggle refuse the push)
+DS="$(kaggle_fit "${KPREFIX}${PROJECT//_/-}" "-prompts")"                      # one Kaggle dataset per project (Kaggle wants 3+ characters in the name and 6+ in the title, so a short set name like xv gets "-prompts")
+SLUG="$(kaggle_fit "${KPREFIX}${PROJECT//_/-}" "-${MODEL//_/-}${MODE}-${START}-${END}")"        # slug must equal the lower-cased, dashed title
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK" "$GEN"' EXIT
 
 # 1. Dataset with the prompt CSVs (create once, new version afterwards)
-mkdir -p "$WORK/ds"; for f in all_shots.csv all_chapters.csv audio_shots.csv audio_chapters.csv all_images.csv keyframes.csv; do [ -f "$PD/$f" ] && cp "$PD/$f" "$WORK/ds/"; done
+mkdir -p "$WORK/ds"; for f in all_shots.csv all_chapters.csv audio_shots.csv audio_chapters.csv audio_scenes.csv all_images.csv keyframes.csv; do [ -f "$PD/$f" ] && cp "$PD/$f" "$WORK/ds/"; done
 if { [ "$SHOTS_CSV" = keyframes.csv ] || [ "$SHOTS_CSV" = all_images.csv ]; } && [ -d "$PD/keyframe_refs" ]; then   # character pictures that steer the pictures (make_keyframes_csv.py --refs; the Characters tab)
   cp "$PD"/keyframe_refs/ref-*.png "$WORK/ds/" 2>/dev/null || true
 fi

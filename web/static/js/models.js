@@ -345,6 +345,19 @@ function showUpscaleNote() {
 $("fupmodel").addEventListener("change", showUpscaleNote);
 $("gpu").addEventListener("change", fillUpscalers);
 
+async function tickCloseUps() {          // only close-ups where a character speaks are worth lip-syncing
+  const proj = $("proj").value;
+  try {
+    const r = await api(`/api/lipsync_candidates?project=${encodeURIComponent(proj)}`);
+    const want = new Set(r.rows.map(x => x.n));
+    document.querySelectorAll("#ftable tr[data-row]").forEach(tr => { const c = tr.querySelector('input.cell[data-col="video"]'); if (c && !c.disabled) c.checked = want.has(Number(tr.dataset.row)); });
+    updateFilmSummary();
+    $("filmmsg").textContent = r.rows.length ? `${r.rows.length} close-up(s) with a speaking character ticked (${r.runs.length} run(s)). Press "Lip-sync the ticked clips".` : "No close-up with a speaking character was found in this book (the narrator's lines are not lip-synced).";
+    $("filmmsg").className = r.rows.length ? "warn" : "err";
+  } catch (e) { $("filmmsg").textContent = e.message; $("filmmsg").className = "err"; }
+}
+$("bTickSpeech").addEventListener("click", tickCloseUps);
+
 function tickAll(on) {
   document.querySelectorAll("#ftable input.cell:not(:disabled), #ftable input.colall").forEach(c => { c.checked = on; });
   updateFilmSummary();
@@ -356,7 +369,7 @@ async function makeFilm() {
                  sources: { narration: $("fnarr").value, sfx: $("fsfx").value, music: $("fmusic").value },
                  rows: rows.map(r => ({ n: r.n, narration: r.narration, sfx: r.sfx, music: r.music, trim_start: r.trim_start, trim_end: r.trim_end })), sync: $("fsync").value,
                  transition: $("ftrans").value, fade: $("ffade").value, title: $("ftitle").value.trim(), end_title: $("fendtitle").value.trim(), burn_captions: $("fburn").checked,
-                 match_colour: $("fcolour").checked, music_bed: $("fbed").checked, duck: $("fduck").checked, loudnorm: $("fln").checked,
+                 match_colour: $("fcolour").checked, music_bed: $("fbed").checked && !$("fscenes").checked, music_scenes: $("fscenes").checked, grade: $("fgrade").checked, credits: $("fcredits").checked, duck: $("fduck").checked, loudnorm: $("fln").checked,
                  vol: { narration: $("fvn").value, sfx: $("fvs").value, music: $("fvm").value } };
   $("msg").textContent = ""; $("msg").className = "warn";
   try {

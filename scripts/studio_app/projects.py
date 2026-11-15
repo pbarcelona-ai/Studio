@@ -10,6 +10,8 @@ from layout import project_dir as pdir     # a name -> its folder (books/, chara
 
 from schemas import clean_global_params
 
+from .adapt import summary as adaptation_summary
+
 from .config import AUDIO_KINDS, BOOK_EXTS, IMAGE_MODELS, LEGACY, LIBRARY, MODEL_RE, VIDEO_MODELS, get_character_series
 
 
@@ -48,6 +50,7 @@ def project_info(slug):
         "slug": slug, "legacy": slug in LEGACY, "not_started": not d.exists(), "pdf_choices": pdf_choices(slug),
         "pdfs": sorted(p.name for p in (d / "source").iterdir() if p.suffix.lower() in BOOK_EXTS) if (d / "source").exists() else [],
         "chapters": len(chapters.get("chapters", [])), "split_method": chapters.get("method"),
+        "adaptation": adaptation_summary(d) if slug not in LEGACY else {"exists": False},
         "continuity": continuity_file(d).exists(), "scripts": count_files(d / "scripts", "chapter-*.json"),
         "built": (d / "all_shots.csv").exists(),
         "character_series": series,

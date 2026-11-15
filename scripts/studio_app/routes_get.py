@@ -3,6 +3,9 @@ import character_tokens
 from bookkit import SLUG_RE
 
 from .api import HttpError, Request, route
+from .adapt import adaptation_data, cast_lock_data, grading_data, screenplay_data
+from .chapters import chapter_list, chapter_text
+from .export import credits_get, exports_data, shares_data
 from .cleanup import cleanup_scan, files_inventory
 from .common import num
 from .config import ROOT
@@ -17,13 +20,60 @@ from .media import media_inventory
 from .overview import setup_status, status
 from .planner import chapter_shots
 from .projects import load_global_params
+from .providers import providers_data
+from .path import path_data
 from .scenes import scene_data
-from .takes import storyboard
+from .takes import lipsync_candidates, storyboard
 
 
 @route("GET", "/api/scenes")
 def _scenes(r: Request):
     return scene_data(r.q("project"), r.q("chapter"))
+
+
+@route("GET", "/api/adaptation")
+def _adaptation(r: Request):
+    return adaptation_data(r.q("project"))
+
+
+@route("GET", "/api/cast_lock")
+def _cast_lock(r: Request):
+    return cast_lock_data(r.q("project"))
+
+
+@route("GET", "/api/exports")
+def _exports(r: Request):
+    return exports_data(r.q("project"))
+
+
+@route("GET", "/api/shares")
+def _shares(r: Request):
+    return shares_data(r.q("project"))
+
+
+@route("GET", "/api/credits")
+def _credits(r: Request):
+    return credits_get(r.q("project"))
+
+
+@route("GET", "/api/grading")
+def _grading(r: Request):
+    return grading_data(r.q("project"))
+
+
+@route("GET", "/api/screenplay")
+def _screenplay(r: Request):
+    return screenplay_data(r.q("project"), r.q("scene"))
+
+
+@route("GET", "/api/chapters")
+def _chapters(r: Request):
+    return chapter_list(r.q("project"))
+
+
+@route("GET", "/api/chapter_text")
+def _chapter_text(r: Request):
+    return chapter_text(r.q("project"), r.q("n"))
 
 
 @route("GET", "/api/chapter_shots")
@@ -39,6 +89,11 @@ def _files(r: Request):
 @route("GET", "/api/cleanup_scan")
 def _cleanup_scan(r: Request):
     return {"categories": cleanup_scan()}
+
+
+@route("GET", "/api/lipsync_candidates")
+def _lipsync_candidates(r: Request):
+    return lipsync_candidates(r.q("project"), r.q("medium") == "1")
 
 
 @route("GET", "/api/storyboard")
@@ -116,7 +171,36 @@ def _status(r: Request):
 def _log(r: Request):
     since = max(num({"since": r.q("since", "0")}, "since", 0, int, 0), 0)
     with JOB.lock:
-        return {"lines": JOB.lines[since:], "next": len(JOB.lines), "running": JOB.running, "current": JOB.current}
+        return {"lines": JOB.lines[since:], "next": len(JOB.lines), "running": JOB.running, "current": JOB.current, "queued": len(JOB.queue)}
+
+
+@route("GET", "/api/old_pictures")
+def _old_pictures(r: Request):
+    from .old_pictures import old_pictures
+    n = r.q("n", "")
+    return old_pictures(r.q("project"), int(n) if n.isdigit() else None)
+
+
+@route("GET", "/api/results")
+def _results(r: Request):
+    from .results import results_data
+    return results_data(r.q("project"), r.q("kind", "any"))
+
+
+@route("GET", "/api/sessions")
+def _sessions(r: Request):
+    from .resume import sessions_data
+    return sessions_data(with_kernels=r.q("kernels", "") == "1")
+
+
+@route("GET", "/api/path")
+def _path(r: Request):
+    return path_data(r.q("project"))
+
+
+@route("GET", "/api/providers")
+def _providers(r: Request):
+    return providers_data()
 
 
 @route("GET", "/api/clip_prompt")

@@ -344,58 +344,107 @@ def shot_negative(global_negatives=""):
     return ", ".join(x for x in (str(global_negatives or "").strip(" ,"), VIDEO_NEGATIVE) if x)
 
 
-def compose_prompt(visual, characters, continuity, limit=1000, global_positives="", global_negatives="", chapter=None, look="", location=""):
-    """Visual description + the continuity book's exact character tokens (for this chapter's life stage) + the location's token + style + global
-    params, kept under the model's prompt window. When it does not fit, the location goes first, then characters from the end."""
+PROMPT_TOKENS = 240      # the video models read 256 tokens (max_sequence_length); a margin is left because the estimate below is not the model's own tokenizer
+
+
+def est_tokens(text):
+    """A cautious guess of how many tokens a T5-style tokenizer makes of the text. Calibrated on the genesis_film run, where prompts of 930-970 characters
+    (about 245 by the plain word count) were cut by the model at 256 tokens: words count 1.3, punctuation 1, plus 12 % for rare words that split."""
+    return math.ceil((1.3 * len(re.findall(r"\w+", text)) + len(re.findall(r"[^\w\s]", text))) * 1.12)
+
+
+def shorten_words(text, n):
+    w = text.split()
+    return " ".join(w[:n]).rstrip(",;:") if len(w) > n else text
+
+
+def compose_prompt(visual, characters, continuity, limit=1000, global_positives="", global_negatives="", chapter=None, look="", location="", max_tokens=PROMPT_TOKENS,
+                   token_overrides=None):
+    """The shot's own description FIRST (it is the part that must never be cut), then the continuity book's exact character tokens (for this chapter's
+    life stage), the location's token, the book's visual style and the global style words, then the no-text tail; kept under `limit` characters and
+    `max_tokens` estimated tokens. When it does not fit, the tail goes first, then the style words are shortened and dropped, then the location,
+    then characters from the end, and only as the last resort the description itself is cut.
+    token_overrides {lower-case name: description} replaces a character's description (cast_lock.py: the costume locked for this shot's scene)."""
     known = {c["name"].lower(): c for c in continuity.get("characters", [])}
     tokens = []
     for n in characters:
         c = known.get(str(n).lower())
         if c:
-            tok = re.sub(rf"^{re.escape(c['name'])}\s*[:,-]\s*", "", character_token(c, chapter, look), flags=re.I)   # don't repeat the name
+            tok = re.sub(rf"^{re.escape(c['name'])}\s*[:,-]\s*", "", (token_overrides or {}).get(c["name"].lower()) or character_token(c, chapter, look), flags=re.I)   # don't repeat the name
             tokens.append(f"{c['name'].upper()}: {tok}")
     place = next((p for p in continuity.get("locations", []) if str(p.get("name", "")).lower() == str(location or "").strip().lower()), None)
-    if place and place.get("token"):
-        tokens.append(f"SETTING: {place['token']}")
+    where = [f"SETTING: {place['token']}"] if place and place.get("token") else []
     base = visual.strip().rstrip(".")
     style = (continuity.get("visual_style") or "").strip().rstrip(".")
-
+    gp = (global_positives or "").strip().rstrip(",")
     # global_negatives are not added here: words in this text would ask the model FOR them. They go in the shot's negative column (shot_negative).
-    neg_tail = NEG_TAIL
 
-    # Build the positive parts with global positives
-    def build_positive_parts(token_list):
-        parts = []
-        if global_positives:
-            parts.append(global_positives)
-        parts.append(base)
-        parts.extend(token_list)
-        if style:
-            parts.append(style)
-        return parts
+    def fits(text):
+        return len(text) <= limit and est_tokens(text) <= max_tokens
 
-    positive_parts = build_positive_parts(tokens)
+    def render(chars, place_part, styles, tail):
+        return ", ".join([base] + chars + place_part + [x for x in styles if x] + ([tail] if tail else []))
 
-    # Try combinations to fit within limit
-    for tail in (neg_tail, NEG_TAIL, ""):
-        parts = positive_parts + ([tail] if tail else [])
-        text = ", ".join(parts)
-        if len(text) <= limit:
+    for styles in ([style, gp], [shorten_words(style, 12), shorten_words(gp, 12)], [shorten_words(style, 12)], []):
+        for tail in (NEG_TAIL, ""):
+            if fits(text := render(tokens, where, styles, tail)):
+                return text
+    if fits(text := render(tokens, [], [], "")):
+        return text
+    chars = list(tokens)
+    while chars:
+        chars.pop()
+        if fits(text := render(chars, [], [], "")):
             return text
+    words_ = base.split()                                    # last resort: the description alone is too long
+    while words_ and not fits(", ".join(words_)):
+        words_.pop()
+    return ", ".join(words_) if words_ else base[:limit]
 
-    # If still too long, trim tokens from the end
-    while tokens and len(", ".join(build_positive_parts(tokens))) > limit:
-        tokens.pop()
 
-    # Final attempt with trimmed tokens
-    for tail in (neg_tail, NEG_TAIL, ""):
-        parts = build_positive_parts(tokens) + ([tail] if tail else [])
-        text = ", ".join(parts)
-        if len(text) <= limit:
-            return text
+def global_texts(pdir, look=""):
+    """(positives, negatives) for a book: its saved Global Parameters, or the style words of the film's look when none were saved."""
+    path = Path(pdir) / "global_params.json"
+    pos = neg = ""
+    if path.exists():
+        try:
+            gp = json.loads(path.read_text())
+            pos, neg = gp.get("positives", ""), gp.get("negatives", "")
+        except (OSError, ValueError, AttributeError):
+            pass
+    if look and not pos and not neg:
+        import model_advisor
+        if look in model_advisor.STYLE:
+            pos, neg = model_advisor.STYLE[look]["positives"], model_advisor.STYLE[look]["negatives"]
+    return pos, neg
 
-    # Last resort: truncate the whole thing
-    return (", ".join(build_positive_parts(tokens) + ([neg_tail] if neg_tail else [])))[:limit].rsplit(" ", 1)[0]
+
+def recompose_scripts(pdir, look="", max_tokens=PROMPT_TOKENS, scene_of=None, lock=None):
+    """Rewrite the `prompt` of every shot in scripts/chapter-NNN.json from its saved visual/characters/location, with the current continuity book and
+    global parameters and the current prompt rules. No AI call. scene_of(chapter, shot, n_shots) -> scene id and lock (cast_lock.load) apply the costume
+    locked for each shot's scene. Returns (shots changed, shots that were over the token budget before)."""
+    pdir = Path(pdir)
+    cont = read_json(continuity_file(pdir), {})
+    pos, neg = global_texts(pdir, look)
+    changed = over = 0
+    for f in sorted((pdir / "scripts").glob("chapter-*.json")):
+        d = read_json(f)
+        for s in d["shots"]:
+            if est_tokens(s.get("prompt", "")) > max_tokens:
+                over += 1
+            scene = scene_of(d["chapter"], s["n"], len(d["shots"])) if scene_of else None
+            over_tokens = {}
+            for n, e in ((lock or {}).get(scene or "", {}).get("characters") or {}).items():
+                if e.get("token"):
+                    over_tokens[n.lower()] = e["token"]
+            new = compose_prompt(s["visual"], s.get("characters", []), cont, global_positives=pos, global_negatives=neg, chapter=d["chapter"], look=look,
+                                 location=s.get("location", ""), max_tokens=max_tokens, token_overrides=over_tokens)
+            if scene:
+                s["scene_id"] = scene
+            if new != s.get("prompt"):
+                s["prompt"], changed = new, changed + 1
+        write_json(f, d)
+    return changed, over
 
 
 # ------------------------------------------------------------------ movies: ~N minutes each, always ending on a chapter end
@@ -443,16 +492,14 @@ def build_movies(pdir, minutes=10.0):
         prompts, audio = read_csv(pdir / shots_csv), read_csv(pdir / audio_csv)
         if not prompts:
             continue
-        chapters: dict = {}
-        order: list = []
+        segments: list = []          # runs of rows of one chapter, in film order (a scene moved in the plan can put a chapter's shots in two places)
         for i, row in enumerate(prompts, start=1):
             narr = audio[i - 1]["narration"] if i - 1 < len(audio) else ""
-            c = chapters.setdefault(row["chapter"], {"label": row["chapter"], "rows": [i, i], "seconds": 0.0})
-            c["rows"][1] = i
-            c["seconds"] += estimate_seconds(narr)
-            if row["chapter"] not in order:
-                order.append(row["chapter"])
-        groups = group_chapters([chapters[k] for k in order], minutes * 60)
+            if not segments or segments[-1]["label"] != row["chapter"]:
+                segments.append({"label": row["chapter"], "rows": [i, i], "seconds": 0.0})
+            segments[-1]["rows"][1] = i
+            segments[-1]["seconds"] += estimate_seconds(narr)
+        groups = group_chapters(segments, minutes * 60)
         plan[mode] = [{"id": n, "chapters": [c["label"] for c in g],
                        "first_chapter": g[0]["label"], "last_chapter": g[-1]["label"],
                        "rows": [g[0]["rows"][0], g[-1]["rows"][1]],

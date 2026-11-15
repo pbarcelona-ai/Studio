@@ -29,7 +29,35 @@ def film_options(opt):
     opt["aspect"] = opt.get("aspect") or "16:9"
     opt["scenes"] = True
     opt["music_bed"] = True
+    opt["credits"] = bool(d and (d / "credits.json").exists())             # credits filled in on the Export card roll after the end title
+    opt["grade"] = bool(d and (d / "grading.json").exists())               # colour grades set in the Film plan card
+    opt["music_scenes"] = bool(d and (d / "adaptation" / "adaptation.json").exists())          # a book with a film plan gets music that follows its scenes
     return opt
+
+
+def chunks_of(numbers):
+    """[1, 2, 3, 7] -> [(1, 3), (7, 7)]: runs of neighbouring numbers."""
+    runs: list = []
+    for n in numbers:
+        if runs and runs[-1][1] == n - 1:
+            runs[-1][1] = n
+        else:
+            runs.append([n, n])
+    return [tuple(r) for r in runs]
+
+
+def pictures_missing(folder, lo, hi):
+    """The rows lo..hi with no keyframe picture in this folder now, as runs of neighbours. A shot whose picture was re-rolled (kept as a take)
+    has none, so it is made again."""
+    runs: list = []
+    for n in range(lo, hi + 1):
+        if (Path(folder) / f"image-{n:04d}.png").is_file():
+            continue
+        if runs and runs[-1][1] == n - 1:
+            runs[-1][1] = n
+        else:
+            runs.append([n, n])
+    return [tuple(r) for r in runs]
 
 
 def rows_missing(lo, hi, *patterns):
@@ -117,24 +145,26 @@ def film_steps(opt, slug):
                 steps.append({"label": f"Movie {mv['id']} shots with people on Pika's Space: rows {s}-{e}", "env": env, "ok_codes": (0, 1),
                               "argv": ["scripts/run_hf_space.sh", FILM_SPACE, str(s), str(e)]})
     steps.append({"label": "clips still missing", "expand": "film_video"})
+    scene_music = bool(opt.get("music_scenes")) and (d / "audio_scenes.csv").exists()
     if opt.get("local_audio"):
-        steps += [local_audio_step(slug, "kokoro"), local_audio_step(slug, "musicgen")]
+        steps += [local_audio_step(slug, "kokoro"), local_audio_step(slug, "musicgen_scenes" if scene_music else "musicgen")]
     else:
-        narr, cue = d / "audio" / "kokoro" / "narration-{:04d}.wav", d / "audio" / "musicgen_chapters" / "music-{:04d}.wav"
+        narr, cue = d / "audio" / "kokoro" / "narration-{:04d}.wav", d / "audio" / ("musicgen_scenes" if scene_music else "musicgen_chapters") / "music-{:04d}.wav"
         for mv in movies:
             for s, e in rows_missing(mv["rows"][0], mv["rows"][1], narr):
                 argv, env = runner("audio_kokoro", s, e, "audio_shots.csv")
                 steps.append({"label": f"Movie {mv['id']} narration: rows {s}-{e}", "argv": argv, "env": env})
-        chapters = len(read_csv_rows(d / "audio_chapters.csv"))
+        cues_csv = "audio_scenes.csv" if scene_music else "audio_chapters.csv"
+        chapters = len(read_csv_rows(d / cues_csv))
         for s, e in rows_missing(1, chapters, cue):
-            argv, env = runner("audio_musicgen", s, e, "audio_chapters.csv")
-            steps.append({"label": f"Music cues: chapters {s}-{e}", "argv": argv, "env": env})
+            argv, env = runner("audio_musicgen", s, e, cues_csv)
+            steps.append({"label": f"Music cues: {'scenes' if scene_music else 'chapters'} {s}-{e}", "argv": argv, "env": env})
     vols = {k: num(opt.get("vol", {}), k, v, float, 0, 5) for k, v in (("narration", 1.0), ("sfx", 0.5), ("music", 0.25))}
     for mv in movies:
         lo, hi = mv["rows"]
         steps.append({"label": f"Movie {mv['id']} final film", "env": {},
                       "argv": ["uv", "run", "--with", "imageio-ffmpeg", "python", "mix_film.py", "--project", slug, "--models", f"{FILM_SPACE},{FILM_VIDEO}", "--start", str(lo), "--end", str(hi),
-                               "--sync", opt["sync"] if opt["sync"] in SYNC_MODES else "gentle", "--music-bed", "--out", f"{slug}-movie-{mv['id']:02d}.mp4",
+                               "--sync", opt["sync"] if opt["sync"] in SYNC_MODES else "gentle", "--music-scenes" if scene_music else "--music-bed", *(["--grade"] if opt.get("grade") else []), *(["--credits"] if opt.get("credits") else []), "--out", f"{slug}-movie-{mv['id']:02d}.mp4",
                                "--vol-narration", str(vols["narration"]), "--vol-sfx", str(vols["sfx"]), "--vol-music", str(vols["music"])]})
     return steps
 
@@ -200,7 +230,10 @@ def generation_steps(opt, slug):
     aspect = str(opt.get("aspect") or "")
     if aspect and aspect not in ASPECTS:
         raise PlanError("unknown film shape")
-    music_bed = bool(opt.get("music_bed")) and not chapters_mode      # in chapter mode each chapter already has one cue
+    music_scenes = bool(opt.get("music_scenes")) and not chapters_mode      # music that follows the scenes of the film plan (audio_scenes.csv)
+    if music_scenes and not (pdir(slug) / "audio_scenes.csv").exists():
+        raise PlanError("this book has no scene music list: plan the film, approve its screenplay, then run 'Build CSVs' (it writes audio_scenes.csv)")
+    music_bed = (bool(opt.get("music_bed")) or music_scenes) and not chapters_mode      # in chapter mode each chapter already has one cue
 
     plan = read_json(pdir(slug) / "movies.json", {})
     movies = plan.get("chapters" if chapters_mode else "shots", [])
@@ -239,13 +272,17 @@ def generation_steps(opt, slug):
                               + (["--look", look] if look else [])})
 
     done = set()
+    kf_dir, kf_steps = pdir(slug) / "images" / f"{kmodel}_keyframes", 0
     for mv in chosen:
         lo, hi = mv["rows"]
         lo, hi = max(lo, lo_o or lo), min(hi, hi_o or hi)
         for s, e in (chunks(lo, hi, batch) if lo <= hi else []):
             if st.get("keyframes") and ("kf", s, e) not in done:      # stills first, so the video steps after them can animate them
-                done.add(("kf", s, e)); argv, env = runner(f"image_{kmodel}", s, e, "keyframes.csv")
-                steps.append({"label": f"Movie {mv['id']} keyframes {kmodel}: rows {s}-{e}", "argv": argv, "env": env})
+                done.add(("kf", s, e))
+                for a, b in pictures_missing(kf_dir, s, e):     # only the rows with no picture yet (a re-rolled one has none): no GPU time for the rest
+                    argv, env = runner(f"image_{kmodel}", a, b, "keyframes.csv")
+                    steps.append({"label": f"Movie {mv['id']} keyframes {kmodel}: rows {a}-{b}", "argv": argv, "env": env})
+                    kf_steps += 1
             if st.get("video"):
                 for m in vmodels:
                     if (m, s, e) not in done:
@@ -255,12 +292,21 @@ def generation_steps(opt, slug):
                         steps.append({"label": f"Movie {mv['id']} video {m}: rows {s}-{e}", "argv": argv, "env": env})
             if st.get("audio"):
                 for k in akinds:
-                    if k == "musicgen" and music_bed:         # one cue per chapter instead, below
+                    if k == "musicgen" and music_bed:         # one cue per chapter (or scene) instead, below
                         continue
                     if (k, s, e) not in done:
                         done.add((k, s, e)); argv, env = runner(f"audio_{k}", s, e, acsv)
                         steps.append({"label": f"Movie {mv['id']} audio {k}: rows {s}-{e}", "argv": argv, "env": env})
-    if st.get("audio") and music_bed and "musicgen" in akinds:
+    if st.get("audio") and music_scenes and "musicgen" in akinds:
+        scene_labels = [r.get("chapter", "") for r in read_csv_rows(pdir(slug) / "audio_scenes.csv")]
+        shot_scene = [r.get("scene", "") for r in read_csv_rows(pdir(slug) / "audio_shots.csv")]
+        for mv in chosen:
+            need = sorted({scene_labels.index(x) + 1 for x in shot_scene[mv["rows"][0] - 1: mv["rows"][1]] if x in scene_labels})
+            for s, e in chunks_of(need):
+                if ("scene", s, e) not in done:
+                    done.add(("scene", s, e)); argv, env = runner("audio_musicgen", s, e, "audio_scenes.csv")
+                    steps.append({"label": f"Movie {mv['id']} music, one cue per scene: scenes {s}-{e}", "argv": argv, "env": env})
+    elif st.get("audio") and music_bed and "musicgen" in akinds:
         labels = [r.get("chapter", "") for r in read_csv_rows(pdir(slug) / "audio_chapters.csv")]
         for mv in chosen:
             if mv["first_chapter"] in labels and mv["last_chapter"] in labels:
@@ -282,7 +328,10 @@ def generation_steps(opt, slug):
                               "argv": uv + ["mix_film.py", "--project", slug, "--model", m, "--start", str(lo), "--end", str(hi),
                                             "--sync", sync, "--out", f"{name}_{m}.mp4",
                                             "--vol-narration", str(vols["narration"]), "--vol-sfx", str(vols["sfx"]),
-                                            "--vol-music", str(vols["music"])] + (["--chapters"] if chapters_mode else []) + sound_flags(opt, music_bed)})
+                                            "--vol-music", str(vols["music"])] + (["--chapters"] if chapters_mode else []) + sound_flags(opt, music_bed, music_scenes)})
+    if st.get("keyframes") and not kf_steps and not any(st.get(k) for k in ("video", "audio", "merge", "mix")):
+        raise PlanError(f"every shot of the chosen movies already has a picture from {kmodel}: nothing to make "
+                        "(say no to a picture on the storyboard and re-roll it to make it again)")
     return steps
 
 
@@ -301,9 +350,10 @@ def clean_stages(stages):
     return out[:8]
 
 
-def sound_flags(opt, music_bed):
-    """mix_film.py options for the page's sound choices. Ducking and the loudness pass are on unless the page says no."""
-    return (["--no-duck"] if opt.get("duck") is False else []) + (["--no-loudnorm"] if opt.get("loudnorm") is False else []) + (["--music-bed"] if music_bed else [])
+def sound_flags(opt, music_bed, scenes=False):
+    """mix_film.py options for the page's sound choices. Ducking and the loudness pass are on unless the page says no. scenes: music follows the scenes."""
+    return (["--no-duck"] if opt.get("duck") is False else []) + (["--no-loudnorm"] if opt.get("loudnorm") is False else []) + (
+        ["--music-scenes"] if scenes else ["--music-bed"] if music_bed else []) + (["--grade"] if opt.get("grade") else []) + (["--credits"] if opt.get("credits") else [])
 
 
 def keyframe_size(image_model, video_model, aspect=""):

@@ -44,6 +44,7 @@ AUDIO_MODELS = {
     "qwen3_tts": ("narration", "Qwen3-TTS 1.7B", "newer, more natural voices (Jan 2026)"),
     "chatterbox_turbo": ("narration", "Chatterbox-Turbo", "natural voice, understands tags like [chuckle]"),
     "mmaudio": ("sfx", "MMAudio", "experimental"),
+    "audioldm2": ("sfx", "AudioLDM 2", "sound effects and ambience; non-commercial licence; run once on a CPU, not on a GPU"),
     "musicgen": ("music", "MusicGen", "15 s background score"),
 }
 AUDIO_KINDS = list(AUDIO_MODELS)
@@ -57,6 +58,16 @@ IMAGE_GROUPS = [("Stable Diffusion", ["sdxl_turbo", "sdxl", "sd35_large", "sd35_
                 ("Qwen-Image", ["qwen_image_21", "qwen_image_21_turbo"]), ("Z-Image", ["z_image_turbo", "z_image"]), ("ERNIE-Image", ["ernie_image_turbo"]), ("MOSS-Image", ["moss_image_sft", "moss_image_base", "moss_sharpness_slider"]),
                 ("Uncensored (adult content)", ["qwen_image_21_uc", "qwen_image_21_lora", "moss_image_sft_lora", "chroma1_hd", "noobai_xl", "realvisxl_v5", "illustrious_xl"]),
                 ("TPU (Kaggle only)", ["tpu_mage_flow", "tpu_flux_jax"])]
+# The models of the "Uncensored (adult content)" groups are hidden and refused until the person switches them on (Models tab, Advanced), or starts the Studio with STUDIO_ADULT_MODELS=1.
+ADULT_GROUP = "Uncensored (adult content)"
+ADULT_MODELS = {m for title, ms in VIDEO_GROUPS + IMAGE_GROUPS if title == ADULT_GROUP for m in ms}
+ADULT_FLAG = ROOT / ".studio_adult_models"
+
+
+def adult_enabled() -> bool:
+    return os.environ.get("STUDIO_ADULT_MODELS") == "1" or ADULT_FLAG.exists()
+
+
 # Defaults baked into each generator script; shown as placeholders on the page. "locked" = fields the model ignores (greyed out).
 LIPSYNC_MODEL = "upscale_lipsync"      # goes the upscalers' road (clips in, clips back), but is not one of them
 SYNC_MODES = ("stretch", "gentle", "speed", "trim")     # mix_film.py --sync
@@ -121,7 +132,7 @@ MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{1,79}$")
 MAX_UPLOAD = 300 * 1024 * 1024
 MAX_JSON_BODY = 8 * 1024 * 1024                        # the largest JSON request the page may send
 WEB = ROOT / "web"                                       # the page: index.html and static/ (CSS, JS)
-BOOK_EXTS = (".pdf", ".txt", ".md")                   # what can be imported as a book: a PDF, or plain text (a file or pasted text)
+from book_formats import BOOK_EXTS      # noqa: E402,F401  what can be imported as a book (book_formats.py reads them); pasted text becomes a .txt
 
 # Run jobs in a clean environment: the OSS CAD Suite shell setup sets PYTHONHOME and puts its own Python first
 # on PATH, which breaks uv-managed Pythons. Drop those so `uv run` and `python3` behave normally.

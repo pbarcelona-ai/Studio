@@ -94,7 +94,7 @@ class TestComposePrompt:
 
     def test_all_parts_in_order(self):
         out = bk.compose_prompt("She walks.", ["eve", "Adam", "ghost"], self.cont, location="garden", global_positives="cinematic")
-        assert out.startswith("cinematic, She walks., ") or out.startswith("cinematic, She walks")
+        assert out.startswith("She walks, EVE: ") and out.index("cinematic") > out.index("SETTING")          # the shot first, style words after the people and place
         assert "EVE: a woman in red" in out and "ADAM: a tall man" in out and "SETTING: a lush garden" in out and "oil painting" in out
         assert out.count("EVE:") == 1 and "Eve: Eve" not in out and "ghost" not in out.lower()
 
