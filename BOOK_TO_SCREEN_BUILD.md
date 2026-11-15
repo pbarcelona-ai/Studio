@@ -1009,7 +1009,7 @@ saying what's left.
         providers, crew role files, project rules, recipes, gates,
         the studio_index.db index + reindex, rev checks (Section 8.0).
         README.
-[ ] MW  Windows support (rule 11): port the shell scripts the Studio
+[x] MW (2026-11-15, 11ec094; Windows CI result not yet checked) Windows support (rule 11): port the shell scripts the Studio
         calls (run_kaggle_model.sh, run_colab_model.sh, run_hf_space.sh,
         fetch_kaggle_run.sh, kaggle_names.sh) to Python; run_studio.bat and
         install.ps1; .venv\Scripts on the tool path; CI on windows-latest
