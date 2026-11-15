@@ -14,7 +14,7 @@ import shares
 from bookkit import SLUG_RE, slugify
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
-from . import crew_routes, routes_get, routes_post, setup_install  # noqa: F401  (importing them registers the routes)
+from . import crew_routes, routes_get, routes_post, setup_install, sources_routes  # noqa: F401  (importing them registers the routes)
 from .api import ROUTES, Request, dispatch
 from .config import BOOK_EXTS, LIBRARY, MAX_JSON_BODY, MAX_UPLOAD, WEB
 from .gallery import make_depth, make_thumb
@@ -267,6 +267,8 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if url.path == "/api/upload":
             return self._upload(url)
+        if url.path == "/api/source_upload":
+            return self._source_upload(url)
         if url.path not in ROUTES["POST"]:
             return self._json(404, {"error": "not found"})
         size = self._content_length()
@@ -290,9 +292,12 @@ class Handler(BaseHTTPRequestHandler):
         if ext == ".pdf":
             with open(path, "rb") as f:
                 return f.read(5) == b"%PDF-", "a complete PDF file"
-        if ext in (".epub", ".docx"):
+        if ext == ".rtf":
+            with open(path, "rb") as f:
+                return f.read(64).lstrip().startswith(b"{\\rtf"), "an RTF file"
+        if ext in (".epub", ".docx", ".odt"):
             import zipfile
-            want = "META-INF/container.xml" if ext == ".epub" else "word/document.xml"
+            want = {".epub": "META-INF/container.xml", ".docx": "word/document.xml", ".odt": "content.xml"}[ext]
             try:
                 with zipfile.ZipFile(path) as z:
                     return want in z.namelist(), f"a valid {ext[1:].upper()} file"
@@ -306,11 +311,51 @@ class Handler(BaseHTTPRequestHandler):
             ok = False
         return ok, "readable text of at least a few words"
 
+    def _source_upload(self, url):
+        """A story source file (document, screenplay, picture, video / audio) streamed into the book's sources (sources.py, M2)."""
+        import tempfile
+
+        import sources
+        q = parse_qs(url.query)
+        one = lambda k, d="": q.get(k, [d])[0]                     # noqa: E731
+        fname = re.sub(r"[^A-Za-z0-9._ -]", "_", Path(one("filename", "source")).name).strip()[:120]
+        if not fname.lower().endswith(sources.ACCEPTED) or len(fname) < 3:
+            return self._json(400, {"error": "that kind of file cannot be used as a source"})
+        try:
+            book = pdir(one("project"), "book")
+        except ValueError as e:
+            return self._json(400, {"error": str(e)})
+        if one("rights") != "1":
+            return self._json(400, {"error": "Tick the box to confirm you have the right to use this source."})
+        limit = sources.MAX_VIDEO if fname.lower().endswith(sources.MEDIA_EXTS) else sources.MAX_DOC
+        size = self._content_length() or 0
+        if size <= 0 or size > limit:
+            return self._json(400, {"error": f"the file must be 1 byte to {limit // 2**20} MB"})
+        book.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="studio-src-", dir=book) as t:
+            tmp = Path(t) / "upload.part"
+            left = size
+            with open(tmp, "wb") as f:
+                while left:
+                    chunk = self.rfile.read(min(1 << 20, left))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    left -= len(chunk)
+            if left:
+                return self._json(400, {"error": "the upload stopped before the end; try again"})
+            from .sources_routes import upload
+            try:
+                entry = upload(book, tmp, fname, True, one("comic") == "1", one("title")[:120], one("note")[:500])
+            except sources.SourceError as e:
+                return self._json(400, {"error": str(e)})
+        return self._json(200, {"added": entry, **sources.summary(book)})
+
     def _upload(self, url):
         q = parse_qs(url.query)
         fname = re.sub(r"[^A-Za-z0-9._ -]", "_", Path(q.get("filename", ["book.pdf"])[0]).name).strip()
         if not fname.lower().endswith(BOOK_EXTS) or len(fname) < 5:
-            return self._json(400, {"error": "only .pdf, .epub, .docx, .html, .txt or .md files"})
+            return self._json(400, {"error": "only .pdf, .epub, .docx, .odt, .rtf, .html, .txt or .md files"})
         if not SLUG_RE.match(slugify(Path(fname).stem)):
             return self._json(400, {"error": "that file name has no letters or digits to name the book from"})
         size = self._content_length() or 0

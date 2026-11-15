@@ -179,7 +179,7 @@
       <div id="chips"></div>
       <div class="upload-block">
         <label class="f">Add a book file (.pdf, .epub, .docx, .html, .txt, .md): drag it onto the box below (or click the box). It is uploaded to the <code>books</code> folder when you press Import. You can also drop files into that folder yourself and reload this page.</label>
-        <input type="file" id="file" accept="application/pdf,.pdf,.epub,application/epub+zip,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.html,.htm,text/html,text/plain,.txt,.md,text/markdown">
+        <input type="file" id="file" accept="application/pdf,.pdf,.epub,.odt,.rtf,application/epub+zip,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.html,.htm,text/html,text/plain,.txt,.md,text/markdown">
       </div>
       <div class="text-block">
         <label class="f" for="impTitle">Or paste text (a story, a scene, a few paragraphs: only the part you paste is used)</label>
@@ -194,6 +194,14 @@
         <div style="margin:0 0 6px 26px"><select id="pdf"></select></div>
                 </section>
             </div>
+        </div>
+
+        <div class="card bookonly" id="stepSources">
+            <div class="card__header">
+                <h2 class="card__title">Add your sources</h2>
+                <p class="card__subtitle">Anything the crew can turn into a story: a book or document, an idea, pictures, a comic page, a web page, a screenplay, video or audio. Mix as many as you like.</p>
+            </div>
+            <div class="card__body" id="sourcesBody"><p class="warn">Pick or name a book first.</p></div>
         </div>
 
         <div class="card bookonly" id="stepChapters">
@@ -225,13 +233,14 @@
 
         <div class="card bookonly" id="crewCard">
             <div class="card__header">
-                <h2 class="card__title">Format and project rules</h2>
-                <p class="card__subtitle">What kind of film this is, and the rules your film crew always follows</p>
+                <h2 class="card__title">Format, products and styles</h2>
+                <p class="card__subtitle">What kind of film this is, what to make, in which looks, and the rules your film crew always follows</p>
             </div>
             <div class="card__body">
                 <label class="f" for="crewRecipe">Format</label>
                 <select id="crewRecipe" aria-describedby="crewRecipeAbout"><option value="">Normal film path</option></select>
                 <p class="warn" id="crewRecipeAbout" aria-live="polite"></p>
+                <div id="prodBody" aria-live="polite"></div>
                 <label class="f" for="crewRules">Project rules (one per line, e.g. "Eve never wears red", "no gore")</label>
                 <textarea id="crewRules" rows="5" maxlength="20000" spellcheck="true" autocomplete="off" style="width:100%"></textarea>
                 <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
@@ -1255,6 +1264,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/chapters.js" defer></script>
 <script src="/static/js/adapt.js" defer></script>
 <script src="/static/js/crew.js" defer></script>
+<script src="/static/js/sources.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>

@@ -1,4 +1,4 @@
-"""Reading a book file into text: PDF (scans are read with OCR), EPUB, DOCX, HTML and plain text.
+"""Reading a book file into text: PDF (scans are read with OCR), EPUB, DOCX, ODT, RTF, HTML and plain text.
 
   book = read_book(path)        # -> BookText
 
@@ -24,7 +24,7 @@ from xml.etree import ElementTree as ET  # noqa: S405  (untrusted XML is refused
 
 TEXT_EXTS = (".txt", ".md")
 HTML_EXTS = (".html", ".htm", ".xhtml")
-BOOK_EXTS = (".pdf", ".epub", ".docx", ".html", ".htm", ".txt", ".md")       # what the Studio accepts (.xhtml only appears inside EPUBs)
+BOOK_EXTS = (".pdf", ".epub", ".docx", ".odt", ".rtf", ".html", ".htm", ".txt", ".md")       # what the Studio accepts (.xhtml only appears inside EPUBs)
 MAX_MEMBER = 80 * 2**20          # the largest single file read out of an EPUB / DOCX (guards against zip bombs)
 MAX_MEMBERS = 20000
 MIN_PAGE_CHARS = 25              # a PDF page with less text than this is treated as an image-only page
@@ -254,6 +254,100 @@ def read_docx(path: Path) -> BookText:
     if found:
         book.front, book.sections, book.back = trim_matter(found[1], found[0])
     return book
+
+
+# ---------------------------------------------------------------------------------------------- ODT (OpenDocument text)
+_TEXT_NS = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
+
+
+def read_odt(path: Path) -> BookText:
+    z = _open_zip(path, "OpenDocument (.odt)")
+    root = _safe_xml(_member(z, "content.xml"))
+    blocks: list[Block] = []
+    for el in root.iter():
+        if el.tag not in (_TEXT_NS + "p", _TEXT_NS + "h"):
+            continue
+        text = re.sub(r"\s+", " ", "".join(el.itertext())).strip()
+        if not text:
+            continue
+        level = int(el.get(_TEXT_NS + "outline-level") or 1) if el.tag == _TEXT_NS + "h" else 0
+        blocks.append(Block(min(max(level, 0), 6), text))
+    if words(blocks_text(blocks)) < 5:
+        raise BookReadError("That OpenDocument file has no readable text.")
+    book = BookText("odt", [blocks_text(blocks)])
+    found = sections_from_blocks(blocks)
+    if found:
+        book.front, book.sections, book.back = trim_matter(found[1], found[0])
+    return book
+
+
+# ---------------------------------------------------------------------------------------------- RTF
+_RTF_SKIP = {"fonttbl", "colortbl", "stylesheet", "info", "pict", "object", "header", "footer", "headerl", "headerr", "footerl", "footerr",
+             "listtable", "listoverridetable", "rsidtbl", "generator", "xmlnstbl", "themedata", "colorschememapping", "datastore", "latentstyles"}
+
+_RTF_CTRL = re.compile(r"\\(?:([a-zA-Z]+)(-?\d+)? ?|'([0-9a-fA-F]{2})|(.))", re.S)
+
+
+def rtf_to_text(data: str) -> str:
+    """Plain text from RTF: paragraphs kept, formatting, font tables, pictures and other hidden groups dropped; hex (backslash-quote-hh) and unicode (backslash-uN) characters decoded."""
+    out: list[str] = []
+    stack: list[bool] = []
+    skip = False
+    i, n = 0, len(data)
+    uc_skip = 0
+    while i < n:
+        c = data[i]
+        if c == "{":
+            stack.append(skip)
+            i += 1
+        elif c == "}":
+            skip = stack.pop() if stack else False
+            i += 1
+        elif c == "\\":
+            m = _RTF_CTRL.match(data, i)
+            if not m:
+                break
+            i = m.end()
+            word, arg, hexch, sym = m.groups()
+            if hexch:
+                if not skip:
+                    out.append(bytes([int(hexch, 16)]).decode("cp1252", errors="replace"))
+            elif sym:
+                if sym == "*":
+                    skip = True
+                elif not skip and sym in "\\{}":
+                    out.append(sym)
+                elif not skip and sym == "~":
+                    out.append(" ")
+            elif word in _RTF_SKIP:
+                skip = True
+            elif not skip:
+                if word in ("par", "line", "sect", "page"):
+                    out.append("\n\n" if word != "line" else "\n")
+                elif word == "tab":
+                    out.append("\t")
+                elif word == "u" and arg:
+                    code = int(arg)
+                    out.append(chr(code + 65536 if code < 0 else code))
+                    uc_skip = 1                                # the plain-text stand-in that follows (usually "?")
+        else:
+            if uc_skip:
+                uc_skip -= 1
+            elif not skip and c not in "\r\n":
+                out.append(c)
+            i += 1
+    text = "".join(out)
+    return re.sub(r"\n{3,}", "\n\n", re.sub(r"[ \t]+\n", "\n", text)).strip()
+
+
+def read_rtf(path: Path) -> BookText:
+    raw = path.read_bytes()
+    if not raw.lstrip().startswith(b"{\\rtf"):
+        raise BookReadError("That is not an RTF file.")
+    text = rtf_to_text(raw.decode("latin-1"))
+    if words(text) < 5:
+        raise BookReadError("That RTF file has no readable text.")
+    return BookText("rtf", [text])
 
 
 # ---------------------------------------------------------------------------------------------- EPUB
@@ -487,4 +581,8 @@ def read_book(path: Path | str, ocr: bool = True, engine: OcrFn | None = None, p
         return read_docx(path)
     if ext in HTML_EXTS:
         return read_html(path)
-    raise BookReadError(f"Cannot read {ext or 'this'} files; use PDF, EPUB, DOCX, HTML or plain text.")
+    if ext == ".odt":
+        return read_odt(path)
+    if ext == ".rtf":
+        return read_rtf(path)
+    raise BookReadError(f"Cannot read {ext or 'this'} files; use PDF, EPUB, DOCX, ODT, RTF, HTML or plain text.")

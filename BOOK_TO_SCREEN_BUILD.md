@@ -56,6 +56,10 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D13 | 2026-11-15 | MI: the macOS app carries the Studio and copies it on first open (and after an update) to `~/Library/Application Support/Pistachios Studio`, where projects live, so dragging a newer app over the old one keeps them; no Dock icon (LSUIElement). Separate arm64 and x86_64 .dmg files. Windows installs per user to `%LOCALAPPDATA%\Programs\Pistachios Studio` | assumed — not answered |
 | D14 | 2026-11-15 | MI: no signing identity exists yet, so builds are unsigned (Windows) / ad-hoc signed (macOS); CI signs and notarises automatically once `WIN_SIGN_CMD` or `MAC_SIGN_ID` + `MAC_NOTARY_PROFILE` secrets are added. The README says how to open an unsigned app | assumed — not answered |
 | D15 | 2026-11-15 | MI: the only optional part today is the 3D depth view; "local GPU models" get a tick box (`install_studio.OPTIONAL`) when a milestone adds them | assumed — not answered |
+| D16 | 2026-11-15 | M2: sources live in `projects/books/<book>/sources/` (index.json + one folder per source). "Use these sources as the chapters" turns them into the normal chapters (a document's own sections, one chapter per idea / web page / picture set, one per screenplay scene), so every later step works for any source today; M3's Read it in reads the merged, source-labelled text | assumed — not answered |
+| D17 | 2026-11-15 | M2: the format recipe stays on the M1 Format card (crew.js); the new products / length / aspect / rating / faithfulness / quality / styles controls sit in the same card. Choosing a new recipe resets those settings to the recipe's, keeping the chosen styles | assumed — not answered |
+| D18 | 2026-11-15 | M2: cost model for the estimate: 4 s per shot (2.5 s microdrama / music video, 2 s trailer); free GPUs cost $0 and are shown as GPU hours and weeks of the 30-hour Kaggle weekly quota; paid prices (only shown when a paid service is used) are placeholders in `production.PAID_DOLLARS` until M15's cost ledger | assumed — not answered |
+| D19 | 2026-11-15 | M2: picture and comic descriptions run when the person presses Describe (one AI call per picture, Story Analyst role); website pictures (up to 8) are downloaded through the same SSRF-safe fetch | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1020,7 +1024,7 @@ saying what's left.
         fetch_kaggle_run.sh, kaggle_names.sh) to Python; run_studio.bat and
         install.ps1; .venv\Scripts on the tool path; CI on windows-latest
         and macos-latest.
-[ ] MI  Installers for Windows and macOS (rule 12): a Windows installer
+[x] MI (2026-11-15, 34bf0eb; CI builds, installs and uninstalls both) Installers for Windows and macOS (rule 12): a Windows installer
         (.exe, Start-menu and desktop shortcuts, uninstaller) and a macOS
         app (.dmg with Pistachio's Studio.app). Each shows a progress bar
         for the whole install and for the current task, with the task
@@ -1030,7 +1034,7 @@ saying what's left.
         half-installed, a clear message and a "copy the log" button when
         a step fails, and a resume after a failed or cancelled install.
         Updates install over the top and keep every project.
-[ ] M2  Sources: every story SourceAdapter + the format/products/styles
+[x] M2 (2026-11-15) Sources: every story SourceAdapter + the format/products/styles
         step.
 [ ] M3  READ IT IN: the full Section 5 pipeline with critique loop;
         screenplay exports (Product A complete for any source).

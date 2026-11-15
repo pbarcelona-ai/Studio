@@ -13,9 +13,9 @@
   };
   // id, title, what it is for, cards shown, cards under "More settings", buttons (RUN keys, or a special one)
   const STEPS = [
-    ["read", "Read the book", "Pick your book at the top of the page (or add a new one here), then let the Studio read it.", ["Read book"], ["Tools Status", "Imported Book Tools", "Make my film"], ["read"]],
+    ["read", "Read the book", "Pick your book at the top of the page (or add a new one here), or add any other sources: an idea, pictures, a web page, a screenplay. Then let the Studio read it.", ["Read book", "Add your sources"], ["Tools Status", "Imported Book Tools", "Make my film"], ["read"]],
     ["chapters", "Check the chapters", "Look at the chapters. You can join, split or rename them, and drop pages that are not part of the story.", ["Chapters"], [], []],
-    ["plan", "Plan the film", "Say how many minutes long your film is. The Studio picks the scenes that tell the story in that time.", ["Format and project rules", "Film plan and screenplay"], ["AI Prompt Writer"], ["adapt"]],
+    ["plan", "Plan the film", "Say how many minutes long your film is. The Studio picks the scenes that tell the story in that time.", ["Format, products and styles", "Film plan and screenplay"], ["AI Prompt Writer"], ["adapt"]],
     ["screenplay", "Write and approve the screenplay", "The screenplay is what happens and what people say in every scene. Read it, change anything, then approve it.", ["Film plan and screenplay"], [], ["screenplay", "approve"]],
     ["continuity", "Make the story notes", "The Studio writes down who is in the story, what they look like and how they sound, so they look the same in every picture.", [], ["Continuity book"], ["continuity"]],
     ["cast", "Pick the cast", "You can give each character a picture, so their face stays the same. You can skip this.", ["Cast (optional)"], [], []],

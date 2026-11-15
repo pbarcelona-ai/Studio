@@ -269,4 +269,4 @@ class TestEdgeCases:
 
     def test_read_book_rejects_unknown_types(self, tmp_path):
         with pytest.raises(bf.BookReadError, match="Cannot read"):
-            bf.read_book(tmp_path / "x.rtf")
+            bf.read_book(tmp_path / "x.xyz")
