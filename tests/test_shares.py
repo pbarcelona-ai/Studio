@@ -1,4 +1,5 @@
 """Private preview links: the store, the watch routes (no Studio token, only the linked film), expiry, revocation, hosts and Range."""
+import sys
 import http.client
 import json
 
@@ -54,7 +55,7 @@ class TestStore:
 
     def test_file_is_private_and_a_missing_film_ends_the_link(self, films):
         link = sh.create(films, "cut.mp4")
-        assert oct(sh.shares_file(films).stat().st_mode & 0o777) == "0o600"
+        assert sys.platform == "win32" or oct(sh.shares_file(films).stat().st_mode & 0o777) == "0o600"     # Windows has no permission bits
         (films / "films" / "cut.mp4").unlink()
         assert sh.lookup(films, link["token"]) is None
         sh.shares_file(films).write_text("[1]")

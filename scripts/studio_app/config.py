@@ -146,5 +146,5 @@ DROP_ENV = ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "PYTHONSTARTUP", "VI
 
 def clean_env() -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if k not in DROP_ENV and "OSS_CAD" not in k}
-    env.update({"PATH": ENV_PATH, "PYTHONUNBUFFERED": "1"})
+    env.update({"PATH": ENV_PATH, "PYTHONUNBUFFERED": "1", "PYTHONUTF8": "1"})     # job steps read and write UTF-8 text on every system
     return env

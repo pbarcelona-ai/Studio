@@ -180,7 +180,7 @@ def open_folder(series, name):
     folder = character_tokens.ensure_reference_dir(series, name)
     if not procs.open_folder(folder):
         raise PlanError(f"cannot open folders here; it is at {folder}")
-    return str(folder.relative_to(ROOT))
+    return folder.relative_to(ROOT).as_posix()
 
 
 FACE_CHECK_FILE = "face_check.json"

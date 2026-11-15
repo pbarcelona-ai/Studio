@@ -313,7 +313,7 @@ CARD_SECONDS = 3.5
 def filter_path(p):
     """A file path quoted for an ffmpeg filter argument. The temporary files are passed by bare name (ffmpeg runs inside the temporary
     folder), so only the font path needs this; a ' in it is closed, escaped and reopened."""
-    return "'" + str(p).replace("\\", "/").replace("'", "'\\''") + "'"
+    return "'" + str(p).replace("\\", "/").replace(":", "\\:").replace("'", "'\\''") + "'"     # C:/Windows/Fonts: the : would end the option
 
 
 def video_shape(path):

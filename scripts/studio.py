@@ -16,6 +16,12 @@ import sys
 if sys.version_info < (3, 11):  # noqa: UP036  (a runtime guard for people who start it with an old python3)
     sys.exit("Pistachio's Studio needs Python 3.11 or newer (run ./install.sh, which makes .venv with a suitable Python).")
 
+if sys.platform == "win32" and not sys.flags.utf8_mode and __name__ == "__main__":
+    # Windows reads and writes text in its own code page (cp1252) unless told otherwise; books, prompts and the page are UTF-8.
+    # Start again in Python's UTF-8 mode, so every file and every job step reads text the same way as on a Mac.
+    import subprocess
+    sys.exit(subprocess.call([sys.executable, "-X", "utf8", *sys.argv]))
+
 from studio_app.common import PlanError  # noqa: E402, F401
 from studio_app.config import AUDIO_MODELS, I2V_MODELS, IMAGE_MODELS, MODEL_DEFAULTS, VIDEO_MODELS, clean_env  # noqa: F401
 from studio_app.server import main

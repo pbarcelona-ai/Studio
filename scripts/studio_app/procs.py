@@ -94,7 +94,7 @@ def processes() -> list[tuple[int, int, str, str]]:
     if sys.platform == "win32":
         return _win_processes()
     try:
-        out = subprocess.run(["ps", "-x", "-o", "pid=,pgid=,etime=,command="], capture_output=True, text=True, timeout=10).stdout
+        out = subprocess.run(["ps", "-ww", "-x", "-o", "pid=,pgid=,etime=,command="], capture_output=True, text=True, timeout=10).stdout
     except (OSError, subprocess.SubprocessError):
         return []
     rows = []

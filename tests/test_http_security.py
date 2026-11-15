@@ -1,4 +1,5 @@
 """Authentication, host/origin checks, cookies, size limits and file serving."""
+import sys
 from conftest import TOKEN
 from studio_app import handler
 from studio_app.session import SESSION
@@ -127,7 +128,7 @@ def test_session_file_is_private_and_reloads(tmp_path, monkeypatch):
     monkeypatch.setattr(S, "SESSION_FILE", tmp_path / "s.json")
     s = S.Session()
     s.save(1234)
-    assert oct((tmp_path / "s.json").stat().st_mode & 0o777) == "0o600"
+    assert sys.platform == "win32" or oct((tmp_path / "s.json").stat().st_mode & 0o777) == "0o600"     # Windows has no permission bits
     again = S.Session()
     assert (again.token, again.port) == (s.token, 1234)
     s.reset()

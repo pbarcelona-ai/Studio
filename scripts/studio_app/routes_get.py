@@ -247,7 +247,7 @@ def _ch_sync(r: Request):
 def _ch_references(r: Request):
     series, name = r.q("series"), r.q("name")
     return {"pictures": character_tokens.reference_pictures(series, name),
-            "folder": str(character_tokens.get_reference_dir(series, name).relative_to(ROOT))}
+            "folder": character_tokens.get_reference_dir(series, name).relative_to(ROOT).as_posix()}
 
 
 def _ch_archetypes(r: Request):              # the Characters tab wants {archetype: {...}} (keys fill the dropdown)

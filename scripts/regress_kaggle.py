@@ -162,7 +162,7 @@ def run_one(kind, model, lane, user, gpu, timeout_min):
         m = re.findall(r"(?:FAILED|Error|ERROR|OutOfMemory|out of memory)[^\n]{0,200}", tail)
         res = "FAIL"
         note = ("kernel did not complete; " if not completed else "") + (why if not ok else "") + ((" | " + m[-1]) if m else "")
-    return {"kind": kind, "result": res, "minutes": round((time.time() - t0) / 60), "note": note, "log": str(log.relative_to(ROOT))}
+    return {"kind": kind, "result": res, "minutes": round((time.time() - t0) / 60), "note": note, "log": log.relative_to(ROOT).as_posix()}
 
 
 def main():

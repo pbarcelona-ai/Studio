@@ -37,9 +37,15 @@ def test_rebuild_and_search(book, tmp_path):
 def test_rebuild_is_repeatable_and_ids_are_stable(book):
     png(book / "images" / "flux_keyframes" / "image-0003.png")
     studio_index.rebuild()
-    first = sqlite3.connect(studio_index.db_path()).execute("select id from asset").fetchall()
+    def ids():
+        db = sqlite3.connect(studio_index.db_path())
+        try:
+            return db.execute("select id from asset").fetchall()
+        finally:
+            db.close()                                     # Windows cannot replace a file that is still open
+    first = ids()
     studio_index.rebuild()
-    assert sqlite3.connect(studio_index.db_path()).execute("select id from asset").fetchall() == first
+    assert ids() == first
 
 
 def test_no_index_means_no_hits(fake_root):

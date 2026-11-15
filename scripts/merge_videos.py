@@ -41,7 +41,7 @@ out = (PD / "films" / (args.output or f"{clip_dir.name}_merged.mp4")).resolve()
 
 with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
     for c in clips:
-        f.write(f"file '{c.resolve()}'\n")
+        f.write(f"file '{c.resolve().as_posix()}'\n")                 # forward slashes: ffmpeg reads them on Windows too
     listfile = f.name
 
 # No audio track (the open models make silent clips); scale to the first clip's size is not needed

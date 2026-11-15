@@ -89,7 +89,7 @@ class TestSessionFile:
         monkeypatch.setattr(session, "SESSION_FILE", tmp_path / "s.json")
         s = session.Session()
         s.save(9000)
-        assert oct((tmp_path / "s.json").stat().st_mode)[-3:] == "600" and session.Session().port == 9000
+        assert (sys.platform == "win32" or oct((tmp_path / "s.json").stat().st_mode)[-3:] == "600") and session.Session().port == 9000
         token = s.token
         s.reset()
         assert s.token != token and s.port is None

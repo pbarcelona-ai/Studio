@@ -39,8 +39,8 @@ def cleanup_scan():
     found: dict[str, list] = {c[0]: [] for c in CLEAN_CATEGORIES}
 
     def add(cat, path):
-        if path.exists() and not any(i["path"] == str(path.relative_to(ROOT)) for i in found[cat]):
-            found[cat].append({"path": str(path.relative_to(ROOT)), "bytes": _size(path), "dir": path.is_dir()})
+        if path.exists() and not any(i["path"] == path.relative_to(ROOT).as_posix() for i in found[cat]):
+            found[cat].append({"path": path.relative_to(ROOT).as_posix(), "bytes": _size(path), "dir": path.is_dir()})
 
     for dirpath, dirnames, _ in os.walk(ROOT):
         dirnames[:] = [d for d in dirnames if d not in (".git", "node_modules", "source")]       # never walk into a book's source folder

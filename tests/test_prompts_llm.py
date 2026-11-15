@@ -1,6 +1,7 @@
 """Size checks and row helpers in single_prompts, plus llm.local_llm_status / clip_prompt with the network and hardware faked."""
 import json
 import platform
+import sys
 
 import pytest
 
@@ -120,6 +121,7 @@ class TestLocalLlmStatus:
         assert llm.local_llm_status() is first
         assert not llm.local_llm_status(force=True)["ready"]
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows reads the memory size another way (GlobalMemoryStatusEx)")
     def test_small_memory_is_reported(self, monkeypatch):
         monkeypatch.delenv("STUDIO_LOCAL_LLM")
         monkeypatch.setattr(platform, "system", lambda: "Linux")

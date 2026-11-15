@@ -153,7 +153,7 @@ def main(argv=None):
         status = "no_face" if not faces else ("ok" if all(v >= THRESHOLD for v in scores.values()) else "different")
         rows[str(n)] = {"status": status, "faces": len(faces), "scores": scores}
         print(f"row {n}: {status} {scores}", flush=True)
-    bookkit.write_json(d / "face_check.json", {"threshold": THRESHOLD, "source": str(src.relative_to(d)), "rows": rows})
+    bookkit.write_json(d / "face_check.json", {"threshold": THRESHOLD, "source": src.relative_to(d).as_posix(), "rows": rows})
     tally = {s: sum(1 for r in rows.values() if r["status"] == s) for s in ("ok", "different", "no_face", "skipped")}
     print(f"checked {len(rows)} shot(s) in {src.name}: {tally}")
     flagged = [n for n, r in rows.items() if r["status"] == "different"]

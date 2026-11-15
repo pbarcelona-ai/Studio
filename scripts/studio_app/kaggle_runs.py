@@ -105,8 +105,8 @@ def kernel_output(ref):
     dest.mkdir(parents=True, exist_ok=True)
     r = subprocess.run([kaggle, "kernels", "output", ref, "-p", str(dest), "-o"], env=clean_env(),
                        capture_output=True, text=True, timeout=600)
-    files = sorted(str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file())
-    return {"ref": ref, "dir": str(dest.relative_to(ROOT)), "files": files, "ok": r.returncode == 0,
+    files = sorted(p.relative_to(dest).as_posix() for p in dest.rglob("*") if p.is_file())
+    return {"ref": ref, "dir": dest.relative_to(ROOT).as_posix(), "files": files, "ok": r.returncode == 0,
             "message": (r.stderr or r.stdout).strip()[-300:]}
 
 

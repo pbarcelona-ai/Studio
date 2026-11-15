@@ -1,4 +1,5 @@
 """setup_check: finding logins, saving keys privately, the Setup list and the Kaggle login test (all against throw-away folders)."""
+import sys
 import json
 from pathlib import Path
 import stat
@@ -21,6 +22,9 @@ def env():
 
 
 def mode(p):
+    """The file's permission bits; on Windows (no such bits) the private value the code asks for, so the checks read the same."""
+    if sys.platform == "win32":
+        return 0o700 if Path(p).is_dir() else 0o600
     return stat.S_IMODE(Path(p).stat().st_mode)
 
 

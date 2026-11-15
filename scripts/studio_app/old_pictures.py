@@ -174,6 +174,9 @@ def swap_pictures(b: dict) -> dict:
         os.replace(fb, fa)
     if tmp.is_file():
         os.replace(tmp, fb)
+    for f in (fa, fb):                                     # a rename keeps the old time; the page's picture link uses size + time, so it must change
+        if f.is_file():                                    # (Windows: two pictures written in the same clock tick had the same time)
+            os.utime(f)
     keys = [review.shot_key(rows[n - 1]) for n in (x, y)]
     verdicts = review.load(d)
     if any(k in verdicts for k in keys):
