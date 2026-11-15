@@ -1,0 +1,56 @@
+feature,area,priority,original,clone,notes
+Start a project from one prompt box,start,must,yes,no,Studio: starts from a book file; v3 §4 adds idea/picture/URL/media
+Start from a script / image / character sheet / music track,start,must,yes,no,Studio: book only; v3 §4.1-4.2
+Agent plans the job and orders tasks by dependency,agent,must,yes,no,Studio: fixed step path; v3 §3.5 Producer
+Clarifying question and confirmation cards before acting,agent,must,yes,no,Studio: gates exist; v3 §3.5 plan → accept
+Live progress line showing the current task,agent,must,yes,no,Studio: job progress exists; v3 §3.5 names the crew member
+Stop a task / add information / continue,agent,must,yes,no,Studio: stop exists; v3 §3.5
+Revise by chat; keep the original as a version and compare,agent,must,yes,no,Studio: takes exist; v3 §3.5 + §6b
+Assets holding several versions with a liked default,assets,must,yes,no,Studio: takes per shot; v3 §6b.2 asset groups
+Groups and sequences (nested containers; sequence = story order),structure,should,yes,no,Studio: chapters/scenes/shots; map sequences to scenes/episodes
+Bind media to an element / shot / audio layer; one asset in many shots,assets,must,yes,no,v3 §6b.2 used_by_shot_ids
+Purpose label on media (keyframe / final / reference),assets,should,yes,no,v3 §6b.2
+Quick Generation panel (type / references / prompt / model / settings),generation,must,yes,no,Studio: Single Prompts tab covers most of it; keep it and reach it from a shot
+Video references: first frame / last frame / image / video / audio,generation,should,yes,no,Studio: first frame (i2v); add last frame and audio refs
+Cost estimate shown before submit,generation,must,yes,no,Studio: budget.py (GPU hours); v3 §10.2 dollars
+Generation settings history with compare,generation,should,yes,no,Studio: prompt edits saved; v3 §9 logs every call
+Prompt drafts reviewed before generating,generation,should,yes,no,Studio: prompt edit per shot; Autopilot stop_at
+Sample mode → confirm quote → final quality,generation,should,yes,no,v3 §10.2 draft/final tiers
+Doodle / annotation editing of an image or video,generation,could,yes,no,needs an inpainting-capable provider
+AI upscale for images and video,media tools,should,yes,no,add as a finish option
+Crop / trim / rotate / background removal / LUTs,media tools,could,yes,no,Studio: grade.py LUTs; the rest via ffmpeg/PIL
+Subtitle removal from videos,media tools,could,yes,no,
+One-click audio extraction from a video,media tools,should,yes,no,v3 §4.2 media understanding
+Analyse uploaded video / audio / documents as references,media,must,yes,no,v3 §4.2
+Add AI shots to existing live-action footage,media,should,yes,no,v3 §4.2
+Lip-sync video from an image and audio,generation,could,yes,no,Studio: lip-sync code exists; check which model
+Canvas view: free-form cards and unsorted media,views,could,yes,no,optional; keep the linear path primary (memory: simple linear path)
+List view (tree) and grid view (square / masonry),views,should,yes,no,Studio: storyboard grid exists
+Drag-box multi-select; drag several items at once,views,could,yes,no,
+Comments on a card / shot / scene / asset → agent revises,collaboration,must,yes,no,v3 §3.4 notes on anything
+Multi-turn threads from comments,collaboration,should,yes,no,v3 §3.4
+Edit timeline: video / voice-over / music tracks,edit,must,yes,no,Studio: mix_film.py renders; no interactive editor; v3 §6 Edit
+Timeline: split / trim / replace / delete / mirror / rotate / volume / mute / fade / undo,edit,must,yes,no,v3 §6 Edit
+Several timelines per Edit (alternative cuts); one Edit per episode,edit,should,yes,no,v3 §6e episodes + §6c branches
+Project documents (script / characters / delivery specification) shared by agent and user,docs,should,yes,no,Studio: screenplay + continuity files; show them as docs
+AGENTS.md project rules read on every call,docs,must,yes,no,v3 §6d project rules
+Document change comparison,docs,could,yes,no,Studio: screenplay versions; add a diff view
+Multiple conversations per project,agent,could,yes,no,
+Back to this moment (restore project to a message),history,must,yes,no,v3 §6c
+Branch from a moment into a new project,history,should,yes,no,v3 §6c
+Conflict panel when the agent and user change the same thing,history,should,yes,no,v3 §6c
+Skills: reusable format recipes (steps / criteria / templates / media),recipes,should,yes,no,v3 §6d format recipes
+Skill sharing by link / code and revoke,recipes,could,yes,no,v3 §6d export/import recipe files
+Asset Library for cross-project reuse,assets,should,yes,no,v3 §6b.2 all-projects switch
+Export final video; several edits → ZIP,deliver,must,yes,no,Studio: export_film.py
+Export a project-files ZIP following the hierarchy,deliver,should,yes,no,v3 §13 download everything
+Recent Downloads with export job status,deliver,should,yes,no,Studio: job status exists
+MCP server and CLI for external AI tools,automation,should,yes,no,v3 §11
+Voice input in chat; next-message suggestions,agent,could,yes,no,
+Export as a CapCut draft,deliver,could,yes,skip,CapCut's private format; export .fcpxml / .otio / .edl instead (v3 §13)
+Hosted partner models (Seedance / Kling / Wan / OmniHuman / MiniMax),models,skip,yes,skip,their model deals; Studio uses its own providers
+Skill Community (Featured public Skills / usage counts),community,skip,yes,skip,their network and its content
+Flova TV channels,community,skip,yes,skip,their audience
+Credits / plans / refunds / invoicing,billing,skip,yes,skip,a store; Studio has a budget preview only
+Team workspaces / seats / credit allocation,teams,skip,yes,skip,out of scope for a single-user Studio
+Branding / layout look / copy / example projects,brand,skip,yes,skip,never copied
