@@ -18,6 +18,21 @@ Fill in the `[brackets]` in Section 0 first.
   - dollar estimates including regenerations, and draft/final quality tiers
   - an MCP server
 - Wording fixes: "style card", and "Step N of M" with no numbers on the cards.
+- 2026-11-15 architecture check: Section 8 storage rules (folders as the truth plus a rebuildable SQLite index,
+  immutable asset files, rev checks, cents) and progress checkboxes on the milestones.
+
+## Progress
+
+Preparation (outside the build):
+
+- [x] v1–v3 build instructions written (2026-11-15, commit `d4ffcc0`)
+- [x] Capability review of Flova, Story.com, Creatorwood and Inkitt (Appendix A)
+- [x] Flova recon map and feature matrix: `replica/recon.md`, `replica/features.csv` (2026-11-15, commit `ca92d1b`)
+- [x] Architecture check of Section 8: `replica/architecture.md`, `replica/schema.sql` (2026-11-15). The fixes are in Section 8.0
+- [ ] Fill in Section 0 (my choices) for the Studio upgrade
+- [ ] Approve starting M1
+
+Build milestones: tick them in Section 17 inside the build prompt as each one is approved.
 
 ~~~
 =====================================================================
@@ -508,7 +523,7 @@ SECTION 6b — START OVER (keep old pictures and their prompts for reuse)
 6b.4 API
   POST /api/projects/{id}/start_over  { keep: [...] } → attempt_id
   GET  /api/projects/{id}/attempts    POST .../attempts/{a}/restore
-  GET  /api/library?project=&q=&style=&character=&purpose=&all_projects=
+  GET  /api/picture_library?project=&q=&style=&character=&purpose=&all_projects=
   GET  /api/projects/{id}/shots/{n}/matches
   POST /api/projects/{id}/shots/{n}/reuse  { item_id, how: picture|prompt|layout }
   POST /api/projects/{id}/auto_reuse  { min_score }
@@ -630,23 +645,50 @@ timing, audio and edit. Only the rendering style may differ.
 ---------------------------------------------------------------------
 SECTION 8 — DATA MODEL
 ---------------------------------------------------------------------
-(In Studio, map these onto the existing project folder files where one
-already exists — e.g. all_shots.csv, cast_lock.json, grading.json,
-shares.json — and add the rest. Don't migrate for the sake of it.)
+8.0 Storage rules (checked against the Flova recon on 2026-11-15; details
+    in replica/architecture.md, index schema in replica/schema.sql)
+  - In Studio, the project folders under projects/ stay the SOURCE OF
+    TRUTH. Map each entity onto the existing file where there is one
+    (all_shots.csv, cast_lock.json, grading.json, shares.json ...) and add
+    the rest as JSON. Don't migrate for the sake of it.
+  - One SQLite file, projects/studio_index.db, holds only what can be
+    REBUILT from the folders (picture-library search, moments, cost
+    ledger, queue, job locks). It is rebuilt after every job. If it
+    disagrees with the folders, the folders win.
+  - ASSET FILES ARE IMMUTABLE. Every version gets its own file name, and
+    "current" is a pointer (is_selected), never a rename or overwrite,
+    so moments, archives and branches can reference files safely. Old
+    takes/ and replaced/ paths are mapped through a path_alias table.
+  - Every editable record carries a rev number. A save sends the rev it
+    read; a mismatch returns 409 and opens the conflict prompt (6c).
+  - Money is integer cents + a currency. Times are UTC. Every entity has
+    created_at / updated_at.
+  - Hard constraints: one selected asset per (owner, style, kind); one
+    current EDL per (project, episode); one master style per project;
+    one job lock per (project, episode, step, style).
+  - Studio's own JOB runner (one job + a queue) stays for GPU notebooks;
+    provider API calls get a small worker pool guarded by the job locks.
+  - Naming: AssetGroup = one creative purpose (Flova's "asset"); Asset =
+    one file version (Flova's "resource"). The new picture-library route
+    is /api/picture_library (Studio's /api/library is the gallery).
 
-Project      id, title, settings(json), recipe_id, selected_products[],
+Project      id, slug, title, settings(json), recipe_id, selected_products[],
              mode, master_style_id, is_series, parent_project_id
-             (branch), branched_from_moment_id, owner_id, created_at
+             (branch), branched_from_moment_id, owner_id, created_at,
+             updated_at
 Source       id, project_id, kind, title, text, image_asset_ids[],
              media_asset_ids[], metadata(json), rights_ack_at
 Episode      id, project_id, number, title, logline, status
-Step         project_id, episode_id, key, status, out_of_date, updated_at
+Step         project_id, episode_id, style_id (null = shared step), key,
+             status, updated_at
 CrewRole     key, display_name, prompt_file, model, temperature
-CrewNote     id, project_id, step, role, target_type, target_id,
-             author(user|role), body, round, score, resolved_at, created_at
-ChatMessage  id, project_id, author(user|producer), body, plan(json),
-             accepted, moment_id, created_at
-ProjectRules project_id, body, version
+CrewNote     id, project_id, parent_id (threads), step, role, target_type,
+             target_id, author(user|role), body, round, score,
+             resolved_at, created_at
+Conversation id, project_id, title, closed_at, created_at
+ChatMessage  id, conversation_id, author(user|producer), body, refs[],
+             plan(json), accepted, moment_id, created_at
+ProjectRules project_id, body, rev
 Recipe       id, name, owner_id, body(json), built_in
 Moment       id, project_id, label, snapshot_path, created_at, cause
 Attempt      id, project_id, number, label, archived_at, kept[], snapshot_path
@@ -654,40 +696,45 @@ Coverage     project_id, logline, genre, tone, themes, characters, events
 BeatSheet    project_id, episode_id, beats(json)
 Treatment    project_id, episode_id, text, version
 Scene        id, project_id, episode_id, number, heading, fountain,
-             meta(json), version
+             meta(json), rev
 ContinuityItem id, project_id, kind(character|location|prop),
-             name, identity_token, personality(json), invented_fields[]
+             name, identity_token, personality(json), invented_fields[], rev
 StyleProfile id, project_id, name, is_master, style_card(json:
              prefix, suffix, negative, lighting_language, palette,
-             grade_lut), example_asset_id
+             grade_lut), example_asset_id, rev
 StyleTranslation continuity_item_id, style_id, text, sheet_asset_id
 Shot         id, scene_id, number, order, source(ai|footage),
              shot_type, lens_mm, camera, blocking, action, expression,
              dialogue, sound, duration_s, transition, priority,
              lighting_intent, composition, motion_prompt, seed,
-             continuity_item_ids[], footage_asset_id
+             footage_asset_id, rev
+ShotContinuity shot_id, continuity_item_id        (who/what is in frame)
 ShotLayout   shot_id, depth_asset_id, pose_asset_id, edge_asset_id,
              boxes(json), master_asset_id
-Page         id, project_id, number, text, composition, seed
-AssetGroup   id, owner_id, project_id, name, purpose, liked_asset_id,
-             used_by_shot_ids[]
+Page         id, project_id, number, text, composition, seed, rev
+AssetGroup   id, owner_id, project_id, name, purpose, liked_asset_id
+ShotAsset    shot_id, group_id, purpose     (one group used in many shots)
 Asset        id, project_id, group_id, owner_type, owner_id, style_id
-             (nullable = shared), attempt_id, kind, path, version,
-             is_selected, purpose, verdict, provider, prompt_parts(json),
+             (nullable = shared), attempt_id, kind, path (immutable),
+             sha256, version, is_selected, purpose, verdict, provider,
+             model, params(json), references(json), prompt_parts(json),
              seed, consistency_score, continuity_hash, quality_tier,
-             cost_usd, reused_from_asset_id
+             cost_cents, currency, reused_from_asset_id, created_at
+PathAlias    old_path, asset_id         (takes/ and replaced/ files)
 AudioLine    id, shot_id, character, text, voice_id, delivery_note, asset_id
 MusicCue     id, project_id, episode_id, start_shot_id, end_shot_id,
              mood, tempo, asset_id
-EDL          project_id, episode_id, version, tracks(json: video, voice,
-             music+fx — each entry: asset_id, in, out, volume,
-             transition)
+EDL          id, project_id, episode_id, name ("Main cut", alternative
+             cuts), is_current, rev, tracks(json: video, voice, music+fx
+             — each entry: asset_id, in, out, volume, fade, transition)
 Job          id, project_id, episode_id, step, style_id, status,
              progress, items_total, items_done, error, retry_count,
              timestamps
+JobLock      project_id, episode_id, step, style_id, job_id
 QueueItem    id, owner_id, project_id, episode_id, order, status
-CostLedger   id, project_id, style_id, provider, model, units,
-             quality_tier, is_regeneration, cost_usd
+CostLedger   id, owner_id, project_id, style_id, provider, model, units,
+             quality_tier, is_regeneration, cost_cents, currency,
+             idempotency_key, created_at
 
 ---------------------------------------------------------------------
 SECTION 9 — PROMPT TEMPLATES
@@ -870,32 +917,44 @@ Follow the project's CLAUDE.md review rules for every changed source file.
 ---------------------------------------------------------------------
 SECTION 17 — MILESTONES (stop after each one)
 ---------------------------------------------------------------------
-M1  Skeleton (or, for Studio, the new step path layout), FAKE
-    providers, crew role files, project rules, recipes, gates. README.
-M2  Sources: every story SourceAdapter + the format/products/styles step.
-M3  READ IT IN: the full Section 5 pipeline with critique loop; screenplay
-    exports (Product A complete for any source).
-M4  Continuity book (style-neutral, with personalities) + director's
-    breakdown + shot list.
-M5  Style system: style cards, translations, prompt assembly, look dev.
-M6  Pictures in the master style + shot layouts; storyboard and
-    illustrated book exports (Products B and C).
-M7  Other styles via structure lock + consistency check + comparison view.
-M8  Start over + picture library (assets, versions, purpose labels) +
-    reuse (Section 6b).
-M9  Voices, sound, music, audiobook export (Product F).
-M10 Timeline editor + EDL + animatic export (Product D, all styles).
-M11 Clips per style + film export (Product E, all styles).
-M12 Producer chat (stop / add information / continue), notes on
-    anything, history moments, branches (Sections 3.4, 3.5, 6c).
-M13 Media sources: video/audio understanding, real footage + AI shots,
-    raw-footage auto-edit, cut to music (Section 4.2).
-M14 Episodes, series and production queue (Section 6e); marketing kit
-    (Product G).
-M15 Autopilot polish, cost tiers and estimate vs. actual, automation API,
-    CLI, MCP server.
-M16 Accounts (if needed), security hardening, accessibility pass, all
-    tests passing, deployment.
+Tick a box ([ ] → [x]) and add the date and commit only when that
+milestone's tests pass, the review (CLAUDE.md) shows PASS, and I've
+approved it. A partly done milestone stays unticked. Add a line under it
+saying what's left.
+
+[ ] M1  Skeleton (or, for Studio, the new step path layout), FAKE
+        providers, crew role files, project rules, recipes, gates,
+        the studio_index.db index + reindex, rev checks (Section 8.0).
+        README.
+[ ] M2  Sources: every story SourceAdapter + the format/products/styles
+        step.
+[ ] M3  READ IT IN: the full Section 5 pipeline with critique loop;
+        screenplay exports (Product A complete for any source).
+[ ] M4  Continuity book (style-neutral, with personalities) + director's
+        breakdown + shot list.
+[ ] M5  Style system: style cards, translations, prompt assembly, look dev.
+[ ] M6  Pictures in the master style + shot layouts; storyboard and
+        illustrated book exports (Products B and C).
+[ ] M7  Other styles via structure lock + consistency check + comparison
+        view.
+[ ] M8  Immutable asset files + path aliases for old takes/replaced
+        files; start over + picture library (asset groups, versions,
+        liked default, purpose labels) + reuse (Section 6b).
+[ ] M9  Voices, sound, music, audiobook export (Product F).
+[ ] M10 Timeline editor + EDL (alternative cuts) + animatic export
+        (Product D, all styles).
+[ ] M11 Clips per style + film export (Product E, all styles).
+[ ] M12 Producer chat (stop / add information / continue), notes on
+        anything (threads), history moments, branches, conflict prompt
+        (Sections 3.4, 3.5, 6c).
+[ ] M13 Media sources: video/audio understanding, real footage + AI shots,
+        raw-footage auto-edit, cut to music (Section 4.2).
+[ ] M14 Episodes, series and production queue (Section 6e); marketing kit
+        (Product G).
+[ ] M15 Autopilot polish, cost tiers and estimate vs. actual, worker pool +
+        job locks for parallel styles, automation API, CLI, MCP server.
+[ ] M16 Accounts (if needed), security hardening, accessibility pass, all
+        tests passing, deployment.
 
 ---------------------------------------------------------------------
 SECTION 18 — DONE MEANS
