@@ -513,8 +513,8 @@
   function cardHtml(c) {
         const proj = sbProj || $("proj").value, pick = pickKf;
         const kf = pick(c), clips = Object.entries(c.clips), cap = `Shot ${c.n} (${c.chapter}) - ${c.prompt}`;
-        const still = kf ? `<div class="pz-media" tabindex="0" role="button" aria-label="Open the keyframe of shot ${c.n}" data-file="${esc(proj + "/" + kf)}" data-kind="image" data-cap="${esc(cap)}">${mediaHtml(proj + "/" + kf, "image", "", c.ver && c.ver[kf])}<span class="pz-badge">${c.n}</span></div>`
-                         : `<div class="pz-media" aria-label="No keyframe yet for shot ${c.n}"><span class="pz-badge">${c.n}</span><span style="font-size:var(--text-sm)">no keyframe yet</span></div>`;
+        const still = kf ? `<div class="pz-media" tabindex="0" role="button" draggable="true" data-drag="${c.n}" data-drop="${c.n}" title="Drag onto another shot's picture to swap the two" aria-label="Open the keyframe of shot ${c.n}" data-file="${esc(proj + "/" + kf)}" data-kind="image" data-cap="${esc(cap)}">${mediaHtml(proj + "/" + kf, "image", "", c.ver && c.ver[kf])}<span class="pz-badge">${c.n}</span></div>`
+                         : `<div class="pz-media" data-drop="${c.n}" aria-label="No keyframe yet for shot ${c.n}"><span class="pz-badge">${c.n}</span><span style="font-size:var(--text-sm)">no keyframe yet</span></div>`;
         const clipBtns = clips.map(([m, f]) => `<button type="button" class="pz-chip" data-clip="${esc(proj + "/" + f)}" data-cap="${esc(m + " - " + cap)}">▶ ${esc(m)}</button>`).join("");
         const st = (c.review && c.review.status) || "pending";
         const verdict = `<div class="pz-row" style="flex-wrap:wrap;gap:6px;align-items:center"><span class="pz-cat" data-verdict="${st}">${st === "approved" ? "✓ approved" : st === "rejected" ? "✗ rejected" : "not reviewed"}</span>` +
@@ -547,6 +547,40 @@
     movieTotal();
   }
   window.sbRefreshCard = refreshCard;
+  // drag one card's picture onto another card's picture: the two shots trade pictures (onto a shot with none, the picture moves there)
+  let dragFrom = 0;
+  async function swapPictures(a, b) {
+    const st = $("sbStatus"), c = sbData[a];
+    if (!c || !b || a === b) return;
+    try {
+      await api("/api/swap_pictures", { project: $("proj").value, a, b, model: kfModelOf(c, pickKf(c)) });
+      await refreshCard(a); await refreshCard(b);
+      st.textContent = `Shots ${a} and ${b} swapped pictures. Say yes or no to both again.`;
+      if (window.flowRefresh) window.flowRefresh();
+    } catch (e) { st.textContent = e.message; }
+  }
+  window.sbSwapPictures = swapPictures;
+  const dropOf = e => e.target.closest && e.target.closest("[data-drop]");
+  $("sbGrid").addEventListener("dragstart", e => {
+    const m = e.target.closest && e.target.closest("[data-drag]"); if (!m) return;
+    dragFrom = Number(m.dataset.drag);
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", String(dragFrom)); } catch (err) { /* some browsers refuse */ } }
+    m.classList.add("sb-dragging");
+  });
+  $("sbGrid").addEventListener("dragover", e => {
+    const t = dropOf(e); if (!dragFrom || !t || Number(t.dataset.drop) === dragFrom) return;
+    e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    t.classList.add("sb-drop");
+  });
+  $("sbGrid").addEventListener("dragleave", e => { const t = dropOf(e); if (t && !t.contains(e.relatedTarget)) t.classList.remove("sb-drop"); });
+  $("sbGrid").addEventListener("drop", e => {
+    const t = dropOf(e); if (!dragFrom || !t) return;
+    e.preventDefault();
+    const a = dragFrom, b = Number(t.dataset.drop); dragFrom = 0;
+    document.querySelectorAll("#sbGrid .sb-drop, #sbGrid .sb-dragging").forEach(x => x.classList.remove("sb-drop", "sb-dragging"));
+    swapPictures(a, b);
+  });
+  $("sbGrid").addEventListener("dragend", () => { dragFrom = 0; document.querySelectorAll("#sbGrid .sb-drop, #sbGrid .sb-dragging").forEach(x => x.classList.remove("sb-drop", "sb-dragging")); });
   $("sbLoad").addEventListener("click", loadStoryboard);
   window.sbReload = loadStoryboard;                 // other cards (old pictures) reload it and then say what they did
   $("sbAnimatic").addEventListener("click", async () => {      // stills timed to the narration: judge pacing before paying for video clips

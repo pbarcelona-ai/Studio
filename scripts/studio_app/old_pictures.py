@@ -6,6 +6,7 @@ GET  /api/old_pictures?project=&n=     every old picture, the ones most like sho
 POST /api/assign_picture {project, n, path, model?}   copy that picture onto shot n (the picture it had is kept as a take; its verdict starts again)
 POST /api/auto_assign_pictures {project, model?}     do that by itself for every shot with no picture, when an old picture of the same shot exists
 POST /api/match_pictures {project, model?}           check every shot: each gets the picture that shows it best (pictures in the wrong place move)
+POST /api/swap_pictures {project, a, b, model}       shots a and b trade pictures (drag and drop on the storyboard)
 """
 import csv
 import os
@@ -142,6 +143,47 @@ def assign_picture(b: dict) -> dict:
         fc["rows"].pop(str(n))
         write_json(d / "face_check.json", fc)
     return {"n": n, "path": dst.relative_to(d).as_posix(), "kept_as_take": kept.relative_to(d).as_posix() if kept else None}
+
+
+def swap_pictures(b: dict) -> dict:
+    """POST /api/swap_pictures {project, a, b, model}: shot a gets shot b's picture and b gets a's (dragged on the storyboard). When one of them
+    has no picture, the other's moves over. Their takes stay with their shots; both verdicts and face checks start again."""
+    from .jobs import JOB
+    d = _book(b.get("project", ""))
+    if JOB.running:
+        raise PlanError("wait until the running job is finished")
+    rows = read_csv_rows(d / "all_shots.csv")
+    x, y = b.get("a"), b.get("b")
+    if not (isinstance(x, int) and isinstance(y, int)) or isinstance(x, bool) or isinstance(y, bool) or not (1 <= x <= len(rows) and 1 <= y <= len(rows)):
+        raise PlanError("there is no such shot")
+    if x == y:
+        raise PlanError("drop the picture on another shot")
+    model = str(b.get("model") or "")
+    if not re.fullmatch(r"[a-z0-9_]{2,60}", model):
+        raise PlanError("say which picture maker's pictures to swap")
+    folder = d / "images" / f"{model}_keyframes"
+    fa, fb = folder / f"image-{x:04d}.png", folder / f"image-{y:04d}.png"
+    if not fa.is_file() and not fb.is_file():
+        raise PlanError("neither shot has a picture yet")
+    import picture_record
+    picture_record.record_new(d)                           # both pictures keep what they show (the record follows the file's contents)
+    tmp = folder / f".swap-{x:04d}-{y:04d}.png"
+    if fa.is_file():
+        os.replace(fa, tmp)
+    if fb.is_file():
+        os.replace(fb, fa)
+    if tmp.is_file():
+        os.replace(tmp, fb)
+    keys = [review.shot_key(rows[n - 1]) for n in (x, y)]
+    verdicts = review.load(d)
+    if any(k in verdicts for k in keys):
+        review.set_status(d, [k for k in keys if k in verdicts], "pending")      # each shot shows another picture: say yes or no again
+    fc = read_json(d / "face_check.json", None)
+    if isinstance(fc, dict) and isinstance(fc.get("rows"), dict) and (str(x) in fc["rows"] or str(y) in fc["rows"]):
+        fc["rows"].pop(str(x), None)
+        fc["rows"].pop(str(y), None)
+        write_json(d / "face_check.json", fc)
+    return {"a": x, "b": y, "a_has": fa.is_file(), "b_has": fb.is_file()}
 
 
 AUTO_MIN = 0.5             # how alike an old picture's prompt and the shot's prompt must be (share of words) to be used without asking

@@ -205,6 +205,12 @@ def _assign_picture(r: Request):
     return assign_picture(r.body)
 
 
+@route("POST", "/api/swap_pictures")
+def _swap_pictures(r: Request):
+    from .old_pictures import swap_pictures
+    return swap_pictures(r.body)
+
+
 @route("POST", "/api/sessions")
 def _sessions_post(r: Request):
     from .resume import sessions_action
