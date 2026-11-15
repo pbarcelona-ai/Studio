@@ -26,6 +26,29 @@
     };
     return `<ul class="checks">${S.items.map(row).join("")}</ul>`;
   }
+  // Optional parts (the 3D depth view): installed on the same progress screen as the installer (progress.js).
+  let prog = null;
+  function partsHtml(S) {
+    const missing = S.items.filter(i => i.id === "depth3d" && !i.ok);
+    if (!missing.length) return "";
+    return `<h3>Optional parts</h3><p class="detail">Large downloads, installed into the Studio's own folder only.</p>
+      <div class="row"><button type="button" id="setupPart3d">Install the 3D depth view (about 2 GB)</button></div><div id="setupProg"></div>`;
+  }
+  function wireParts() {
+    const b = document.getElementById("setupPart3d");
+    if (prog) { prog.stop(); prog = null; }
+    if (!b || !window.StudioProgress) return;
+    const io = {
+      get: () => api("/api/setup_install"), post: what => api("/api/setup_install_" + what, {}),
+      log: async () => (await api("/api/setup_install_log")).log,
+      onState: P => { b.disabled = P.state === "running"; },
+    };
+    const show = () => { if (!prog) prog = StudioProgress.mount(document.getElementById("setupProg"), io); };
+    api("/api/setup_install").then(P => { if (P.state !== "ready") show(); }).catch(() => {});
+    b.addEventListener("click", async () => {
+      try { await api("/api/setup_install", { part: "3d" }); show(); } catch (e) { alert(e.message); }
+    });
+  }
   async function render(msg) {
     const S = await api("/api/setup");
     window.STUDIO_ROOT = S.root;
@@ -35,6 +58,7 @@
     dlg.innerHTML = `<h2 id="setupTitle">Setup</h2>
       <p>${S.ready ? "Everything the Studio needs is here." : "The Studio needs a few more things before it can generate. The ✗ lines are required."}</p>
       ${listHtml(S)}
+      ${partsHtml(S)}
       <h3>Your Kaggle account (free GPUs)</h3>
       <p class="detail">Create a free account at kaggle.com and verify your phone number (needed for GPUs). Then on kaggle.com open Settings &gt; API and press <b>Create New Token</b>. Paste that token here. It is saved only on this computer.</p>
       <label for="setupKToken">Kaggle API token</label><input type="password" id="setupKToken" autocomplete="off" spellcheck="false" placeholder="paste the token (leave empty if you use the older username + key)">
@@ -46,6 +70,7 @@
       <label for="setupHF">Hugging Face token</label><input type="password" id="setupHF" autocomplete="off" spellcheck="false" placeholder="hf_...">
       <div class="row"><button type="button" id="setupSave">Save</button><button type="button" id="setupTest">Test Kaggle login</button><button type="button" id="setupClose">Close</button></div>
       <p class="msg" id="setupMsg" role="status" aria-live="polite">${esc(msg || "")}</p>`;
+    wireParts();
     const say = (t, bad) => { const m = document.getElementById("setupMsg"); m.textContent = t; m.style.color = bad ? "#d6455d" : ""; };
     document.getElementById("setupClose").onclick = () => dlg.close();
     document.getElementById("setupSave").onclick = async () => {

@@ -1,0 +1,74 @@
+name: Installers
+# Builds the Windows .exe and the macOS .dmg (milestone MI, rule 12), installs each one on a clean runner and checks the Studio starts.
+on:
+  push:
+    branches: [main, film-from-book]
+    tags: ["v*"]
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv pillow
+      - name: Inno Setup
+        run: |
+          if [ ! -f "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ]; then choco install innosetup -y --no-progress; fi
+      - run: python installer/build.py windows --out dist
+        env:
+          WIN_SIGN_CMD: ${{ secrets.WIN_SIGN_CMD }}
+      - name: Install it silently, finish the setup, check the Studio starts, uninstall
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist\*.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP "studio"
+          Start-Process $exe.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/NORESTART", "/DIR=$dir" -Wait
+          & "$dir\runtime\python\python.exe" "$dir\scripts\install_studio.py" --cli
+          if ($LASTEXITCODE -ne 0) { Get-Content "$dir\.install\install.log" -Tail 40; exit 1 }
+          & "$dir\.venv\Scripts\python.exe" "$dir\scripts\studio.py" --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "$dir\runtime\python\python.exe" "$dir\scripts\install_studio.py" --cli    # a second run resumes: nothing to do
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-windows
+          path: dist/*.exe
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv pillow
+      - run: python installer/build.py macos --arch ${{ matrix.arch }} --out dist
+        env:
+          MAC_SIGN_ID: ${{ secrets.MAC_SIGN_ID }}
+          MAC_NOTARY_PROFILE: ${{ secrets.MAC_NOTARY_PROFILE }}
+      - name: Open the .dmg, run the app's install into a fresh folder, check the Studio starts
+        if: matrix.arch == 'arm64'           # the runner is Apple silicon; the Intel build is checked by building it
+        run: |
+          M=$(hdiutil attach -nobrowse -readonly dist/*.dmg | tail -1 | awk -F'\t' '{print $NF}')
+          R="$M/Pistachio's Studio.app/Contents/Resources/app"
+          H="$RUNNER_TEMP/home"
+          "$R/runtime/python/bin/python3" "$R/scripts/install_studio.py" --cli --payload "$R" --home "$H" || { tail -40 "$H/.install/install.log"; exit 1; }
+          "$H/.venv/bin/python" "$H/scripts/studio.py" --help >/dev/null
+          "$R/runtime/python/bin/python3" "$R/scripts/install_studio.py" --cli --payload "$R" --home "$H"
+          hdiutil detach "$M"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-macos-${{ matrix.arch }}
+          path: dist/*.dmg

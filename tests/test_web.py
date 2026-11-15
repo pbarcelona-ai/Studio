@@ -37,8 +37,9 @@ def script_order():
 
 
 def test_every_js_file_is_loaded_exactly_once():
-    on_disk = {f.stem for f in (WEB / "static" / "js").glob("*.js")}
+    on_disk = {f.stem for f in (WEB / "static" / "js").glob("*.js")} - {"installer"}      # installer.js belongs to setup_progress.html
     order = script_order()
+    assert re.findall(r'/static/js/(\w+)\.js', (WEB / "setup_progress.html").read_text()) == ["progress", "installer"]
     assert sorted(order) == sorted(on_disk) and len(order) == len(set(order))
 
 

@@ -12,7 +12,20 @@ The Studio itself always runs on your computer; nothing is hosted for you.
 - Or a **GPU in this computer** (Linux, or Windows through WSL 2): NVIDIA, or AMD with ROCm (experimental). Then no Kaggle account is needed.
 - Optional: Claude Code or Codex (for the AI prompt writer), or a Hugging Face token (see below).
 
-## Install (about 2 minutes)
+## Install with the installer (easiest)
+
+Download the installer for your computer from the project's **Actions > Installers** page (or a release):
+
+- **Windows 10/11:** `PistachiosStudio-<version>-Setup.exe`. Double-click it. It installs for you only (no administrator needed), adds a Start-menu and a desktop shortcut and an uninstaller. If Windows says "Windows protected your PC", press *More info > Run anyway* (the installer is not signed yet).
+- **macOS:** `PistachiosStudio-<version>-arm64.dmg` (Apple silicon) or `-x86_64.dmg` (Intel). Open it and drag *Pistachio's Studio* to Applications. The first time, right-click the app and choose *Open* (it is not notarised yet).
+
+The first start shows an install page in your browser: one bar for the whole install and one for the current task ("Installing the Studio's requirements (5 of 9)", "Downloading the 3D depth view: 145 of 610 MB, 3.2 MB/s, about 2 min left"), *Show details* with the live log, **Cancel** (nothing is left half-installed), **Retry** and **Copy the log** if a step fails. Running it again carries on where it stopped. The installer brings its own Python 3.12 and uv, so nothing has to be installed first. Optional parts (the 3D depth view) are tick boxes, off by default; you can add them later in the Studio's Setup window.
+
+Updates install over the top and keep your projects, books and saved keys. On a Mac your projects live in `~/Library/Application Support/Pistachios Studio`; on Windows in `%LOCALAPPDATA%\Programs\Pistachios Studio`. Uninstalling asks before it deletes projects.
+
+To build the installers yourself: `pip install uv pillow`, then `python installer/build.py macos` (on a Mac) or `python installer/build.py windows` (on Windows, with Inno Setup 6). A terminal-only install: `python scripts/install_studio.py --cli [--3d]`.
+
+## Install from the source folder (about 2 minutes)
 
 ```bash
 git clone https://github.com/pbarcelona-ai/Studio.git

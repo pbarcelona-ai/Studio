@@ -132,7 +132,7 @@ def check(path=None, home=None, environ=None, local_llm_ready=False, local_gpu="
         "Run ./install.sh, or: pip install pillow")
     have_3d = all(_has_module(m) for m in ("numpy", "cv2", "transformers", "torch"))
     add("depth3d", "3D depth view (numpy, opencv, transformers, torch)", "optional", have_3d, "found" if have_3d else "not installed; the 3D button stays unavailable",
-        "Optional and large (about 2 GB): ./install.sh --3d")
+        "Optional and large (about 2 GB): press Install the 3D depth view below")
     writers = [n for n, ok in (("Claude Code", bool(which("claude"))), ("Codex", bool(which("codex"))), ("Hugging Face", bool(env.get("HF_TOKEN", "").strip())),
                                ("a local model server", bool(local_llm_ready))) if ok]
     add("writer", "An AI prompt writer", "recommended", bool(writers), ("available: " + ", ".join(writers)) if writers else "none found",

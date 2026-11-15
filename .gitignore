@@ -97,3 +97,8 @@ studio.log*
 node_modules/
 /.studio_adult_models
 /logs/
+# installers (MI): the install state, the bundled Python and uv, half-made tools, built installers
+/.install/
+/runtime/
+/.venv.partial/
+/dist/

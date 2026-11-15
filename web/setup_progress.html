@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Installing Pistachio's Studio on this computer">
+  <title>Installing Pistachio's Studio</title>
+  <style>
+    :root { color-scheme: dark light; --bg: #15122b; --fg: #f2f0ff; --card: #211c42; --accent: #7a5cff; }
+    @media (prefers-color-scheme: light) { :root { --bg: #f5f4fb; --fg: #1d1a33; --card: #ffffff; } }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 680px; margin: 0 auto; padding: 32px 16px; }
+    .card { background: var(--card); border-radius: 14px; padding: 22px 24px; box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+    h1 { margin: 0 0 4px; font-size: 1.5rem; }
+    .ver { opacity: .7; margin: 0 0 16px; }
+    .part { display: block; margin: 8px 0; } .size { opacity: .75; }
+    button { font: inherit; min-height: 44px; padding: 0 18px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 3px solid #ffd166; outline-offset: 2px; }
+    .sp-row button:not(#spRetry) { background: transparent; color: var(--fg); }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="card" aria-labelledby="title">
+      <h1 id="title">Installing Pistachio's Studio</h1>
+      <p class="ver" id="ver"></p>
+      <noscript><p>This page needs JavaScript to show the install. You can also install in a terminal: python scripts/install_studio.py --cli</p></noscript>
+      <div id="choose" hidden>
+        <p>Everything the Studio needs is installed into its own folder; nothing else on this computer changes. Optional parts can be added later from the Studio's Setup window.</p>
+        <fieldset><legend>Optional parts</legend><div id="parts"></div></fieldset>
+        <p><button type="button" id="start">Start installing</button></p>
+      </div>
+      <div id="progress"></div>
+      <p><button type="button" id="openStudio" hidden>Open the Studio</button></p>
+      <p id="bye" hidden role="status">The Studio is starting in a new tab. You can close this one.</p>
+    </section>
+  </main>
+  <script src="/static/js/progress.js" defer></script>
+  <script src="/static/js/installer.js" defer></script>
+</body>
+</html>
