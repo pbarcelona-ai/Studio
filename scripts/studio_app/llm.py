@@ -10,6 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 from bookkit import NEG_TAIL, continuity_file, LOCAL_LLM_URL, SLUG_RE, hf_json, llm_json, local_chat
+import crew
 import prompt_guides
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
@@ -240,8 +241,8 @@ def enhance_prompt(opt):
         if "updated_prompt" not in d or not isinstance(d["updated_prompt"], str) or len(d["updated_prompt"]) < 10:
             raise ValueError("missing or invalid updated_prompt")
 
-    data = llm_json(prompt, "You are a prompt engineer enhancing prompts for video/image generation models. "
-                        "Reply with a single JSON object and nothing else.",
+    data = llm_json(prompt, crew.system(["storyboard_artist", "cinematographer"], pdir(project), "enhance-prompt",
+                                        "Improve one prompt for an image or video generation model, following the owner's instruction."),
                     model=model, engine=engine, validate=check)
 
     updated_prompt = data.get("updated_prompt", original_prompt)

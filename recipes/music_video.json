@@ -1,0 +1,22 @@
+{
+  "name": "music_video",
+  "title": "Music video",
+  "about": "Pictures and clips cut to an uploaded track.",
+  "products": [
+    "screenplay",
+    "storyboard",
+    "film"
+  ],
+  "aspect": "16:9",
+  "target_minutes": 4,
+  "series": false,
+  "quality_tier": "final",
+  "critique": {
+    "min_score": 8,
+    "max_rounds": 2
+  },
+  "prompt_rules": {
+    "editor": "Cut to the beat of the track.",
+    "composer": "The uploaded track is the score; do not add other music."
+  }
+}

@@ -23,7 +23,7 @@ def fake_llm(calls, speakers=None, fail=False):
         calls.append(prompt)
         if fail:
             raise RuntimeError("model down")
-        if "script supervisor" in system:
+        if getattr(system, "step", "") == "outline":          # crew.system() prompts know their step
             d = {"scenes": [{"first": 1, "title": "Garden", "location": "", "state": "dawn"}, {"first": 5, "title": "Night", "location": "", "state": "dark"}]}
         else:
             n = int(re.search(r"with exactly (\d+) shots", prompt).group(1))

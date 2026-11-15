@@ -1,0 +1,22 @@
+{
+  "name": "trailer_only",
+  "title": "Trailer only",
+  "about": "A 30-90 second trailer and marketing kit.",
+  "products": [
+    "screenplay",
+    "storyboard",
+    "film",
+    "marketing"
+  ],
+  "aspect": "16:9",
+  "target_minutes": 1.5,
+  "series": false,
+  "quality_tier": "final",
+  "critique": {
+    "min_score": 8,
+    "max_rounds": 2
+  },
+  "prompt_rules": {
+    "trailer_editor": "Set-up, escalation, button. Never spoil the ending."
+  }
+}

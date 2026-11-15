@@ -223,6 +223,34 @@
             </div>
         </div>
 
+        <div class="card bookonly" id="crewCard">
+            <div class="card__header">
+                <h2 class="card__title">Format and project rules</h2>
+                <p class="card__subtitle">What kind of film this is, and the rules your film crew always follows</p>
+            </div>
+            <div class="card__body">
+                <label class="f" for="crewRecipe">Format</label>
+                <select id="crewRecipe" aria-describedby="crewRecipeAbout"><option value="">Normal film path</option></select>
+                <p class="warn" id="crewRecipeAbout" aria-live="polite"></p>
+                <label class="f" for="crewRules">Project rules (one per line, e.g. "Eve never wears red", "no gore")</label>
+                <textarea id="crewRules" rows="5" maxlength="20000" spellcheck="true" autocomplete="off" style="width:100%"></textarea>
+                <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
+                    <button type="button" class="btn btn--secondary" id="crewRulesSave">Save the rules</button>
+                    <span class="warn" id="crewNote" role="status" aria-live="polite"></span>
+                </div>
+                <div id="crewConflict" class="hidden" role="alert">
+                    <p class="warn">These rules were changed somewhere else while you were editing. Pick which version to keep.</p>
+                    <label class="f" for="crewTheirs">The saved version</label>
+                    <textarea id="crewTheirs" rows="4" readonly style="width:100%"></textarea>
+                    <div class="row" style="gap:8px;margin-top:6px">
+                        <button type="button" class="btn btn--secondary" id="crewKeepMine">Keep mine</button>
+                        <button type="button" class="btn btn--ghost" id="crewKeepTheirs">Keep the saved version</button>
+                    </div>
+                </div>
+                <details style="margin-top:8px"><summary>Your film crew</summary><ul id="crewRoles" class="warn"></ul></details>
+            </div>
+        </div>
+
         <div class="card bookonly" id="stepAdapt">
             <div class="card__header">
                 <h2 class="card__title">Film plan and screenplay</h2>
@@ -1226,6 +1254,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/film.js" defer></script>
 <script src="/static/js/chapters.js" defer></script>
 <script src="/static/js/adapt.js" defer></script>
+<script src="/static/js/crew.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>

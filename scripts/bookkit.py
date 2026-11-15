@@ -186,6 +186,9 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
     """
     if engine not in ENGINES:
         raise RuntimeError(f"unknown engine {engine!r}; use one of {sorted(ENGINES)}")
+    record = getattr(system, "record", None)                # a crew.system() prompt writes one crew-log line per call
+    if callable(record):
+        record()
     cmd_name, family = ENGINES[engine]
     exe = shutil.which(cmd_name, path=_env()["PATH"]) if family not in ("hf", "local") else None
     if not exe and family not in ("hf", "local"):

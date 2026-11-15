@@ -1,0 +1,21 @@
+{
+  "name": "animatic_pitch",
+  "title": "Animatic pitch",
+  "about": "A storyboard timed to voices: a cheap way to pitch the film.",
+  "products": [
+    "screenplay",
+    "storyboard",
+    "animatic"
+  ],
+  "aspect": "16:9",
+  "target_minutes": 5,
+  "series": false,
+  "quality_tier": "draft",
+  "critique": {
+    "min_score": 8,
+    "max_rounds": 2
+  },
+  "prompt_rules": {
+    "storyboard_artist": "Clear staging over detail: these frames are for timing."
+  }
+}

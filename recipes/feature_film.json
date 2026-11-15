@@ -1,0 +1,23 @@
+{
+  "name": "feature_film",
+  "title": "Feature film",
+  "about": "A full-length film, 16:9.",
+  "products": [
+    "screenplay",
+    "storyboard",
+    "animatic",
+    "film"
+  ],
+  "aspect": "16:9",
+  "target_minutes": 90,
+  "series": false,
+  "quality_tier": "final",
+  "critique": {
+    "min_score": 8,
+    "max_rounds": 2
+  },
+  "prompt_rules": {
+    "screenwriter": "Three acts. Give the climax and ending room.",
+    "editor": "Feature pacing: let big moments breathe."
+  }
+}

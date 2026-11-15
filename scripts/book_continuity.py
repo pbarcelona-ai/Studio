@@ -9,6 +9,7 @@ into every shot prompt, plus a narration voice) and key locations. You can edit 
 import argparse
 import re
 import sys
+import crew
 from bookkit import COST, VOICE_MAP, continuity_file, cost_note, llm_json, project_dir, read_json, write_json
 
 ap = argparse.ArgumentParser()
@@ -35,7 +36,8 @@ for i in pick:
     samples.append(f"--- {chapters[i]['title']} (chapter {chapters[i]['n']}) ---\n{text[:5000]}")
 titles = "; ".join(f"{c['n']}: {c['title']}" for c in chapters[:200])
 
-SYSTEM = "You are a film production designer. You reply with a single JSON object and nothing else."
+SYSTEM = crew.system(["script_supervisor", "casting_director", "production_designer"], pdir, "continuity",
+                     "Write the continuity book: every character, location and prop, described so they look the same in every picture.")
 PROMPT = f"""We are adapting the book "{index.get('pdf', args.project)}" into a series of short AI-generated video clips with
 narration and music. Read these excerpts and the chapter list, then write the continuity book.
 

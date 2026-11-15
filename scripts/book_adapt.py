@@ -18,6 +18,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import adaptation as ad
 import screenplay as sp
+import crew
 from bookkit import CLIP_SECONDS, COST, cost_note, llm_json, project_dir, read_json, write_json
 
 ap = argparse.ArgumentParser()
@@ -44,7 +45,9 @@ chapters = index["chapters"]
 N = len(chapters)
 target = args.minutes * 60
 focus = " ".join(args.focus.split())[:300]
-SYSTEM = "You are a film development executive adapting a book into a screenplay. You reply with a single JSON object and nothing else."
+SUMMARY_SYSTEM = crew.system("story_analyst", pdir, "adapt-summary", "Write coverage of each chapter so the film can be planned from it.")
+SHAPE_SYSTEM = crew.system(["development_executive", "screenwriter"], pdir, "adapt-shape", "Shape the book into a film of the target length: acts and how much of the book each one covers.")
+SCENES_SYSTEM = crew.system("screenwriter", pdir, "adapt-scenes", "Turn the planned part of the book into a list of scenes.")
 EXCERPT_WORDS = 5000
 
 
@@ -73,7 +76,7 @@ def summarise(c):
 
 Return ONE JSON object: {{"summary": "2-4 sentences of what happens", "characters": ["names of people who matter in it"],
 "beats": ["3-6 short story beats in order"], "locations": ["places"], "importance": 1-5 (5 = the story cannot be told without it; 1 = could be cut unnoticed)}}"""
-    d = llm_json(prompt, SYSTEM, model=args.model, engine=args.engine, validate=ad.check_summary)
+    d = llm_json(prompt, SUMMARY_SYSTEM, model=args.model, engine=args.engine, validate=ad.check_summary)
     f.parent.mkdir(parents=True, exist_ok=True)
     write_json(f, {"n": c["n"], "title": c["title"], "words": c.get("words"), **{k: d.get(k) for k in ("summary", "characters", "beats", "locations", "importance")}})
     return c["n"], True
@@ -121,7 +124,7 @@ Return ONE JSON object: {{"logline": "one sentence", "premise": "2-3 sentences",
 "first_chapter": 1, "last_chapter": 6}}]}}
 Rules: 3 to 5 acts for a film over 20 minutes, 1 to 3 below that. Acts follow the book's order and together cover chapters 1-{N} without overlap. Give long
 or crucial parts a larger share. Base the structure on the story, not on equal numbers of chapters."""
-    shape = llm_json(shape_prompt, SYSTEM, model=args.model, engine=args.engine, validate=lambda d: ad.check_shape(d, N))
+    shape = llm_json(shape_prompt, SHAPE_SYSTEM, model=args.model, engine=args.engine, validate=lambda d: ad.check_shape(d, N))
     acts = ad.normalise_acts(shape["acts"], N, target)
     scene_lists = []
     for a in acts:
@@ -139,7 +142,7 @@ Choose the scenes of this act in story order. Return ONE JSON object: {{"scenes"
 "location": "place", "characters": ["names"], "time_of_day": "dawn|day|dusk|night|unknown"}}]}}
 Rules: the scene seconds should add up to about {a['seconds']}; each scene at least {args.clip_seconds:g} s; leave out what the film does not need
 (chapters of low importance); do not invent events that are not in the book."""
-        d = llm_json(scene_prompt, SYSTEM, model=args.model, engine=args.engine, validate=lambda d, lo=lo, hi=hi: ad.check_scenes(d, lo, hi))
+        d = llm_json(scene_prompt, SCENES_SYSTEM, model=args.model, engine=args.engine, validate=lambda d, lo=lo, hi=hi: ad.check_scenes(d, lo, hi))
         scene_lists.append(d["scenes"])
         print(f"{a['name']}: {len(d['scenes'])} scenes ({COST['calls']} calls{cost_note()} so far)", flush=True)
     (ad.adapt_dir(pdir)).mkdir(parents=True, exist_ok=True)

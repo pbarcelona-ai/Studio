@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from bookkit import KOKORO_VOICE_RE, KOKORO_VOICES, VOICE_CAST_FILE, apply_voice_cast, read_voice_cast, voice_id, continuity_file, SLUG_RE, llm_json, read_json, write_json
 import character_tokens
+import crew
 import voices
 import layout
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
@@ -21,8 +22,7 @@ from .scenes import _scene_tables
 from .steps import engine_args
 
 
-CD_SYSTEM = ("You are a film director's creative partner helping to set the look, tone, sound and pacing of a film adapted from a book. "
-             "You reply with a single JSON object and nothing else.")
+CD_TASK = "Talk with the owner, the film's director, to set the look, tone, sound and pacing of a film adapted from a book."
 
 
 def _direction_book(slug):
@@ -73,7 +73,7 @@ def creative_direction(opt):
             raise ValueError("'direction' must be at most 120 words")
 
     args = engine_args(opt)
-    data = llm_json(prompt, CD_SYSTEM, model=(args[3] if len(args) > 3 else None), engine=args[1], validate=check)
+    data = llm_json(prompt, crew.system(["director", "cinematographer"], d, "creative-direction", CD_TASK), model=(args[3] if len(args) > 3 else None), engine=args[1], validate=check)
     direction = data.get("direction", "").strip()
     clean.append({"role": "assistant", "content": data["reply"].strip() + (f"\n\nDIRECTION:\n{direction}" if direction else ""),
                   **({"finalized": True} if direction else {})})
@@ -215,7 +215,7 @@ def new_scene(opt):
 
     if opt.get("preview_only"):
         args = engine_args(opt)
-        data = llm_json(prompt, "You are a film director and prompt writer. You reply with a single JSON object and nothing else.",
+        data = llm_json(prompt, crew.system(["director", "storyboard_artist"], d, "new-scene", "Write one new shot: its picture prompt and its narration."),
                         model=(args[3] if len(args) > 3 else None), engine=args[1], validate=check)
         return {"preview": f"PROMPT: {data['prompt'].strip()}\nNARRATION: {data['narration'].strip()}", "prompt": data["prompt"].strip(), "narration": data["narration"].strip(),
                 "feedback": "Preview ready. Click Apply & Insert to add it."}

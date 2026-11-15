@@ -13,6 +13,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import adaptation as ad
 import screenplay as sp
+import crew
 from bookkit import COST, WORDS_PER_SECOND, cost_note, continuity_file, llm_json, project_dir, read_json, words
 
 ap = argparse.ArgumentParser()
@@ -37,7 +38,7 @@ if args.scenes:
         sys.exit("none of those scenes is in the plan")
 continuity = read_json(continuity_file(pdir), {})
 names = [c["name"] for c in continuity.get("characters", [])]
-SYSTEM = "You are a screenwriter adapting a novel scene by scene. You reply with a single JSON object and nothing else."
+SYSTEM = crew.system("screenwriter", pdir, "screenplay", "Adapt the book into a screenplay, one scene at a time.")
 SOURCE_WORDS = 3000
 
 

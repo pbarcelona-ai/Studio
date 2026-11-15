@@ -29,10 +29,26 @@ Preparation (outside the build):
 - [x] Capability review of Flova, Story.com, Creatorwood and Inkitt (Appendix A)
 - [x] Flova recon map and feature matrix: `replica/recon.md`, `replica/features.csv` (2026-11-15, commit `ca92d1b`)
 - [x] Architecture check of Section 8: `replica/architecture.md`, `replica/schema.sql` (2026-11-15). The fixes are in Section 8.0
-- [ ] Fill in Section 0 (my choices) for the Studio upgrade
-- [ ] Approve starting M1
+- [x] Fill in Section 0 for the Studio upgrade (recommended answers used, see the Decisions log)
+- [x] Approve starting M1 (owner: "proceed with the upgrade", 2026-11-15)
 
 Build milestones: tick them in Section 17 inside the build prompt as each one is approved.
+
+## Decisions log
+
+How decisions are made (owner, 2026-11-15): Claude always proposes a recommendation. If the owner doesn't answer within
+about 3 minutes, the recommendation is used and the build continues. Each one is recorded here and summarised at the end
+of the upgrade. Anything destructive or that spends money still waits for a real yes.
+
+| # | date | decision | source |
+|---|---|---|---|
+| D1 | 2026-11-15 | Section 0 filled in with the recommended Studio answers (below) | assumed — not answered |
+| D2 | 2026-11-15 | Studio must work on **Windows as well as macOS** (Section 2, rule 11; milestone MW) | owner |
+| D3 | 2026-11-15 | Crew role files live in `prompts/crew/`, recipes in `recipes/` (repo root, next to `scripts/`) | assumed — not answered |
+| D4 | 2026-11-15 | FAKE providers: tests keep using the existing stubs; a `fake` engine for demo runs is added in M3, when Read it in runs end to end | assumed — not answered |
+| D5 | 2026-11-15 | README.md and ARCHITECTURE.md were emptied in commit `252cb89` (130 and 48 lines removed, no reason given). Restored from `252cb89^` and updated, because M1 asks for a README | assumed — not answered |
+| D7 | 2026-11-15 | Package Studio as installers for **Windows and macOS** with progress bars that name each task (Section 2, rule 12; milestone MI) | owner |
+| D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
 =====================================================================
@@ -76,9 +92,32 @@ SECTION 0 — MY CHOICES (fill these in before you start)
 - Default mode: [Autopilot / Review each step]
 - Default format recipe: [Feature film / Vertical microdrama / Picture book] ★
 - Monthly spending limit on AI calls: [$__]
+- Operating systems: Windows 10/11 AND macOS (both required)       ★
 
 If anything here is blank, pick a sensible default, tell me which one you
 picked, and keep going.
+
+Studio upgrade answers (D1 — recommended, used because no answer came):
+- Site name: Pistachio's Studio (unchanged)
+- Build target: upgrade the existing Studio app
+- Who uses it: just me (single user, local), designed so accounts can
+  be added later
+- Hosting: local only (python scripts/studio.py, on Windows or macOS)
+- Tech stack: keep Studio's existing Python server + plain JS
+- Text + vision AI: Studio's existing engines (claude / codex / hf /
+  local); claude-opus-5-5 for writing and directing, claude-sonnet-5-5 for
+  checks, when the claude engine is used
+- Image AI: Studio's existing catalogue (Kaggle / Colab / Hugging Face /
+  this computer); structure lock uses the models with depth/pose control
+- Video AI: Studio's existing catalogue (LTX, Wan, Hunyuan, SkyReels ...)
+- Voice AI: Studio's existing local TTS (Kokoro, Chatterbox, Qwen3 TTS)
+- Music AI: Studio's existing MusicGen, plus upload
+- Transcription: Whisper (local), added in M13
+- Default mode: Review each step (Autopilot available)
+- Default format recipe: Feature film
+- Monthly spending limit: $0 by default (free GPUs only); paid calls are
+  refused until the owner sets a limit
+- Operating systems: Windows 10/11 and macOS
 
 ---------------------------------------------------------------------
 SECTION 1 — WHAT THE SITE DOES
@@ -192,6 +231,48 @@ SECTION 2 — DESIGN RULES
     - Every milestone report includes a "Layout changes" table showing
       each tab/card added, moved, merged or removed, where its features
       went, and why.
+11. WINDOWS AND MAC. Everything must work the same on Windows 10/11 and
+    macOS (and Linux where it already does).
+    - Python only for anything the Studio runs on the owner's computer:
+      no bash scripts in the Studio's own path. The remote GPU notebooks
+      (Kaggle/Colab, which are Linux) may keep shell steps.
+    - pathlib for every path, os.replace for atomic saves, encoding="utf-8"
+      on every text file, argument lists for subprocess (never shell=True),
+      no POSIX-only modules (fcntl, os.fork, signals other than SIGTERM).
+    - Launchers for both: run_studio.sh / install.sh (macOS) and
+      run_studio.bat / install.ps1 (Windows). The virtualenv's tools are
+      in .venv/bin on macOS and .venv\Scripts on Windows.
+    - CI runs the test suite on windows-latest and macos-latest as well as
+      ubuntu-latest.
+
+12. INSTALLING. Studio is packaged so a non-programmer can install it on
+    Windows 10/11 and macOS by double-clicking one file.
+    - Windows: a signed .exe installer (Inno Setup or NSIS) that installs
+      per user (no admin rights needed), adds Start-menu and desktop
+      shortcuts and an uninstaller. macOS: a .dmg with
+      Pistachio's Studio.app (drag to Applications), signed and notarised
+      when a developer ID is available.
+    - The installer brings its own Python (python.org embeddable build on
+      Windows, python-build-standalone on macOS) and makes .venv with uv,
+      so nothing has to be installed first.
+    - PROGRESS: one overall bar (step N of M with a percentage) and one bar
+      for the current task, with the task named in plain words:
+      "Installing Python 3.12", "Installing the Studio's tools (uv)",
+      "Downloading the picture tools: 145 of 610 MB", "Installing ffmpeg",
+      "Setting up Kaggle", "Checking everything works". Downloads show
+      size, speed and time left. A "Show details" area shows the live log.
+    - Cancel at any time leaves nothing half-installed; a failed step says
+      what went wrong in plain words, offers Retry, and has a "Copy the
+      log" button. Running the installer again resumes where it stopped.
+    - Optional parts (the 3D tools, local GPU models) are tick boxes with
+      their download size, off by default.
+    - Updates install over the top and never touch projects/, books/ or
+      the saved settings. Uninstall asks before removing projects.
+    - The same progress screen is used by the Studio's own Setup window
+      when it installs or updates a tool later.
+    - CI builds both installers on every release tag (windows-latest,
+      macos-latest) and runs a smoke test: install, start the Studio,
+      open the page, uninstall.
 
 ---------------------------------------------------------------------
 SECTION 3 — THE CREW (every AI and GPU prompt comes from a crew member)
@@ -716,7 +797,7 @@ AssetGroup   id, owner_id, project_id, name, purpose, liked_asset_id
 ShotAsset    shot_id, group_id, purpose     (one group used in many shots)
 Asset        id, project_id, group_id, owner_type, owner_id, style_id
              (nullable = shared), attempt_id, kind, path (immutable),
-             sha256, version, is_selected, purpose, verdict, provider,
+             content_hash, version, is_selected, purpose, verdict, provider,
              model, params(json), references(json), prompt_parts(json),
              seed, consistency_score, continuity_hash, quality_tier,
              cost_cents, currency, reused_from_asset_id, created_at
@@ -926,6 +1007,21 @@ saying what's left.
         providers, crew role files, project rules, recipes, gates,
         the studio_index.db index + reindex, rev checks (Section 8.0).
         README.
+[ ] MW  Windows support (rule 11): port the shell scripts the Studio
+        calls (run_kaggle_model.sh, run_colab_model.sh, run_hf_space.sh,
+        fetch_kaggle_run.sh, kaggle_names.sh) to Python; run_studio.bat and
+        install.ps1; .venv\Scripts on the tool path; CI on windows-latest
+        and macos-latest.
+[ ] MI  Installers for Windows and macOS (rule 12): a Windows installer
+        (.exe, Start-menu and desktop shortcuts, uninstaller) and a macOS
+        app (.dmg with Pistachio's Studio.app). Each shows a progress bar
+        for the whole install and for the current task, with the task
+        named in plain words ("Installing Python 3.12 (2 of 7)",
+        "Downloading the picture tools: 145 of 610 MB", "Checking
+        Kaggle"), a details log, a Cancel button that leaves nothing
+        half-installed, a clear message and a "copy the log" button when
+        a step fails, and a resume after a failed or cancelled install.
+        Updates install over the top and keep every project.
 [ ] M2  Sources: every story SourceAdapter + the format/products/styles
         step.
 [ ] M3  READ IT IN: the full Section 5 pipeline with critique loop;

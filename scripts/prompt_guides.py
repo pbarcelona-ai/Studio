@@ -4,6 +4,8 @@ Every model family likes a different style: some want one flowing paragraph, som
 `guide_for(kind, model)` returns the rules for the model the prompts are written for; `writer_system(kind, model)` is the system prompt the
 writing AI gets. A model name that is not listed gets the general rules for its kind. To teach the writer about a new model, add it to FAMILY.
 """
+import crew
+
 
 VIDEO_BASE = (
     "A strong video prompt is ONE clip: a clear subject, what that subject DOES over the clip (named motion, in the order it happens), the camera "
@@ -72,13 +74,14 @@ def guide_for(kind, model=None):
     return base + (" Length: 50-90 words." if kind == "video" else " Length: 30-70 words."), ("50-90 words" if kind == "video" else "30-70 words")
 
 
-def writer_system(kind, model=None):
-    """The system prompt for the writing AI (any engine)."""
+def writer_system(kind, model=None, book_dir=None):
+    """The system prompt for the writing AI (any engine): the Storyboard Artist and the Cinematographer, with the target model's rules."""
     rules, _ = guide_for(kind, model)
-    return (f"You are an expert prompt writer for {kind} generation models. You write vivid, specific, production-ready prompts. {rules} "
-            "Reply with a single JSON object and nothing else.")
+    return crew.system(["storyboard_artist", "cinematographer"], book_dir, f"{kind}-prompt",
+                       f"Write prompts for {kind} generation models: vivid, specific and production-ready. {rules}")
 
 
-def review_system():
-    return ("You are a careful reviewer of AI-generated pictures and video frames. You compare a result with the prompt that made it and judge only what "
-            "you can see. You reply with a single JSON object and nothing else.")
+def review_system(book_dir=None):
+    """The system prompt for checking a picture or a frame against its prompt: the Script Supervisor."""
+    return crew.system("script_supervisor", book_dir, "review",
+                       "Review AI-generated pictures and video frames. Compare a result with the prompt that made it and judge only what you can see.")

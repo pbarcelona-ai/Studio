@@ -166,7 +166,7 @@ create table asset (
   style_id text references style_profile(id) on delete set null,          -- null = shared by every style
   kind text not null check (kind in ('image','video','audio','music','pdf','mp4','m4b','zip','doc')),
   path text not null unique,                                              -- never renamed or overwritten
-  sha256 text not null, version integer not null,
+  content_hash text not null, version integer not null,                  -- sha1 of the file (picture_record.py)
   is_selected integer not null default 0,
   purpose text, verdict text check (verdict in ('liked','approved','rejected')),
   provider text, model text, params text not null default '{}', references_json text not null default '[]',

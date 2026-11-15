@@ -1,0 +1,26 @@
+{
+  "name": "vertical_microdrama",
+  "title": "Vertical microdrama series",
+  "about": "A series of 60-120 second vertical episodes, each ending on a cliffhanger.",
+  "products": [
+    "screenplay",
+    "storyboard",
+    "film",
+    "marketing"
+  ],
+  "aspect": "9:16",
+  "target_minutes": 2,
+  "series": true,
+  "quality_tier": "final",
+  "critique": {
+    "min_score": 8,
+    "max_rounds": 2
+  },
+  "prompt_rules": {
+    "development_executive": "Split the story into episodes of about 2 minutes; every episode needs a hook in the first 3 seconds and a cliffhanger at the end.",
+    "screenwriter": "Short scenes, strong conflict, a hook at the start of every episode.",
+    "cinematographer": "Vertical 9:16 framing: centred subjects, close-ups and medium shots, space for captions at the bottom.",
+    "editor": "Fast pacing; cut on action; end on the cliffhanger."
+  },
+  "episode_minutes": 2
+}

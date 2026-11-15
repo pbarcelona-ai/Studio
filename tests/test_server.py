@@ -53,6 +53,8 @@ def quiet(monkeypatch, tmp_path):
     monkeypatch.setattr(SESSION, "remove", lambda: seen.__setitem__("removed", seen["removed"] + 1))
     monkeypatch.setattr(srv, "start_auto_cleanup", lambda: seen.__setitem__("cleanup", seen["cleanup"] + 1))
     monkeypatch.setattr(srv.JOB, "on_finish", None)
+    import studio_index
+    monkeypatch.setattr(studio_index, "rebuild_in_background", lambda: seen.__setitem__("index", seen.get("index", 0) + 1))
     return seen
 
 
@@ -61,7 +63,7 @@ def test_main_prints_the_link_and_cleans_up_on_ctrl_c(quiet, capsys):
     out = capsys.readouterr().out
     assert f"http://127.0.0.1:4242/?t={SESSION.token}" in out and "stopped" in out
     assert quiet["saved"] == [4242] and quiet["cleanup"] == 1 and quiet["removed"] == 1 and quiet["opened"] == []
-    assert srv.JOB.on_finish is srv.start_auto_cleanup
+    assert srv.JOB.on_finish.__name__ == "after_jobs" and quiet["index"] == 1     # Kaggle clean-up, then the search index is rebuilt
 
 
 def test_main_opens_the_browser_unless_told_not_to(quiet):

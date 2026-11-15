@@ -1,6 +1,7 @@
 """Scene prompts: look at them, add details, get suggestions, save and revert."""
 import re
 import time
+import crew
 from bookkit import EDIT_FIELDS, continuity_file, SLUG_RE, llm_json, read_json, set_scene_field, write_json
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
@@ -184,6 +185,6 @@ def prompt_suggest(opt):
             raise ValueError(f"'suggestions' must be {count} strings, each at most {limit} characters")
 
     args = engine_args(opt)
-    data = llm_json(prompt, "You are a film director and prompt writer. You reply with a single JSON object and nothing else.",
+    data = llm_json(prompt, crew.system(["director", "storyboard_artist"], d, "prompt-suggest", "Suggest new wording for one shot."),
                     model=(args[3] if len(args) > 3 else None), engine=args[1], validate=check)
     return [x.strip() for x in data["suggestions"]]

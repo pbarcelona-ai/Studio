@@ -1,0 +1,20 @@
+{
+  "name": "picture_book",
+  "title": "Picture book",
+  "about": "An illustrated book: one picture per page with the story text.",
+  "products": [
+    "screenplay",
+    "illustrated_book"
+  ],
+  "aspect": "4:3",
+  "target_minutes": 0,
+  "series": false,
+  "quality_tier": "final",
+  "critique": {
+    "min_score": 8,
+    "max_rounds": 2
+  },
+  "prompt_rules": {
+    "illustrator": "About 80 words per page; one clear picture moment per page; page turns land on surprises."
+  }
+}

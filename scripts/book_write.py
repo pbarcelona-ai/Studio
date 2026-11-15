@@ -25,6 +25,7 @@ from bookkit import (global_texts, sentences, character_token, continuity_file, 
                      project_dir, read_json, shot_count, slice_text, strip_verse_numbers, words, write_json)
 import adaptation
 import cast_lock
+import crew
 import screenplay
 
 ap = argparse.ArgumentParser()
@@ -165,11 +166,10 @@ if args.dry_run:
     sys.exit(0)
 
 # ---------------------------------------------------------------- real run
-SYSTEM = ("You are an expert hollywood filmmaker, storyboard artist, and technical prompt engineer. "
-          "Translate the following book excerpt into a structured, shot-by-shot video production plan. "
-          "Convert interior thoughts, feelings, and abstract descriptions into visible behavior, physical action, and environmental cues. "
-          "You are also a sound designer: you adapt the book into short AI-video shots. "
-          "You reply with a single JSON object and nothing else.")
+SYSTEM = crew.system(["director", "cinematographer", "storyboard_artist", "sound_designer"], pdir, "shots",
+                     "Translate the following book excerpt into a structured, shot-by-shot video production plan. "
+                     "Convert interior thoughts, feelings, and abstract descriptions into visible behavior, physical action, and environmental cues. "
+                     "Adapt the book into short AI-video shots, each with its picture prompt and its sound.")
 (pdir / "scripts").mkdir(exist_ok=True)
 char_names = [c["name"] for c in continuity["characters"]]
 book_brief = {k: continuity[k] for k in ("setting", "visual_style", "music_theme") if k in continuity}
@@ -180,7 +180,7 @@ location_names = [loc["name"] for loc in continuity.get("locations", [])]
 voice_of = {c["name"].lower(): voice_id(c.get("voice")) for c in continuity["characters"]}   # a voice word (male, elder) or a Kokoro id
 
 
-OUTLINE_SYSTEM = "You are a script supervisor breaking a book chapter into scenes. You reply with a single JSON object and nothing else."
+OUTLINE_SYSTEM = crew.system("script_supervisor", pdir, "outline", "Break a book chapter into scenes.")
 
 
 def outline(c, text):

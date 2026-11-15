@@ -214,6 +214,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import bookkit
+    import crew
     langs = [x.strip() for x in a.languages.split(",") if x.strip()]
     tracks = []
     for t in a.audio_track:
@@ -221,7 +222,7 @@ def main(argv=None):
         tracks.append((lang.strip(), rel.strip()))
 
     def llm(prompt, check):
-        return bookkit.llm_json(prompt, "You are a professional subtitle translator. You reply with a single JSON object and nothing else.", model=a.model, engine=a.engine, validate=check)
+        return bookkit.llm_json(prompt, crew.system("subtitle_translator", bookkit.project_dir(a.project), "subtitles"), model=a.model, engine=a.engine, validate=check)
     try:
         res = export(bookkit.project_dir(a.project), a.film, a.preset, langs, llm if langs else None, tracks, a.out, a.title)
     except (ExportError, RuntimeError) as e:

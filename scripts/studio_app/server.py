@@ -47,8 +47,14 @@ def main(argv=None):
     url = f"http://127.0.0.1:{srv.server_port}/?t={SESSION.token}"
     print(f"Pistachio's Studio running. Open: {url}\nCtrl-C to stop.", flush=True)
     log.info("listening on 127.0.0.1:%s", srv.server_port)
-    JOB.on_finish = start_auto_cleanup
+    import studio_index
+
+    def after_jobs():                            # after the last job of a queue: Kaggle clean-up, and the search index sees the new pictures
+        start_auto_cleanup()
+        studio_index.rebuild_in_background()
+    JOB.on_finish = after_jobs
     start_auto_cleanup()
+    studio_index.rebuild_in_background()         # derived from the folders; a missing or old index is simply rebuilt
     from .resume import on_startup
     on_startup()                                 # a job from the last session that is still running: follow it
     if not a.no_open:

@@ -1,0 +1,20 @@
+{
+  "name": "audiobook_only",
+  "title": "Audiobook only",
+  "about": "The book read aloud with a narrator and character voices. No pictures.",
+  "products": [
+    "screenplay",
+    "audiobook"
+  ],
+  "aspect": "16:9",
+  "target_minutes": 0,
+  "series": false,
+  "quality_tier": "final",
+  "critique": {
+    "min_score": 8,
+    "max_rounds": 2
+  },
+  "prompt_rules": {
+    "voice_director": "Narration carries the prose; give each character a distinct voice."
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "short_film",
+  "title": "Short film",
+  "about": "A short film up to 15 minutes, 16:9.",
+  "products": [
+    "screenplay",
+    "storyboard",
+    "animatic",
+    "film"
+  ],
+  "aspect": "16:9",
+  "target_minutes": 10,
+  "series": false,
+  "quality_tier": "final",
+  "critique": {
+    "min_score": 8,
+    "max_rounds": 2
+  },
+  "prompt_rules": {
+    "screenwriter": "One clear story line; cut subplots.",
+    "editor": "Keep it tight: no scene longer than it needs to be."
+  }
+}
