@@ -1003,7 +1003,7 @@ milestone's tests pass, the review (CLAUDE.md) shows PASS, and I've
 approved it. A partly done milestone stays unticked. Add a line under it
 saying what's left.
 
-[ ] M1  Skeleton (or, for Studio, the new step path layout), FAKE
+[x] M1 (2026-11-15, 8223bc2)  Skeleton (or, for Studio, the new step path layout), FAKE
         providers, crew role files, project rules, recipes, gates,
         the studio_index.db index + reindex, rev checks (Section 8.0).
         README.
