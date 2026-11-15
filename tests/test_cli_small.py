@@ -196,7 +196,7 @@ class TestMergeVideos:
         monkeypatch.setattr("shutil.which", lambda n: "/usr/bin/ffmpeg")
         code, out = run_script("merge_videos.py", "videos/ltx_video", "out.mp4", "--project", "demo", "--end", "9")
         assert code is None and "merged 2 clips" in out
-        assert [l.split("/")[-1] for l in seen["list"].split("'\n") if l] == ["shot-0001.mp4", "shot-0002.mp4"] and seen["argv"][-1].endswith("films/out.mp4")
+        assert [l.split("/")[-1] for l in seen["list"].split("'\n") if l] == ["shot-0001.mp4", "shot-0002.mp4"] and seen["argv"][-1].replace("\\", "/").endswith("films/out.mp4")
 
     def test_no_clips_in_range(self, book, run_script, monkeypatch):
         (book / "videos" / "ltx_video").mkdir(parents=True)
