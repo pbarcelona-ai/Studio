@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from bookkit import NEG_TAIL, continuity_file, LOCAL_LLM_URL, SLUG_RE, hf_json, llm_json, local_chat
@@ -26,6 +27,21 @@ log = get_logger("llm")
 _LOCAL_CACHE: dict[str, Any] = {"at": 0.0, "value": None}
 
 
+
+def _windows_memory_gb() -> float:
+    """Installed memory on Windows (GlobalMemoryStatusEx), in GB; 0 when it cannot be read."""
+    if sys.platform != "win32":
+        return 0.0
+    import ctypes
+
+    class _Mem(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong), ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong), ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong), ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+    m = _Mem()
+    m.dwLength = ctypes.sizeof(_Mem)
+    return m.ullTotalPhys / 2**30 if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)) else 0.0
+
 def local_llm_status(force=False):
     """Can this computer run the prompt writer on a local language model? {"ready", "reason", "url", "models"}. The checkbox in the Studio is greyed out
     (with this reason) until the computer qualifies: Apple Silicon or an NVIDIA GPU, 16 GB of memory or more, and a model server answering on
@@ -37,8 +53,10 @@ def local_llm_status(force=False):
     try:
         if platform.system() == "Darwin":
             gb = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=3).stdout.strip() or 0) / 2**30
-        else:
+        elif sys.platform != "win32":
             gb = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2**30
+        else:
+            gb = _windows_memory_gb()
     except (OSError, ValueError, subprocess.SubprocessError):
         gb = 0
     if os.environ.get("STUDIO_LOCAL_LLM") != "1":

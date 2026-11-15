@@ -15,12 +15,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-IS_WIN = os.name == "nt"
+IS_WIN = sys.platform == "win32"          # mypy checks each branch for the system it is told (sys.platform guards)
 
 
 def group_kwargs() -> dict:
     """Popen keyword arguments that put a new process in its own group, so it and everything it starts can be stopped together."""
-    if IS_WIN:
+    if sys.platform == "win32":
         return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200)}
     return {"start_new_session": True}
 
@@ -28,7 +28,7 @@ def group_kwargs() -> dict:
 def pid_alive(pid) -> bool:
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1:
         return False
-    if IS_WIN:
+    if sys.platform == "win32":
         return _win_alive(pid)
     try:
         os.kill(pid, 0)
@@ -42,8 +42,10 @@ def pid_alive(pid) -> bool:
 
 
 def _win_alive(pid: int) -> bool:
+    if sys.platform != "win32":
+        return False
     import ctypes                                         # Windows only; kept here so POSIX never loads it
-    k32 = ctypes.windll.kernel32                          # type: ignore[attr-defined]
+    k32 = ctypes.windll.kernel32
     h = k32.OpenProcess(0x1000, False, pid)               # PROCESS_QUERY_LIMITED_INFORMATION
     if not h:
         return False
@@ -56,14 +58,14 @@ def _win_alive(pid: int) -> bool:
 
 def group_of(pid: int) -> int:
     """The process group to stop for pid (on Windows the pid itself: taskkill /T follows its children)."""
-    if IS_WIN:
+    if sys.platform == "win32":
         return pid
     return os.getpgid(pid)
 
 
 def stop_group(pid: int, hard: bool = False) -> bool:
     """Ask the group of pid to stop (hard: make it stop). False when there was nothing to stop."""
-    if IS_WIN:
+    if sys.platform == "win32":
         argv = ["taskkill", "/PID", str(pid), "/T"] + (["/F"] if hard else [])
         try:
             return subprocess.run(argv, capture_output=True, timeout=30).returncode == 0
@@ -78,7 +80,7 @@ def stop_group(pid: int, hard: bool = False) -> bool:
 
 def stop_known_group(pgid: int, hard: bool = False) -> None:
     """Like stop_group, for a group found earlier (POSIX: the group id; Windows: the leading pid)."""
-    if IS_WIN:
+    if sys.platform == "win32":
         stop_group(pgid, hard)
         return
     try:
@@ -89,7 +91,7 @@ def stop_known_group(pgid: int, hard: bool = False) -> None:
 
 def processes() -> list[tuple[int, int, str, str]]:
     """(pid, group, running time, command line) of this user's processes. Empty when the system will not say."""
-    if IS_WIN:
+    if sys.platform == "win32":
         return _win_processes()
     try:
         out = subprocess.run(["ps", "-x", "-o", "pid=,pgid=,etime=,command="], capture_output=True, text=True, timeout=10).stdout
@@ -123,7 +125,15 @@ def _win_processes() -> list[tuple[int, int, str, str]]:
 
 def cwd_of(pid: int) -> str:
     """The working folder of pid, or '' when it cannot be found (always '' on Windows: the command line names the Studio's folder)."""
-    if IS_WIN or not shutil.which("lsof"):
+    if sys.platform == "win32":
+        return ""
+    proc_cwd = Path(f"/proc/{pid}/cwd")                    # Linux: no lsof needed
+    if proc_cwd.exists():
+        try:
+            return str(proc_cwd.readlink())
+        except OSError:
+            return ""
+    if not shutil.which("lsof"):
         return ""
     try:
         out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True, timeout=10).stdout
@@ -134,8 +144,8 @@ def cwd_of(pid: int) -> str:
 
 def open_folder(folder: Path) -> bool:
     """Show a folder in Finder, Explorer or the file manager. False when this computer has no way to."""
-    if IS_WIN:
-        os.startfile(str(folder))                         # type: ignore[attr-defined]  # noqa: S606  (Windows: the folder only, no shell)
+    if sys.platform == "win32":
+        os.startfile(str(folder))                         # noqa: S606  (Windows: the folder only, no shell)
         return True
     opener = "open" if sys.platform == "darwin" else "xdg-open"
     if not shutil.which(opener):

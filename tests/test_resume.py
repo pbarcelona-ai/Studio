@@ -120,6 +120,7 @@ def test_discard(jobdir):
         resume.sessions_action({"action": "nope"})
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows finds Studio programs by the folder in their command line; this stand-in has none")
 def test_studio_programs_left_running_are_found_and_can_be_stopped(jobdir, monkeypatch):
     monkeypatch.delenv("STUDIO_NO_BUSY_CHECK", raising=False)
     p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "scripts/run_local_model.py"], cwd=ROOT, start_new_session=True)
