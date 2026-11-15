@@ -4,7 +4,15 @@ on:
   pull_request:
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # The Studio must work on Windows as well as macOS (BOOK_TO_SCREEN_BUILD.md rule 11), so every push is tested on all three.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,4 +29,6 @@ jobs:
         working-directory: tests/js
       - run: pytest --cov=scripts
       - run: coverage report --include='scripts/studio_app/*' --fail-under=85
+        if: matrix.os == 'ubuntu-latest'
       - run: coverage report --fail-under=90
+        if: matrix.os == 'ubuntu-latest'

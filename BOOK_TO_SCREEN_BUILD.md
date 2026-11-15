@@ -48,6 +48,8 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D4 | 2026-11-15 | FAKE providers: tests keep using the existing stubs; a `fake` engine for demo runs is added in M3, when Read it in runs end to end | assumed — not answered |
 | D5 | 2026-11-15 | README.md and ARCHITECTURE.md were emptied in commit `252cb89` (130 and 48 lines removed, no reason given). Restored from `252cb89^` and updated, because M1 asks for a README | assumed — not answered |
 | D7 | 2026-11-15 | Package Studio as installers for **Windows and macOS** with progress bars that name each task (Section 2, rule 12; milestone MI) | owner |
+| D8 | 2026-11-15 | MW: the shell scripts keep their names in steps and saved jobs; `steps.script_argv` runs their Python ports (`scripts/*.py`) on every system, so Mac and Windows run the same code. The `.sh` files stay as 4-line wrappers for old terminal commands. `kaggle_names.sh` is gone (Python `cksum` gives the same names, so old runs are still recognised). The remote GPU scripts (`make_*.py`) stay Linux-only: they run on Kaggle/Colab | assumed — not answered |
+| D9 | 2026-11-15 | MW: Windows install is `install.bat` → `install.ps1` (a progress bar naming each task) until the MI installers exist; `run_studio.bat` starts it | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~

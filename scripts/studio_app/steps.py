@@ -1,5 +1,6 @@
 """Step building blocks: script argv, engine arguments, book steps, runner commands."""
 import re
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from bookkit import SLUG_RE
@@ -13,8 +14,26 @@ from .common import PlanError, num
 from .config import CATALOG, BOOK_EXTS, LEGACY, MODEL_RE, ROOT
 
 
-def script_argv(argv: list[str]) -> list[str]:
-    """Steps name their Python scripts bare ("book_continuity.py") but the job runs from the repository root and the scripts live in scripts/."""
+# Shell scripts the steps still name (saved jobs and the page show these names) and the Python that runs them on every system.
+PORTS = {
+    "scripts/run_kaggle_model.sh": ["{py}", "scripts/run_kaggle_model.py"],
+    "scripts/run_colab_model.sh": ["{py}", "scripts/run_colab_model.py"],
+    "scripts/fetch_kaggle_run.sh": ["{py}", "scripts/fetch_kaggle_run.py"],
+    "scripts/run_hf_space.sh": ["uv", "run", "--quiet", "--with", "gradio_client", "--with", "pillow", "scripts/run_hf_space.py"],
+}
+
+
+def script_argv(argv: list[str], run: bool = True) -> list[str]:
+    """The command a step runs. Steps name their Python scripts bare ("book_continuity.py") but the job runs from the repository root and the
+    scripts live in scripts/; "python3" is the Python the Studio runs on (Windows has no python3); a ported .sh runs its Python version.
+    run=False: only the path fix, for showing the step in the log as its author wrote it."""
+    if not argv:
+        return []
+    head = argv[0]
+    if run and head in PORTS:
+        argv = [a.replace("{py}", sys.executable) for a in PORTS[head]] + list(argv[1:])
+    elif run and head == "python3":
+        argv = [sys.executable] + list(argv[1:])
     out = []
     for a in argv:
         if a.endswith(".py") and "/" not in a and not (ROOT / a).exists() and (ROOT / "scripts" / a).exists():
@@ -27,7 +46,7 @@ def shell_form(step: dict) -> str:
     if "expand" in step:
         return "(chosen when the earlier steps finish: " + step["label"] + ")"
     env = " ".join(f"{k}={v}" for k, v in step["env"].items())
-    return (env + " " if env else "") + " ".join(script_argv(step["argv"]))
+    return (env + " " if env else "") + " ".join(script_argv(step["argv"], run=False))
 
 
 ENGINES = ["claude", "fcc-claude", "codex", "fcc-codex", "hf", "local"]

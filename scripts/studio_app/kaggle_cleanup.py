@@ -3,6 +3,7 @@ from typing import Any
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timedelta, UTC
@@ -152,7 +153,7 @@ def start_auto_cleanup():
 
 
 def recreate_notebooks():
-    r = subprocess.run(["python3", "scripts/make_all.py"], cwd=ROOT, env=clean_env(), capture_output=True, text=True, timeout=120)
+    r = subprocess.run([sys.executable, "scripts/make_all.py"], cwd=ROOT, env=clean_env(), capture_output=True, text=True, timeout=120)
     if r.returncode != 0:
         raise PlanError("could not re-create the notebooks: " + (r.stderr or r.stdout)[-300:])
     return {"notebooks": len(list(ROOT.glob("Studio_*.ipynb"))), "scripts": len(list(ROOT.glob("colab_generate_*.py")))}

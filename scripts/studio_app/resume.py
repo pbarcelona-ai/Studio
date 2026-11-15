@@ -6,18 +6,18 @@ POST /api/sessions {action}         continue | redo | discard | stop (pid) | fol
 """
 import os
 import re
-import subprocess
 import time
 from pathlib import Path
 
 from .common import PlanError
 from .config import ROOT
+from . import procs
 from .jobs import JOB, exit_code, kill_group, pid_alive, read_state, write_state
 from .log import get_logger
 
 log = get_logger("resume")
 # Studio programs that use a GPU or an AI model (and the few others a job runs), as they appear in `ps`
-PROGRAMS = re.compile(r"(run_kaggle_model\.sh|run_colab_model\.sh|run_hf_space\.sh|run_local_model\.py|make_video\.py|make_audio\.py|make_keyframes\w*\.py|"
+PROGRAMS = re.compile(r"(run_kaggle_model\.(?:sh|py)|run_colab_model\.(?:sh|py)|run_hf_space\.(?:sh|py)|fetch_kaggle_run\.(?:sh|py)|run_local_model\.py|make_video\.py|make_audio\.py|make_keyframes\w*\.py|"
                       r"local_audio\.py|face_check\.py|book_adapt\.py|book_screenplay\.py|book_continuity\.py|book_write\.py|book_ingest\.py|book_build\.py|"
                       r"mix_film\.py|export_film\.py|regress_kaggle\.py)")
 AI = ("book_adapt", "book_screenplay", "book_continuity", "book_write")
@@ -37,24 +37,11 @@ def kind_of(command: str) -> str:
 
 def _ps() -> list[tuple[int, int, str, str]]:
     """(pid, process group, running time, command) of every process of this user."""
-    try:
-        out = subprocess.run(["ps", "-x", "-o", "pid=,pgid=,etime=,command="], capture_output=True, text=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
-    rows = []
-    for line in out.splitlines():
-        parts = line.split(None, 3)
-        if len(parts) == 4 and parts[0].isdigit() and parts[1].isdigit():
-            rows.append((int(parts[0]), int(parts[1]), parts[2], parts[3]))
-    return rows
+    return procs.processes()
 
 
 def _cwd(pid: int) -> str:
-    try:
-        out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    return next((ln[1:] for ln in out.splitlines() if ln.startswith("n")), "")
+    return procs.cwd_of(pid)
 
 
 def studio_processes(exclude_groups: set[int] | None = None) -> list[dict]:

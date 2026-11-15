@@ -6,7 +6,7 @@ The Studio itself always runs on your computer; nothing is hosted for you.
 
 ## What you need
 
-- A Mac (or Linux) with **Python 3.11 or newer** (the Kaggle program needs it). Windows support and one-click installers for Windows and macOS are being built (milestones MW and MI in `BOOK_TO_SCREEN_BUILD.md`).
+- A Mac, Windows 10/11 or Linux computer with **Python 3.11 or newer** (the Kaggle program needs it). One-click installers for Windows and macOS are being built (milestone MI in `BOOK_TO_SCREEN_BUILD.md`).
 - Either a free **Kaggle account** (kaggle.com): verify your phone number in Kaggle's settings, as Kaggle only gives GPUs to verified accounts.
   Free accounts get roughly 30 GPU hours a week and two GPU sessions at a time.
 - Or a **GPU in this computer** (Linux, or Windows through WSL 2): NVIDIA, or AMD with ROCm (experimental). Then no Kaggle account is needed.
@@ -20,6 +20,8 @@ cd Studio
 ./install.sh          # makes a private .venv and installs what the Studio needs; add --3d for the optional 3D depth view
 ./run_studio.sh       # starts the Studio and opens it in your browser
 ```
+
+On **Windows**: download or clone the folder, double-click `install.bat` once, then double-click `run_studio.bat` (the page opens in your browser; close the window to stop the Studio). The Kaggle and Colab runs, the job queue and Stop work the same as on a Mac: they are Python programs (`scripts/run_kaggle_model.py`, `run_colab_model.py`, `fetch_kaggle_run.py`, `run_step.py`); the old `.sh` names still work on a Mac and only call them.
 
 On a Mac you can also run `./create_app_bundle.sh` once to get a double-clickable **Pistachio's Studio** app in Applications.
 

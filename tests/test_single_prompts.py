@@ -106,14 +106,13 @@ class TestOpenFolder:
             sp.open_folder("series", " ")
 
     def test_no_file_manager(self, fake_root, monkeypatch):
-        monkeypatch.setattr(sp.shutil, "which", lambda n: None)
+        monkeypatch.setattr(sp.procs, "open_folder", lambda folder: False)
         with pytest.raises(PlanError, match="cannot open folders"):
             sp.open_folder("series", "eve")
 
     def test_opens_and_returns_a_relative_path(self, fake_root, monkeypatch):
         ran = []
-        monkeypatch.setattr(sp.shutil, "which", lambda n: "/usr/bin/" + n)
-        monkeypatch.setattr(sp.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
+        monkeypatch.setattr(sp.procs, "open_folder", lambda folder: ran.append(folder) or True)
         out = sp.open_folder("series", "eve")
         assert ran and not out.startswith("/")
 

@@ -1,7 +1,8 @@
 """Runs a plan (a list of validated steps) one step after another in a background thread, keeping the output for the page to poll.
 
-A step is {"label", "argv": [...], "env": {...}, optional "ok_codes"}; argv is passed to subprocess WITHOUT a shell (a fixed /bin/sh wrapper
-only records the exit code). Stopping sends SIGTERM to the step's whole process group and SIGKILL if it is still alive after STOP_GRACE seconds.
+A step is {"label", "argv": [...], "env": {...}, optional "ok_codes"}; argv is passed to subprocess WITHOUT a shell (scripts/run_step.py
+only records the exit code, on every system). Stopping asks the step's whole process group to stop (SIGTERM, or taskkill /T on Windows) and
+forces it if it is still alive after STOP_GRACE seconds (procs.py).
 
 A job outlives the Studio: each step runs in its own session and writes to a log file (logs/jobs/<job id>/step-N.log) with its exit code in
 step-N.exit, and the job's state (its steps, options and where it is) is kept in logs/jobs/current.json. When the Studio starts again it
@@ -10,13 +11,14 @@ follows a step that is still running and then carries on with the rest (attach),
 import json
 import os
 import shutil
-import signal
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 
+from . import procs
 from .common import PlanError
 from .config import ROOT, clean_env
 from .generation import film_video_steps, generation_steps
@@ -28,7 +30,11 @@ STOP_GRACE = 10.0          # seconds between SIGTERM and SIGKILL
 MAX_QUEUE = 10             # jobs that may wait behind the running one
 KEEP_JOBS = 20             # job folders kept in logs/jobs
 POLL = 0.2                 # seconds between looks at a step's log file
-WRAPPER = 'c=0; "$@" || c=$?; echo "$c" > "$STUDIO_EXIT_FILE"; exit "$c"'
+
+
+def step_command(argv: list[str]) -> list[str]:
+    """The command that runs one step and records its exit code in $STUDIO_EXIT_FILE (scripts/run_step.py: no shell, so Windows works)."""
+    return [sys.executable, str(ROOT / "scripts" / "run_step.py"), *argv]
 
 
 def job_dir() -> Path:
@@ -53,20 +59,13 @@ def write_state(d: dict) -> None:
     f.parent.mkdir(parents=True, exist_ok=True)
     tmp = f.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(d, indent=1, default=str))
-    os.chmod(tmp, 0o600)                                 # it holds the job's options (a Kaggle name, never a key)
+    if not procs.IS_WIN:
+        os.chmod(tmp, 0o600)                                 # it holds the job's options (a Kaggle name, never a key)
     os.replace(tmp, f)
 
 
 def pid_alive(pid) -> bool:
-    if not isinstance(pid, int) or pid <= 1:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return procs.pid_alive(pid)
 
 
 def exit_code(path) -> int | None:
@@ -217,7 +216,7 @@ class Job:
     def _run_step(self, step: dict, env_base: dict[str, str]) -> int:
         argv = script_argv(step["argv"])
         prog = argv[0] if argv else ""
-        if not prog or not (shutil.which(prog) or (os.sep in prog and os.access(prog if Path(prog).is_absolute() else ROOT / prog, os.X_OK))):
+        if not prog or not (shutil.which(prog) or ("/" in prog or os.sep in prog) and (Path(prog) if Path(prog).is_absolute() else ROOT / prog).is_file()):
             self.log(f"!! cannot start: {prog or '(nothing)'} was not found")
             return 127
         d = Path(self.state.get("dir") or job_dir() / "loose")
@@ -228,8 +227,8 @@ class Job:
         env = {**env_base, **step["env"], "STUDIO_EXIT_FILE": str(exitf), "PYTHONUNBUFFERED": "1"}
         try:
             with open(logf, "ab") as out:
-                proc = subprocess.Popen(["/bin/sh", "-c", WRAPPER, "sh", *argv], cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
-                                        stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+                proc = subprocess.Popen(step_command(argv), cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+                                        stdout=out, stderr=subprocess.STDOUT, **procs.group_kwargs())
         except OSError as e:                                  # not found, not executable, ...
             self.log(f"!! cannot start: {e}")
             return 127
@@ -331,38 +330,26 @@ class Job:
             kill_group(pid)
 
     def _terminate(self, proc: subprocess.Popen) -> None:
-        self._signal(proc, signal.SIGTERM)
+        procs.stop_group(proc.pid)
         timer = threading.Timer(STOP_GRACE, self._kill_if_alive, args=(proc,))
         timer.daemon = True
         timer.start()
 
     @staticmethod
-    def _signal(proc: subprocess.Popen, sig: int) -> None:
-        try:
-            os.killpg(os.getpgid(proc.pid), sig)
-        except (ProcessLookupError, PermissionError):
-            pass
-
-    def _kill_if_alive(self, proc: subprocess.Popen) -> None:
+    def _kill_if_alive(proc: subprocess.Popen) -> None:
         if proc.poll() is None:
-            log.warning("step ignored SIGTERM; sending SIGKILL")
-            self._signal(proc, signal.SIGKILL)
+            log.warning("step did not stop when asked; forcing it")
+            procs.stop_group(proc.pid, hard=True)
 
 
 def kill_group(pid: int) -> None:
-    """SIGTERM to the process group of pid (a step runs in its own session, so this is the step and everything it started), SIGKILL later."""
+    """Ask the process group of pid to stop (a step runs in its own group, so this is the step and everything it started); force it later."""
     try:
-        pg = os.getpgid(pid)
-        os.killpg(pg, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
+        pg = procs.group_of(pid)
+    except (ProcessLookupError, PermissionError, OSError):
         return
-
-    def later():
-        try:
-            os.killpg(pg, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-    t = threading.Timer(STOP_GRACE, later)
+    procs.stop_known_group(pg)
+    t = threading.Timer(STOP_GRACE, procs.stop_known_group, args=(pg, True))
     t.daemon = True
     t.start()
 

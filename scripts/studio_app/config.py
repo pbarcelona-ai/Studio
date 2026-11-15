@@ -136,9 +136,11 @@ from book_formats import BOOK_EXTS      # noqa: E402,F401  what can be imported 
 
 # Run jobs in a clean environment: the OSS CAD Suite shell setup sets PYTHONHOME and puts its own Python first
 # on PATH, which breaks uv-managed Pythons. Drop those so `uv run` and `python3` behave normally.
-_PATH = [d for d in os.environ.get("PATH", "").split(":") if d and "oss-cad-suite" not in d]
-_VENV_BIN = [str(ROOT / ".venv" / "bin")] if (ROOT / ".venv" / "bin").is_dir() else []      # install.sh puts kaggle, uv and the Python packages here
-ENV_PATH = ":".join(_VENV_BIN + [f"{Path.home()}/.local/bin", "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"] + _PATH)
+_PATH = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d and "oss-cad-suite" not in d]
+_VENV = ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin")      # the installer puts kaggle, uv and the Python packages here
+_VENV_BIN = [str(_VENV)] if _VENV.is_dir() else []
+_USUAL = [str(Path.home() / ".local" / "bin")] + ([] if os.name == "nt" else ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"])
+ENV_PATH = os.pathsep.join(dict.fromkeys(_VENV_BIN + _USUAL + _PATH))   # uv's tool folder; then the usual places; no repeats
 DROP_ENV = ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "PYTHONSTARTUP", "VIRTUAL_ENV", "__PYVENV_LAUNCHER__")
 
 

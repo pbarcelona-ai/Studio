@@ -3,12 +3,11 @@ import csv
 import json
 import re
 import shutil
-import subprocess
-import sys
 from bookkit import NEG_TAIL, SLUG_RE, llm_json
 import character_tokens
 import prompt_guides
 import model_advisor
+from . import procs
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
 from schemas import IMAGE_COLS, VIDEO_COLS
@@ -179,10 +178,8 @@ def open_folder(series, name):
     if not SLUG_RE.match(str(series)) or not str(name).strip():
         raise PlanError("pick a series and a character first")
     folder = character_tokens.ensure_reference_dir(series, name)
-    opener = "open" if sys.platform == "darwin" else "xdg-open"
-    if not shutil.which(opener):
+    if not procs.open_folder(folder):
         raise PlanError(f"cannot open folders here; it is at {folder}")
-    subprocess.run([opener, str(folder)], check=True, timeout=10)
     return str(folder.relative_to(ROOT))
 
 

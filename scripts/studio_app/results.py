@@ -6,9 +6,9 @@ POST /api/get_results {project, kind} start (or queue) one "fetch" step per run 
 """
 import re
 import shutil
-import subprocess
 from functools import lru_cache
 
+import kaggle_names
 from bookkit import SLUG_RE
 from layout import project_dir as pdir
 
@@ -22,12 +22,8 @@ TAIL = re.compile(r"^(?P<model>.+?)(?P<mode>-chapters|-scenes|-keyframes)?-(?P<a
 
 @lru_cache(maxsize=256)
 def _cksum5(text: str) -> str:
-    """The short number run_kaggle_model.sh (kaggle_names.sh) puts in a name that was too long: the first 5 digits of `cksum`."""
-    try:
-        out = subprocess.run(["cksum"], input=text.encode(), capture_output=True, timeout=10).stdout.decode()
-        return out.split()[0][:5]
-    except (OSError, subprocess.SubprocessError, IndexError):
-        return ""
+    """The short number run_kaggle_model puts in a name that was too long (kaggle_names.py: the first 5 digits of the POSIX cksum)."""
+    return kaggle_names.cksum5(text)
 
 
 def tail_of(slug: str, project: str) -> str | None:

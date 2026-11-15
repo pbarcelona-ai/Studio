@@ -1,5 +1,6 @@
 """Work that outlives a session of the Studio: steps write to log files and keep running, the next Studio follows them or carries on, and
 Studio programs and Kaggle notebooks left running are found and reported (studio_app/jobs.py, studio_app/resume.py)."""
+import os
 import subprocess
 import sys
 import time
@@ -7,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from studio_app import jobs, resume
+
+from studio_app import jobs, procs, resume
 from studio_app.common import PlanError
 from studio_app.config import ROOT
 from studio_app.jobs import Job
@@ -41,8 +43,8 @@ def _earlier(jobdir, code_now, more_steps, exit_now=None):
     proc = None
     if code_now is not None:
         out = open(logf, "ab")
-        proc = subprocess.Popen(["/bin/sh", "-c", jobs.WRAPPER, "sh", sys.executable, "-c", code_now], stdout=out, stderr=subprocess.STDOUT,
-                                env={"STUDIO_EXIT_FILE": str(exitf), "PATH": "/usr/bin:/bin"}, start_new_session=True)
+        proc = subprocess.Popen(jobs.step_command([sys.executable, "-c", code_now]), stdout=out, stderr=subprocess.STDOUT,
+                                env={**os.environ, "STUDIO_EXIT_FILE": str(exitf)}, **procs.group_kwargs())
         out.close()
     else:
         logf.write_text("pushing kernel pat/demo-image-keyframes-1-4\nworking...\n")

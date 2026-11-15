@@ -1,14 +1,13 @@
-"""scripts/kaggle_names.sh: notebook and dataset names for Kaggle stay within 50 characters, and long ones stay unique and repeatable."""
+"""scripts/kaggle_names.py: notebook and dataset names for Kaggle stay within 50 characters, and long ones stay unique and repeatable."""
 import re
-import subprocess
+import kaggle_names
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
 def fit(name, tail):
-    r = subprocess.run(["bash", "-c", f'. "{ROOT}/scripts/kaggle_names.sh"; kaggle_fit "$0" "$1"', name, tail], capture_output=True, text=True, check=True)
-    return r.stdout
+    return kaggle_names.fit(name, tail)
 
 
 def test_short_names_are_unchanged():
@@ -29,5 +28,10 @@ def test_long_names_stay_different_and_repeatable():
 
 
 def test_the_script_uses_it():
-    text = (ROOT / "scripts" / "run_kaggle_model.sh").read_text()
-    assert "kaggle_names.sh" in text and 'kaggle_fit "${KPREFIX}' in text
+    text = (ROOT / "scripts" / "run_kaggle_model.py").read_text()
+    assert "kaggle_names.fit(name" in text
+
+
+def test_cksum_matches_the_posix_command():
+    assert kaggle_names.cksum(b"") == 4294967295 and kaggle_names.cksum(b"genesis-jasher-jubilees-adam-eve") == kaggle_names.cksum(b"genesis-jasher-jubilees-adam-eve")
+    assert kaggle_names.cksum(b"a") == 1220704766                       # `printf a | cksum`

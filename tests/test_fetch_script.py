@@ -1,9 +1,12 @@
-"""scripts/fetch_kaggle_run.sh with a stand-in `kaggle` command: results land in the folder the Studio reads (keyframes in <model>_keyframes)."""
+"""scripts/fetch_kaggle_run.py with a stand-in `kaggle` command: results land in the folder the Studio reads (keyframes in <model>_keyframes)."""
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="the stand-in kaggle command is a shell script")
 
 ROOT = Path(__file__).resolve().parent.parent
 FAKE = """#!/bin/sh
@@ -27,7 +30,7 @@ def test_results_land_where_the_studio_looks(tmp_path, slug, where):
     (bin_ / "kaggle").write_text(FAKE)
     (bin_ / "kaggle").chmod(0o755)
     dest = tmp_path / "out"
-    r = subprocess.run([str(ROOT / "scripts" / "fetch_kaggle_run.sh"), f"pat/{slug}", "--dest", str(dest)], capture_output=True, text=True,
-                       env={**os.environ, "PATH": f"{bin_}:{os.environ['PATH']}"}, timeout=60)
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "fetch_kaggle_run.py"), f"pat/{slug}", "--dest", str(dest)], capture_output=True, text=True,
+                       env={**os.environ, "PATH": f"{bin_}{os.pathsep}{os.environ['PATH']}"}, timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr
     assert (dest / where).is_file(), sorted(str(p.relative_to(dest)) for p in dest.rglob("*"))

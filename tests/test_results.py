@@ -1,5 +1,5 @@
 """Get results: which Kaggle runs belong to a book and kind, what is already here, and the fetch steps for the rest (studio_app/results.py)."""
-import subprocess
+import kaggle_names
 from pathlib import Path
 
 import pytest
@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def fit(name, tail):
-    return subprocess.run(["bash", "-c", f'. "{ROOT}/scripts/kaggle_names.sh"; kaggle_fit "$0" "$1"', name, tail], capture_output=True, text=True, check=True).stdout
+    return kaggle_names.fit(name, tail)
 
 
 def test_tail_of_plain_cut_and_old_names():

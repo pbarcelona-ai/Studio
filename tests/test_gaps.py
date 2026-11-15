@@ -7,7 +7,7 @@ import pytest
 import layout
 import model_advisor as ma
 import prompt_guides as pg
-from studio_app import jobs, session, steps
+from studio_app import jobs, procs, session, steps
 from studio_app.common import PlanError
 from studio_app.jobs import Job
 
@@ -124,7 +124,8 @@ class TestJobExpansion:
     def test_signalling_a_process_that_is_gone_is_fine(self):
         p = subprocess.Popen([sys.executable, "-c", "pass"])
         p.wait()
-        Job._signal(p, 15)
+        assert procs.stop_group(p.pid) is False and procs.stop_group(p.pid, hard=True) is False
+        Job._kill_if_alive(p)
 
 
 class TestStudioCommand:
