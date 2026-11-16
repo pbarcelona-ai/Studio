@@ -1438,7 +1438,8 @@
   .flow-nav__toggle:hover { color: var(--fg); background: var(--bg-hover); }
   .flow-about { color: var(--fg-muted); margin: 0 0 var(--space-3); }
   .flow-about.hidden, .flow-foot.hidden { display: none; }
-  .flow-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin: var(--space-4) 0; }
+  /* the bottom margin leaves room for the notifications button and the Producer chat, which stay in the bottom-right corner */
+  .flow-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin: var(--space-4) 0 104px; }
   body:not(.flow) .flow-foot, body:not(.flow) .flow-activity, body:not(.flow) .flow-run { display: none; }
   body.flow .tab-nav > .tab-btn { display: none; }
   body.flow .tab-panel { display: none; }
