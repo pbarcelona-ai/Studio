@@ -260,6 +260,32 @@
             </div>
         </div>
 
+        <div class="card bookonly" id="stepReadIn">
+            <div class="card__header">
+                <h2 class="card__title">Read it in</h2>
+                <p class="card__subtitle">Your film crew turns the sources into a professional, scene-by-scene shooting script: coverage, beat sheet, treatment, screenplay, then notes from the script doctor and the director.</p>
+            </div>
+            <div class="card__body">
+                <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+                    <button type="button" class="btn btn--primary" id="riStart">Read it in</button>
+                    <label class="opt" style="margin:0"><input type="checkbox" id="riForce"><span>Start again from the beginning</span></label>
+                </div>
+                <p class="warn" id="riProgress" role="status" aria-live="polite"></p>
+                <div id="riResult" class="hidden">
+                    <div role="tablist" aria-label="Read it in results" class="row" style="gap:6px;flex-wrap:wrap;margin:8px 0">
+                        <button type="button" role="tab" class="btn btn--secondary" data-ri="script" aria-selected="true" aria-controls="riPane">Screenplay</button>
+                        <button type="button" role="tab" class="btn btn--ghost" data-ri="coverage" aria-selected="false" aria-controls="riPane">Coverage</button>
+                        <button type="button" role="tab" class="btn btn--ghost" data-ri="beats" aria-selected="false" aria-controls="riPane">Beat sheet</button>
+                        <button type="button" role="tab" class="btn btn--ghost" data-ri="treatment" aria-selected="false" aria-controls="riPane">Treatment</button>
+                        <button type="button" role="tab" class="btn btn--ghost" data-ri="notes" aria-selected="false" aria-controls="riPane">Crew notes</button>
+                    </div>
+                    <div id="riPane" role="tabpanel" tabindex="0" style="max-height:420px;overflow:auto;white-space:pre-wrap;font-family:var(--font-mono, monospace);font-size:var(--text-sm)"></div>
+                    <h3 style="font-size:var(--text-sm);margin:12px 0 4px">Download the screenplay (Product A)</h3>
+                    <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="riExport">Make the downloads</button><span id="riFiles"></span></div>
+                </div>
+            </div>
+        </div>
+
         <div class="card bookonly" id="stepAdapt">
             <div class="card__header">
                 <h2 class="card__title">Film plan and screenplay</h2>
@@ -1265,6 +1291,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/adapt.js" defer></script>
 <script src="/static/js/crew.js" defer></script>
 <script src="/static/js/sources.js" defer></script>
+<script src="/static/js/readin.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>

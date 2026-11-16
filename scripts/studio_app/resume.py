@@ -18,9 +18,9 @@ from .log import get_logger
 log = get_logger("resume")
 # Studio programs that use a GPU or an AI model (and the few others a job runs), as they appear in `ps`
 PROGRAMS = re.compile(r"(run_kaggle_model\.(?:sh|py)|run_colab_model\.(?:sh|py)|run_hf_space\.(?:sh|py)|fetch_kaggle_run\.(?:sh|py)|run_local_model\.py|make_video\.py|make_audio\.py|make_keyframes\w*\.py|"
-                      r"local_audio\.py|face_check\.py|book_adapt\.py|book_screenplay\.py|book_continuity\.py|book_write\.py|book_ingest\.py|book_build\.py|"
+                      r"local_audio\.py|face_check\.py|book_adapt\.py|book_screenplay\.py|read_it_in\.py|book_continuity\.py|book_write\.py|book_ingest\.py|book_build\.py|"
                       r"mix_film\.py|export_film\.py|regress_kaggle\.py)")
-AI = ("book_adapt", "book_screenplay", "book_continuity", "book_write")
+AI = ("book_adapt", "book_screenplay", "read_it_in", "book_continuity", "book_write")
 GPU = ("run_kaggle_model", "run_colab_model", "run_hf_space", "run_local_model", "make_video", "make_audio", "make_keyframes", "local_audio", "face_check", "regress_kaggle")
 KERNEL = re.compile(r"(?:pushing kernel|kernel pushed: https://www\.kaggle\.com/code/)\s*([A-Za-z0-9_-]+/[A-Za-z0-9_.-]+)")
 TAIL = 25

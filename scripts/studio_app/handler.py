@@ -14,7 +14,7 @@ import shares
 from bookkit import SLUG_RE, slugify
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
-from . import crew_routes, routes_get, routes_post, setup_install, sources_routes  # noqa: F401  (importing them registers the routes)
+from . import crew_routes, readin_routes, routes_get, routes_post, setup_install, sources_routes  # noqa: F401  (importing them registers the routes)
 from .api import ROUTES, Request, dispatch
 from .config import BOOK_EXTS, LIBRARY, MAX_JSON_BODY, MAX_UPLOAD, WEB
 from .gallery import make_depth, make_thumb
@@ -26,6 +26,8 @@ COOKIE = "studio_token"
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 MEDIA = {".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg", ".wav": "audio/wav"}
+DOWNLOADS = {".pdf": "application/pdf", ".fountain": "text/plain; charset=utf-8", ".fdx": "application/xml",
+             ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".zip": "application/zip", ".json": "application/json"}
 
 
 def safe_project_file(prefix: str, path: str, allowed: tuple[str, ...]) -> Path | None:
@@ -112,11 +114,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._index(query)
         if url.path.startswith("/static/"):
             return self._static(url.path)
-        if url.path.startswith(("/file/", "/thumb/", "/depth/")):
+        if url.path.startswith(("/file/", "/thumb/", "/depth/", "/download/")):
             if not self._authed(query):
                 return self._json(403, {"error": "forbidden"})
             if url.path.startswith("/file/"):
                 return self._file(url)
+            if url.path.startswith("/download/"):
+                return self._download(url)
             return self._derived(url)
         if not self._authed():
             return self._json(403, {"error": "forbidden"})
@@ -181,6 +185,13 @@ class Handler(BaseHTTPRequestHandler):
         if target is None:
             return self._json(404, {"error": "not found"})
         self._serve(target, MEDIA[target.suffix.lower()])
+
+    def _download(self, url):
+        """An export to save: /download/<project>/exports/<file> (screenplay PDF / Fountain / Word / Final Draft, notes, zips), as an attachment."""
+        target = safe_project_file("/download/", url.path, tuple(DOWNLOADS))
+        if target is None or target.parent.name != "exports":
+            return self._json(404, {"error": "not found"})
+        self._serve(target, DOWNLOADS[target.suffix.lower()], {"Content-Disposition": f'attachment; filename="{target.name}"'})
 
     def _serve(self, target: Path, ctype: str, extra_headers: dict | None = None):
         """Send a file with Range support (a 206 for a partial request)."""

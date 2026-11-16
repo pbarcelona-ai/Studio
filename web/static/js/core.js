@@ -227,6 +227,7 @@ function renderProject(applyDef) {
   if (typeof loadAdaptation === "function") loadAdaptation(p);
   if (typeof window.loadCrewCard === "function") window.loadCrewCard(p);
   if (typeof window.loadSourcesCard === "function") window.loadSourcesCard(p);
+  if (typeof window.loadReadIn === "function") window.loadReadIn(p);
   if (typeof loadExports === "function") loadExports(p);
   renderMovies();
   const rows = Object.entries(p.have).filter(([, n]) => n);
