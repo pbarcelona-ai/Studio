@@ -76,6 +76,8 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D33 | 2026-11-15 | M8: Start over keeps sources, settings and styles by default (as the plan's checklist shows); restoring an attempt first archives the current version as a new attempt, keeping in place what the restored attempt did not archive | assumed — not answered |
 | D34 | 2026-11-15 | M9: the sound plan writes the Studio's own audio CSVs (audio_shots.csv one row per shot of the approved shot list, audio_scenes.csv, and a new audiobook.csv), so the existing narration / effects / music runners and the mixer make the sound; the CSVs they replace are kept as .csv.bak. Voices are Kokoro voices (on this computer, no GPU) | assumed — not answered |
 | D35 | 2026-11-15 | M9: the audiobook narrator reads the screenplay's action lines and the characters speak their own lines; its cover is the first approved master picture until the marketing kit makes the poster (M14) | assumed — not answered |
+| D36 | 2026-11-15 | M10: the EDL lives in `edit/edl.json` with named alternative cuts; clips are referred to by scene and shot, so one cut renders in every style. Voice and effects ride on their clip (they move and delete with it); music spans its scene. Renders run through `render_cut.py` (ffmpeg graph in a file, so long films work on Windows) | assumed — not answered |
+| D37 | 2026-11-15 | M10: the style card's colour grade is mapped to the nearest grade.py preset by its words (noir, warm, cool, desaturated, vivid, faded, night) | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1065,7 +1067,7 @@ saying what's left.
         files; start over + picture library (asset groups, versions,
         liked default, purpose labels) + reuse (Section 6b).
 [x] M9 (2026-11-15) Voices, sound, music, audiobook export (Product F).
-[ ] M10 Timeline editor + EDL (alternative cuts) + animatic export
+[x] M10 (2026-11-15) Timeline editor + EDL (alternative cuts) + animatic export
         (Product D, all styles).
 [ ] M11 Clips per style + film export (Product E, all styles).
 [ ] M12 Producer chat (stop / add information / continue), notes on

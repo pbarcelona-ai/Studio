@@ -405,6 +405,34 @@
             </div>
         </div>
 
+        <div class="card bookonly" id="stepEdit">
+            <div class="card__header">
+                <h2 class="card__title">Timeline editor</h2>
+                <p class="card__subtitle">One edit for every style: video, voice and music + effects tracks. Reorder, trim, split, delete, set volumes, snap to the music's beat; keep alternative cuts; accept the editor's notes in one click. Then make the animatic.</p>
+            </div>
+            <div class="card__body">
+                <div class="row" style="gap:8px;flex-wrap:wrap;align-items:end">
+                    <div><label class="f" for="edCut">Cut</label><select id="edCut"></select></div>
+                    <button type="button" class="btn btn--ghost" id="edCopy">Save as a new cut…</button>
+                    <button type="button" class="btn btn--ghost" id="edSnap">Snap to the beat</button>
+                    <button type="button" class="btn btn--ghost" id="edNotes">Ask the editor</button>
+                    <div><label class="f" for="edDuck">Music under speech (dB)</label><input type="number" id="edDuck" min="0" max="30" step="1" style="width:5em"></div>
+                    <button type="button" class="btn btn--primary" id="edApprove" disabled>Approve the edit</button>
+                </div>
+                <p class="warn" id="edNote" role="status" aria-live="polite"></p>
+                <div id="edTracks" style="overflow-x:auto"></div>
+                <div id="edSuggest"></div>
+                <h3 style="font-size:var(--text-sm);margin:12px 0 4px">Animatic (Product D)</h3>
+                <div class="row" style="gap:8px;flex-wrap:wrap;align-items:end">
+                    <div><label class="f" for="edStyle">Style</label><select id="edStyle"><option value="">every style</option></select></div>
+                    <div><label class="f" for="edSize">Size</label><select id="edSize"><option>1920x1080</option><option>1280x720</option><option value="3840x2160">3840x2160 (4K)</option><option>1080x1920</option><option>1080x1080</option></select></div>
+                    <label class="opt" style="margin:0"><input type="checkbox" id="edSubs"><span>Burn in subtitles</span></label>
+                    <button type="button" class="btn btn--secondary" id="edAnimatic">Make the animatic</button>
+                </div>
+                <div id="edPreview" class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"></div>
+            </div>
+        </div>
+
         <div class="card bookonly" id="stepAdapt">
             <div class="card__header">
                 <h2 class="card__title">Film plan and screenplay</h2>
@@ -1416,6 +1444,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/pictures.js" defer></script>
 <script src="/static/js/library.js" defer></script>
 <script src="/static/js/sound.js" defer></script>
+<script src="/static/js/edit.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>

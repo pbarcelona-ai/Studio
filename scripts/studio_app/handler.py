@@ -14,7 +14,7 @@ import shares
 from bookkit import SLUG_RE, slugify
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
-from . import breakdown_routes, crew_routes, library_routes, pictures_routes, readin_routes, routes_get, routes_post, setup_install, sound_routes, sources_routes, styles_routes  # noqa: F401  (importing them registers the routes)
+from . import breakdown_routes, crew_routes, edit_routes, library_routes, pictures_routes, readin_routes, routes_get, routes_post, setup_install, sound_routes, sources_routes, styles_routes  # noqa: F401  (importing them registers the routes)
 from .api import ROUTES, Request, dispatch
 from .config import BOOK_EXTS, LIBRARY, MAX_JSON_BODY, MAX_UPLOAD, WEB
 from .gallery import make_depth, make_thumb
@@ -25,7 +25,7 @@ log = get_logger("http")
 COOKIE = "studio_token"
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
-MEDIA = {".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg", ".wav": "audio/wav"}
+MEDIA = {".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg", ".wav": "audio/wav", ".srt": "text/plain; charset=utf-8"}
 DOWNLOADS = {".pdf": "application/pdf", ".fountain": "text/plain; charset=utf-8", ".fdx": "application/xml",
              ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".zip": "application/zip", ".json": "application/json",
              ".epub": "application/epub+zip", ".m4b": "audio/mp4", ".mp3": "audio/mpeg"}
