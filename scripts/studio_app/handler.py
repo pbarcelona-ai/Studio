@@ -14,7 +14,7 @@ import shares
 from bookkit import SLUG_RE, slugify
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
-from . import breakdown_routes, crew_routes, readin_routes, routes_get, routes_post, setup_install, sources_routes  # noqa: F401  (importing them registers the routes)
+from . import breakdown_routes, crew_routes, readin_routes, routes_get, routes_post, setup_install, sources_routes, styles_routes  # noqa: F401  (importing them registers the routes)
 from .api import ROUTES, Request, dispatch
 from .config import BOOK_EXTS, LIBRARY, MAX_JSON_BODY, MAX_UPLOAD, WEB
 from .gallery import make_depth, make_thumb

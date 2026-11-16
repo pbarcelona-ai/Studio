@@ -305,6 +305,19 @@
             </div>
         </div>
 
+        <div class="card bookonly" id="stepLookDev">
+            <div class="card__header">
+                <h2 class="card__title">Look development</h2>
+                <p class="card__subtitle">For every chosen style: its style card, how each character, place and prop is made in that style, and character sheets and key art to pick from (the best of 4).</p>
+            </div>
+            <div class="card__body">
+                <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="ldWrite">Write the style cards</button>
+                    <button type="button" class="btn btn--primary" id="ldApprove" disabled>Approve the look development</button></div>
+                <p class="warn" id="ldNote" role="status" aria-live="polite"></p>
+                <div id="ldBody"></div>
+            </div>
+        </div>
+
         <div class="card bookonly" id="stepAdapt">
             <div class="card__header">
                 <h2 class="card__title">Film plan and screenplay</h2>
@@ -1312,6 +1325,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/sources.js" defer></script>
 <script src="/static/js/readin.js" defer></script>
 <script src="/static/js/breakdown.js" defer></script>
+<script src="/static/js/lookdev.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>
