@@ -4,7 +4,7 @@
   python3 render_cut.py <project> <style> [--kind animatic|film] [--cut NAME] [--size 1920x1080] [--subtitles]
 
   animatic (Product D): each shot's approved picture of that style, held for its clip's length with a slow Ken Burns push-in
-  film     (Product E): each shot's clip of that style (videos/<style>/shot-NNNN.mp4, M11), trimmed to the EDL
+  film     (Product E): each shot's clip of that style (clips.py: the style's image-to-video set, videos/<model>/shot-NNNN.mp4), trimmed to the EDL
 Both: the cut's order, lengths and transitions (a crossfade on every dissolve); the voice track at its times; the music, ducked by the
 cut's duck_db (12 dB) under speech; the effects; every track's and item's volume; the style card's colour grade; H.264 + AAC, 24 fps.
 Writes exports/<kind>_<style>[_<cut>].mp4 and the matching .srt (subtitles burned in with --subtitles). The same EDL makes every style, so
@@ -80,9 +80,10 @@ def sources(pdir: Path, sid: str, kind: str, clips: list[dict]) -> dict[str, Pat
             else:
                 missing.append(f"{v['scene']} shot {v['shot']}")
     else:
+        import clips as clipmod
         for v in clips:
-            f = pdir / "videos" / sid / f"shot-{int(v['row']):04d}.mp4"
-            if f.is_file():
+            f = clipmod.clip_file(pdir, sid, int(v["row"]))
+            if f is not None:
                 out[v["id"]] = f
             else:
                 missing.append(f"{v['scene']} shot {v['shot']}")

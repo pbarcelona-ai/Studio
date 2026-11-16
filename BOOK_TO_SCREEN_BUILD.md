@@ -78,6 +78,7 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D35 | 2026-11-15 | M9: the audiobook narrator reads the screenplay's action lines and the characters speak their own lines; its cover is the first approved master picture until the marketing kit makes the poster (M14) | assumed — not answered |
 | D36 | 2026-11-15 | M10: the EDL lives in `edit/edl.json` with named alternative cuts; clips are referred to by scene and shot, so one cut renders in every style. Voice and effects ride on their clip (they move and delete with it); music spans its scene. Renders run through `render_cut.py` (ffmpeg graph in a file, so long films work on Windows) | assumed — not answered |
 | D37 | 2026-11-15 | M10: the style card's colour grade is mapped to the nearest grade.py preset by its words (noir, warm, cool, desaturated, vivid, faded, night) | assumed — not answered |
+| D38 | 2026-11-15 | M11: each style's clips render from its picture set as an image-to-video set (all_shots.csv + images/pictures_keyframes) with the usual runners and KEYFRAME_MODEL=pictures; the motion prompt is shared, prefixed with the style card's prefix. Clips are checked by the owner against the Animation Supervisor's checklist (no morphing, no identity drift, the right motion); an automatic vision check of clips is for M15 | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1069,7 +1070,7 @@ saying what's left.
 [x] M9 (2026-11-15) Voices, sound, music, audiobook export (Product F).
 [x] M10 (2026-11-15) Timeline editor + EDL (alternative cuts) + animatic export
         (Product D, all styles).
-[ ] M11 Clips per style + film export (Product E, all styles).
+[x] M11 (2026-11-15) Clips per style + film export (Product E, all styles).
 [ ] M12 Producer chat (stop / add information / continue), notes on
         anything (threads), history moments, branches, conflict prompt
         (Sections 3.4, 3.5, 6c).

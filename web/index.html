@@ -405,6 +405,26 @@
             </div>
         </div>
 
+        <div class="card bookonly" id="stepClips">
+            <div class="card__header">
+                <h2 class="card__title">Clips in every style</h2>
+                <p class="card__subtitle">The same motion, length and seed for every style; each clip starts from that style's approved picture. Check each clip: no morphing, no identity drift, the right motion.</p>
+            </div>
+            <div class="card__body">
+                <div class="row" style="gap:8px;flex-wrap:wrap;align-items:end">
+                    <button type="button" class="btn btn--secondary" id="clMotion">Write the motion prompts</button>
+                    <div><label class="f" for="clStyle">Style</label><select id="clStyle"></select></div>
+                    <button type="button" class="btn btn--secondary" id="clRender">Make the clips</button>
+                    <button type="button" class="btn btn--primary" id="clApprove" disabled>Approve the clips</button>
+                </div>
+                <p class="warn" id="clNote" role="status" aria-live="polite"></p>
+                <div id="clGrid" class="row" style="gap:10px;flex-wrap:wrap"></div>
+                <h3 style="font-size:var(--text-sm);margin:12px 0 4px">The film (Product E)</h3>
+                <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="clFilm">Make the film in this style</button>
+                    <button type="button" class="btn btn--secondary" id="clFilmAll">Make the film in every style</button></div>
+            </div>
+        </div>
+
         <div class="card bookonly" id="stepEdit">
             <div class="card__header">
                 <h2 class="card__title">Timeline editor</h2>
@@ -1445,6 +1465,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/library.js" defer></script>
 <script src="/static/js/sound.js" defer></script>
 <script src="/static/js/edit.js" defer></script>
+<script src="/static/js/clips.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>

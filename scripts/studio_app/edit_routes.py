@@ -134,3 +134,20 @@ def _animatic(r: Request):
     steps = render_steps(d, r.body, "animatic")
     ahead = JOB.start(steps, r.body, queue=bool(r.body.get("queue")))
     return {"started": ahead == 0, "ahead": ahead, "styles": len(steps)}
+
+
+@route("POST", "/api/film_render")
+def _film(r: Request):
+    """The film (Product E) in one style or every style, from the approved edit and each style's approved clips (a job)."""
+    d = _book(r.body.get("project"))
+    import clips
+    e = edl.load(d)
+    if not e or not gates.approved(d, "edit", e["cuts"]):
+        raise PlanError("approve the edit first: every style's film is cut from it")
+    steps = render_steps(d, r.body, "film")
+    for st in steps:
+        sid = st["argv"][3]
+        if not gates.approved(d, clips.gate_step(d, sid), clips.gate_data(d, sid)):
+            raise PlanError(f"approve the {sid} clips first")
+    ahead = JOB.start(steps, r.body, queue=bool(r.body.get("queue")))
+    return {"started": ahead == 0, "ahead": ahead, "styles": len(steps)}
