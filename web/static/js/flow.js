@@ -13,7 +13,7 @@
   };
   // id, title, what it is for, cards shown, cards under "More settings", buttons (RUN keys, or a special one)
   const STEPS = [
-    ["read", "Read the book", "Pick your book at the top of the page (or add a new one here), or add any other sources: an idea, pictures, a web page, a screenplay. Then let the Studio read it.", ["Read book", "Add your sources", "Your footage and music"], ["Tools Status", "Imported Book Tools", "Make my film"], ["read"]],
+    ["read", "Read the book", "Pick your book at the top of the page (or add a new one here), or add any other sources: an idea, pictures, a web page, a screenplay. Then let the Studio read it.", ["Read book", "Add your sources", "Your footage and music"], ["Tools Status", "Imported Book Tools", "Make my film"], ["read", "startOver"]],
     ["chapters", "Check the chapters", "Look at the chapters. You can join, split or rename them, and drop pages that are not part of the story.", ["Chapters"], [], []],
     ["plan", "Plan the film", "Say how many minutes long your film is. The Studio picks the scenes that tell the story in that time.", ["Format, products and styles", "Read it in", "Film plan and screenplay"], ["AI Prompt Writer"], ["adapt"]],
     ["screenplay", "Write and approve the screenplay", "The screenplay is what happens and what people say in every scene. Read it, change anything, then approve it.", ["Film plan and screenplay"], [], ["screenplay", "approve"]],
@@ -153,12 +153,13 @@
     getPictures: ["Get results: pictures", () => window.getResults && window.getResults("keyframes", "", t => say(t))],
     getVideo: ["Get results: video", () => window.getResults && window.getResults("video", "", t => say(t))],
     getSound: ["Get results: sound", () => window.getResults && window.getResults("audio", "", t => say(t))],
+    startOver: ["Start over…", () => window.openStartOver && window.openStartOver($("pathActions"), t => say(t))],
   };
   function actions(s) {
     const box = $("pathActions"); box.textContent = "";
     for (const k of s[5]) {
       const [label, fn] = SPECIAL[k] ? SPECIAL[k] : [RUN[k][0], () => runOnly(RUN[k][1], RUN[k][2], RUN[k][3], RUN[k][0])];
-      const b = document.createElement("button"); b.type = "button"; b.className = "btn btn--primary path-btn"; b.textContent = label; b.dataset.run = k;
+      const b = document.createElement("button"); b.type = "button"; b.className = k === "startOver" ? "btn btn--secondary path-btn" : "btn btn--primary path-btn"; b.textContent = label; b.dataset.run = k;
       b.addEventListener("click", fn);
       box.append(b);
     }

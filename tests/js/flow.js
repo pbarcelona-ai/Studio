@@ -26,13 +26,17 @@ JSDOM.fromURL(url, { beforeParse(w) { const N = class { observe() {} unobserve()
   await wait(2500);
   const chips = () => [...d.querySelectorAll("#flowList button")];
   const out = { errors, orphans: w.flowOrphans(), names: w.flowScreens(), steps: chips().length, flowOn: d.body.classList.contains("flow") };
-  const proj = d.getElementById("proj"); proj.value = "demo"; proj.dispatchEvent(new w.Event("change"));
+  const proj = d.getElementById("proj"); out.firstBook = [proj.value, proj.options[0].textContent]; proj.value = "demo"; proj.dispatchEvent(new w.Event("change"));
   d.querySelector("input[name=svc][value=kaggle]").checked = true;
   const ku = d.getElementById("kuser"); ku.value = "pat"; ku.dispatchEvent(new w.Event("change"));
   await wait(1500); await w.flowRefresh();
   out.locked = chips().filter(b => b.disabled).map(b => b.dataset.step);
   chips()[0].click(); await wait(200);
   out.step1 = { title: d.getElementById("pathTitle").textContent, shown: w.flowStageTitles(), more: w.flowMoreTitles(), buttons: [...d.querySelectorAll("#pathActions button")].map(b => b.textContent) };
+  [...d.querySelectorAll("#pathActions button")].find(b => b.textContent === "Start over…").click(); await wait(100);
+  const over = d.getElementById("libOver");
+  out.startOver = { open: !over.classList.contains("hidden"), underPath: over.previousElementSibling === d.getElementById("pathActions") };
+  d.getElementById("libOverCancel").click();
   d.getElementById("flowNext").click(); await wait(300);
   out.afterNext = d.getElementById("pathTitle").textContent;
   chips()[2].click(); await wait(200); out.planStep = d.body.dataset.step;

@@ -263,7 +263,7 @@ async function loadStatus(applyDef) {
   ST = await api("/api/status");
   $("tools").innerHTML = Object.entries(ST.tools).map(([t, ok]) => `<span class="${ok ? "ok" : "bad"}">${ok ? "✓" : "✗"} ${t}</span>`).join("") +
     `<span class="warn">${ST.tools.claude ? "" : "Claude Code missing (the default prompt writer). "}${ST.tools.colab ? "" : "Colab CLI missing. "}${ST.tools.kaggle ? "" : "Kaggle CLI missing. "}${ST.tools.uv ? "" : "uv missing (needed to read books and merge)."}</span>`;
-  $("proj").innerHTML = ST.projects.map(p => `<option value="${p.slug}">${p.slug}${p.legacy ? " (imported)" : p.not_started ? " (new, from books/)" : ""}</option>`).join("");
+  $("proj").innerHTML = '<option value="">Pick one…</option>' + ST.projects.map(p => `<option value="${p.slug}">${p.slug}${p.legacy ? " (imported)" : p.not_started ? " (new, from books/)" : ""}</option>`).join("");
   $("libcount").textContent = `· ${ST.library.length} book file(s) in books/`;
   if (prev && [...$("proj").options].some(o => o.value === prev)) $("proj").value = prev;
   if (!$("models").children.length) {

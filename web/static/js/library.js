@@ -1,4 +1,4 @@
-// studio/library.js - M8: the "Picture library and start over" card. Start over (keep: sources, settings, styles, continuity book,
+// studio/library.js - M8: the "Picture library and start over" card (its Start over also opens from the first step of the film path). Start over (keep: sources, settings, styles, continuity book,
 // screenplay; everything else is archived, never deleted), earlier attempts (view, restore), and the picture library: assets with their
 // versions (the liked one first), search, verdicts (liked / approved / rejected), purpose labels, and moving a version to another asset.
 // Classic script: uses $ and api from core.js. Server: studio_app/library_routes.py.
@@ -44,12 +44,23 @@
     body.querySelectorAll("[data-purpose]").forEach(el => el.addEventListener("change", () => post({ key: el.dataset.purpose, purpose: el.value })));
     body.querySelectorAll("[data-own]").forEach(el => el.addEventListener("click", () => post({ key: el.dataset.own, own: true })));
   }
-  $("libStartOver").addEventListener("click", () => $("libOver").classList.toggle("hidden"));
+  // The keep-choices open under whichever Start over button was pressed: this card's, or the one on the first step of the film path.
+  let tell = note;
+  function openStartOver(after, say) {
+    const box = $("libOver");
+    if (after && box.previousElementSibling !== after) after.after(box);
+    tell = say ? (t, bad) => { say(t); note(t, bad); } : note;
+    box.classList.toggle("hidden");
+    if (!slug) tell("Pick your book at the top of the page first.", true);
+  }
+  window.openStartOver = openStartOver;
+  $("libStartOver").addEventListener("click", () => openStartOver($("libStartOver").parentElement, null));
   $("libOverCancel").addEventListener("click", () => $("libOver").classList.add("hidden"));
   $("libOverGo").addEventListener("click", async () => {
+    if (!slug) return tell("Pick your book at the top of the page first.", true);
     const keep = [...document.querySelectorAll("input[name=libKeep]:checked")].map(b => b.value);
-    try { const j = await api("/api/start_over", { project: slug, keep }); $("libOver").classList.add("hidden"); note(`Started over. Everything made so far is in "${j.attempt.label}".`); loadAttempts(); search(); if (typeof refresh === "function") refresh(); }
-    catch (e) { note(e.message, true); }
+    try { const j = await api("/api/start_over", { project: slug, keep }); $("libOver").classList.add("hidden"); tell(`Started over. Everything made so far is in "${j.attempt.label}".`); loadAttempts(); search(); if (typeof refresh === "function") refresh(); }
+    catch (e) { tell(e.message, true); }
   });
   $("libRefresh").addEventListener("click", () => search(true));
   $("libSearch").addEventListener("click", () => search());
