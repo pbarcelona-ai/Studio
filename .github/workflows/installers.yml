@@ -61,7 +61,11 @@ jobs:
       - name: Open the .dmg, run the app's install into a fresh folder, check the Studio starts
         if: matrix.arch == 'arm64'           # the runner is Apple silicon; the Intel build is checked by building it
         run: |
-          M=$(hdiutil attach -nobrowse -readonly dist/*.dmg | tail -1 | awk -F'\t' '{print $NF}')
+          for try in 1 2 3 4 5; do                  # hdiutil on the hosted Macs sometimes answers "Resource temporarily unavailable"
+            M=$(hdiutil attach -nobrowse -readonly dist/*.dmg 2>/dev/null | tail -1 | awk -F'\t' '{print $NF}') && [ -n "$M" ] && break
+            sleep 10
+          done
+          [ -n "$M" ] || { echo "could not open the .dmg"; exit 1; }
           R="$M/Pistachio's Studio.app/Contents/Resources/app"
           H="$RUNNER_TEMP/home"
           "$R/runtime/python/bin/python3" "$R/scripts/install_studio.py" --cli --payload "$R" --home "$H" || { tail -40 "$H/.install/install.log"; exit 1; }
