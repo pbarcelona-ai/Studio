@@ -23,7 +23,7 @@
     ["write", "Write the shots", "Each scene is cut into short shots: what we see, and what is said.", [], ["Write shots"], ["write", "rewrite"]],
     ["build", "Get the shots ready", "The shots are put in the lists the picture and video makers read.", [], ["Build CSVs", "Run the ticked book steps"], ["build"]],
     ["where", "Choose the computer", "Pictures and video need a strong computer. Kaggle is free: type your Kaggle name.", ["Where to Run"], ["Which Movies"], []],
-    ["keyframes", "Make the pictures", "First one picture is made for every shot. They are cheap to make, and you check them before any video is made.", [], ["Suggested Models", "Video and Audio"], ["stills", "getPictures"]],
+    ["keyframes", "Make the pictures", "First one picture is made for every shot. They are cheap to make, and you check them before any video is made.", ["Pictures in the master style"], ["Suggested Models", "Video and Audio"], ["stills", "getPictures"]],
     ["storyboard", "Check every picture", "Say yes or no to every picture. You can change a shot's words, move shots, or make everything again from the screenplay.", ["Storyboard (optional)"], [], ["approveRest", "getPictures"]],
     ["video", "Make the video", "Now every picture you said yes to is turned into a moving clip.", ["Video & Audio Models"], ["Video and Audio", "Make the Movie"], ["video", "getVideo"]],
     ["audio", "Make the sound", "The voices, sounds and music are made.", [], ["Video and Audio", "Video & Audio Models"], ["audio", "getSound"]],

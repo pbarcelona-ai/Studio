@@ -67,6 +67,8 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D24 | 2026-11-15 | M4: the shot list lives in `shots/shotlist.json`; M6 turns it into the picture prompts. The Script Supervisor's fixes change text fields only; the Editor's pacing fit scales shot lengths (1.5-12 s, nice-to-have shots change most). The shot list can only be written after the continuity book is approved | assumed — not answered |
 | D25 | 2026-11-15 | M5: style cards are written by the Production Designer (as Art Director) and the Colorist; style translations by the Casting Director (as Character Designer) and the Production Designer: the crew files have no separate art_director / character_designer roles (the Section 3.2 roster pairs them) | assumed — not answered |
 | D26 | 2026-11-15 | M5: look development renders as a Single Prompts set `projects/prompts/<book>_ld_<style>/` with the usual image runners (Kaggle, Colab, Hugging Face, this computer), using the GPU and keyframe image model chosen in Make the Movie; 4 variants per sheet with their own seeds | assumed — not answered |
+| D27 | 2026-11-15 | M6: pictures render as a prompt set `projects/prompts/<book>_px_<style>/` (row N = shot N of the shot list), steered by the look-development picks (front sheet of each character, the location key art) through the runners' existing `refs` column; each shot's seed is fixed from book + scene + shot, so every style uses the same seed | assumed — not answered |
+| D28 | 2026-11-15 | M6: a shot layout saves the seed, the size, an edge map (Pillow) and a depth map when the optional depth model is installed; pose skeletons and character boxes are recorded as empty until a pose model is added (M7) | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1048,7 +1050,7 @@ saying what's left.
 [x] M4 (2026-11-15) Continuity book (style-neutral, with personalities) + director's
         breakdown + shot list.
 [x] M5 (2026-11-15) Style system: style cards, translations, prompt assembly, look dev.
-[ ] M6  Pictures in the master style + shot layouts; storyboard and
+[x] M6 (2026-11-15) Pictures in the master style + shot layouts; storyboard and
         illustrated book exports (Products B and C).
 [ ] M7  Other styles via structure lock + consistency check + comparison
         view.

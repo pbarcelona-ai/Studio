@@ -230,6 +230,7 @@ function renderProject(applyDef) {
   if (typeof window.loadReadIn === "function") window.loadReadIn(p);
   if (typeof window.loadBreakdown === "function") window.loadBreakdown(p);
   if (typeof window.loadLookDev === "function") window.loadLookDev(p);
+  if (typeof window.loadPictures === "function") window.loadPictures(p);
   if (typeof loadExports === "function") loadExports(p);
   renderMovies();
   const rows = Object.entries(p.have).filter(([, n]) => n);
