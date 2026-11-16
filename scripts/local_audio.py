@@ -4,7 +4,7 @@
   uv run --python 3.11 --with kokoro --with soundfile --with "numpy<2" --with pip python local_audio.py BOOK kokoro
   uv run --python 3.11 --with "transformers<4.50" --with "numpy<2" --with scipy --with accelerate python local_audio.py BOOK musicgen
 
-kokoro:   every row of audio_shots.csv -> audio/kokoro/narration-NNNN.wav. Measured on an Intel Mac: about 3 s for each line.
+kokoro:   every row of audio_shots.csv -> audio/kokoro/narration-NNNN.wav. audiobook: every row of audiobook.csv -> audio/kokoro_audiobook/. Measured on an Intel Mac: about 3 s for each line.
 musicgen: one 28 s cue for every row of audio_chapters.csv -> audio/musicgen_chapters/music-NNNN.wav. Measured on an Intel Mac: about 7 minutes for each.
 musicgen_scenes: the same for audio_scenes.csv (one cue per scene of the film plan) -> audio/musicgen_scenes/music-NNNN.wav.
 Files already there are kept, so running it again carries on. The same voices and music as the GPU runs (make_audio.py holds the Kokoro worker).
@@ -27,9 +27,9 @@ def kokoro_worker():
     return next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "KOKORO_WORKER")
 
 
-def narration(d):
-    rows = sum(1 for _ in csv.DictReader(open(d / "audio_shots.csv", newline="", encoding="utf-8")))
-    out = d / "audio" / "kokoro"
+def narration(d, csv_name="audio_shots.csv", folder="kokoro"):
+    rows = sum(1 for _ in csv.DictReader(open(d / csv_name, newline="", encoding="utf-8")))
+    out = d / "audio" / folder
     out.mkdir(parents=True, exist_ok=True)
     missing = [n for n in range(1, rows + 1) if not (out / f"narration-{n:04d}.wav").is_file()]
     if not missing:
@@ -39,7 +39,7 @@ def narration(d):
         worker = Path(tmp) / "kokoro_worker.py"
         worker.write_text(kokoro_worker())
         for lo, hi in spans(missing):
-            subprocess.run([sys.executable, str(worker), str(d / "audio_shots.csv"), str(lo), str(hi), str(out)], check=True)
+            subprocess.run([sys.executable, str(worker), str(d / csv_name), str(lo), str(hi), str(out)], check=True)
 
 
 def spans(rows):
@@ -77,7 +77,7 @@ def music(d, scenes=False):
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[2] not in ("kokoro", "musicgen", "musicgen_scenes"):
+    if len(sys.argv) != 3 or sys.argv[2] not in ("kokoro", "audiobook", "musicgen", "musicgen_scenes"):
         sys.exit(__doc__)
     try:
         d = layout.find_dir(sys.argv[1])
@@ -87,6 +87,8 @@ def main():
         sys.exit(f"no such book: {sys.argv[1]}")
     if sys.argv[2] == "kokoro":
         narration(d)
+    elif sys.argv[2] == "audiobook":                    # the audiobook: one row per scene of audiobook.csv (sound_design.py)
+        narration(d, "audiobook.csv", "kokoro_audiobook")
     else:
         music(d, scenes=sys.argv[2] == "musicgen_scenes")
 

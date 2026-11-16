@@ -74,6 +74,8 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D31 | 2026-11-15 | M8: every picture and clip is stored once by its contents in `<book>/assets/objects/` (read-only), with `aliases.json` recording every content a path has had, so replaced takes, reset storyboards and archived attempts stay findable; the library's thumbnails come from these copies | assumed — not answered |
 | D32 | 2026-11-15 | M8: "N old pictures could fit" is scored in code (same characters 3, location 2, action 3, camera 1, style 1 = 10), with no AI call per picture per shot (that would cost a call for every pair); the vision check stays available through the consistency check (M7). Auto-fill skips pictures marked "may not match the continuity book" | assumed — not answered |
 | D33 | 2026-11-15 | M8: Start over keeps sources, settings and styles by default (as the plan's checklist shows); restoring an attempt first archives the current version as a new attempt, keeping in place what the restored attempt did not archive | assumed — not answered |
+| D34 | 2026-11-15 | M9: the sound plan writes the Studio's own audio CSVs (audio_shots.csv one row per shot of the approved shot list, audio_scenes.csv, and a new audiobook.csv), so the existing narration / effects / music runners and the mixer make the sound; the CSVs they replace are kept as .csv.bak. Voices are Kokoro voices (on this computer, no GPU) | assumed — not answered |
+| D35 | 2026-11-15 | M9: the audiobook narrator reads the screenplay's action lines and the characters speak their own lines; its cover is the first approved master picture until the marketing kit makes the poster (M14) | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1062,7 +1064,7 @@ saying what's left.
 [x] M8 (2026-11-15) Immutable asset files + path aliases for old takes/replaced
         files; start over + picture library (asset groups, versions,
         liked default, purpose labels) + reuse (Section 6b).
-[ ] M9  Voices, sound, music, audiobook export (Product F).
+[x] M9 (2026-11-15) Voices, sound, music, audiobook export (Product F).
 [ ] M10 Timeline editor + EDL (alternative cuts) + animatic export
         (Product D, all styles).
 [ ] M11 Clips per style + film export (Product E, all styles).

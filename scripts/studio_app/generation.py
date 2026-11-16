@@ -81,8 +81,8 @@ def local_audio_step(slug, kind):
     pins = ["--with", "numpy<2", "--with", "pip"]
     if sys.platform == "darwin" and os.uname().machine == "x86_64":
         pins += ["--with", "torch==2.2.2", "--with", "transformers<4.50"]      # the last PyTorch for Intel Macs, and the last transformers that accepts it
-    extra = ["--with", "kokoro", "--with", "soundfile"] if kind == "kokoro" else ["--with", "transformers<4.50", "--with", "scipy", "--with", "accelerate"]
-    title = "narration" if kind == "kokoro" else "one music cue per chapter"
+    extra = ["--with", "kokoro", "--with", "soundfile"] if kind in ("kokoro", "audiobook") else ["--with", "transformers<4.50", "--with", "scipy", "--with", "accelerate"]
+    title = {"kokoro": "narration", "audiobook": "the audiobook narration"}.get(kind, "one music cue per chapter")
     return {"label": f"Make {title} on this computer", "env": {}, "argv": ["uv", "run", "--quiet", "--python", "3.11"] + pins + extra + ["python", "local_audio.py", slug, kind]}
 
 

@@ -26,7 +26,7 @@
     ["keyframes", "Make the pictures", "First one picture is made for every shot. They are cheap to make, and you check them before any video is made.", ["Pictures in the master style", "Compare styles", "Picture library and start over"], ["Suggested Models", "Video and Audio"], ["stills", "getPictures"]],
     ["storyboard", "Check every picture", "Say yes or no to every picture. You can change a shot's words, move shots, or make everything again from the screenplay.", ["Storyboard (optional)"], [], ["approveRest", "getPictures"]],
     ["video", "Make the video", "Now every picture you said yes to is turned into a moving clip.", ["Video & Audio Models"], ["Video and Audio", "Make the Movie"], ["video", "getVideo"]],
-    ["audio", "Make the sound", "The voices, sounds and music are made.", [], ["Video and Audio", "Video & Audio Models"], ["audio", "getSound"]],
+    ["audio", "Make the sound", "The voices, sounds and music are made.", ["Voices, sound and music"], ["Video and Audio", "Video & Audio Models"], ["audio", "getSound"]],
     ["cut", "Put the film together", "The clips and the sound are joined into your film.", ["Final film"], ["Kaggle Runs", "Execution Log"], ["cut"]],
     ["premiere", "Share your film", "Watch it, save a copy for YouTube or a friend, and add the credits.", ["Export and credits"], ["Results Gallery", "What Exists for This Book", "Cleanup"], []],
   ];

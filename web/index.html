@@ -389,6 +389,22 @@
             </div>
         </div>
 
+        <div class="card bookonly" id="stepSound">
+            <div class="card__header">
+                <h2 class="card__title">Voices, sound and music</h2>
+                <p class="card__subtitle">Made once and shared by every style: a voice for every character (from their personality), effects and ambience for every shot, the music cues. Then the audiobook.</p>
+            </div>
+            <div class="card__body">
+                <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="sdPlan">Write the voices, sound and music</button>
+                    <button type="button" class="btn btn--primary" id="sdApprove" disabled>Approve the sound</button></div>
+                <p class="warn" id="sdNote" role="status" aria-live="polite"></p>
+                <div id="sdBody"></div>
+                <h3 style="font-size:var(--text-sm);margin:12px 0 4px">The audiobook (Product F)</h3>
+                <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="sdAbRender" disabled>Read it aloud on this computer</button>
+                    <button type="button" class="btn btn--secondary" id="sdAbMake" disabled>Make the audiobook</button><span id="sdAbFile"></span></div>
+            </div>
+        </div>
+
         <div class="card bookonly" id="stepAdapt">
             <div class="card__header">
                 <h2 class="card__title">Film plan and screenplay</h2>
@@ -1399,6 +1415,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/lookdev.js" defer></script>
 <script src="/static/js/pictures.js" defer></script>
 <script src="/static/js/library.js" defer></script>
+<script src="/static/js/sound.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>
