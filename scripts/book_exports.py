@@ -151,6 +151,36 @@ def storyboard_pdf(pdir: Path, sid: str, title: str) -> bytes:
     return pdf.bytes()
 
 
+def comparison_pdf(pdir: Path, title: str) -> bytes:
+    """The style comparison (Section 13): one row per shot, one column per style (up to 4 styles per page width), 5 rows per page."""
+    sids = [s["id"] for s in production.load(pdir)["styles"]]
+    cols = {sid: _frames(pdir, sid) if pictures.status(pdir, sid)["shots"] else [] for sid in sids}
+    n = max((len(v) for v in cols.values()), default=0)
+    if not n:
+        raise ExportError("There are no pictures yet to compare.")
+    pdf = PDF()
+    for chunk in [sids[i:i + 4] for i in range(0, len(sids), 4)]:
+        w = (PAGE_W - 108 - 40) / len(chunk)
+        for r in range(n):
+            if r % 5 == 0:
+                pdf.page()
+                pdf.text(54, 36, f"{title} - style comparison", 10, bold=True)
+                for c, sid in enumerate(chunk):
+                    pdf.text(94 + c * w, 54, production.style_name({"id": sid}), 9, bold=True)
+            y = 64 + (r % 5) * 140
+            first = next((cols[sid][r] for sid in chunk if r < len(cols[sid])), None)
+            if first:
+                pdf.text(54, y + 60, f"{first['scene']}", 8)
+                pdf.text(54, y + 72, f"shot {first['shot']}", 8)
+            for c, sid in enumerate(chunk):
+                f = cols[sid][r] if r < len(cols[sid]) else None
+                if f and f["path"] is not None and f["path"].is_file():
+                    pdf.image(f["path"], 94 + c * w, y, w - 8, 126)
+                else:
+                    pdf.rect(94 + c * w, y, w - 8, 126)
+    return pdf.bytes()
+
+
 # ---------------------------------------------------------------------------------------------- the illustrated book
 def check_pages(d) -> None:
     if not isinstance(d, dict) or not isinstance(d.get("pages"), list) or not d["pages"]:
@@ -240,7 +270,8 @@ def export(pdir: Path, sid: str = "", kinds: tuple[str, ...] = ("storyboard", "i
     makers: dict[str, tuple[str, Callable[[], bytes]]] = {
         "storyboard": (f"storyboard_{sid}.pdf", lambda: storyboard_pdf(pdir, sid, title)),
         "illustrated": (f"illustrated_{sid}.pdf", lambda: illustrated_pdf(pdir, sid, title)),
-        "epub": (f"illustrated_{sid}.epub", lambda: illustrated_epub(pdir, sid, title))}
+        "epub": (f"illustrated_{sid}.epub", lambda: illustrated_epub(pdir, sid, title)),
+        "comparison": ("style_comparison.pdf", lambda: comparison_pdf(pdir, title))}
     for k in kinds:
         if k not in makers:
             raise ExportError(f"unknown export {k!r}")

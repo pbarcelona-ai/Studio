@@ -69,6 +69,8 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D26 | 2026-11-15 | M5: look development renders as a Single Prompts set `projects/prompts/<book>_ld_<style>/` with the usual image runners (Kaggle, Colab, Hugging Face, this computer), using the GPU and keyframe image model chosen in Make the Movie; 4 variants per sheet with their own seeds | assumed — not answered |
 | D27 | 2026-11-15 | M6: pictures render as a prompt set `projects/prompts/<book>_px_<style>/` (row N = shot N of the shot list), steered by the look-development picks (front sheet of each character, the location key art) through the runners' existing `refs` column; each shot's seed is fixed from book + scene + shot, so every style uses the same seed | assumed — not answered |
 | D28 | 2026-11-15 | M6: a shot layout saves the seed, the size, an edge map (Pillow) and a depth map when the optional depth model is installed; pose skeletons and character boxes are recorded as empty until a pose model is added (M7) | assumed — not answered |
+| D29 | 2026-11-15 | M7: the structure lock uses the provider's reference feature (7.4b): the approved master frame is the first reference picture, with the same seed and an instruction to keep its layout; it works with the reference-image model (FLUX.2 klein). For other image models the img2img settings (master frame, strength 0.55, 7.4c) are written to the prompt CSV, but the current Kaggle / Colab notebooks do not start from a picture yet, so pick FLUX.2 klein for the other styles | assumed — not answered |
+| D30 | 2026-11-15 | M7: the consistency loop runs one round per click ("Render the failed ones again" = render those rows + check again), up to 3 tries, then the shot is flagged; adding a style takes the look-development approval away (its card and sheets must be approved too) | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1052,7 +1054,7 @@ saying what's left.
 [x] M5 (2026-11-15) Style system: style cards, translations, prompt assembly, look dev.
 [x] M6 (2026-11-15) Pictures in the master style + shot layouts; storyboard and
         illustrated book exports (Products B and C).
-[ ] M7  Other styles via structure lock + consistency check + comparison
+[x] M7 (2026-11-15) Other styles via structure lock + consistency check + comparison
         view.
 [ ] M8  Immutable asset files + path aliases for old takes/replaced
         files; start over + picture library (asset groups, versions,

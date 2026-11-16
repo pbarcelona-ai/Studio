@@ -6,7 +6,11 @@ POST /api/pictures_render {project, style?, first?, last?, service, gpu, kaggle_
 POST /api/picture_action {project, style, row, action: approve|unapprove|note|prompt|regenerate|swap, text?, other?, + render settings}
 POST /api/pictures_approve {project, style?}                          the REVIEW GATE: every shot approved
 POST /api/page_plan {project, style?, engine, claude_model}           the Illustrator's page plan for the illustrated book
-POST /api/pictures_export {project, style?, kinds: [storyboard, illustrated, epub]}
+POST /api/pictures_export {project, style?, kinds: [storyboard, illustrated, epub, comparison]}
+M7, the other styles (the same routes with style=<id>, made from the approved master frames), plus:
+GET  /api/style_compare?project=                                     one row per shot, one cell per style (picture, approval, consistency)
+POST /api/consistency_check {project, style, engine, claude_model}    the Script Supervisor compares each picture with its master frame (a job)
+POST /api/pictures_render_again {project, style, + render settings}   render the pictures that failed the check, then check them again (a job)
 """
 from __future__ import annotations
 
@@ -14,6 +18,7 @@ import re
 from pathlib import Path
 
 import book_exports
+import consistency
 import crew
 import gates
 import pictures
@@ -25,7 +30,7 @@ from .common import PlanError
 from .config import GPUS, IMAGE_MODELS
 from .gpus import check_models, gpu_blocker
 from .jobs import JOB
-from .steps import make_runner
+from .steps import engine_args, make_runner
 
 
 def _book(slug) -> Path:
@@ -52,8 +57,10 @@ def _wrap(fn):
 def _view(d: Path, sid: str) -> dict:
     st = pictures.status(d, sid)
     ex = d / "exports"
-    names = [f"storyboard_{sid}.pdf", f"illustrated_{sid}.pdf", f"illustrated_{sid}.epub"]
-    return {**st, "gate": gates.status(d, "pictures", pictures.gate_data(d, sid)),
+    names = [f"storyboard_{sid}.pdf", f"illustrated_{sid}.pdf", f"illustrated_{sid}.epub", "style_comparison.pdf"]
+    master = production.load(d)["master"]
+    return {**st, "master": master, "styles": [x["id"] for x in production.load(d)["styles"]], "consistency": consistency.load(d, sid) if sid != master else {},
+            "gate": gates.status(d, pictures.gate_step(d, sid), pictures.gate_data(d, sid)),
             "exports": [{"name": n, "url": f"/download/{d.name}/exports/{n}"} for n in names if (ex / n).is_file()]}
 
 
@@ -173,3 +180,59 @@ def _export(r: Request):
         raise PlanError("kinds is a list")
     _wrap(lambda: book_exports.export(d, sid, tuple(str(k) for k in kinds)))
     return _view(d, sid)
+
+
+def _check_step(d: Path, sid: str, body: dict) -> dict:
+    engine = str(body.get("engine") or "claude")
+    argv = ["python3", "consistency.py", d.name, sid] + (["--engine", "fake"] if engine == "fake" else engine_args(body))
+    return {"label": f"Check the {sid} pictures against the master frames", "argv": argv, "env": {}}
+
+
+@route("POST", "/api/consistency_check")
+def _consistency(r: Request):
+    d = _book(r.body.get("project"))
+    sid = str(r.body.get("style") or "")
+    if sid == production.load(d)["master"] or sid not in [x["id"] for x in production.load(d)["styles"]]:
+        raise PlanError("choose one of the other styles (the master style is the reference)")
+    ahead = JOB.start([_check_step(d, sid, r.body)], r.body, queue=bool(r.body.get("queue")))
+    return {"started": ahead == 0, "ahead": ahead}
+
+
+@route("POST", "/api/pictures_render_again")
+def _again(r: Request):
+    d = _book(r.body.get("project"))
+    sid = str(r.body.get("style") or "")
+    rows = sorted(int(k) for k, v in consistency.load(d, sid).items() if v.get("pending"))
+    if not rows:
+        raise PlanError("no picture of this style is waiting to be rendered again")
+    ranges, start = [], rows[0]
+    for a, b in zip(rows, [*rows[1:], None], strict=True):
+        if b != a + 1:
+            ranges.append((start, a))
+            start = b if b is not None else start
+    steps = [_render_step(d, sid, r.body, a, b) for a, b in ranges] + [_check_step(d, sid, r.body)]
+    ahead = JOB.start(steps, r.body, queue=bool(r.body.get("queue")))
+    return {"started": ahead == 0, "ahead": ahead, "rows": rows}
+
+
+@route("GET", "/api/style_compare")
+def _compare(r: Request):
+    try:
+        d = _book(r.q("project"))
+    except PlanError:
+        return {"styles": [], "rows": []}
+    sids = [x["id"] for x in production.load(d)["styles"]]
+    per = {sid: pictures.status(d, sid) for sid in sids}
+    checks = {sid: consistency.load(d, sid) for sid in sids}
+    n = max((len(p["shots"]) for p in per.values()), default=0)
+    rows = []
+    for i in range(n):
+        cells = {}
+        for sid in sids:
+            sh = per[sid]["shots"][i] if i < len(per[sid]["shots"]) else None
+            c = checks[sid].get(str(i + 1), {})
+            cells[sid] = {"set": per[sid]["set"], "image": sh["image"] if sh else "", "approved": bool(sh and sh["approved"]), "score": c.get("score"),
+                          "flagged": bool(c.get("flagged")), "pending": bool(c.get("pending"))}
+        first: dict = next((per[s]["shots"][i] for s in sids if i < len(per[s]["shots"])), {})
+        rows.append({"row": i + 1, "scene": first.get("scene", ""), "shot": first.get("shot", 0), "cells": cells})
+    return {"styles": [{"id": s, "name": production.style_name({"id": s}), "master": s == production.load(d)["master"]} for s in sids], "rows": rows}

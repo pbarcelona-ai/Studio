@@ -89,8 +89,16 @@ def picked_refs(pdir: Path, sid: str) -> dict[str, Path]:
     return out
 
 
+LOCK_TEXT = ("Keep exactly the composition, camera angle, framing, character positions, poses, expressions and action of the first reference "
+             "picture; change only the look, to this style")
+IMG2IMG_STRENGTH = 0.55                  # Section 7.4c: from the master frame, for image models that take a starting picture
+
+
 def write_prompts(pdir: Path, sid: str = "") -> dict:
-    """The master style's picture prompts from the approved shot list and look development."""
+    """The picture prompts of a style from the approved shot list and look development. The master style first; another style (Section 7.4b)
+    only after the master's pictures are approved: each row then keeps the shot's seed, puts the approved master frame first among its
+    reference pictures (the structure lock: image models that take reference pictures keep its layout), adds that style's own character
+    sheets, and names the master frame and a strength for image models that start from a picture (7.4c)."""
     sl = shot_list.load(pdir)
     if not gates.approved(pdir, "shotlist", shot_list.gate_data(sl)):
         raise PictureError("Approve the shot list first: the pictures are made from it.")
@@ -100,6 +108,14 @@ def write_prompts(pdir: Path, sid: str = "") -> dict:
         raise PictureError("Approve the look development first: the pictures use its style cards and character sheets.")
     card, tr, book = styles.card_of(pdir, sid), styles.translations_of(pdir, sid), continuity_book.load(pdir)
     refs = picked_refs(pdir, sid)
+    master = settings["master"]
+    master_frames: dict[int, Path] = {}
+    if sid != master:
+        if not gates.approved(pdir, "pictures", gate_data(pdir, master)):
+            raise PictureError("Approve the master style's pictures first: every other style is made from them (same layout, same seed).")
+        mst = status(pdir, master)
+        mdir = layout.find_dir(mst["set"])
+        master_frames = {s["row"]: mdir / s["image"] for s in mst["shots"] if mdir and s["image"]}
     w, h = styles.SIZES.get(settings["aspect"], styles.SIZES["16:9"])
     out = set_dir(pdir, sid)
     out.mkdir(parents=True, exist_ok=True)
@@ -116,15 +132,25 @@ def write_prompts(pdir: Path, sid: str = "") -> dict:
             a = styles.assemble(s, loc, card, tr, book)
             names = [c["name"] for c in a["parts"]["characters"]] + ([a["parts"]["location"]["name"]] if a["parts"]["location"] else [])
             use: list[str] = []
+            row = len(shots) + 1
+            init = ""
+            if master_frames:
+                if row not in master_frames:
+                    raise PictureError(f"the master style has no picture for shot {row}")
+                init = f"master-{row:04d}.png"
+                shutil.copy2(master_frames[row], rdir / init)
+                use.append(init)
             for n in names:
                 if n in refs and len(use) < 3:
                     shutil.copy2(refs[n], rdir / _ref_name(n))
                     use.append(_ref_name(n))
-            row = len(shots) + 1
             own = (review.get(str(row)) or {}).get("prompt")
             seed = seed_of(pdir.name, sc["id"], s["n"])
-            shots.append({"row": row, "scene": sc["id"], "shot": s["n"], "seed": seed, "parts": a["parts"], "prompt": a["prompt"], "negative": a["negative"], "refs": use})
-            rows.append({"prompt": own or a["prompt"], "negative": a["negative"], "width": w, "height": h, "seed": seed, "steps": 30, "guidance": 5, "refs": "|".join(use)})
+            prompt = f"{LOCK_TEXT}. {a['prompt']}" if init else a["prompt"]
+            shots.append({"row": row, "scene": sc["id"], "shot": s["n"], "seed": seed, "parts": a["parts"], "prompt": prompt, "negative": a["negative"], "refs": use,
+                          "structure": {"method": "reference", "master": init, "strength": IMG2IMG_STRENGTH} if init else None})
+            rows.append({"prompt": own or prompt, "negative": a["negative"], "width": w, "height": h, "seed": seed, "steps": 30, "guidance": 5, "refs": "|".join(use),
+                         "init_image": init, "strength": IMG2IMG_STRENGTH if init else ""})
     with open(out / "all_images.csv", "w", newline="", encoding="utf-8") as fh:
         wr = csv.DictWriter(fh, list(rows[0]))
         wr.writeheader()
@@ -278,6 +304,11 @@ def gate_data(pdir: Path, sid: str = "") -> list:
     return [[s["row"], s["image"], s["approved"], s["own_prompt"]] for s in st["shots"]]
 
 
+def gate_step(pdir: Path, sid: str) -> str:
+    """The review gate of a style's pictures: "pictures" for the master style, "pictures_<style>" for the others."""
+    return "pictures" if sid in ("", production.load(pdir)["master"]) else f"pictures_{sid}"
+
+
 def approve_all_ready(pdir: Path, sid: str = "") -> dict:
     """The REVIEW GATE of the pictures: every shot has an approved picture."""
     st = status(pdir, sid)
@@ -286,4 +317,4 @@ def approve_all_ready(pdir: Path, sid: str = "") -> dict:
     left = [s for s in st["shots"] if not s["approved"]]
     if left:
         raise PictureError(f"{len(left)} picture(s) are not approved yet (the first is scene {left[0]['scene']} shot {left[0]['shot']})")
-    return gates.approve(pdir, "pictures", gate_data(pdir, sid))
+    return gates.approve(pdir, gate_step(pdir, sid), gate_data(pdir, sid))

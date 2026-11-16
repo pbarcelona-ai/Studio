@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from pathlib import Path
 
@@ -31,8 +32,14 @@ def digest(data) -> str:
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:20]
 
 
+def known(step: str) -> bool:
+    """A step, or a step of one style ("pictures_claymation", "clips_anime")."""
+    base, _, style = step.partition("_")
+    return step in STEPS or (base in STEPS and bool(re.fullmatch(r"[a-z0-9_]{2,30}", style)))
+
+
 def approve(pdir: Path, step: str, data) -> dict:
-    if step not in STEPS:
+    if not known(step):
         raise ValueError(f"unknown step {step!r}")
     d = _load(pdir)
     d[step] = {"approved_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "hash": digest(data)}

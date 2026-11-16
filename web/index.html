@@ -324,16 +324,33 @@
                 <p class="card__subtitle">One picture per shot, made from the approved shot list and look development. Approve, re-prompt, regenerate or swap each one; then download the storyboard and the illustrated book.</p>
             </div>
             <div class="card__body">
+                <label class="f" for="pxStyle">Style</label>
+                <select id="pxStyle" aria-describedby="pxStyleHelp"></select>
+                <small class="warn" id="pxStyleHelp">The master style is made first; every other style is made from its approved pictures (same layout, same seed).</small>
                 <div class="row" style="gap:8px;flex-wrap:wrap">
                     <button type="button" class="btn btn--secondary" id="pxPrompts">Make the picture prompts</button>
                     <button type="button" class="btn btn--secondary" id="pxRender" disabled>Render the pictures</button>
                     <button type="button" class="btn btn--primary" id="pxApprove" disabled>Approve the pictures</button>
+                    <button type="button" class="btn btn--secondary hidden" id="pxCheck">Check against the master</button>
+                    <button type="button" class="btn btn--secondary hidden" id="pxAgain">Render the failed ones again</button>
                 </div>
                 <p class="warn" id="pxNote" role="status" aria-live="polite"></p>
                 <div id="pxGrid" class="row" style="gap:10px;flex-wrap:wrap"></div>
                 <h3 style="font-size:var(--text-sm);margin:12px 0 4px">Storyboard and illustrated book (Products B and C)</h3>
                 <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="pxPages">Plan the book's pages</button>
                     <button type="button" class="btn btn--secondary" id="pxExport">Make the downloads</button><span id="pxFiles"></span></div>
+            </div>
+        </div>
+
+        <div class="card bookonly" id="stepCompare">
+            <div class="card__header">
+                <h2 class="card__title">Compare styles</h2>
+                <p class="card__subtitle">The same shots side by side in every style, with the script supervisor's consistency score (7 or more matches the master frame).</p>
+            </div>
+            <div class="card__body">
+                <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="cmpLoad">Show the comparison</button>
+                    <button type="button" class="btn btn--secondary" id="cmpPdf">Make the comparison PDF</button><span id="cmpFile"></span></div>
+                <div id="cmpBody" style="overflow:auto;max-height:520px"></div>
             </div>
         </div>
 

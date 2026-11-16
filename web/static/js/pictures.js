@@ -20,7 +20,7 @@
     const img = s.image ? `<img src="/thumb/${esc(P.set)}/${esc(s.image)}?v=${esc(s.versions.length)}" alt="Scene ${esc(s.scene)} shot ${s.shot}" width="220" height="124" loading="lazy" style="object-fit:cover;border-radius:6px;display:block">`
       : `<div style="width:220px;height:124px;display:grid;place-items:center;border:1px dashed var(--border);border-radius:6px" class="warn">not rendered</div>`;
     return `<div class="tile" draggable="${s.image ? "true" : "false"}" data-row="${s.row}" style="width:220px;border:2px solid ${s.approved ? "#2e9e5b" : "transparent"};border-radius:8px;padding:4px">
-      ${img}<small><b>${esc(s.scene)} / ${s.shot}</b>${s.approved ? " ✓ approved" : ""}${s.versions.length ? ` · ${s.versions.length} older version(s)` : ""}</small>
+      ${img}<small><b>${esc(s.scene)} / ${s.shot}</b>${s.approved ? " ✓ approved" : ""}${(P.consistency || {})[s.row] ? ` · match ${P.consistency[s.row].score}/10${P.consistency[s.row].flagged ? " ⚑ check it" : ""}` : ""}${s.versions.length ? ` · ${s.versions.length} older version(s)` : ""}</small>
       <div class="row" style="gap:4px;flex-wrap:wrap;margin-top:4px">
         <button type="button" class="btn btn--ghost" data-a="${s.approved ? "unapprove" : "approve"}"${s.image ? "" : " disabled"}>${s.approved ? "Unapprove" : "Approve"}</button>
         <button type="button" class="btn btn--ghost" data-a="regenerate">Regenerate</button>
@@ -31,7 +31,14 @@
         <label class="f" for="pxN${s.row}">Note</label><input type="text" id="pxN${s.row}" value="${esc(s.note)}" data-f="note" style="width:100%"></details></div>`;
   }
   function draw() {
-    const g = P.gate;
+    const g = P.gate, sel = $("pxStyle");
+    const want = sel.value || P.style;
+    sel.innerHTML = (P.styles || [P.style]).map(id => `<option value="${esc(id)}"${id === want ? " selected" : ""}>${esc(id)}${id === P.master ? " (master)" : ""}</option>`).join("");
+    const other = P.style && P.master && P.style !== P.master;
+    $("pxCheck").classList.toggle("hidden", !other);
+    const again = Object.values(P.consistency || {}).filter(c => c.pending).length;
+    $("pxAgain").classList.toggle("hidden", !other || !again);
+    $("pxAgain").textContent = `Render the ${again} failed one(s) again`;
     $("pxRender").disabled = !P.shots.length;
     $("pxApprove").disabled = !P.shots.length || g.approved;
     note(!P.shots.length ? "Approve the shot list and the look development, then make the picture prompts." :
@@ -56,10 +63,20 @@
       t.addEventListener("drop", e => { e.preventDefault(); const from = Number(e.dataTransfer.getData("text/plain")); if (from && from !== row) act(from, "swap", { other: row }); });
     });
   }
+  const styleQ = () => ($("pxStyle").value ? `&style=${encodeURIComponent($("pxStyle").value)}` : "");
   async function load() {
     if (!slug) { grid.innerHTML = ""; return; }
-    try { P = await api(`/api/pictures?project=${encodeURIComponent(slug)}`); draw(); } catch (e) { /* nothing yet */ }
+    try { P = await api(`/api/pictures?project=${encodeURIComponent(slug)}${styleQ()}`); draw(); } catch (e) { /* nothing yet */ }
   }
+  $("pxStyle").addEventListener("change", () => { swapFrom = 0; load(); });
+  $("pxCheck").addEventListener("click", async () => {
+    const o = typeof options === "function" ? options() : {};
+    try { await api("/api/consistency_check", { project: slug, style: P.style, engine: o.engine, claude_model: o.claude_model }); startLog(); watch(); } catch (e) { note(e.message, true); }
+  });
+  $("pxAgain").addEventListener("click", async () => {
+    const o = typeof options === "function" ? options() : {};
+    try { await api("/api/pictures_render_again", { project: slug, style: P.style, engine: o.engine, claude_model: o.claude_model, ...gpu() }); startLog(); watch(); } catch (e) { note(e.message, true); }
+  });
   async function watch() {
     clearTimeout(timer);
     await load();
@@ -67,7 +84,7 @@
     try { running = (await api("/api/log?since=0")).running; } catch (e) { /* keep */ }
     if (running) timer = setTimeout(watch, 5000);
   }
-  $("pxPrompts").addEventListener("click", async () => { try { P = await api("/api/pictures_prompts", { project: slug }); draw(); note(`${P.made.rows} picture prompts made.`); } catch (e) { note(e.message, true); } });
+  $("pxPrompts").addEventListener("click", async () => { try { P = await api("/api/pictures_prompts", { project: slug, style: $("pxStyle").value }); draw(); note(`${P.made.rows} picture prompts made.`); } catch (e) { note(e.message, true); } });
   $("pxRender").addEventListener("click", async () => { try { await api("/api/pictures_render", { project: slug, style: P.style, ...gpu() }); startLog(); watch(); } catch (e) { note(e.message, true); } });
   $("pxApprove").addEventListener("click", async () => { try { P = await api("/api/pictures_approve", { project: slug, style: P.style }); draw(); } catch (e) { note(e.message, true); } });
   $("pxPages").addEventListener("click", async () => {
@@ -77,4 +94,25 @@
   });
   $("pxExport").addEventListener("click", async () => { try { P = await api("/api/pictures_export", { project: slug, style: P && P.style }); draw(); } catch (e) { note(e.message, true); } });
   window.loadPictures = p => { slug = p && p.slug && !p.legacy && /^[a-z0-9_]{2,40}$/.test(p.slug) ? p.slug : ""; swapFrom = 0; load(); };
+})();
+
+// The "Compare styles" card: one row per shot, one column per style.
+(function () {
+  const body = $("cmpBody");
+  if (!body) return;
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const slug = () => { const p = typeof cur === "function" ? cur() : null; return p && !p.legacy ? p.slug : ""; };
+  $("cmpLoad").addEventListener("click", async () => {
+    if (!slug()) return;
+    const R = await api(`/api/style_compare?project=${encodeURIComponent(slug())}`);
+    if (!R.rows.length) { body.innerHTML = '<p class="warn">No pictures yet.</p>'; return; }
+    body.innerHTML = `<table class="data-table" aria-label="Every shot in every style"><tr><th>Shot</th>${R.styles.map(s => `<th>${esc(s.name)}${s.master ? " (master)" : ""}</th>`).join("")}</tr>
+      ${R.rows.map(r => `<tr><td>${esc(r.scene)} / ${r.shot}</td>${R.styles.map(s => { const c = r.cells[s.id];
+        return `<td>${c.image ? `<img src="/thumb/${esc(c.set)}/${esc(c.image)}" alt="${esc(r.scene)} shot ${r.shot} in ${esc(s.name)}" width="160" height="90" loading="lazy" style="object-fit:cover">` : '<span class="warn">none</span>'}
+          <br><small>${c.approved ? "✓ " : ""}${c.score != null ? `match ${c.score}/10` : ""}${c.flagged ? " ⚑" : ""}${c.pending ? " (again)" : ""}</small></td>`; }).join("")}</tr>`).join("")}</table>`;
+  });
+  $("cmpPdf").addEventListener("click", async () => {
+    try { const j = await api("/api/pictures_export", { project: slug(), kinds: ["comparison"] }); const f = j.exports.find(x => x.name === "style_comparison.pdf");
+      $("cmpFile").innerHTML = f ? `<a class="btn btn--ghost" href="${esc(f.url)}" download>${esc(f.name)}</a>` : ""; } catch (e) { $("cmpFile").textContent = e.message; }
+  });
 })();
