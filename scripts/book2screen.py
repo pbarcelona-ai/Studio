@@ -28,8 +28,18 @@ import production  # noqa: E402
 import sources  # noqa: E402
 
 
+def is_file(source: str) -> bool:
+    """Is the source a file on this computer? (An idea is long text: on some systems asking about it as a path raises "name too long".)"""
+    if len(source) > 1000 or "\n" in source:
+        return False
+    try:
+        return Path(source).expanduser().is_file()
+    except (OSError, ValueError):
+        return False
+
+
 def name_for(source: str) -> str:
-    base = Path(source).stem if Path(source).exists() else (re.sub(r"^https?://(www\.)?", "", source).split("/")[0] if source.startswith(("http://", "https://")) else source)
+    base = Path(source).stem if is_file(source) else (re.sub(r"^https?://(www\.)?", "", source).split("/")[0] if source.startswith(("http://", "https://")) else source)
     slug = re.sub(r"[^a-z0-9]+", "_", base.lower()).strip("_")[:40] or "film"
     return slug if len(slug) >= 2 else f"{slug}_film"
 
@@ -39,8 +49,8 @@ def add_source(pdir: Path, source: str) -> dict:
         with tempfile.TemporaryDirectory(prefix="b2s-web-") as t:
             doc, files = sources.from_url(source, Path(t))
             return sources.store(pdir, doc, True, files)
-    p = Path(source).expanduser()
-    if p.is_file():
+    p = Path(source).expanduser() if is_file(source) else None
+    if p is not None:
         import shutil
         with tempfile.TemporaryDirectory(prefix="b2s-src-") as t:      # a copy: the source moves into the book, the original stays
             tmp = Path(t) / p.name

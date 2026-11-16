@@ -41,6 +41,7 @@ class TestApi:
 class TestCli:
     def test_make_with_the_fake_crew_and_status(self, fake_root, capsys):
         assert book2screen.name_for("A lighthouse keeper finds a door") == "a_lighthouse_keeper_finds_a_door" and book2screen.name_for("https://www.x.org/a") == "x_org"
+        assert not book2screen.is_file("x" * 5000) and not book2screen.is_file("a/" * 300)                # long ideas are never asked about as paths
         rc = book2screen.main(["make", STORY, "--name", "door_cli", "--product", "screenplay", "--minutes", "1", "--engine", "fake", "--stop-at", "continuity"])
         out = capsys.readouterr().out
         assert rc == 0 and "door_cli: source s001 (idea" in out and "Waiting for your review at the continuity book" in out
