@@ -465,6 +465,32 @@
             </div>
         </div>
 
+        <div class="card bookonly" id="stepSeries">
+            <div class="card__header">
+                <h2 class="card__title">Episodes, queue and marketing</h2>
+                <p class="card__subtitle">Make the book a series (each episode its own film, sharing the cast, looks and voices), queue several books or episodes to run one after another, and cut the marketing kit.</p>
+            </div>
+            <div class="card__body">
+                <div class="row" style="gap:8px;flex-wrap:wrap;align-items:end">
+                    <div><label class="f" for="srEpisodes">Episodes (0 = let the crew decide)</label><input type="number" id="srEpisodes" min="0" max="40" value="0" style="width:6em"></div>
+                    <button type="button" class="btn btn--secondary" id="srSplit">Split into episodes</button>
+                    <div><label class="f" for="srPick">Episode</label><select id="srPick"><option value="">—</option></select></div>
+                    <button type="button" class="btn btn--secondary" id="srNext">Make next episode</button>
+                    <button type="button" class="btn btn--ghost" id="srSync">Take the series' cast and looks again</button>
+                </div>
+                <p class="warn" id="srNote" role="status" aria-live="polite"></p>
+                <div id="srList"></div>
+                <h3 style="font-size:var(--text-sm);margin:12px 0 4px">Production queue</h3>
+                <div class="row" style="gap:8px;flex-wrap:wrap;align-items:end"><div><label class="f" for="srQueue">Books or episodes (comma separated)</label><input type="text" id="srQueue" autocomplete="off" style="min-width:16em"></div>
+                    <button type="button" class="btn btn--secondary" id="srQueueAdd">Queue Read it in for each</button></div>
+                <div id="srQueueOut" class="warn"></div>
+                <h3 style="font-size:var(--text-sm);margin:12px 0 4px">Marketing kit (Product G)</h3>
+                <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="mkPlan">Plan the trailer, teasers and poster</button>
+                    <button type="button" class="btn btn--secondary" id="mkRender">Cut the kit in every style</button></div>
+                <div id="mkOut"></div>
+            </div>
+        </div>
+
         <div class="card bookonly" id="stepNotes">
             <div class="card__header">
                 <h2 class="card__title">Notes and history</h2>
@@ -1518,6 +1544,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/clips.js" defer></script>
 <script src="/static/js/collab.js" defer></script>
 <script src="/static/js/media.js" defer></script>
+<script src="/static/js/series.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>

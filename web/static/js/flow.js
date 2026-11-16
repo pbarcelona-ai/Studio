@@ -27,7 +27,7 @@
     ["storyboard", "Check every picture", "Say yes or no to every picture. You can change a shot's words, move shots, or make everything again from the screenplay.", ["Storyboard (optional)"], [], ["approveRest", "getPictures"]],
     ["video", "Make the video", "Now every picture you said yes to is turned into a moving clip.", ["Video & Audio Models"], ["Video and Audio", "Make the Movie"], ["video", "getVideo"]],
     ["audio", "Make the sound", "The voices, sounds and music are made.", ["Voices, sound and music"], ["Video and Audio", "Video & Audio Models"], ["audio", "getSound"]],
-    ["cut", "Put the film together", "The clips and the sound are joined into your film.", ["Clips in every style", "Timeline editor", "Final film"], ["Kaggle Runs", "Execution Log", "Notes and history"], ["cut"]],
+    ["cut", "Put the film together", "The clips and the sound are joined into your film.", ["Clips in every style", "Timeline editor", "Final film"], ["Kaggle Runs", "Execution Log", "Notes and history", "Episodes, queue and marketing"], ["cut"]],
     ["premiere", "Share your film", "Watch it, save a copy for YouTube or a friend, and add the credits.", ["Export and credits"], ["Results Gallery", "What Exists for This Book", "Cleanup"], []],
   ];
   const ID = STEPS.map(s => s[0]);

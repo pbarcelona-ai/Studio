@@ -83,6 +83,8 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D40 | 2026-11-15 | M12: the conflict prompt guards the shot list, the continuity book and the edit: an edit while the running step writes the same thing answers 409, and the page asks whether to keep the owner's change (sent again with force) or the job's | assumed — not answered |
 | D41 | 2026-11-15 | M13: transcription uses faster-whisper ("small", on the processor) through the job's own uv environment; without it the video is still understood from its pictures. Shots are found with ffmpeg's scene score (0.3). The Story Analyst sees one contact sheet of the key frames (one vision call per video) | assumed — not answered |
 | D42 | 2026-11-15 | M13: "Make a story from my clips" writes a new shot list of real shots (the old one is saved as a history moment first); a real shot's clip is the same footage in every style; an uploaded track becomes one music item under the whole film, its tempo estimated in plain Python | assumed — not answered |
+| D43 | 2026-11-15 | M14: an episode is a book of its own (<book>_e01 ...) made from its part of the source; the series' continuity book, style cards and look development, settings, rules and voice cast are copied into it (sync), with the series' approvals of them, so the series stays the one place to edit them | assumed — not answered |
+| D44 | 2026-11-15 | M14: the marketing kit is planned by the Trailer Editor with the producer as Marketing Lead and cut from the style's approved clips by the film's renderer; the poster and thumbnail are drawn with Pillow on the chosen shot's picture | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1080,7 +1082,7 @@ saying what's left.
         (Sections 3.4, 3.5, 6c).
 [x] M13 (2026-11-15) Media sources: video/audio understanding, real footage + AI shots,
         raw-footage auto-edit, cut to music (Section 4.2).
-[ ] M14 Episodes, series and production queue (Section 6e); marketing kit
+[x] M14 (2026-11-15) Episodes, series and production queue (Section 6e); marketing kit
         (Product G).
 [ ] M15 Autopilot polish, cost tiers and estimate vs. actual, worker pool +
         job locks for parallel styles, automation API, CLI, MCP server.

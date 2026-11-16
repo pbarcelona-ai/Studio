@@ -115,9 +115,11 @@ def audio_files(pdir: Path, tl: dict) -> list[tuple[str, dict, Path]]:
     return out
 
 
-def render(pdir: Path, sid: str, kind: str = "animatic", cut_name: str = "", size: tuple[int, int] = (1920, 1080), subtitles: bool = False) -> Path:
-    d = edl.load(pdir) or edl.assemble(pdir)
-    c = edl.cut(d, cut_name)
+def render(pdir: Path, sid: str, kind: str = "animatic", cut_name: str = "", size: tuple[int, int] = (1920, 1080), subtitles: bool = False,
+           cut: dict | None = None, out_name: str = "", srt_text: str | None = None) -> Path:
+    """`cut` renders a cut that is not in the EDL (the marketing kit's trailer and teasers), as `out_name`, with its own subtitles."""
+    d = (edl.load(pdir) or edl.assemble(pdir)) if cut is None else {"current": "", "cuts": {}}
+    c = cut if cut is not None else edl.cut(d, cut_name)
     tl = edl.timeline(c)
     clips = tl["video"]
     if not clips:
@@ -128,8 +130,8 @@ def render(pdir: Path, sid: str, kind: str = "animatic", cut_name: str = "", siz
     ff = ffmpeg()
     out_dir = pdir / "exports"
     out_dir.mkdir(exist_ok=True)
-    tag = "" if d.get("current", "main") == c["name"] == "main" else "_" + re.sub(r"[^a-z0-9]+", "_", c["name"].lower()).strip("_")
-    out = out_dir / f"{kind}_{sid}{tag}.mp4"
+    tag = "" if cut is not None or d.get("current", "main") == c["name"] == "main" else "_" + re.sub(r"[^a-z0-9]+", "_", c["name"].lower()).strip("_")
+    out = out_dir / (out_name or f"{kind}_{sid}{tag}.mp4")
     with tempfile.TemporaryDirectory(prefix="studio-render-") as tmp_:
         tmp = Path(tmp_)
         segs = []
@@ -192,7 +194,7 @@ def render(pdir: Path, sid: str, kind: str = "animatic", cut_name: str = "", siz
         else:
             fc.append(f"anullsrc=r=44100:cl=stereo,atrim=0:{total:.3f}[aud]")
         vlast = last
-        srt_text = edl.srt(c, pdir)
+        srt_text = edl.srt(c, pdir) if srt_text is None else srt_text
         srt_file = out.with_suffix(".srt")
         srt_file.write_text(srt_text, encoding="utf-8")
         if subtitles and srt_text.strip():

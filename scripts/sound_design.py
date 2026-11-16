@@ -118,7 +118,8 @@ def write_plan(pdir: Path, ask: Ask, say: Callable[[str], None] = print) -> dict
     book = continuity_book.load(pdir)
     names = [c["name"] for c in book.get("characters", [])]
     lines = lines_of(pdir, sl)
-    say("Your voice director is casting the voices")
+    shared = pdir / "sound" / "series_cast.json"
+    say("Your voice director is casting the voices" if not shared.is_file() else "The series' voices are used (the voice director directs the new lines)")
     people = "\n".join(f"- {c['name']}: {c['token']}. Personality: " + "; ".join(f"{k} {v}" for k, v in (c.get("personality") or {}).items()) for c in book.get("characters", []))
     cast = ask(f"Cast a voice for every character and the narrator from these voices: {', '.join(KOKORO)} (a = American, b = British; f = female, "
                f"m = male). Use the personality profiles. Give each a usual emotion (one of {', '.join(voices.EMOTIONS)}) and, for any line that "
@@ -126,6 +127,9 @@ def write_plan(pdir: Path, ask: Ask, say: Callable[[str], None] = print) -> dict
                'Reply as JSON: {"cast": {"NAME": {"voice": "af_bella", "emotion": "calm", "why": "..."}}, "narrator": {"voice": "bm_george", '
                '"emotion": "warm", "notes": "..."}, "lines": {"S001#2#1": "whisper"}}\n\nCHARACTERS:\n' + people + "\n\nLINES:\n"
                + "\n".join(f"{x['id']} {x['character']}: {x['text']}" for x in lines), "voice_director", "sound: voice casting", cast_checker(names))
+    if shared.is_file():                                      # an episode keeps the series' voices; only the line direction is new
+        keep = json.loads(shared.read_text(encoding="utf-8"))
+        cast = {**cast, "cast": {**cast["cast"], **keep.get("cast", {})}, "narrator": keep.get("narrator", cast["narrator"])}
     effects: dict[str, list[dict]] = {}
     for i, sc in enumerate(sl["scenes"], 1):
         say(f"Your sound designer is working on scene {i} of {len(sl['scenes'])}")
