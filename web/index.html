@@ -453,6 +453,33 @@
             </div>
         </div>
 
+        <div class="card bookonly" id="stepNotes">
+            <div class="card__header">
+                <h2 class="card__title">Notes and history</h2>
+                <p class="card__subtitle">Notes to your crew on anything (they go into that crew member's next revision), and every moment of the project: go back to one, or branch from it to try another idea.</p>
+            </div>
+            <div class="card__body">
+                <h3 style="font-size:var(--text-sm);margin:0 0 4px">Add a note</h3>
+                <div class="row" style="gap:8px;flex-wrap:wrap;align-items:end">
+                    <div><label class="f" for="ntKind">On</label><select id="ntKind"></select></div>
+                    <div><label class="f" for="ntRef">Which (scene id, shot, name…)</label><input type="text" id="ntRef" maxlength="80" autocomplete="off"></div>
+                    <div><label class="f" for="ntRole">For</label><select id="ntRole"><option value="">the right crew member</option></select></div>
+                    <div style="flex:1;min-width:220px"><label class="f" for="ntText">Note</label><input type="text" id="ntText" maxlength="4000" autocomplete="off" style="width:100%"></div>
+                    <button type="button" class="btn btn--secondary" id="ntAdd">Add the note</button>
+                </div>
+                <p class="warn" id="ntNote" role="status" aria-live="polite"></p>
+                <div id="ntList"></div>
+                <h3 style="font-size:var(--text-sm);margin:12px 0 4px">History</h3>
+                <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--ghost" id="hsSave">Save this moment</button><span id="hsBranchOf" class="warn"></span></div>
+                <div id="hsList" style="max-height:300px;overflow:auto"></div>
+                <div class="row" style="gap:8px;flex-wrap:wrap;align-items:end;margin-top:6px">
+                    <div><label class="f" for="hsCmp">Compare with the book</label><input type="text" id="hsCmp" maxlength="40" autocomplete="off"></div>
+                    <button type="button" class="btn btn--ghost" id="hsCompare">Compare</button>
+                </div>
+                <div id="hsCompareOut" style="max-height:360px;overflow:auto"></div>
+            </div>
+        </div>
+
         <div class="card bookonly" id="stepAdapt">
             <div class="card__header">
                 <h2 class="card__title">Film plan and screenplay</h2>
@@ -1451,6 +1478,17 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         </div>
     </div>
 </div>
+<aside id="chatPanel" aria-labelledby="chatTitle" style="position:fixed;right:16px;bottom:16px;width:min(380px,92vw);z-index:50;background:var(--bg-elevated, #211c42);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.3)">
+  <button type="button" id="chatToggle" aria-expanded="false" aria-controls="chatBody" style="width:100%;text-align:left;padding:10px 12px;background:none;border:none;color:inherit;font:inherit;cursor:pointer"><b id="chatTitle">Producer chat</b> <small id="chatWorking" class="warn"></small></button>
+  <div id="chatBody" hidden style="padding:0 12px 12px">
+    <div id="chatLog" role="log" aria-live="polite" style="max-height:300px;overflow:auto;font-size:13px"></div>
+    <label class="f" for="chatText">Tell the producer what you want</label>
+    <textarea id="chatText" rows="2" style="width:100%" placeholder="make the villain scarier; give me a 3-minute vertical version…"></textarea>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px"><button type="button" class="btn btn--secondary" id="chatSend">Send</button>
+      <button type="button" class="btn btn--ghost" id="chatStop">Stop</button><button type="button" class="btn btn--ghost" id="chatAdd">Add information</button>
+      <button type="button" class="btn btn--ghost" id="chatGo">Continue</button></div>
+  </div>
+</aside>
 <script src="/static/js/core.js" defer></script>
 <script src="/static/js/prompts.js" defer></script>
 <script src="/static/js/film.js" defer></script>
@@ -1466,6 +1504,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/sound.js" defer></script>
 <script src="/static/js/edit.js" defer></script>
 <script src="/static/js/clips.js" defer></script>
+<script src="/static/js/collab.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>

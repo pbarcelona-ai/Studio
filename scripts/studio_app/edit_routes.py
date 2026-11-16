@@ -19,6 +19,7 @@ import gates
 import production
 from layout import project_dir
 
+from . import conflicts
 from .api import Request, route
 from .common import PlanError
 from .jobs import JOB
@@ -62,6 +63,7 @@ def _get(r: Request):
 @route("POST", "/api/edl_edit")
 def _edit(r: Request):
     d = _book(r.body.get("project"))
+    conflicts.check("edit", r.body)
     op = str(r.body.get("op", ""))
     try:
         if op == "reassemble":

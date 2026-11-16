@@ -182,6 +182,13 @@ def system(roles_: str | list[str], book_dir: Path | None = None, step: str = ""
         body = read_rules(Path(book_dir))["body"]
         if body:
             parts.append("## Project rules (the owner's; always follow them, and they win over anything above)\n" + body)
+        try:
+            import notes                                    # the owner's open notes for these roles (Section 3.4)
+            text = notes.prompt_text(Path(book_dir), names)
+        except (OSError, ValueError):
+            text = ""
+        if text:
+            parts.append(text)
     if json_reply:
         parts.append(JSON_REPLY)
     out = CrewPrompt("\n\n".join(parts))

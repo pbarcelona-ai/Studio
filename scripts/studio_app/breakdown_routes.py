@@ -18,6 +18,7 @@ import gates
 import shot_list
 from layout import project_dir
 
+from . import conflicts
 from .api import Request, route
 from .common import PlanError
 from .jobs import JOB
@@ -70,6 +71,7 @@ def _cb_get(r: Request):
 @route("POST", "/api/continuity_edit")
 def _cb_edit(r: Request):
     d = _book(r.body.get("project"))
+    conflicts.check("continuity", r.body)
     fields = r.body.get("fields")
     if not isinstance(fields, dict):
         raise PlanError("fields must be an object")
@@ -110,6 +112,7 @@ def _sl_get(r: Request):
 @route("POST", "/api/shot_edit")
 def _sl_edit(r: Request):
     d = _book(r.body.get("project"))
+    conflicts.check("shotlist", r.body)
     sid, action = str(r.body.get("scene", "")), str(r.body.get("action", "edit"))
     try:
         n = int(r.body.get("n", 0))

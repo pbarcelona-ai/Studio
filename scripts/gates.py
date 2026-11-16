@@ -46,7 +46,23 @@ def approve(pdir: Path, step: str, data) -> dict:
     tmp = _file(pdir).with_suffix(".json.tmp")
     tmp.write_text(json.dumps(d, indent=1), encoding="utf-8")
     tmp.replace(_file(pdir))
+    _after_approval(pdir, step)
     return d[step]
+
+
+def _after_approval(pdir: Path, step: str) -> None:
+    """An approval resolves the notes addressed to that step's roles and makes a moment in the history (Sections 3.4, 6c). Never fails the
+    approval itself."""
+    try:
+        import notes
+        notes.resolve_for_step(pdir, step)
+    except (OSError, ValueError):
+        pass
+    try:
+        import history
+        history.create(pdir, f"approved: {step.replace('_', ' ')}", "approval")
+    except (OSError, ValueError, RuntimeError):
+        pass
 
 
 def approved(pdir: Path, step: str, data) -> bool:

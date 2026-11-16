@@ -12,6 +12,11 @@ const hdr = { "X-Studio-Token": TOKEN };
 const api = async (path, body) => {
   const r = await fetch(path, { method: body ? "POST" : "GET", headers: { ...hdr, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
   const j = await r.json();
+  // the conflict prompt (M12): a job is changing what this edit changes; the owner chooses which version to keep
+  if (r.status === 409 && body && !body.force && String(j.error || "").startsWith("conflict:")) {
+    if (confirm(j.error.slice(9).trim() + "\n\nOK: keep your change.  Cancel: keep the job's version.")) return api(path, { ...body, force: true });
+    throw new Error("Kept the job's version; your change was not saved.");
+  }
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 };
@@ -235,6 +240,7 @@ function renderProject(applyDef) {
   if (typeof window.loadSound === "function") window.loadSound(p);
   if (typeof window.loadEdit === "function") window.loadEdit(p);
   if (typeof window.loadClips === "function") window.loadClips(p);
+  if (typeof window.loadCollab === "function") window.loadCollab(p);
   if (typeof loadExports === "function") loadExports(p);
   renderMovies();
   const rows = Object.entries(p.have).filter(([, n]) => n);
