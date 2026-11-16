@@ -114,10 +114,46 @@ def recipes() -> list[dict]:
     out = []
     for p in sorted(RECIPES_DIR.glob("*.json")) if RECIPES_DIR.is_dir() else []:
         d = _read(p, {})
-        if d.get("name") == p.stem and d.get("title"):
+        if d.get("name") == p.stem and d.get("title") and not recipe_problems(d):
             out.append(d)
     order = ["feature_film", "short_film", "vertical_microdrama", "picture_book", "animatic_pitch", "trailer_only", "audiobook_only", "music_video"]
     return sorted(out, key=lambda d: (order.index(d["name"]) if d["name"] in order else len(order), d["name"]))
+
+
+RECIPE_PRODUCTS = {"screenplay", "storyboard", "illustrated_book", "animatic", "film", "audiobook", "marketing"}
+
+
+def recipe_problems(d: dict) -> list[str]:
+    """What is wrong with a recipe (Section 14: recipes are data, never code, checked against this schema). [] = it can be used."""
+    out = []
+    if not isinstance(d, dict):
+        return ["a recipe is a JSON object"]
+    for k in ("name", "title", "about", "aspect"):
+        if not isinstance(d.get(k), str) or not d[k].strip():
+            out.append(f"{k} must be text")
+    if d.get("aspect") not in ("16:9", "9:16", "1:1", "4:3"):
+        out.append("aspect must be 16:9, 9:16, 1:1 or 4:3")
+    prods = d.get("products")
+    if not isinstance(prods, list) or not prods or any(p not in RECIPE_PRODUCTS for p in prods):
+        out.append(f"products must be some of {', '.join(sorted(RECIPE_PRODUCTS))}")
+    tm = d.get("target_minutes")
+    if not isinstance(tm, (int, float)) or isinstance(tm, bool) or not (tm == 0 or 0.5 <= tm <= 600):
+        out.append("target_minutes must be 0 (the length follows the book) or a number from 0.5 to 600")
+    if not isinstance(d.get("series", False), bool):
+        out.append("series must be true or false")
+    if d.get("quality_tier", "final") not in ("draft", "final"):
+        out.append("quality_tier must be draft or final")
+    rules = d.get("prompt_rules", {})
+    if not isinstance(rules, dict) or any(not isinstance(k, str) or not isinstance(v, str) or len(v) > 2000 for k, v in rules.items()):
+        out.append("prompt_rules maps a crew role to a short text")
+    crit = d.get("critique", {})
+    if not isinstance(crit, dict) or any(not isinstance(v, (int, float)) or isinstance(v, bool) for v in crit.values()):
+        out.append("critique holds numbers (min_score, max_rounds)")
+    allowed = {"name", "title", "about", "aspect", "products", "target_minutes", "series", "quality_tier", "prompt_rules", "critique", "episode_minutes", "notes"}
+    extra = sorted(set(d) - allowed)
+    if extra:
+        out.append(f"unknown keys: {', '.join(extra)}")
+    return out
 
 
 def recipe(name: str) -> dict:
@@ -179,6 +215,14 @@ def system(roles_: str | list[str], book_dir: Path | None = None, step: str = ""
             rec = recipe(name)
             rules = [f"- {rec['prompt_rules'][r]}" for r in names if rec.get("prompt_rules", {}).get(r)]
             parts.append(f"## Format: {rec['title']}\n{rec['about']} Aspect ratio {rec['aspect']}." + ("\n" + "\n".join(rules) if rules else ""))
+        try:                                                # the rating is applied to every crew prompt (Section 14)
+            rating = json.loads((Path(book_dir) / "production.json").read_text(encoding="utf-8")).get("rating", "")
+        except (OSError, ValueError, AttributeError):
+            rating = ""
+        if rating:
+            word = {"all": "All ages", "8": "8+", "13": "13+", "adult": "Adult"}.get(str(rating), "")
+            if word:
+                parts.append(f"## Rating\nThe film is rated {word}. Keep everything you write within that rating.")
         body = read_rules(Path(book_dir))["body"]
         if body:
             parts.append("## Project rules (the owner's; always follow them, and they win over anything above)\n" + body)

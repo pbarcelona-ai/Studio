@@ -65,7 +65,7 @@ def path(pdir: Path) -> Path:
 def defaults(recipe_name: str = "") -> dict:
     r = crew.recipe(recipe_name) if recipe_name else {}
     products = [p for p in r.get("products", ["screenplay", "storyboard", "animatic", "film"]) if p in PRODUCTS]
-    return {"recipe": recipe_name, "products": products, "target_minutes": r.get("target_minutes", 90), "aspect": r.get("aspect", "16:9"),
+    return {"recipe": recipe_name, "products": products, "target_minutes": r.get("target_minutes") or 10, "aspect": r.get("aspect", "16:9"),
             "rating": "13", "faithfulness": "balanced", "tier": r.get("quality_tier", "final"), "styles": [{"id": "realistic"}], "master": "realistic"}
 
 

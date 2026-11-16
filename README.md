@@ -85,6 +85,32 @@ can see them or use your Kaggle hours; your generations run in **your** Kaggle a
 - Generated files, notebooks and your projects stay in this folder and are not part of the code (see `.gitignore`).
 - To update: `git pull`, then run `./install.sh` again if the requirements changed.
 
+## Book to Screen: from any source to a finished film
+
+The Book-tab cards follow one path, each step run by the right member of your film crew, each with a review gate you approve (or let
+Autopilot approve):
+
+1. **Add your sources**: a book or document (PDF, EPUB, Word, OpenDocument, RTF, web page, text), an idea, pictures or comic pages, a web
+   address, a screenplay (Fountain, Final Draft), or video and sound (the crew watches and listens, finds the shots and can use your footage).
+2. **Format, products and styles**: a format recipe, what to make (screenplay, storyboard, illustrated book, animatic, film, audiobook,
+   marketing kit), the length, shape, rating and faithfulness, and one or more styles (one is the master). A live estimate shows GPU time and cost.
+3. **Read it in**: coverage, a beat sheet, a treatment and a professional screenplay, critiqued by the script doctor and the director.
+   Download it as PDF (industry format), Fountain, Word or Final Draft.
+4. **Cast, places and shot list**: the continuity book (how everyone and everything looks, the same in every style, and each character's
+   personality), then the director's breakdown and every shot.
+5. **Look development**: a style card per style, how the cast and places are made in it, character sheets and key art (pick the best of 4).
+6. **Pictures**: the master style first, then every other style from the same layout and seed, checked for consistency; storyboard and
+   illustrated-book downloads; a picture library that keeps every picture ever made (Start over never deletes anything).
+7. **Voices, sound and music** (once, for every style) and the **audiobook**.
+8. **Clips in every style**, the **timeline editor** (one edit for every style, alternative cuts), the **animatic**, the **film**, and the
+   **marketing kit** (trailers, teasers, poster, thumbnail, captions).
+
+Also: the **Producer chat** (say what you want; nothing runs until you accept), **notes** to any crew member, **history** (go back to any
+moment, or branch to try another idea), **episodes** for a series, a **production queue**, and **Make everything** (Autopilot, stopping
+for your review where you tick). Without the page: `python scripts/book2screen.py make "an idea" --style claymation --product film`, the
+`/api/v1` API, or an AI assistant through the MCP server (`python scripts/mcp_server.py`, with STUDIO_URL and STUDIO_TOKEN).
+Every choice the build made on its own is listed, with its reason, in `BOOK_TO_SCREEN_BUILD.md` (the decisions table).
+
 ## Running everything on your own computer
 
 With an NVIDIA GPU you can make every picture, clip, sound and upscale here instead of on Kaggle:

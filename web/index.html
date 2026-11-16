@@ -178,19 +178,19 @@
       <div><label class="f" for="proj">Book</label><select id="proj"></select></div>
       <div id="chips"></div>
       <div class="upload-block">
-        <label class="f">Add a book file (.pdf, .epub, .docx, .html, .txt, .md): drag it onto the box below (or click the box). It is uploaded to the <code>books</code> folder when you press Import. You can also drop files into that folder yourself and reload this page.</label>
+        <label for="file" class="f">Add a book file (.pdf, .epub, .docx, .html, .txt, .md): drag it onto the box below (or click the box). It is uploaded to the <code>books</code> folder when you press Import. You can also drop files into that folder yourself and reload this page.</label>
         <input type="file" id="file" accept="application/pdf,.pdf,.epub,.odt,.rtf,application/epub+zip,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.html,.htm,text/html,text/plain,.txt,.md,text/markdown">
       </div>
       <div class="text-block">
         <label class="f" for="impTitle">Or paste text (a story, a scene, a few paragraphs: only the part you paste is used)</label>
         <input type="text" id="impTitle" maxlength="60" placeholder="Name for this text (for example: garden-scene)" spellcheck="false" autocomplete="off" style="margin-bottom:6px">
-        <textarea id="impText" rows="6" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="Paste or type the text you want prompts written from. Select just the passage you want in another document and paste that." autocomplete="off"></textarea>
+        <textarea id="impText" rows="6" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="Paste or type the text you want prompts written from. Select just the passage you want in another document and paste that." autocomplete="off" aria-label="The text to write prompts from"></textarea>
         <small class="warn" id="impTextCount" aria-live="polite"></small>
       </div>
     </div>
   </section>
                 <section class="bookonly bookstep" style="margin-top:12px">
-        <label class="opt"><input type="checkbox" id="b_ingest"><span>Read the book and split it into chapters<small>PDF (scans are read with OCR, which can take minutes per hundred pages), EPUB, Word, web page or text.</small></span></label>
+        <label for="pdf" class="opt"><input type="checkbox" id="b_ingest"><span>Read the book and split it into chapters<small>PDF (scans are read with OCR, which can take minutes per hundred pages), EPUB, Word, web page or text.</small></span></label>
         <div style="margin:0 0 6px 26px"><select id="pdf"></select></div>
                 </section>
             </div>
@@ -605,15 +605,15 @@
         <label class="opt" style="margin-left:26px"><input type="checkbox" id="b_force"><span>Redo chapters that are already written<small>Use to change narration style, shot counts or the continuity book. Old clips no longer match, so make them again.</small></span></label>
     <div class="row" style="margin-top:8px">
       <div>
-        <label class="f">Narration</label>
+        <label for="narration" class="f">Narration</label>
         <select id="narration"><option value="condensed">Condensed: short lines written to fit each clip</option><option value="dialogue">Dialogue: only the words in double quotes are spoken</option><option value="verbatim">Verbatim: the book's own words, split across shots</option></select>
-        <label class="f" style="margin-top:6px">Only chapters (optional, e.g. 1-5)</label><input type="text" id="chs" placeholder="all" autocomplete="off">
+        <label for="chs" class="f" style="margin-top:6px">Only chapters (optional, e.g. 1-5)</label><input type="text" id="chs" placeholder="all" autocomplete="off">
       </div>
       <div>
-        <label class="f">Words of the book per shot (blank = auto)</label><input type="number" id="wps" min="5" placeholder="60 / 25" autocomplete="off">
-        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Min shots</label><input type="number" id="minshots" value="1" min="1" autocomplete="off"></div>
-        <div style="min-width:70px"><label class="f">Max shots</label><input type="number" id="maxshots" value="12" min="1" autocomplete="off"></div></div>
-        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">AI at once</label><input type="number" id="workers" value="2" min="1" max="6" autocomplete="off"></div>
+        <label for="wps" class="f">Words of the book per shot (blank = auto)</label><input type="number" id="wps" min="5" placeholder="60 / 25" autocomplete="off">
+        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label for="minshots" class="f">Min shots</label><input type="number" id="minshots" value="1" min="1" autocomplete="off"></div>
+        <div style="min-width:70px"><label for="maxshots" class="f">Max shots</label><input type="number" id="maxshots" value="12" min="1" autocomplete="off"></div></div>
+        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label for="workers" class="f">AI at once</label><input type="number" id="workers" value="2" min="1" max="6" autocomplete="off"></div>
         <div style="min-width:70px"><label class="f" for="clipsecs" title="How long one clip from your video model lasts. The AI writes each shot and narration line to fit it.">Seconds per clip</label><input type="number" id="clipsecs" value="4" min="1" max="30" step="0.5" autocomplete="off"></div></div>
         <label class="opt" style="margin-top:8px"><input type="checkbox" id="b_scenes" checked><span>Find the scenes first<small>One more AI call per chapter. No shot straddles two scenes, and each scene keeps its time of day, weather and costumes.</small></span></label>
       </div>
@@ -639,7 +639,7 @@
                 <section class="bookonly bookstep">
         <label class="opt"><input type="checkbox" id="b_build"><span>Build the CSV files and plan the movies</span></label>
         <label class="opt" style="margin-left:26px"><input type="checkbox" id="b_recompose"><span>First rewrite every prompt with the current rules and locked costumes<small>No AI call. Puts each shot's own description first so the model's 256-token window never cuts it, and applies the costumes locked in the Film plan card.</small></span></label>
-        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label class="f">Movie minutes</label><input type="number" id="mmin" value="10" min="1" autocomplete="off"></div></div>
+        <div class="row" style="gap:8px;margin-top:6px"><div style="min-width:70px"><label for="mmin" class="f">Movie minutes</label><input type="number" id="mmin" value="10" min="1" autocomplete="off"></div></div>
                 </section>
             </div>
         </div>
@@ -835,13 +835,13 @@
     </div>
     <h2 style="margin-top:12px">Options (blank = the model's default)</h2>
     <div class="row" style="gap:8px 14px">
-      <div style="min-width:90px"><label class="f">Width</label><input type="number" id="pw" min="0" autocomplete="off"></div>
-      <div style="min-width:90px"><label class="f">Height</label><input type="number" id="ph" min="0" autocomplete="off"></div>
-      <div style="min-width:90px" id="pframesbox"><label class="f">Frames</label><input type="number" id="pframes" min="0" autocomplete="off"></div>
-      <div style="min-width:90px"><label class="f">Steps</label><input type="number" id="psteps" min="0" autocomplete="off"></div>
-      <div style="min-width:90px"><label class="f">Guidance</label><input type="number" id="pguid" step="0.1" min="0" autocomplete="off"></div>
-      <div style="min-width:90px"><label class="f">Seed</label><input type="number" id="pseed" min="0" autocomplete="off"></div>
-      <div style="min-width:110px"><label class="f">Variations of each</label><input type="number" id="pvar" min="1" max="8" value="1" autocomplete="off"></div>
+      <div style="min-width:90px"><label for="pw" class="f">Width</label><input type="number" id="pw" min="0" autocomplete="off"></div>
+      <div style="min-width:90px"><label for="ph" class="f">Height</label><input type="number" id="ph" min="0" autocomplete="off"></div>
+      <div style="min-width:90px" id="pframesbox"><label for="pframes" class="f">Frames</label><input type="number" id="pframes" min="0" autocomplete="off"></div>
+      <div style="min-width:90px"><label for="psteps" class="f">Steps</label><input type="number" id="psteps" min="0" autocomplete="off"></div>
+      <div style="min-width:90px"><label for="pguid" class="f">Guidance</label><input type="number" id="pguid" step="0.1" min="0" autocomplete="off"></div>
+      <div style="min-width:90px"><label for="pseed" class="f">Seed</label><input type="number" id="pseed" min="0" autocomplete="off"></div>
+      <div style="min-width:110px"><label for="pvar" class="f">Variations of each</label><input type="number" id="pvar" min="1" max="8" value="1" autocomplete="off"></div>
     </div>
     <p class="warn">Sizes are rounded to what the model accepts. Each variation is its own clip or picture with a different seed. Video models: LTX frames are 8k+1 (97 = 4 s), Wan 4k+1 (81 = 5 s); CogVideoX ignores size and frames. Gated models (Stable Diffusion 3.5) need a Hugging Face token (add HF_TOKEN in Setup).</p>
   </section>
@@ -912,13 +912,13 @@
         <label class="f" for="charName">Character (label used for its folder)</label>
         <input type="text" id="charName" name="character_label" placeholder="e.g. Adam, Eve, Satan_Disguised" spellcheck="false" autocomplete="nope" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">
 
-        <label class="f" style="margin-top:8px">Archetype</label>
+        <label for="charArchetype" class="f" style="margin-top:8px">Archetype</label>
         <select id="charArchetype"></select>
         <small class="warn">Choose an archetype to auto-populate default traits</small>
 
-        <label class="f" style="margin-top:8px">Visual Token (compact prompt string)</label>
+        <label for="charVisualToken" class="f" style="margin-top:8px">Visual Token (compact prompt string)</label>
         <textarea id="charVisualToken" rows="3" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="ADAM: first man, about 30, tall lean olive-brown skin, long dark brown hair, short dark beard, deep brown eyes, grief-worn face" autocomplete="off"></textarea>
-        <label class="f" style="margin-top:8px">Trigger Words (comma-separated)</label>
+        <label for="charTriggerWords" class="f" style="margin-top:8px">Trigger Words (comma-separated)</label>
         <input type="text" id="charTriggerWords" placeholder="adam, first man, biblical figure, adam_token" autocomplete="off">
 
         <h3 style="margin:1rem 0 0.5rem">Physical Traits</h3>
@@ -928,9 +928,9 @@
         <textarea id="charStages" rows="3" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="young | 1-12 | about 20, lean, olive skin, dark hair to the shoulders, no beard
 old | 13- | about 70, stooped, olive skin, long white hair and beard" autocomplete="off"></textarea>
         <small class="warn">The shots in those chapters use this description instead of the Visual Token. Pictures in the Reference Images Directory, in a folder named after the stage, steer that stage's keyframes. Stylised looks keep one design throughout. Send to the book, then redo those chapters.</small>
-        <label class="f" style="margin-top:8px">Clothing</label>
+        <label for="charClothing" class="f" style="margin-top:8px">Clothing</label>
         <input type="text" id="charClothing" placeholder="simple tunic, earth tones, rough woven fabric" autocomplete="off">
-        <label class="f" style="margin-top:8px">Voice (Kokoro voice ID)</label>
+        <label for="charVoice" class="f" style="margin-top:8px">Voice (Kokoro voice ID)</label>
         <input type="text" id="charVoice" placeholder="bm_george" list="voiceOptions" autocomplete="off">
         <datalist id="voiceOptions">
           <option value="bm_george"><option value="af_bella"><option value="bm_lewis"><option value="am_michael"><option value="af_sky"><option value="am_adam">
@@ -944,7 +944,7 @@ old | 13- | about 70, stooped, olive skin, long white hair and beard" autocomple
 projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textarea>
         <small class="warn" id="charRefHelp"><b>What these do:</b> one picture stands for this character's face, marked below. Generate Character starts from it when "Keep this face" is ticked, and the Movies tab's "Steer keyframes with character pictures" uses it for every shot. Both need FLUX.2 klein; other models work from the words alone. To change the face, press "Use this face" under another picture.</small>
         <div id="charRefThumbs" class="pz-row" style="flex-wrap:wrap;gap:8px;margin-top:8px" aria-live="polite"></div>
-        <label class="f" style="margin-top:8px">Consistency Notes</label>
+        <label for="charConsistency" class="f" style="margin-top:8px">Consistency Notes</label>
         <textarea id="charConsistency" rows="2" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="Always depict as the first man, noble but human, burdened by knowledge of the fall" autocomplete="off"></textarea>
 
         <label class="f" style="margin-top:12px">Prompt Preview (what will be sent to the model)</label>
@@ -1012,11 +1012,11 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
     <p class="warn" style="margin-bottom:8px">These get added to every prompt generated for this project. Use for project-wide style, lighting, quality modifiers, etc.</p>
     <div class="row" style="gap:8px;align-items:flex-start">
       <div style="flex:1;min-width:300px">
-        <label class="f">Global Positives (added to every prompt)</label>
+        <label for="globalPositives" class="f">Global Positives (added to every prompt)</label>
         <textarea id="globalPositives" rows="4" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="photorealistic, cinematic lighting, 8k, raw photo, shot on ARRI Alexa 65, anamorphic lens, subsurface scattering, skin pores, natural imperfections" autocomplete="off"></textarea>
       </div>
       <div style="flex:1;min-width:300px">
-        <label class="f">Global Negatives (added to every negative prompt)</label>
+        <label for="globalNegatives" class="f">Global Negatives (added to every negative prompt)</label>
         <textarea id="globalNegatives" rows="4" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit" placeholder="cartoon, animated, illustration, 3d render, cgi, anime, stylized, painting, drawing, smooth skin, doll-like, toy, figurine, low quality, blurry, deformed, ugly, bad anatomy, extra limbs, watermark, text, long neck, elongated neck, distorted proportions" autocomplete="off"></textarea>
       </div>
     </div>
@@ -1041,7 +1041,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
     <p class="warn" style="margin-bottom:8px">Describe your creative intent for this book — visual style, tone, specific directorial choices, things the continuity book doesn't cover. The AI will analyze it, ask clarifying questions, and incorporate it into every shot prompt.</p>
     <div class="row" style="gap:8px;align-items:flex-start">
       <div style="flex:1;min-width:300px">
-        <label class="f">Your Direction</label>
+        <label for="dirNotes" class="f">Your Direction</label>
         <textarea id="dirNotes" rows="4" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit" placeholder="e.g. Make the expulsion feel like a documentary — handheld, grainy, raw. Satan's disguises should feel uncanny, not theatrical. Use silence more than music." autocomplete="off"></textarea>
         <div class="row" style="gap:8px;margin-top:6px;align-items:center">
           <button id="bDirSend" class="primary">Send to AI</button>
@@ -1050,7 +1050,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         </div>
       </div>
       <div style="min-width:300px;max-width:400px;flex:1">
-        <label class="f">AI Response</label>
+        <label for="dirFollowup" class="f">AI Response</label>
         <div id="dirResponse" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;min-height:120px;max-height:300px;overflow:auto;font-size:13px;line-height:1.5;color:var(--fg)">
           <span class="warn">No conversation yet. Enter your direction above and click Send.</span>
         </div>
@@ -1102,7 +1102,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
     <p class="warn" style="margin-bottom:8px">Select one or more clips below, then describe changes to their prompts. The AI will generate updated prompts and preview the changes. Use <b>Update</b> to apply to selected clips, or <b>Next</b> to move through multiple selections.</p>
     <div class="row" style="gap:8px;align-items:flex-start;margin-bottom:12px">
       <div style="flex:1;min-width:300px">
-        <label class="f">Enhancement Instruction</label>
+        <label for="enhNotes" class="f">Enhancement Instruction</label>
         <textarea id="enhNotes" rows="3" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit" placeholder="e.g. Make the lighting more dramatic, add lens flare, change camera to low angle, remove the modern elements" autocomplete="off"></textarea>
         <div class="row" style="gap:8px;margin-top:6px;align-items:center">
           <button id="bEnhPreview" class="primary" disabled>Preview Changes</button>
@@ -1123,14 +1123,14 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
     <h3 style="margin:8px 0">Add New Scene</h3>
     <p class="warn" style="margin-bottom:8px">Insert a new scene before or after an existing scene in the book. The AI will generate a complete scene with shots, narration, and prompts.</p>
     <div class="row" style="gap:8px;align-items:flex-end;margin-bottom:8px">
-      <div style="min-width:140px"><label class="f">Position</label><select id="newScenePos"><option value="before">Before</option><option value="after">After</option></select></div>
-      <div style="min-width:200px;flex:1"><label class="f">Series</label><select id="newSceneSeries" style="width:100%"></select></div>
-      <div style="min-width:300px;flex:2"><label class="f">Existing Scene (chapter/prompt)</label><select id="newSceneChapter" style="width:100%"></select></div>
+      <div style="min-width:140px"><label for="newScenePos" class="f">Position</label><select id="newScenePos"><option value="before">Before</option><option value="after">After</option></select></div>
+      <div style="min-width:200px;flex:1"><label for="newSceneSeries" class="f">Series</label><select id="newSceneSeries" style="width:100%"></select></div>
+      <div style="min-width:300px;flex:2"><label for="newSceneChapter" class="f">Existing Scene (chapter/prompt)</label><select id="newSceneChapter" style="width:100%"></select></div>
       <div style="min-width:140px"><label class="f">&nbsp;</label><button id="bNewScene" class="primary" style="width:100%" disabled>Create New Scene</button></div>
     </div>
     <div class="row" style="gap:8px;align-items:flex-start">
       <div style="flex:1;min-width:300px">
-        <label class="f">New Scene Description</label>
+        <label for="newSceneDesc" class="f">New Scene Description</label>
         <textarea id="newSceneDesc" rows="4" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit" placeholder="Describe the new scene: what happens, who is in it, the mood, key visual elements..." autocomplete="off"></textarea>
         <div class="row" style="gap:8px;margin-top:6px;align-items:center">
           <button id="bNewScenePreview" class="primary" disabled>Preview Scene</button>
@@ -1158,7 +1158,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
             <div class="card__body">
                 <section id="legacypanel" class="hidden bookonly">
     <label class="opt"><input type="checkbox" id="s_extract"><span>Rebuild the prompt CSVs from the production notes<small>Only needed after editing the markdown.</small></span></label>
-    <div id="enochbox" class="hidden" style="margin-left:26px"><label class="f">Enoch verse text per clip (characters, 0 = whole chapter)</label><input type="number" id="echars" min="0" value="300" style="width:110px" autocomplete="off"></div>
+    <div id="enochbox" class="hidden" style="margin-left:26px"><label for="echars" class="f">Enoch verse text per clip (characters, 0 = whole chapter)</label><input type="number" id="echars" min="0" value="300" style="width:110px" autocomplete="off"></div>
   </section>
             </div>
         </div>
@@ -1179,7 +1179,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <label class="opt"><input type="radio" name="msel" value="first"><span>The first <input type="number" id="mfirst" value="1" min="1" style="width:60px;display:inline" autocomplete="off"> (use when movies don't exist yet)</span></label>
         <label class="opt"><input type="radio" name="msel" value="all"><span>All movies</span></label>
       </div>
-      <div><label class="f">Only rows (optional)</label><div class="row" style="gap:8px"><input type="number" id="rs" placeholder="from" min="1" style="width:90px" autocomplete="off"><input type="number" id="re" placeholder="to" min="1" style="width:90px" autocomplete="off"></div></div>
+      <div><label class="f">Only rows (optional)</label><div class="row" style="gap:8px"><input type="number" id="rs" placeholder="from" aria-label="Only rows: from" min="1" style="width:90px" autocomplete="off"><input type="number" id="re" placeholder="to" min="1" style="width:90px" autocomplete="off" aria-label="Only rows: to"></div></div>
     </div>
     <div class="movies" id="movies" style="margin-top:8px"></div>
     <p class="warn">Each movie is about the chosen length and always ends at the end of a chapter. Lengths are estimates (clip length or narration length, whichever is longer).</p>
@@ -1298,7 +1298,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         <label class="opt" style="margin-bottom:8px"><input type="checkbox" id="kfrefs" checked><span>Steer keyframes with character pictures<small id="kfrefsNote">Each character's reference picture (Characters tab) keeps their face and costume the same in every still. FLUX.2 klein only.</small></span></label>
         <label class="f" for="kfseries">Character pictures from</label>
         <select id="kfseries" style="margin-bottom:8px"></select>
-        <label class="f">When narration is longer than the clip</label>
+        <label for="sync" class="f">When narration is longer than the clip</label>
         <select id="sync"><option value="stretch">Stretch video to fit, up to 2x slow motion (default)</option><option value="gentle">Natural motion: at most 1.25x slower, then hold the last frame</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select>
         <label class="f" for="aspect" style="margin-top:8px">Film shape</label>
         <select id="aspect"><option value="">Each model's own shape</option><option value="16:9">16:9 widescreen</option><option value="2.39:1">2.39:1 cinema</option><option value="4:3">4:3 classic</option><option value="1:1">1:1 square</option><option value="9:16">9:16 vertical</option></select>
@@ -1407,13 +1407,13 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
     <p class="warn">Choose where the clips and each kind of audio come from, then tick the rows to use. Only files already downloaded into the project are offered (see "Kaggle runs: fetch results"). Rows you leave unticked are left out; the film follows the table's order (move rows with the arrows), and each clip can be trimmed at the start or end. The finished film appears under Results.</p>
     <div id="filmbody">
       <div class="stack">
-        <div><label class="f">Video clips from</label><select id="fvideo"></select></div>
-        <div><label class="f">Narration from</label><select id="fnarr"></select></div>
-        <div><label class="f">Sound effects from</label><select id="fsfx"></select></div>
-        <div><label class="f">Music from</label><select id="fmusic"></select></div>
+        <div><label for="fvideo" class="f">Video clips from</label><select id="fvideo"></select></div>
+        <div><label for="fnarr" class="f">Narration from</label><select id="fnarr"></select></div>
+        <div><label for="fsfx" class="f">Sound effects from</label><select id="fsfx"></select></div>
+        <div><label for="fmusic" class="f">Music from</label><select id="fmusic"></select></div>
       </div>
       <div class="stack" style="margin-top:12px">
-        <div><label class="f">When narration is longer than the clip</label><select id="fsync"><option value="stretch">Stretch video to fit</option><option value="gentle">Natural motion: at most 1.25x slower, then hold</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select></div>
+        <div><label for="fsync" class="f">When narration is longer than the clip</label><select id="fsync"><option value="stretch">Stretch video to fit</option><option value="gentle">Natural motion: at most 1.25x slower, then hold</option><option value="speed">Speed up narration</option><option value="trim">Trim audio to clip</option></select></div>
         <div class="vol-slider"><label class="f" for="fvn">Voice <output id="fvnOut" for="fvn">1.00</output></label><input type="range" id="fvn" min="0" max="2" step="0.05" value="1.0" data-out="fvnOut"></div>
         <div class="vol-slider"><label class="f" for="fvs">Effects <output id="fvsOut" for="fvs">0.50</output></label><input type="range" id="fvs" min="0" max="2" step="0.05" value="0.5" data-out="fvsOut"></div>
         <div class="vol-slider"><label class="f" for="fvm">Music <output id="fvmOut" for="fvm">0.25</output></label><input type="range" id="fvm" min="0" max="2" step="0.05" value="0.25" data-out="fvmOut"></div>

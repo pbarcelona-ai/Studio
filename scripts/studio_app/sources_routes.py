@@ -129,7 +129,7 @@ def upload(pdir: Path, tmp: Path, fname: str, agreed: bool, comic: bool, title: 
     named = tmp.with_name(fname)
     tmp.replace(named)
     try:
-        doc = sources.from_file(named, comic=comic)
+        doc = sources.from_file(named, comic=comic, ocr=False)   # no minutes-long OCR inside a request: scanned books go through Read book (a job)
         if title:
             doc.title = title
         doc.rights_note = note

@@ -202,6 +202,7 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
         raise RuntimeError("pictures go to the hf and local engines through hf_json, not llm_json")
     feedback = ""
     last: Exception | None = None
+    refused = False
     img_dir = tempfile.TemporaryDirectory() if image else None
     img_path = Path(img_dir.name) if img_dir else Path()
     img_name = ""
@@ -259,10 +260,26 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
             return data
         except (ValueError, json.JSONDecodeError) as e:
             last = e
+            if refusal(text):                                # the service declined: asking again the same way will not help
+                refused = True
+                break
             feedback = f"\n\nYour previous reply was rejected: {e}. Reply again with ONLY the corrected JSON object."
     if img_dir:
         img_dir.cleanup()
+    if refused or refusal(str(last)):
+        raise RuntimeError(REFUSAL_MESSAGE)
     raise RuntimeError(f"{engine} did not return usable JSON after {retries + 1} tries: {last}")
+
+
+REFUSAL_RE = re.compile(r"(?i)\b(I can(no|')t (help|assist|create|write) with|I'?m not able to (help|create|write)|I won'?t (help|create|write)|"
+                        r"content (policy|guidelines)|usage polic(y|ies)|violates? (our|the) (policy|guidelines)|safety (system|filter)s?|flagged as)\b")
+REFUSAL_MESSAGE = ("The AI service declined this request (its content rules). Try rewording the source or your notes, choosing a lower rating "
+                   "in the Format card, or another engine.")
+
+
+def refusal(text: str) -> bool:
+    """Does a reply (or an error) read like the service refusing, rather than a broken answer? (Section 14: a friendly message.)"""
+    return bool(text) and bool(REFUSAL_RE.search(text[:2000]))
 
 
 def hf_json(messages, model=None, validate=None, retries=1, chat=None):

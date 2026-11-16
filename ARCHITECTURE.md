@@ -50,3 +50,28 @@ scripts and event handlers (`tests/test_web.py` enforces it). Notebook templates
 ## Quality gates (CI: `.github/workflows/ci.yml`)
 `ruff check .` · `mypy` (every function body in `scripts/` is type-checked) · `pytest --cov=scripts` (CI fails below 90% for `scripts/` and 85% for `scripts/studio_app/`). Locally: `uv venv .venv-dev && uv pip install --python .venv-dev/bin/python -e '.[dev]'`.
 Tests cover auth and file-serving security, the planner, the job runner, media readers, schemas and catalog.
+
+## Book to Screen modules (milestones M2-M16)
+
+Each step is a plain module in `scripts/` with its own tests, its studio_app/*_routes.py for the page, and (for AI steps) a `fake_ask` so
+the whole path runs in tests without an AI:
+
+| step | module | routes |
+|---|---|---|
+| sources | sources.py, media_sources.py | sources_routes.py, media_routes.py |
+| format / products / styles | production.py | sources_routes.py |
+| Read it in, screenplay exports | read_it_in.py, screenplay_export.py | readin_routes.py |
+| continuity book, shot list, gates | continuity_book.py, shot_list.py, gates.py | breakdown_routes.py |
+| styles, prompt assembly, look development | styles.py | styles_routes.py |
+| pictures, other styles, consistency | pictures.py, consistency.py, book_exports.py | pictures_routes.py |
+| assets, library, start over | assets.py, library.py, attempts.py | library_routes.py |
+| voices, sound, music, audiobook | sound_design.py | sound_routes.py |
+| edit, animatic, film | edl.py, render_cut.py, clips.py | edit_routes.py, clips_routes.py |
+| chat, notes, history, branches, conflicts | producer.py, notes.py, history.py | collab_routes.py, conflicts.py |
+| episodes, queue, marketing | series.py, marketing.py | series_routes.py |
+| Autopilot, cost, automation | autopilot.py, ledger.py, book2screen.py, mcp_server.py | v1_routes.py (+ SSE in handler.py) |
+| installers | setup_engine.py, install_studio.py, installer/ | setup_install.py |
+
+Every AI call goes through `crew.system(role, book, step)`: the role's file in prompts/crew/, the format recipe's rules, the owner's project
+rules, the rating and the open notes for that role. GPU work always goes through the existing runners (run_kaggle_model.py,
+run_colab_model.py, run_hf_space.py, run_local_model.py) on a prompt set or the book's own CSVs.

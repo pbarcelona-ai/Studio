@@ -87,6 +87,8 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D44 | 2026-11-15 | M14: the marketing kit is planned by the Trailer Editor with the producer as Marketing Lead and cut from the style's approved clips by the film's renderer; the poster and thumbnail are drawn with Pillow on the chosen shot's picture | assumed — not answered |
 | D45 | 2026-11-15 | M15: Autopilot is `autopilot.py`, one job that calls the same step modules as Review mode, approves the gates not ticked under "Stop for my review at", picks the first rendered look-development variant, renders styles in parallel up to the service's limit (Kaggle 2, Colab / Hugging Face / this computer 1), and stops before any paid call over the spending limit ($0 by default) unless confirmed | assumed — not answered |
 | D46 | 2026-11-15 | M15: the automation API is `/api/v1/...` with the book named in the body or query (the Studio's router has no path parameters), the page's own token, and server-sent events at `/api/v1/events`; the CLI is `python scripts/book2screen.py`; the MCP server (`scripts/mcp_server.py`, stdio) calls that API with the same token. Actual cost is counted from what is on disk (pictures, versions, clips), plus paid calls recorded in ledger.json | assumed — not answered |
+| D47 | 2026-11-15 | M16: no accounts: the Studio has one owner on their own computer (D1), so the page, the /api/v1 API and the MCP server share the session token; accounts can be added later behind the same checks | assumed — not answered |
+| D48 | 2026-11-15 | M16: hardening = provider refusals become one plain message (no retries), the rating goes into every crew prompt, recipes are checked against a schema (unknown keys refused; 0 minutes = the length follows the book), uploads are read without OCR inside a request; the accessibility pass labels every field of the page (tested) | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1088,7 +1090,7 @@ saying what's left.
         (Product G).
 [x] M15 (2026-11-15) Autopilot polish, cost tiers and estimate vs. actual, worker pool +
         job locks for parallel styles, automation API, CLI, MCP server.
-[ ] M16 Accounts (if needed), security hardening, accessibility pass, all
+[x] M16 (2026-11-15) Accounts (if needed), security hardening, accessibility pass, all
         tests passing, deployment.
 
 ---------------------------------------------------------------------
