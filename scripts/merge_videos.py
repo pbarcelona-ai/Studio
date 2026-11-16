@@ -48,5 +48,5 @@ with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
 # when all clips come from one model, so just re-encode.
 subprocess.run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", listfile,
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-an", str(out)], check=True,
-               stderr=subprocess.DEVNULL)
+               stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
 print(f"merged {len(clips)} clips ({clips[0].name} … {clips[-1].name}) → {out}")

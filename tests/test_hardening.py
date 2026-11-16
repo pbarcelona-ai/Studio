@@ -108,3 +108,23 @@ def test_every_field_picture_and_button_is_labelled(page):
     nameless = [a.get("id") for a, text in p.buttons if not text.strip() and not a.get("aria-label")]
     assert nameless == [], f"buttons without a name: {nameless}"
     assert re.search(r'<html lang="en"', (WEB / page).read_text(encoding="utf-8"))
+
+
+def test_no_ffmpeg_call_can_wait_on_the_keyboard():
+    """ffmpeg reads the keyboard while it works: started from a background shell (a test run, book2screen) without stdin closed, the
+    system pauses it for good (SIGTTIN). Every call in a file that runs ffmpeg closes stdin, except the quick read-only probes listed."""
+    import ast
+    probes = {("install_studio.py", "sys.prefix"), ("run_local_model.py", "--query-gpu"), ("run_local_model.py", "--showproductname"),
+              ("run_local_model.py", "capture_output=True, text=True, timeout=timeout")}
+    missing = []
+    for p in sorted((Path(__file__).resolve().parent.parent / "scripts").rglob("*.py")):
+        s = p.read_text(encoding="utf-8")
+        if "ffmpeg" not in s:
+            continue
+        for n in ast.walk(ast.parse(s)):
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in ("run", "Popen", "check_output", "check_call", "call")
+                    and isinstance(n.func.value, ast.Name) and n.func.value.id == "subprocess" and not any(k.arg == "stdin" for k in n.keywords)):
+                seg = ast.get_source_segment(s, n)
+                if not any(p.name == f and m in seg for f, m in probes):
+                    missing.append(f"{p.name}:{n.lineno}")
+    assert missing == [], f"subprocess calls that leave stdin open: {missing}"

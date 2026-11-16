@@ -244,7 +244,7 @@ def make_audiobook(pdir: Path, cover: Path | None = None) -> dict:
         d = _seconds(w)
         meta += ["[CHAPTER]", "TIMEBASE=1/1000", f"START={round(t * 1000)}", f"END={round((t + d) * 1000)}", f"title=Chapter {i} ({r['chapter']})"]
         t += d
-        subprocess.run([ff, "-y", "-loglevel", "error", "-i", str(w), "-codec:a", "libmp3lame", "-b:a", "96k", str(out / "audiobook" / f"{i:02d}-{r['chapter']}.mp3")], check=True)
+        subprocess.run([ff, "-y", "-loglevel", "error", "-i", str(w), "-codec:a", "libmp3lame", "-b:a", "96k", str(out / "audiobook" / f"{i:02d}-{r['chapter']}.mp3")], check=True, stdin=subprocess.DEVNULL)
     with tempfile.TemporaryDirectory(prefix="studio-ab-") as tmp:
         lst = Path(tmp) / "list.txt"
         lst.write_text("".join(f"file '{w.resolve().as_posix()}'\n" for w in wavs), encoding="utf-8")
@@ -256,7 +256,7 @@ def make_audiobook(pdir: Path, cover: Path | None = None) -> dict:
         else:
             argv += ["-map", "0:a"]
         argv += ["-map_metadata", "1", "-c:a", "aac", "-b:a", "96k", "-f", "mp4", str(out / "audiobook.m4b")]
-        subprocess.run(argv, check=True)
+        subprocess.run(argv, check=True, stdin=subprocess.DEVNULL)
     return {"m4b": "exports/audiobook.m4b", "chapters": len(rows), "seconds": round(t, 1)}
 
 

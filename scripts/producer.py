@@ -71,6 +71,7 @@ def check_plan(d) -> None:
     for n in d.get("notes", []):
         if not isinstance(n, dict) or n.get("kind") not in notes.KINDS or not str(n.get("text", "")).strip():
             raise ValueError(f"every note has a kind ({', '.join(notes.KINDS)}), a ref and its text")
+        n["role"] = notes.role_for(n["kind"], str(n.get("role") or ""))      # "writer" is the screenwriter; an unknown role goes to the kind's owner
     if not isinstance(d.get("settings", {}), dict) or any(k not in SETTINGS for k in d.get("settings", {})):
         raise ValueError(f"settings may change only {', '.join(SETTINGS)}")
     for r in d.get("regenerate", []):
@@ -80,7 +81,7 @@ def check_plan(d) -> None:
 
 PROMPT = """You are the producer. The owner wrote: "{text}"
 Turn it into a plan the owner can accept. You can: run steps again ({steps}); write notes to the crew (kinds: {kinds}; each note says on what,
-e.g. kind "character", ref "MARA"); change settings ({settings}); regenerate single pictures (style, row). A request for one small thing
+e.g. kind "character", ref "MARA"; "role" is one of: {roles}, or "" for the usual one); change settings ({settings}); regenerate single pictures (style, row). A request for one small thing
 (regenerate one picture) is "simple": true and has no steps. Estimate what it costs (GPU time; free GPUs are $0). Say it in plain words.
 Reply as JSON: {{"reply": "what you will do, for the owner", "simple": false, "steps": ["shot_list"], "notes": [{{"kind": "character", "ref": "MARA",
 "role": "", "text": "..."}}], "settings": {{}}, "regenerate": [], "estimate": "..."}}
@@ -99,7 +100,7 @@ def ask_producer(pdir: Path, text: str, ask: Ask) -> dict:
     if not text or len(text) > 4000:
         raise ChatError("write a request of 1-4000 characters")
     _add(pdir, {"who": "owner", "text": text})
-    d = ask(PROMPT.format(text=text, steps=", ".join(STEPS), kinds=", ".join(notes.KINDS), settings=", ".join(SETTINGS), state=state(pdir)),
+    d = ask(PROMPT.format(text=text, steps=", ".join(STEPS), kinds=", ".join(notes.KINDS), roles=", ".join(notes._roles_sorted()), settings=", ".join(SETTINGS), state=state(pdir)),
             "producer", "producer chat", check_plan)
     plan = {k: d.get(k) for k in ("steps", "notes", "settings", "regenerate", "estimate", "simple")}
     return _add(pdir, {"who": "producer", "text": str(d["reply"]), "plan": plan, "status": "proposed"})
@@ -117,7 +118,7 @@ def decide(pdir: Path, cid: str, accept: bool, run_steps: Callable[[list[str]], 
         return m
     p = m["plan"]
     for n in p.get("notes") or []:
-        notes.add(pdir, n["kind"], str(n.get("ref", "")), n["text"], str(n.get("role") or ""), who="producer")
+        notes.add(pdir, n["kind"], str(n.get("ref", "")), n["text"], notes.role_for(n["kind"], str(n.get("role") or "")), who="producer")
     if p.get("settings"):
         cur = production.load(pdir)
         production.save(pdir, {**cur, **p["settings"]})

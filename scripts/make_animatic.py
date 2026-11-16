@@ -101,7 +101,7 @@ try:
         cmd += ["-i", str(wav)] if wav else ["-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono"]
         cmd += ["-vf", vf, "-af", f"apad=pad_dur={a.pause}", "-t", f"{dur:.3f}", "-ar", "24000", "-ac", "1",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", str(part)]
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
         if r.returncode:
             sys.exit(f"shot {n}: ffmpeg failed: {r.stderr.strip()[-400:]}")
         parts.append(part)
@@ -111,7 +111,7 @@ try:
     out_dir = root / "films"
     out_dir.mkdir(exist_ok=True)
     out = out_dir / a.out
-    r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(out)], capture_output=True, text=True)
+    r = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(out)], capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if r.returncode:
         sys.exit("joining failed: " + r.stderr.strip()[-400:])
     t, cues = 0.0, []                          # subtitles next to the video (same name, .srt)

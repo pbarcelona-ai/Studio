@@ -21,6 +21,20 @@ STEP_ROLES = {"continuity": {"script_supervisor", "casting_director", "productio
               "clips": {"animation_supervisor"}, "edit": {"editor"}, "screenplay": {"screenwriter", "script_doctor"}}
 
 
+# What an AI (or a person) may call a crew role, and the role it means.
+ALIASES = {"writer": "screenwriter", "scriptwriter": "screenwriter", "script_writer": "screenwriter", "dp": "cinematographer", "dop": "cinematographer",
+           "director_of_photography": "cinematographer", "camera": "cinematographer", "artist": "storyboard_artist", "storyboard": "storyboard_artist",
+           "animator": "animation_supervisor", "designer": "production_designer", "art_director": "production_designer", "casting": "casting_director",
+           "music": "composer", "sound": "sound_designer", "voice": "voice_director", "continuity": "script_supervisor", "analyst": "story_analyst"}
+
+
+def role_for(kind: str, role: str) -> str:
+    """The crew role a note goes to: the role named (or what it is an alias for), else the one who owns that kind of note."""
+    r = "_".join(str(role or "").strip().lower().replace("-", " ").split())
+    r = ALIASES.get(r, r)
+    return r if r in _roles() else KINDS.get(kind, "producer")
+
+
 class NoteError(ValueError):
     """A note cannot be made or changed as asked."""
 
@@ -47,6 +61,10 @@ def _save(pdir: Path, notes: list[dict]) -> None:
 def _roles() -> set[str]:
     import crew
     return set(crew.roles())
+
+
+def _roles_sorted() -> list[str]:
+    return sorted(_roles())
 
 
 def add(pdir: Path, kind: str, ref: str, text: str, role: str = "", who: str = "owner") -> dict:

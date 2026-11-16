@@ -49,7 +49,7 @@ _GRAPH_FLAG: dict[str, list[str]] = {}
 def graph_args(ff: str, script: Path) -> list[str]:
     """The filter graph read from a file: "-/filter_complex FILE" on ffmpeg 7 and newer, "-filter_complex_script FILE" before (ffmpeg 8 removed it)."""
     if ff not in _GRAPH_FLAG:
-        out = subprocess.run([ff, "-version"], capture_output=True, text=True, check=False).stdout
+        out = subprocess.run([ff, "-version"], capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL).stdout
         m = re.search(r"ffmpeg version n?(\d+)", out)
         _GRAPH_FLAG[ff] = ["-/filter_complex"] if m and int(m.group(1)) >= 7 else ["-filter_complex_script"]
     return [*_GRAPH_FLAG[ff], str(script)]
@@ -148,7 +148,7 @@ def render(pdir: Path, sid: str, kind: str = "animatic", cut_name: str = "", siz
                 vf = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={FPS},format=yuv420p{look}"
                 cmd = [ff, "-y", "-loglevel", "error", "-ss", f"{v['trim_in']:.3f}", "-t", f"{secs:.3f}", "-i", str(src[v["id"]]), "-vf", vf]
             subprocess.run([*cmd, "-frames:v", str(frames), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(seg)], check=True,
-                           capture_output=True)
+                           capture_output=True, stdin=subprocess.DEVNULL, timeout=120 + 30 * secs)
             segs.append(seg)
         # 2: the picture: cuts are joined, dissolves cross-fade (xfade), all in one filter graph written to a file
         fc, inputs = [], []
@@ -190,7 +190,9 @@ def render(pdir: Path, sid: str, kind: str = "animatic", cut_name: str = "", siz
             mix.append(f"[m{k}]")
         total = tl["total"]
         if mix:
-            fc.append("".join(mix) + f"amix=inputs={len(mix)}:normalize=0:dropout_transition=0,apad,atrim=0:{total:.3f}[aud]")
+            # a silent bed the length of the film goes under the mix, so nothing is padded after it (ffmpeg 9 spins for ever on apad after amix)
+            fc.append(f"anullsrc=r=44100:cl=stereo,atrim=0:{total:.3f}[bed]")
+            fc.append("[bed]" + "".join(mix) + f"amix=inputs={len(mix) + 1}:duration=first:normalize=0:dropout_transition=0[aud]")
         else:
             fc.append(f"anullsrc=r=44100:cl=stereo,atrim=0:{total:.3f}[aud]")
         vlast = last
@@ -206,7 +208,8 @@ def render(pdir: Path, sid: str, kind: str = "animatic", cut_name: str = "", siz
         script.write_text(";\n".join(fc), encoding="utf-8")
         subprocess.run([ff, "-y", "-loglevel", "error", *inputs, *graph_args(ff, script), "-map", vlast, "-map", "[aud]",
                         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "20", "-r", str(FPS), "-c:a", "aac", "-b:a", "160k",
-                        "-t", f"{total:.3f}", "-movflags", "+faststart", str(out)], check=True, capture_output=True, cwd=tmp)
+                        "-t", f"{total:.3f}", "-movflags", "+faststart", str(out)], check=True, capture_output=True, cwd=tmp, stdin=subprocess.DEVNULL,
+                       timeout=300 + 10 * total)              # a render that stops moving is stopped, never left running for hours
     (out_dir / f"{out.stem}.json").write_text(json.dumps({"kind": kind, "style": sid, "cut": c["name"], "seconds": total, "clips": len(clips)}), encoding="utf-8")
     return out
 
@@ -231,6 +234,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Done: {out.name}", flush=True)
     except (RenderError, edl.EditError, styles.StyleError) as e:
         print(f"The {a.kind} was not made: {e}", flush=True)
+        return 1
+    except subprocess.TimeoutExpired as e:
+        print(f"ffmpeg took far too long ({e.timeout:.0f} s) and was stopped. Try again; if it happens again, send the log.", flush=True)
         return 1
     except subprocess.CalledProcessError as e:
         print(f"ffmpeg stopped: {(e.stderr or b'').decode(errors='replace')[-800:]}", flush=True)

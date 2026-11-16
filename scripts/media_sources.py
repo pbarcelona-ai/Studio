@@ -56,7 +56,7 @@ def ffmpeg() -> str:
 
 
 def duration(path: Path) -> float:
-    r = subprocess.run([ffmpeg(), "-i", str(path)], capture_output=True, text=True, errors="replace", check=False)
+    r = subprocess.run([ffmpeg(), "-i", str(path)], capture_output=True, text=True, errors="replace", check=False, stdin=subprocess.DEVNULL)
     m = re.search(r"Duration: (\d+):(\d+):([\d.]+)", r.stderr)
     if not m:
         raise MediaError(f"{path.name} is not a video or sound file ffmpeg can read")
@@ -64,7 +64,7 @@ def duration(path: Path) -> float:
 
 
 def has_video(path: Path) -> bool:
-    r = subprocess.run([ffmpeg(), "-i", str(path)], capture_output=True, text=True, errors="replace", check=False)
+    r = subprocess.run([ffmpeg(), "-i", str(path)], capture_output=True, text=True, errors="replace", check=False, stdin=subprocess.DEVNULL)
     return "Video:" in r.stderr
 
 
@@ -72,7 +72,7 @@ def detect_shots(path: Path, threshold: float = SCENE_THRESHOLD) -> list[dict]:
     """[{n, start, end}] cut where the picture changes (ffmpeg's scene score above the threshold); very short pieces join the one before."""
     total = duration(path)
     r = subprocess.run([ffmpeg(), "-hide_banner", "-i", str(path), "-vf", f"select='gt(scene,{threshold})',showinfo", "-an", "-f", "null", "-"],
-                       capture_output=True, text=True, errors="replace", check=False)
+                       capture_output=True, text=True, errors="replace", check=False, stdin=subprocess.DEVNULL)
     cuts = sorted({round(float(t), 3) for t in re.findall(r"pts_time:([\d.]+)", r.stderr)})
     edges = [0.0] + [c for c in cuts if 0 < c < total] + [total]
     shots: list[dict] = []
@@ -86,7 +86,7 @@ def detect_shots(path: Path, threshold: float = SCENE_THRESHOLD) -> list[dict]:
 
 def keyframe(path: Path, at: float, dest: Path) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run([ffmpeg(), "-y", "-loglevel", "error", "-ss", f"{max(0.0, at):.3f}", "-i", str(path), "-frames:v", "1", "-vf", "scale=640:-2", str(dest)], check=True)
+    subprocess.run([ffmpeg(), "-y", "-loglevel", "error", "-ss", f"{max(0.0, at):.3f}", "-i", str(path), "-frames:v", "1", "-vf", "scale=640:-2", str(dest)], check=True, stdin=subprocess.DEVNULL)
     return dest
 
 
@@ -183,7 +183,7 @@ def cut_segment(src: Path, start: float, end: float, dest: Path, audio_only: boo
     dest.parent.mkdir(parents=True, exist_ok=True)
     argv = [ffmpeg(), "-y", "-loglevel", "error", "-ss", f"{start:.3f}", "-t", f"{end - start:.3f}", "-i", str(src)]
     argv += ["-vn", "-c:a", "pcm_s16le"] if audio_only else ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac"]
-    subprocess.run([*argv, str(dest)], check=True)
+    subprocess.run([*argv, str(dest)], check=True, stdin=subprocess.DEVNULL)
     return dest
 
 
@@ -353,11 +353,11 @@ def set_score(pdir: Path, sid: str) -> dict:
     s, f = _source(pdir, sid)
     with tempfile.TemporaryDirectory() as t:
         wav = Path(t) / "score.wav"
-        subprocess.run([ffmpeg(), "-y", "-loglevel", "error", "-i", str(f), "-ac", "1", "-ar", "22050", "-c:a", "pcm_s16le", str(wav)], check=True)
+        subprocess.run([ffmpeg(), "-y", "-loglevel", "error", "-i", str(f), "-ac", "1", "-ar", "22050", "-c:a", "pcm_s16le", str(wav)], check=True, stdin=subprocess.DEVNULL)
         bpm = tempo(wav)
         dest = pdir / "audio" / "score" / "score.wav"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run([ffmpeg(), "-y", "-loglevel", "error", "-i", str(f), "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(dest)], check=True)
+        subprocess.run([ffmpeg(), "-y", "-loglevel", "error", "-i", str(f), "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(dest)], check=True, stdin=subprocess.DEVNULL)
     d = edl.load(pdir) or edl.assemble(pdir)
     c = edl.cut(d)
     first = c["tracks"]["video"][0]["scene"] if c["tracks"]["video"] else "S001"

@@ -101,7 +101,7 @@ if not ffmpeg:
 
 
 def duration(path):
-    err = subprocess.run([ffmpeg, "-i", str(path)], capture_output=True, text=True).stderr
+    err = subprocess.run([ffmpeg, "-i", str(path)], capture_output=True, text=True, stdin=subprocess.DEVNULL).stderr
     m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", err)
     if not m:
         raise RuntimeError(f"cannot read duration of {path}")
@@ -119,7 +119,7 @@ def atempo_chain(factor):
 
 def colour_of(path):
     """(mean Y, U, V) of a clip on the 0-255 scale, from about two frames a second, or None if it cannot be read."""
-    r = subprocess.run([ffmpeg, "-i", str(path), "-vf", "select='not(mod(n,12))',signalstats,metadata=print:file=-", "-an", "-f", "null", "-"], capture_output=True, text=True)
+    r = subprocess.run([ffmpeg, "-i", str(path), "-vf", "select='not(mod(n,12))',signalstats,metadata=print:file=-", "-an", "-f", "null", "-"], capture_output=True, text=True, stdin=subprocess.DEVNULL)
     out = []
     for key in ("YAVG", "UAVG", "VAVG"):
         vals = [float(x) for x in re.findall(rf"lavfi\.signalstats\.{key}=([\d.]+)", r.stdout)]
@@ -169,7 +169,7 @@ def dissolve_join(parts, lengths, fade, out):
         fc.append(f"{alast}[a{i}]acrossfade=d={d:.3f}[ax{i}]")
         vlast, alast, at = f"[vx{i}]", f"[ax{i}]", at + lengths[i] - d
     subprocess.run(cmd + ["-filter_complex", ";".join(fc), "-map", vlast, "-map", alast, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-c:a", "aac", "-b:a", "192k", str(out)],
-                   check=True, capture_output=True)
+                   check=True, capture_output=True, stdin=subprocess.DEVNULL)
     return d
 
 
@@ -220,7 +220,7 @@ def build_segment(i, video, stems, out, trim_start=0.0, trim_end=0.0):
     fc.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=longest,atrim=0:{total:.3f}{afade}[a]")
     cmd += ["-filter_complex", ";".join(fc), "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-c:a", "aac", "-b:a", "192k", str(out)]
-    subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL)
+    subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
     return total
 
 
@@ -248,7 +248,7 @@ def looped(cue, seconds, out, overlap=2.0, fade=None):
         last = f"[x{i}]"
     fade = min(1.5 if fade is None else fade, seconds / 4)
     chain.append(f"{last}atrim=0:{seconds:.3f},afade=t=in:d={fade:.3f},afade=t=out:st={seconds - fade:.3f}:d={fade:.3f}[out]")
-    r = subprocess.run(cmd + ["-filter_complex", ";".join(chain), "-map", "[out]", str(out)], capture_output=True, text=True)
+    r = subprocess.run(cmd + ["-filter_complex", ";".join(chain), "-map", "[out]", str(out)], capture_output=True, text=True, stdin=subprocess.DEVNULL)
     return r.returncode == 0
 
 
@@ -299,7 +299,7 @@ def finish_audio(src, dst, spans):
         fc.append(f"{last}loudnorm=I=-16:TP=-1.5:LRA=11,aresample=44100[final]")
         last = "[final]"
     cmd += ["-filter_complex", ";".join(fc), "-map", "0:v", "-map", last, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", str(dst)]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if r.returncode:
         print("  sound finishing failed, keeping the plain mix: " + r.stderr.strip()[-300:])
     return r.returncode == 0
@@ -318,7 +318,7 @@ def filter_path(p):
 
 def video_shape(path):
     """(width, height, fps) of a video, read from ffmpeg's stream line."""
-    err = subprocess.run([ffmpeg, "-i", str(path)], capture_output=True, text=True).stderr
+    err = subprocess.run([ffmpeg, "-i", str(path)], capture_output=True, text=True, stdin=subprocess.DEVNULL).stderr
     line = next((ln for ln in err.splitlines() if "Video:" in ln), "")
     size, fps = re.search(r", (\d{2,5})x(\d{2,5})", line), re.search(r"([\d.]+) fps", line)
     if not size:
@@ -343,7 +343,7 @@ def build_card(text, shape, out):
            "-f", "lavfi", "-t", str(CARD_SECONDS), "-i", "anullsrc=r=44100:cl=stereo", "-vf", vf, "-t", str(CARD_SECONDS),
            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-c:a", "aac", "-b:a", "192k", str(out)]
     try:
-        subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL, cwd=out.parent)
+        subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL, cwd=out.parent, stdin=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
         print("  title card skipped: ffmpeg could not draw the text")
         return None
@@ -372,7 +372,7 @@ def build_credits(lines, shape, out):
            "-f", "lavfi", "-t", f"{seconds:.2f}", "-i", "anullsrc=r=44100:cl=stereo", "-vf", vf, "-t", f"{seconds:.2f}",
            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-c:a", "aac", "-b:a", "192k", str(out)]
     try:
-        subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL, cwd=out.parent)
+        subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL, cwd=out.parent, stdin=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
         print("  credits skipped: ffmpeg could not draw the text")
         return None, 0.0
@@ -525,7 +525,7 @@ if args.transition == "dissolve" and len(segments) > 1:
         print("  dissolve failed, joining with cuts: " + (e.stderr or b"").decode(errors="replace").strip()[-300:])
 if not overlap:
     subprocess.run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(listfile), "-c", "copy", str(joined)],
-                   check=True, stderr=subprocess.DEVNULL)
+                   check=True, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
 starts, total_len = [], 0.0
 for length in seg_lens:                       # where each segment begins in the film, and how long the film is
     starts.append(total_len)
@@ -572,7 +572,7 @@ if burn:                                      # draw the captions into the pictu
     srt_tmp.write_text(srt_text, encoding="utf-8")
     try:
         subprocess.run([ffmpeg, "-y", "-i", str(joined), "-vf", f"subtitles={srt_tmp.name}", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                        "-crf", "18", "-c:a", "copy", str(out)], check=True, stderr=subprocess.DEVNULL, cwd=tmp)
+                        "-crf", "18", "-c:a", "copy", str(out)], check=True, stderr=subprocess.DEVNULL, cwd=tmp, stdin=subprocess.DEVNULL)
         print("captions drawn into the picture")
     except subprocess.CalledProcessError:
         shutil.move(str(joined), str(out))

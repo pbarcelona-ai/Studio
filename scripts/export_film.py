@@ -64,7 +64,7 @@ def find_ffmpeg() -> str:
 
 def probe(ffmpeg: str, path: Path) -> dict:
     """{width, height, fps, seconds, has_audio} of a media file, read from ffmpeg's report."""
-    err = subprocess.run([ffmpeg, "-i", str(path)], capture_output=True, text=True).stderr
+    err = subprocess.run([ffmpeg, "-i", str(path)], capture_output=True, text=True, stdin=subprocess.DEVNULL).stderr
     line = next((ln for ln in err.splitlines() if "Video:" in ln), "")
     size, fps = re.search(r", (\d{2,5})x(\d{2,5})", line), re.search(r"([\d.]+) fps", line)
     dur = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", err)
@@ -193,7 +193,7 @@ def export(project_dir: Path, film: str, preset: str, languages: list[str], llm=
             raise ExportError(f"audio track {lang}={rel}: choose a language code and a file inside the book's folder")
         tracks.append((p, lang))
     cmd = build_command(ffmpeg, src, dest, preset, info, subs, tracks, title)
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if r.returncode != 0:
         dest.unlink(missing_ok=True)
         raise ExportError("ffmpeg failed: " + r.stderr.strip()[-400:])

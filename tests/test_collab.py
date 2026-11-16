@@ -91,6 +91,26 @@ class TestProducer:
         m3 = producer.ask_producer(ready, "regenerate shot one", producer.fake_ask())
         assert m3["plan"]["simple"] and m3["plan"]["regenerate"] == [{"style": "", "row": 1}]
 
+    def test_a_role_the_crew_does_not_have_is_mapped(self, ready):
+        """The producer AI wrote a note "for the writer" (the crew has a screenwriter): the note goes to the right role, never an error."""
+        plan = {"reply": "I will tell the writer.", "simple": True, "steps": [], "regenerate": [], "settings": {}, "estimate": "$0",
+                "notes": [{"kind": "scene", "ref": "1", "role": "writer", "text": "Make the ending sadder."},
+                          {"kind": "character", "ref": "MARA", "role": "wizard", "text": "Older."},
+                          {"kind": "shot", "ref": "3", "role": "Director of Photography", "text": "Lower the camera."}]}
+        seen = []
+
+        def ask(prompt, roles, step, validate):
+            seen.append(prompt)
+            d = json.loads(json.dumps(plan))
+            validate(d)
+            return d
+        m = producer.ask_producer(ready, "make the ending sadder", ask)
+        assert "screenwriter" in seen[0] and "casting_director" in seen[0]                     # the prompt lists the real roles
+        assert [n["role"] for n in m["plan"]["notes"]] == ["screenwriter", "casting_director", "cinematographer"]
+        producer.decide(ready, m["id"], True, lambda s: None, lambda s, r: None)
+        assert [n["role"] for n in notes.load(ready)[-3:]] == ["screenwriter", "casting_director", "cinematographer"]
+        assert notes.role_for("scene", "") == "screenwriter" and notes.role_for("nope", "nope") == "producer"
+
     def test_bad_plans(self):
         for bad in ({"reply": ""}, {"reply": "x", "steps": ["launch"]}, {"reply": "x", "settings": {"budget": 5}}, {"reply": "x", "notes": [{"kind": "x", "text": "y"}]}):
             with pytest.raises(ValueError):

@@ -209,7 +209,7 @@ def find_notebook(model, tmp):
     nb = ROOT / f"Studio_Kaggle_{model}.ipynb"
     if nb.is_file():
         return nb
-    subprocess.run([sys.executable, str(ROOT / "scripts" / "make_all.py")], env={**os.environ, "STUDIO_GEN_DIR": str(tmp)},
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "make_all.py")], stdin=subprocess.DEVNULL, env={**os.environ, "STUDIO_GEN_DIR": str(tmp)},
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     nb = Path(tmp) / f"Studio_Kaggle_{model}.ipynb"
     if not nb.is_file():
@@ -287,7 +287,7 @@ def pip_argv(cmd):
 
 def run_logged(argv, log, **kw):
     """Run, printing and logging each line as it comes. Returns the exit code."""
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **kw) as p:
+    with subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **kw) as p:
         assert p.stdout is not None
         for line in p.stdout:
             sys.stdout.write(line)
