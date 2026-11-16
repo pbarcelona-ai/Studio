@@ -116,10 +116,12 @@ class TestQueue:
     def test_the_queue_has_a_limit(self):
         j = Job()
         j.start([step("import time; time.sleep(2)")], {})
-        for _ in range(jobs.MAX_QUEUE):
-            j.start([step("print(1)")], {}, queue=True)
+        for i in range(jobs.MAX_QUEUE):
+            j.start([step(f"print({i})")], {}, queue=True)
         with pytest.raises(PlanError, match="already waiting"):
-            j.start([step("print(1)")], {}, queue=True)
+            j.start([step("print(-1)")], {}, queue=True)
+        with pytest.raises(PlanError, match="already waiting in the queue"):
+            j.start([step("print(0)")], {}, queue=True)                         # the same job twice is refused (one lock per job)
         j.stop()
         assert j.queue == [] and j.wait(30)
 

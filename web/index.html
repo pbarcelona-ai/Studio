@@ -282,6 +282,16 @@
                     <button type="button" class="btn btn--primary" id="riStart">Read it in</button>
                     <label class="opt" style="margin:0"><input type="checkbox" id="riForce"><span>Start again from the beginning</span></label>
                 </div>
+                <fieldset style="margin-top:8px"><legend>Make everything (Autopilot)</legend>
+                    <span class="warn">Stop for my review at:</span>
+                    <label class="opt" style="display:inline-flex;margin:0 6px"><input type="checkbox" name="apStop" value="script"><span>script</span></label>
+                    <label class="opt" style="display:inline-flex;margin:0 6px"><input type="checkbox" name="apStop" value="continuity"><span>continuity book</span></label>
+                    <label class="opt" style="display:inline-flex;margin:0 6px"><input type="checkbox" name="apStop" value="shotlist"><span>shot list</span></label>
+                    <label class="opt" style="display:inline-flex;margin:0 6px"><input type="checkbox" name="apStop" value="pictures"><span>pictures</span></label>
+                    <label class="opt" style="display:inline-flex;margin:0 6px"><input type="checkbox" name="apStop" value="cut"><span>final cut</span></label>
+                    <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><button type="button" class="btn btn--primary" id="apGo">Make everything</button>
+                        <span class="warn" id="apCost" aria-live="polite"></span></div>
+                </fieldset>
                 <p class="warn" id="riProgress" role="status" aria-live="polite"></p>
                 <div id="riResult" class="hidden">
                     <div role="tablist" aria-label="Read it in results" class="row" style="gap:6px;flex-wrap:wrap;margin:8px 0">

@@ -54,5 +54,28 @@
   $("riExport").addEventListener("click", async () => {
     try { const j = await api("/api/readin_export", { project: slug }); R.exports = j.exports; draw(); } catch (e) { $("riProgress").textContent = e.message; }
   });
-  window.loadReadIn = p => { slug = p && p.slug && !p.legacy && /^[a-z0-9_]{2,40}$/.test(p.slug) ? p.slug : ""; R = null; $("riResult").classList.add("hidden"); load(); };
+  async function cost() {
+    if (!slug) return;
+    try {
+      const j = await api(`/api/v1/project?project=${encodeURIComponent(slug)}&quiet=1`), C = j.cost;
+      if (!C) { $("apCost").textContent = ""; return; }
+      $("apCost").textContent = `Estimate: ${C.estimate.gpu_hours} GPU hours, $${C.estimate.dollars.toFixed(2)}. So far: ${C.actual.gpu_hours} GPU hours`
+        + (C.actual.regenerations ? ` (${C.actual.regenerations} redone)` : "") + (C.actual.paid_dollars ? `, $${C.actual.paid_dollars.toFixed(2)} paid` : "") + ".";
+    } catch (e) { $("apCost").textContent = ""; }
+  }
+  $("apGo").addEventListener("click", async () => {
+    if (!slug) return ($("riProgress").textContent = "Pick a book first.");
+    const o = typeof options === "function" ? options() : {};
+    const stop_at = [...document.querySelectorAll("input[name=apStop]:checked")].map(b => b.value);
+    const video = (o.video_models || []).find(m => /_i2v$/.test(m)) || "";
+    if (!confirm(`${$("apCost").textContent}\n\nMake everything now?`)) return;
+    try {
+      await api("/api/v1/run", { project: slug, stop_at, engine: o.engine, claude_model: o.claude_model, service: o.service, gpu: o.gpu, kaggle_user: o.kaggle_user,
+        image_model: o.keyframe_model, video_model: video });
+      $("riProgress").textContent = "Your producer is making everything: follow it in the job log and the Producer chat.";
+      if (typeof poll === "function") { since = 0; $("log").textContent = ""; poll(); }
+      watch();
+    } catch (e) { $("riProgress").textContent = e.message; }
+  });
+  window.loadReadIn = p => { slug = p && p.slug && !p.legacy && /^[a-z0-9_]{2,40}$/.test(p.slug) ? p.slug : ""; R = null; $("riResult").classList.add("hidden"); load(); cost(); };
 })();

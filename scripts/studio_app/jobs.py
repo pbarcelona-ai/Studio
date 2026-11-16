@@ -93,9 +93,19 @@ class Job:
         with self.lock:
             self.lines.append(line)
 
+    @staticmethod
+    def key_of(steps: list[dict]) -> tuple:
+        """What a job does: its programs and their arguments (two tabs pressing the same button make the same key)."""
+        return tuple(tuple(str(a) for a in s.get("argv", [])) for s in steps or [])
+
     def start(self, steps: list[dict], opt: dict, queue: bool = False) -> int:
         """Start the plan, or (queue=True) put it behind the running job. Returns how many jobs wait ahead of it: 0 = it started now."""
         with self.lock:
+            key = self.key_of(steps)                         # one lock per project + step + style (Section 12): never the same job twice
+            if self.running and key and key == self.key_of((getattr(self, "state", {}) or {}).get("steps", [])):
+                raise PlanError("that job is already running")
+            if any(key and key == self.key_of(q) for q, _ in self.queue):
+                raise PlanError("that job is already waiting in the queue")
             if self.running:
                 if not queue:
                     raise PlanError("a job is already running")

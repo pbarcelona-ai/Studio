@@ -14,7 +14,7 @@ import shares
 from bookkit import SLUG_RE, slugify
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
-from . import breakdown_routes, clips_routes, collab_routes, crew_routes, edit_routes, library_routes, media_routes, pictures_routes, readin_routes, routes_get, routes_post, series_routes, setup_install, sound_routes, sources_routes, styles_routes  # noqa: F401  (importing them registers the routes)
+from . import breakdown_routes, clips_routes, collab_routes, crew_routes, edit_routes, library_routes, media_routes, pictures_routes, readin_routes, routes_get, routes_post, series_routes, setup_install, sound_routes, sources_routes, styles_routes, v1_routes  # noqa: F401  (importing them registers the routes)
 from .api import ROUTES, Request, dispatch
 from .config import BOOK_EXTS, LIBRARY, MAX_JSON_BODY, MAX_UPLOAD, WEB
 from .gallery import make_depth, make_thumb
@@ -125,8 +125,46 @@ class Handler(BaseHTTPRequestHandler):
             return self._derived(url)
         if not self._authed():
             return self._json(403, {"error": "forbidden"})
+        if url.path == "/api/v1/events":
+            return self._events(query)
         code, obj = dispatch("GET", url.path, Request(query=query))
         self._json(code, obj)
+
+    def _events(self, query, seconds: float = 25.0):
+        """Server-sent events (Section 12): the job's new log lines and its current step, for up to `seconds`; the client reconnects
+        (retry: 3000) with since = the last event id. Polling /api/log every 3 s is the fallback."""
+        import time as _time
+
+        from .jobs import JOB
+        try:
+            since = max(0, int(query.get("since", ["0"])[0] or 0))
+            seconds = min(seconds, max(0.5, float(query.get("seconds", [str(seconds)])[0])))
+        except ValueError:
+            return self._json(400, {"error": "since and seconds are numbers"})
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        end = _time.monotonic() + seconds
+        try:
+            self.wfile.write(b"retry: 3000\n\n")
+            last = ""
+            while _time.monotonic() < end:
+                lines = list(JOB.lines)
+                if since > len(lines):
+                    since = 0                                  # a new job started: its log begins again
+                for i in range(since, len(lines)):
+                    self.wfile.write(f"id: {i + 1}\nevent: log\ndata: {json.dumps(lines[i])}\n\n".encode())
+                since = len(lines)
+                state = json.dumps({"running": JOB.running, "step": JOB.current})
+                if state != last:
+                    self.wfile.write(f"event: status\ndata: {state}\n\n".encode())
+                    last = state
+                self.wfile.flush()
+                _time.sleep(0.5)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def do_HEAD(self):
         self.do_GET()

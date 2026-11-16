@@ -85,6 +85,8 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D42 | 2026-11-15 | M13: "Make a story from my clips" writes a new shot list of real shots (the old one is saved as a history moment first); a real shot's clip is the same footage in every style; an uploaded track becomes one music item under the whole film, its tempo estimated in plain Python | assumed — not answered |
 | D43 | 2026-11-15 | M14: an episode is a book of its own (<book>_e01 ...) made from its part of the source; the series' continuity book, style cards and look development, settings, rules and voice cast are copied into it (sync), with the series' approvals of them, so the series stays the one place to edit them | assumed — not answered |
 | D44 | 2026-11-15 | M14: the marketing kit is planned by the Trailer Editor with the producer as Marketing Lead and cut from the style's approved clips by the film's renderer; the poster and thumbnail are drawn with Pillow on the chosen shot's picture | assumed — not answered |
+| D45 | 2026-11-15 | M15: Autopilot is `autopilot.py`, one job that calls the same step modules as Review mode, approves the gates not ticked under "Stop for my review at", picks the first rendered look-development variant, renders styles in parallel up to the service's limit (Kaggle 2, Colab / Hugging Face / this computer 1), and stops before any paid call over the spending limit ($0 by default) unless confirmed | assumed — not answered |
+| D46 | 2026-11-15 | M15: the automation API is `/api/v1/...` with the book named in the body or query (the Studio's router has no path parameters), the page's own token, and server-sent events at `/api/v1/events`; the CLI is `python scripts/book2screen.py`; the MCP server (`scripts/mcp_server.py`, stdio) calls that API with the same token. Actual cost is counted from what is on disk (pictures, versions, clips), plus paid calls recorded in ledger.json | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1084,7 +1086,7 @@ saying what's left.
         raw-footage auto-edit, cut to music (Section 4.2).
 [x] M14 (2026-11-15) Episodes, series and production queue (Section 6e); marketing kit
         (Product G).
-[ ] M15 Autopilot polish, cost tiers and estimate vs. actual, worker pool +
+[x] M15 (2026-11-15) Autopilot polish, cost tiers and estimate vs. actual, worker pool +
         job locks for parallel styles, automation API, CLI, MCP server.
 [ ] M16 Accounts (if needed), security hardening, accessibility pass, all
         tests passing, deployment.
