@@ -24,11 +24,25 @@
       <div class="row" style="gap:4px;flex-wrap:wrap;margin-top:4px">
         <button type="button" class="btn btn--ghost" data-a="${s.approved ? "unapprove" : "approve"}"${s.image ? "" : " disabled"}>${s.approved ? "Unapprove" : "Approve"}</button>
         <button type="button" class="btn btn--ghost" data-a="regenerate">Regenerate</button>
-        <button type="button" class="btn btn--ghost" data-a="swap"${s.image ? "" : " disabled"}>${swapFrom === s.row ? "Cancel swap" : swapFrom ? "Put here" : "Swap with…"}</button></div>
+        <button type="button" class="btn btn--ghost" data-a="swap"${s.image ? "" : " disabled"}>${swapFrom === s.row ? "Cancel swap" : swapFrom ? "Put here" : "Swap with…"}</button>
+        <button type="button" class="btn btn--ghost" data-a="old">Old pictures that could fit</button></div><div class="pxOld" data-for="${s.row}"></div>
       <details><summary>Prompt and note</summary>
         <label class="f" for="pxP${s.row}">Prompt (leave empty for the crew's)</label><textarea id="pxP${s.row}" rows="3" style="width:100%" data-f="prompt">${esc(s.own_prompt)}</textarea>
         <small class="warn">${esc(s.prompt.slice(0, 300))}</small>
         <label class="f" for="pxN${s.row}">Note</label><input type="text" id="pxN${s.row}" value="${esc(s.note)}" data-f="note" style="width:100%"></details></div>`;
+  }
+  const s0 = row => P.shots.find(x => x.row === row);
+  async function showOld(s, box) {
+    try {
+      const j = await api(`/api/shot_matches?project=${encodeURIComponent(slug)}&style=${encodeURIComponent(P.style)}&scene=${encodeURIComponent(s.scene)}&shot=${s.shot}`);
+      box.innerHTML = !j.matches.length ? '<small class="warn">No old pictures yet.</small>' : `<small class="warn">${j.matches.filter(m => m.match >= 5).length} old picture(s) could fit</small>` +
+        j.matches.slice(0, 6).map(m => `<div class="row" style="gap:4px;align-items:center;margin:3px 0"><img src="${esc(m.thumb)}" alt="Old picture: ${esc(m.group_name)}" width="72" height="40" style="object-fit:cover">
+          <small>${m.match}/10${m.may_not_match ? " · may not match the continuity book" : ""}</small>
+          ${["picture", "prompt", "layout"].map(h => `<button type="button" class="btn btn--ghost" data-reuse="${esc(m.key)}" data-how="${h}">${h === "picture" ? "Use this picture" : h === "prompt" ? "Use its prompt" : "Use its layout"}</button>`).join("")}</div>`).join("");
+      box.querySelectorAll("[data-reuse]").forEach(b => b.addEventListener("click", async () => {
+        try { await api("/api/shot_reuse", { project: slug, style: P.style, scene: s.scene, shot: s.shot, key: b.dataset.reuse, how: b.dataset.how }); load(); note("Reused."); } catch (e) { note(e.message, true); }
+      }));
+    } catch (e) { note(e.message, true); }
   }
   function draw() {
     const g = P.gate, sel = $("pxStyle");
@@ -40,6 +54,7 @@
     $("pxAgain").classList.toggle("hidden", !other || !again);
     $("pxAgain").textContent = `Render the ${again} failed one(s) again`;
     $("pxRender").disabled = !P.shots.length;
+    $("pxAuto").disabled = !P.shots.some(x => !x.image);
     $("pxApprove").disabled = !P.shots.length || g.approved;
     note(!P.shots.length ? "Approve the shot list and the look development, then make the picture prompts." :
       `${P.approved} of ${P.shots.length} approved. ` + (g.approved ? `Approved ${g.approved_at.slice(0, 16).replace("T", " ")}.` : g.changed_since ? "Changed since it was approved." : ""));
@@ -49,6 +64,7 @@
       const row = Number(t.dataset.row);
       t.querySelectorAll("[data-a]").forEach(b => b.addEventListener("click", () => {
         const a = b.dataset.a;
+        if (a === "old") return showOld(s0(row), t.querySelector(".pxOld"));
         if (a === "swap") {
           if (!swapFrom) { swapFrom = row; return draw(); }
           if (swapFrom === row) { swapFrom = 0; return draw(); }
@@ -69,6 +85,10 @@
     try { P = await api(`/api/pictures?project=${encodeURIComponent(slug)}${styleQ()}`); draw(); } catch (e) { /* nothing yet */ }
   }
   $("pxStyle").addEventListener("change", () => { swapFrom = 0; load(); });
+  $("pxAuto").addEventListener("click", async () => {
+    try { const j = await api("/api/auto_reuse", { project: slug, style: P.style, min_score: Number($("pxMin").value) }); load();
+      note(`${j.reused.length} shot(s) filled from the library, about ${Math.round(j.gpu_seconds_saved / 60)} GPU minute(s) saved.`); } catch (e) { note(e.message, true); }
+  });
   $("pxCheck").addEventListener("click", async () => {
     const o = typeof options === "function" ? options() : {};
     try { await api("/api/consistency_check", { project: slug, style: P.style, engine: o.engine, claude_model: o.claude_model }); startLog(); watch(); } catch (e) { note(e.message, true); }

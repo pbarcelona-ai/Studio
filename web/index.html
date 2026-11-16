@@ -333,6 +333,9 @@
                     <button type="button" class="btn btn--primary" id="pxApprove" disabled>Approve the pictures</button>
                     <button type="button" class="btn btn--secondary hidden" id="pxCheck">Check against the master</button>
                     <button type="button" class="btn btn--secondary hidden" id="pxAgain">Render the failed ones again</button>
+                    <label class="f" for="pxMin" style="margin:0 0 0 8px">Reuse an old picture when it matches at least</label>
+                    <input type="number" id="pxMin" min="0" max="10" step="0.5" value="8" style="width:4.5em">
+                    <button type="button" class="btn btn--secondary" id="pxAuto" disabled>Fill matching shots automatically</button>
                 </div>
                 <p class="warn" id="pxNote" role="status" aria-live="polite"></p>
                 <div id="pxGrid" class="row" style="gap:10px;flex-wrap:wrap"></div>
@@ -351,6 +354,38 @@
                 <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="cmpLoad">Show the comparison</button>
                     <button type="button" class="btn btn--secondary" id="cmpPdf">Make the comparison PDF</button><span id="cmpFile"></span></div>
                 <div id="cmpBody" style="overflow:auto;max-height:520px"></div>
+            </div>
+        </div>
+
+        <div class="card bookonly" id="stepLibrary">
+            <div class="card__header">
+                <h2 class="card__title">Picture library and start over</h2>
+                <p class="card__subtitle">Every picture and clip ever made for this book, grouped by what it is for, with the liked version first. Start over keeps them all, and their prompts, for reuse.</p>
+            </div>
+            <div class="card__body">
+                <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="libStartOver">Start over…</button>
+                    <button type="button" class="btn btn--ghost" id="libRefresh">Update the library</button></div>
+                <div id="libOver" class="hidden" role="group" aria-labelledby="libOverTitle" style="margin:8px 0;padding:8px;border:1px solid var(--border);border-radius:8px">
+                    <p id="libOverTitle"><b>Start over: keep</b></p>
+                    <label class="opt"><input type="checkbox" name="libKeep" value="sources" checked><span>my sources</span></label>
+                    <label class="opt"><input type="checkbox" name="libKeep" value="settings" checked><span>my settings</span></label>
+                    <label class="opt"><input type="checkbox" name="libKeep" value="styles" checked><span>my styles</span></label>
+                    <label class="opt"><input type="checkbox" name="libKeep" value="continuity"><span>the continuity book</span></label>
+                    <label class="opt"><input type="checkbox" name="libKeep" value="screenplay"><span>the screenplay</span></label>
+                    <p class="warn">Nothing is deleted: everything else moves into an archive you can look at, reuse from, or bring back.</p>
+                    <button type="button" class="btn btn--primary" id="libOverGo">Start over</button> <button type="button" class="btn btn--ghost" id="libOverCancel">Cancel</button>
+                </div>
+                <details><summary>Earlier attempts</summary><div id="libAttempts"></div></details>
+                <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px;align-items:end">
+                    <div><label class="f" for="libQ">Search</label><input type="search" id="libQ" placeholder="lamp, Mara, sea…" autocomplete="off"></div>
+                    <div><label class="f" for="libStyle">Style</label><select id="libStyle"><option value="">any</option></select></div>
+                    <div><label class="f" for="libPurpose">Purpose</label><select id="libPurpose"><option value="">any</option><option>keyframe</option><option>final</option><option>reference</option></select></div>
+                    <div><label class="f" for="libChar">Character</label><input type="text" id="libChar" autocomplete="off"></div>
+                    <label class="opt" style="margin:0"><input type="checkbox" id="libAll"><span>Show all my projects</span></label>
+                    <button type="button" class="btn btn--secondary" id="libSearch">Search</button>
+                </div>
+                <p class="warn" id="libNote" role="status" aria-live="polite"></p>
+                <div id="libBody"></div>
             </div>
         </div>
 
@@ -1363,6 +1398,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/breakdown.js" defer></script>
 <script src="/static/js/lookdev.js" defer></script>
 <script src="/static/js/pictures.js" defer></script>
+<script src="/static/js/library.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>

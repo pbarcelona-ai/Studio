@@ -240,6 +240,9 @@ def reset_storyboard(body):
         raise PlanError("a job is running: wait for it to finish (or stop it) first")
     import picture_record
     picture_record.record_new(d)                           # so a picture set aside can still be matched to its shot later
+    import assets
+    for top in ("images", "videos"):                         # and stored by its contents (M8): the library and reused shots keep finding it
+        assets.ingest_tree(d, d / top)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     dest = d / "replaced" / stamp
     moved = 0

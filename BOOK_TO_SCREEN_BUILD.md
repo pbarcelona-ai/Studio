@@ -71,6 +71,9 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D28 | 2026-11-15 | M6: a shot layout saves the seed, the size, an edge map (Pillow) and a depth map when the optional depth model is installed; pose skeletons and character boxes are recorded as empty until a pose model is added (M7) | assumed — not answered |
 | D29 | 2026-11-15 | M7: the structure lock uses the provider's reference feature (7.4b): the approved master frame is the first reference picture, with the same seed and an instruction to keep its layout; it works with the reference-image model (FLUX.2 klein). For other image models the img2img settings (master frame, strength 0.55, 7.4c) are written to the prompt CSV, but the current Kaggle / Colab notebooks do not start from a picture yet, so pick FLUX.2 klein for the other styles | assumed — not answered |
 | D30 | 2026-11-15 | M7: the consistency loop runs one round per click ("Render the failed ones again" = render those rows + check again), up to 3 tries, then the shot is flagged; adding a style takes the look-development approval away (its card and sheets must be approved too) | assumed — not answered |
+| D31 | 2026-11-15 | M8: every picture and clip is stored once by its contents in `<book>/assets/objects/` (read-only), with `aliases.json` recording every content a path has had, so replaced takes, reset storyboards and archived attempts stay findable; the library's thumbnails come from these copies | assumed — not answered |
+| D32 | 2026-11-15 | M8: "N old pictures could fit" is scored in code (same characters 3, location 2, action 3, camera 1, style 1 = 10), with no AI call per picture per shot (that would cost a call for every pair); the vision check stays available through the consistency check (M7). Auto-fill skips pictures marked "may not match the continuity book" | assumed — not answered |
+| D33 | 2026-11-15 | M8: Start over keeps sources, settings and styles by default (as the plan's checklist shows); restoring an attempt first archives the current version as a new attempt, keeping in place what the restored attempt did not archive | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1056,7 +1059,7 @@ saying what's left.
         illustrated book exports (Products B and C).
 [x] M7 (2026-11-15) Other styles via structure lock + consistency check + comparison
         view.
-[ ] M8  Immutable asset files + path aliases for old takes/replaced
+[x] M8 (2026-11-15) Immutable asset files + path aliases for old takes/replaced
         files; start over + picture library (asset groups, versions,
         liked default, purpose labels) + reuse (Section 6b).
 [ ] M9  Voices, sound, music, audiobook export (Product F).
