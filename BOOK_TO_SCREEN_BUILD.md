@@ -63,6 +63,8 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D20 | 2026-11-15 | M3: Read it in hands its result to the Studio's existing plan + screenplay files (`adaptation/adaptation.json`, `screenplay/scene-S*.json`), so the screenplay approval gate, the shot writer and every later step use it unchanged; the full Section 5 outputs live in `readin/` | assumed — not answered |
 | D21 | 2026-11-15 | M3: the `fake` engine (D4) is `read_it_in.py --engine fake`: a short, well-formed script made from the source's own sentences, for demo runs and tests; it never calls an AI | assumed — not answered |
 | D22 | 2026-11-15 | M3: the screenplay PDF uses the PDF's built-in Courier (no font file to embed, works the same on Windows and macOS); characters outside Windows-1252 print as "?" in the PDF only (Fountain, Word and Final Draft keep them) | assumed — not answered |
+| D23 | 2026-11-15 | M4: the continuity book is still the book's `<book>.json` (so every existing step reads it); M4 adds personality profiles, props and `style_neutral: true`, and keeps the old file as `.bak`. Rendering words are refused in tokens; identity words such as "clay pot" or "felt hat" are allowed | assumed — not answered |
+| D24 | 2026-11-15 | M4: the shot list lives in `shots/shotlist.json`; M6 turns it into the picture prompts. The Script Supervisor's fixes change text fields only; the Editor's pacing fit scales shot lengths (1.5-12 s, nice-to-have shots change most). The shot list can only be written after the continuity book is approved | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1041,7 +1043,7 @@ saying what's left.
         step.
 [x] M3 (2026-11-15) READ IT IN: the full Section 5 pipeline with critique loop;
         screenplay exports (Product A complete for any source).
-[ ] M4  Continuity book (style-neutral, with personalities) + director's
+[x] M4 (2026-11-15) Continuity book (style-neutral, with personalities) + director's
         breakdown + shot list.
 [ ] M5  Style system: style cards, translations, prompt assembly, look dev.
 [ ] M6  Pictures in the master style + shot layouts; storyboard and

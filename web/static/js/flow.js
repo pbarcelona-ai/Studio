@@ -17,7 +17,7 @@
     ["chapters", "Check the chapters", "Look at the chapters. You can join, split or rename them, and drop pages that are not part of the story.", ["Chapters"], [], []],
     ["plan", "Plan the film", "Say how many minutes long your film is. The Studio picks the scenes that tell the story in that time.", ["Format, products and styles", "Read it in", "Film plan and screenplay"], ["AI Prompt Writer"], ["adapt"]],
     ["screenplay", "Write and approve the screenplay", "The screenplay is what happens and what people say in every scene. Read it, change anything, then approve it.", ["Film plan and screenplay"], [], ["screenplay", "approve"]],
-    ["continuity", "Make the story notes", "The Studio writes down who is in the story, what they look like and how they sound, so they look the same in every picture.", [], ["Continuity book"], ["continuity"]],
+    ["continuity", "Make the story notes", "The Studio writes down who is in the story, what they look like and how they sound, so they look the same in every picture.", ["Cast, places and shot list"], ["Continuity book"], ["continuity"]],
     ["cast", "Pick the cast", "You can give each character a picture, so their face stays the same. You can skip this.", ["Cast (optional)"], [], []],
     ["look", "Choose the look and voices", "Pick how the film looks and which voice each character has. You can skip this.", ["Voice Cast"], ["Global Parameters", "Creative Direction", "Scene Enhancement"], []],
     ["write", "Write the shots", "Each scene is cut into short shots: what we see, and what is said.", [], ["Write shots"], ["write", "rewrite"]],

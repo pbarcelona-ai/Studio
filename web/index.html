@@ -286,6 +286,25 @@
             </div>
         </div>
 
+        <div class="card bookonly" id="stepBreakdown">
+            <div class="card__header">
+                <h2 class="card__title">Cast, places and shot list</h2>
+                <p class="card__subtitle">Who and what is in the film, the same in every style (with each character's personality), then the director's breakdown and the shots of every scene.</p>
+            </div>
+            <div class="card__body">
+                <h3 style="font-size:var(--text-sm);margin:0 0 4px">1. Continuity book</h3>
+                <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="cbMake">Write the continuity book</button>
+                    <button type="button" class="btn btn--primary" id="cbApprove" disabled>Approve the continuity book</button></div>
+                <p class="warn" id="cbNote" role="status" aria-live="polite"></p>
+                <div id="cbBody"></div>
+                <h3 style="font-size:var(--text-sm);margin:14px 0 4px">2. Director's breakdown and shot list</h3>
+                <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="slMake">Write the shot list</button>
+                    <button type="button" class="btn btn--primary" id="slApprove" disabled>Approve the shot list</button></div>
+                <p class="warn" id="slNote" role="status" aria-live="polite"></p>
+                <div id="slBody"></div>
+            </div>
+        </div>
+
         <div class="card bookonly" id="stepAdapt">
             <div class="card__header">
                 <h2 class="card__title">Film plan and screenplay</h2>
@@ -1292,6 +1311,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/crew.js" defer></script>
 <script src="/static/js/sources.js" defer></script>
 <script src="/static/js/readin.js" defer></script>
+<script src="/static/js/breakdown.js" defer></script>
 <script src="/static/js/export.js" defer></script>
 <script src="/static/js/nav.js" defer></script>
 <script src="/static/js/providers.js" defer></script>
