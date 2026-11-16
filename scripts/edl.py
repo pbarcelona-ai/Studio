@@ -116,6 +116,9 @@ def timeline(c: dict) -> dict:
     music: list[dict] = []
     out["music"] = music
     for m in c["tracks"]["music"]:
+        if m.get("whole"):                                   # an uploaded score: under the whole film
+            music.append({**m, "start": 0.0, "end": round(total, 3)})
+            continue
         span = scenes.get(m["attach"])
         if span:
             s0, s1 = min(x["start"] for x in span), max(x["end"] for x in span)
@@ -198,9 +201,10 @@ def ripple_delete(c: dict, cid: str) -> None:
 def snap_to_beats(c: dict, scene: str = "") -> int:
     """Fit clip lengths to whole beats of their scene's music (tempo from the Composer's cue). Returns how many clips changed."""
     tempo = {m["attach"]: m.get("tempo_bpm") for m in c["tracks"]["music"]}
+    score = next((m["tempo_bpm"] for m in c["tracks"]["music"] if m.get("whole") and m.get("tempo_bpm")), None)
     n = 0
     for v in c["tracks"]["video"]:
-        bpm = tempo.get(v["scene"])
+        bpm = score or tempo.get(v["scene"])
         if not bpm or (scene and v["scene"] != scene):
             continue
         beat = 60.0 / float(bpm)

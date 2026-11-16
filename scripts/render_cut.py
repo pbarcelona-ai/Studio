@@ -104,6 +104,9 @@ def audio_files(pdir: Path, tl: dict) -> list[tuple[str, dict, Path]]:
             out.append(("effects", a, f))
             break
     for m in tl["music"]:
+        if m.get("file") and (pdir / m["file"]).is_file():  # an uploaded score (media_sources.set_score)
+            out.append(("music", m, pdir / m["file"]))
+            continue
         for name in ("musicgen_scenes", "musicgen"):
             f = pdir / "audio" / name / f"music-{int(m['ref']):04d}.wav"
             if f.is_file():

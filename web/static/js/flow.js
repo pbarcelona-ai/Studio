@@ -13,7 +13,7 @@
   };
   // id, title, what it is for, cards shown, cards under "More settings", buttons (RUN keys, or a special one)
   const STEPS = [
-    ["read", "Read the book", "Pick your book at the top of the page (or add a new one here), or add any other sources: an idea, pictures, a web page, a screenplay. Then let the Studio read it.", ["Read book", "Add your sources"], ["Tools Status", "Imported Book Tools", "Make my film"], ["read"]],
+    ["read", "Read the book", "Pick your book at the top of the page (or add a new one here), or add any other sources: an idea, pictures, a web page, a screenplay. Then let the Studio read it.", ["Read book", "Add your sources", "Your footage and music"], ["Tools Status", "Imported Book Tools", "Make my film"], ["read"]],
     ["chapters", "Check the chapters", "Look at the chapters. You can join, split or rename them, and drop pages that are not part of the story.", ["Chapters"], [], []],
     ["plan", "Plan the film", "Say how many minutes long your film is. The Studio picks the scenes that tell the story in that time.", ["Format, products and styles", "Read it in", "Film plan and screenplay"], ["AI Prompt Writer"], ["adapt"]],
     ["screenplay", "Write and approve the screenplay", "The screenplay is what happens and what people say in every scene. Read it, change anything, then approve it.", ["Film plan and screenplay"], [], ["screenplay", "approve"]],

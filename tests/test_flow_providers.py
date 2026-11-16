@@ -42,7 +42,7 @@ def test_film_path_in_the_page(server, film):
     assert out["steps"] == 16 and out["names"][0] == "Read the book" and out["names"][-1] == "Share your film" and out["flowOn"]
     assert out["orphans"] == [], "every card of the four main tabs must be in some step"
     assert out["locked"] == ["storyboard", "video", "audio", "cut", "premiere"], out["locked"]
-    assert out["step1"]["title"] == "Read the book" and out["step1"]["shown"] == ["Read book", "Add your sources"] and "Tools Status" in out["step1"]["more"]
+    assert out["step1"]["title"] == "Read the book" and out["step1"]["shown"] == ["Read book", "Add your sources", "Your footage and music"] and "Tools Status" in out["step1"]["more"]
     assert out["step1"]["buttons"] == ["Read the book"] and out["afterNext"] == "Check the chapters" and out["planStep"] == "plan"
     assert out["screenplayButtons"] == ["Write the screenplay", "Approve the screenplay"]
     assert out["kfTitle"] == "Make the pictures" and out["kfNextDisabled"] and "0 of 4" in out["kfTodo"] and out["kfPicker"]

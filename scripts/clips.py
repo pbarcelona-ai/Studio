@@ -115,6 +115,11 @@ def prepare(pdir: Path, sid: str) -> dict:
 
 
 def clip_file(pdir: Path, sid: str, row: int) -> Path | None:
+    """The clip of a shot in a style: the owner's footage for a real shot (the same in every style), else the style's rendered clip."""
+    import media_sources
+    real = media_sources.footage(pdir).get(str(row))
+    if real and (pdir / real).is_file():
+        return pdir / real
     st = pictures.status(pdir, sid)
     setdir = layout.find_dir(st["set"]) if st["set"] else None
     if setdir is None or not (setdir / "videos").is_dir():
@@ -130,21 +135,37 @@ def _review_file(pdir: Path, sid: str) -> Path:
     return pictures.pdir_of(pdir, sid) / "clips.json"
 
 
+def _rows(pdir: Path) -> list[tuple[int, str, int]]:
+    """(row, scene, shot) for every shot of the shot list, in order (row N = shot N everywhere)."""
+    out, row = [], 0
+    for sc in shot_list.load(pdir).get("scenes", []):
+        for s in sc["shots"]:
+            row += 1
+            out.append((row, sc["id"], s["n"]))
+    return out
+
+
 def status(pdir: Path, sid: str) -> dict:
     st = pictures.status(pdir, sid)
     rv = pictures._read(_review_file(pdir, sid), {}) or {}
     setdir = layout.find_dir(st["set"]) if st["set"] else None
     out = []
-    for s in st["shots"]:
-        f = clip_file(pdir, sid, s["row"])
-        r = rv.get(str(s["row"]), {})
-        out.append({"row": s["row"], "scene": s["scene"], "shot": s["shot"], "clip": f.relative_to(setdir).as_posix() if f and setdir else "",
-                    "approved": bool(r.get("approved")) and f is not None, "note": r.get("note", "")})
+    for row, scene, shot in _rows(pdir):
+        f = clip_file(pdir, sid, row)
+        r = rv.get(str(row), {})
+        if f is not None and setdir is not None and setdir in f.parents:
+            rel, base = f.relative_to(setdir).as_posix(), st["set"]
+        elif f is not None:
+            rel, base = f.relative_to(pdir).as_posix(), pdir.name             # the owner's footage, inside the book
+        else:
+            rel, base = "", st["set"]
+        out.append({"row": row, "scene": scene, "shot": shot, "clip": rel, "base": base, "approved": bool(r.get("approved")) and f is not None,
+                    "note": r.get("note", "")})
     return {"style": sid, "set": st["set"], "clips": out, "approved": sum(1 for c in out if c["approved"]), "checklist": list(CHECKLIST)}
 
 
 def review(pdir: Path, sid: str, row: int, approved: bool | None = None, note: str | None = None) -> dict:
-    if not 1 <= row <= len(pictures.status(pdir, sid)["shots"]):
+    if not 1 <= row <= len(_rows(pdir)):
         raise ClipError(f"no clip {row}")
     rv = pictures._read(_review_file(pdir, sid), {}) or {}
     r = rv.setdefault(str(row), {})

@@ -81,6 +81,8 @@ of the upgrade. Anything destructive or that spends money still waits for a real
 | D38 | 2026-11-15 | M11: each style's clips render from its picture set as an image-to-video set (all_shots.csv + images/pictures_keyframes) with the usual runners and KEYFRAME_MODEL=pictures; the motion prompt is shared, prefixed with the style card's prefix. Clips are checked by the owner against the Animation Supervisor's checklist (no morphing, no identity drift, the right motion); an automatic vision check of clips is for M15 | assumed — not answered |
 | D39 | 2026-11-15 | M12: open notes go into the addressed role's system prompt (crew.system) and are resolved when that step is approved; "Add information" is a project note every role reads. Every approval and every accepted chat plan makes a history moment; going back saves the current state first; a branch copies the pictures (no generation) and gets its own prompt sets | assumed — not answered |
 | D40 | 2026-11-15 | M12: the conflict prompt guards the shot list, the continuity book and the edit: an edit while the running step writes the same thing answers 409, and the page asks whether to keep the owner's change (sent again with force) or the job's | assumed — not answered |
+| D41 | 2026-11-15 | M13: transcription uses faster-whisper ("small", on the processor) through the job's own uv environment; without it the video is still understood from its pictures. Shots are found with ffmpeg's scene score (0.3). The Story Analyst sees one contact sheet of the key frames (one vision call per video) | assumed — not answered |
+| D42 | 2026-11-15 | M13: "Make a story from my clips" writes a new shot list of real shots (the old one is saved as a history moment first); a real shot's clip is the same footage in every style; an uploaded track becomes one music item under the whole film, its tempo estimated in plain Python | assumed — not answered |
 | D6 | 2026-11-15 | Milestones don't stop for approval: each is committed, reported and the next one starts (owner: proceed; per D-rule above) | owner |
 
 ~~~
@@ -1076,7 +1078,7 @@ saying what's left.
 [x] M12 (2026-11-15) Producer chat (stop / add information / continue), notes on
         anything (threads), history moments, branches, conflict prompt
         (Sections 3.4, 3.5, 6c).
-[ ] M13 Media sources: video/audio understanding, real footage + AI shots,
+[x] M13 (2026-11-15) Media sources: video/audio understanding, real footage + AI shots,
         raw-footage auto-edit, cut to music (Section 4.2).
 [ ] M14 Episodes, series and production queue (Section 6e); marketing kit
         (Product G).

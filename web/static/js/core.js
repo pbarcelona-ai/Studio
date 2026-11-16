@@ -241,6 +241,7 @@ function renderProject(applyDef) {
   if (typeof window.loadEdit === "function") window.loadEdit(p);
   if (typeof window.loadClips === "function") window.loadClips(p);
   if (typeof window.loadCollab === "function") window.loadCollab(p);
+  if (typeof window.loadMedia === "function") window.loadMedia(p);
   if (typeof loadExports === "function") loadExports(p);
   renderMovies();
   const rows = Object.entries(p.have).filter(([, n]) => n);

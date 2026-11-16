@@ -24,7 +24,7 @@
     note(!C.motion ? "Approve the master pictures, then write the motion prompts." : `${C.approved} of ${C.clips.length} clips approved. Check: ${C.checklist.join(", ")}.`
       + (C.gate.approved ? " Approved." : C.gate.changed_since ? " Changed since it was approved." : ""));
     grid.innerHTML = C.clips.map(c => `<div style="width:240px"><b><small>${esc(c.scene)} / ${c.shot}</small></b>
-      ${c.clip ? `<video src="/file/${esc(C.set)}/${esc(c.clip)}" controls preload="none" width="240" height="135"></video>` : '<div class="warn" style="height:135px;display:grid;place-items:center;border:1px dashed var(--border)">no clip yet</div>'}
+      ${c.clip ? `<video src="/file/${esc(c.base || C.set)}/${esc(c.clip)}" controls preload="none" width="240" height="135"></video>` : '<div class="warn" style="height:135px;display:grid;place-items:center;border:1px dashed var(--border)">no clip yet</div>'}
       <div class="row" style="gap:4px"><button type="button" class="btn btn--ghost" data-row="${c.row}" data-ok="${c.approved ? "" : "1"}"${c.clip ? "" : " disabled"}>${c.approved ? "Unapprove" : "Approve"}</button></div>
       <label class="f" for="clN${c.row}">Note</label><input type="text" id="clN${c.row}" value="${esc(c.note)}" data-note="${c.row}" style="width:100%"></div>`).join("");
     grid.querySelectorAll("[data-ok]").forEach(b => b.addEventListener("click", () => post({ row: Number(b.dataset.row), approved: Boolean(b.dataset.ok) })));
