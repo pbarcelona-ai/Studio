@@ -155,7 +155,7 @@ def character_reference(opt, model, service):
     """The picture that steers this run on the Characters tab, or None. Only a model that takes pictures, on a service that uploads them."""
     ref = (opt.get("opts") or {}).get("reference") or {}
     series, name = str(ref.get("series") or ""), str(ref.get("name") or "")
-    if not series or not name or model not in REF_IMAGE_MODELS or service not in ("kaggle", "computer"):
+    if not series or not name or model not in REF_IMAGE_MODELS or service not in ("kaggle", "computer", "cloud_api"):
         return None
     if not SLUG_RE.match(series):
         raise PlanError("bad series name")

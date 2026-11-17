@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 SETTINGS_DIR = ".pistachios_studio"
-SAVED_KEYS = ("HF_TOKEN",)                      # keys kept in settings.json and loaded into the environment
+SAVED_KEYS = ("HF_TOKEN", "FAL_KEY", "REPLICATE_API_TOKEN")                      # keys kept in settings.json and loaded into the environment
 USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,59}$")
 SECRET_RE = re.compile(r"^[A-Za-z0-9_.\-]{10,200}$")
 _loaded: set[str] = set()                                  # environment variables this module set from settings.json (so "remove" only unsets those)
@@ -140,6 +140,9 @@ def check(path=None, home=None, environ=None, local_llm_ready=False, local_gpu="
     hf = bool(env.get("HF_TOKEN", "").strip())
     add("hf_token", "Hugging Face token", "optional", hf, "found" if hf else "not set (only needed for the Hugging Face prompt writer)",
         "Paste a token below (huggingface.co > Settings > Access Tokens). Inference Providers needs prepaid credit.")
+    fal = bool(env.get("FAL_KEY", "").strip())
+    add("fal_key", "Fal.ai Cloud API key", "optional", fal, "found" if fal else "not set (optional: for instant serverless generation)",
+        "Paste a key below (fal.ai > Keys). Without it, generation runs on Kaggle, Hugging Face or your local GPU.")
     return items
 
 
@@ -181,6 +184,26 @@ def save(body, home=None, environ=None):
         env["HF_TOKEN"] = hf
         _loaded.add("HF_TOKEN")
         saved.append("hf_token")
+    fal = str(body.get("fal_key") or "").strip()
+    if fal:
+        if not SECRET_RE.match(fal):
+            raise ValueError("that does not look like a Fal.ai key (it should be one unbroken piece of text)")
+        data = _read_json(settings_path(home))
+        data["FAL_KEY"] = fal
+        _write_private(settings_path(home), json.dumps(data))
+        env["FAL_KEY"] = fal
+        _loaded.add("FAL_KEY")
+        saved.append("fal_key")
+    rep = str(body.get("replicate_token") or "").strip()
+    if rep:
+        if not SECRET_RE.match(rep):
+            raise ValueError("that does not look like a Replicate token (it should be one unbroken piece of text)")
+        data = _read_json(settings_path(home))
+        data["REPLICATE_API_TOKEN"] = rep
+        _write_private(settings_path(home), json.dumps(data))
+        env["REPLICATE_API_TOKEN"] = rep
+        _loaded.add("REPLICATE_API_TOKEN")
+        saved.append("replicate_token")
     for what in body.get("clear") or []:
         if what == "hf_token":
             data = _read_json(settings_path(home))

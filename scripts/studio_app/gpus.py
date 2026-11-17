@@ -29,9 +29,14 @@ def all_gpus():
 
 
 def local_gpus():
-    """The GPUs the models can run on here [(name, GB, compute capability or AMD gfx name)]: NVIDIA, or AMD with ROCm (experimental);
-    [] if none (or not on Linux / WSL 2)."""
-    return [(g["name"], g["gb"], g["cap"]) for g in run_local_model.usable(all_gpus())] if sys.platform.startswith("linux") else []
+    """The GPUs the models can run on here [(name, GB, compute capability or AMD gfx name)]: NVIDIA, AMD with ROCm (experimental), or Apple Silicon (MPS);
+    [] if none (or unsupported system)."""
+    u = run_local_model.usable(all_gpus())
+    if sys.platform.startswith("linux"):
+        return [(g["name"], g["gb"], g["cap"]) for g in u]
+    if sys.platform == "darwin":
+        return [(g["name"], g["gb"], g["cap"]) for g in u if g.get("mps_ready")]
+    return []
 
 
 def local_is_amd():
@@ -50,11 +55,19 @@ def local_gpu_label():
 def gpu_blocker(service, gpu):
     if service == "computer":
         return run_local_model.gpu_problem(all_gpus())
+    if service == "cloud_api":
+        import run_cloud_api
+        keys = run_cloud_api.load_api_keys()
+        if not keys.get("fal") and not keys.get("replicate"):
+            return "set FAL_KEY or REPLICATE_API_TOKEN in your environment or ~/.pistachios_studio/cloud_keys.json to use the Cloud API"
+        return None
     return TPU_CLI_NOTE if gpu.startswith("Tpu") and not TPU_CLI_WORKS else None
 
 
 def gpu_memory(service, gpu):
     """(GB, Ampere or newer) of the chosen GPU, or (None, None) when it is not known."""
+    if service == "cloud_api":
+        return 80, True
     if service == "computer" and local_gpus():
         name, gb, cap = local_gpus()[0]
         try:
@@ -76,13 +89,14 @@ def suggestions(look, service, gpu):
         raise PlanError("choose where to run (Models tab)")
     gpu_why = gpu_blocker(service, gpu)
     out = model_advisor.suggest(look, blocker=lambda m: gpu_why or model_blocker(m, service, gpu), gpu_gb=gpu_memory(service, gpu)[0])
-    if service not in ("kaggle", "computer"):            # keyframes are only made (and handed to the video model) by these two runners
+    if service not in ("kaggle", "computer", "cloud_api"):            # keyframes are made by these runners
         out["keyframe"]["alternatives"] = ([dict(out["keyframe"]["pick"], blocked="")] if out["keyframe"]["pick"] else []) + out["keyframe"]["alternatives"]
         out["keyframe"]["pick"] = None
-        out["keyframe"]["note"] = "keyframes are made on Kaggle or this computer: choose one of them in the Models tab to use them"
+        out["keyframe"]["note"] = "keyframes are made on Kaggle, this computer, or Cloud API: choose one of them in the Models tab to use them"
         for step, what in (("video_i2v", "animating keyframes"), ("upscale", "upscaling")):
             if not out[step]["pick"]:
-                out[step]["note"] = f"{what} runs on Kaggle or this computer: choose one of them in the Models tab"
+                out[step]["note"] = f"{what} runs on Kaggle, this computer, or Cloud API: choose one of them in the Models tab"
+    return {"look": look, "service": service, "gpu": gpu, "gpu_problem": gpu_why or "", "steps": out}
     return {"look": look, "service": service, "gpu": gpu, "gpu_problem": gpu_why or "", "steps": out}
 
 
@@ -103,16 +117,16 @@ def model_blocker(name, service, gpu):
     if service == "computer" and name in run_local_model.NVIDIA_ONLY and local_is_amd():
         return "cannot run on this AMD GPU: " + run_local_model.NVIDIA_ONLY[name]
     if name in UPSCALE_MODELS:
-        if service not in ("kaggle", "computer"):
-            return "upscales clips you already made, which only the Kaggle and This computer runners hand to the model (use one of them)"
+        if service not in ("kaggle", "computer", "cloud_api"):
+            return "upscales clips you already made, which only the Kaggle, This computer and Cloud API runners hand to the model (use one of them)"
         label, need, least_gb, ampere = UPSCALE_MODELS[name]
         gb, is_ampere = gpu_memory(service, gpu)
         if ampere and is_ampere is False:
             return f"{label} needs an Ampere or newer GPU (RTX 30/40/50, A100, L4); this one is older"
         if gb is not None and gb < least_gb:
             return f"{label} needs at least {least_gb} GB of GPU memory; this GPU has {gb:g} GB"
-    if name in I2V_MODELS and service not in ("kaggle", "computer"):
-        return "starts from keyframes, which only the Kaggle and This computer runners hand to the model (use one of them)"
+    if name in I2V_MODELS and service not in ("kaggle", "computer", "cloud_api"):
+        return "starts from keyframes, which only the Kaggle, This computer and Cloud API runners hand to the model (use one of them)"
     on_tpu = gpu.startswith("Tpu")
     if name in TPU_ONLY:
         if service != "kaggle":

@@ -101,8 +101,8 @@ def film_video_steps(opt, slug):
 def film_steps(opt, slug):
     """Everything after the book's CSVs, for each movie, skipping what exists: running it again carries on after a quota stop."""
     service, gpu = opt.get("service"), opt.get("gpu")
-    if service not in ("kaggle", "computer"):
-        raise PlanError("Make my film makes its keyframes on Kaggle or this computer: choose one in the Models tab, Where to run")
+    if service not in ("kaggle", "computer", "cloud_api"):
+        raise PlanError("Make my film makes its keyframes on Kaggle, this computer or Cloud API: choose one in the Models tab, Where to run")
     if gpu not in [g for g, _ in GPUS[service]]:
         raise PlanError(f"gpu {gpu!r} is not an option for {service}")
     if gpu_blocker(service, gpu):
@@ -216,8 +216,8 @@ def generation_steps(opt, slug):
         raise PlanError("unknown look")
     if refs and kmodel not in REF_IMAGE_MODELS:
         raise PlanError(f"character pictures steer only {', '.join(sorted(REF_IMAGE_MODELS))} keyframes: pick it, or untick 'Steer keyframes with character pictures'")
-    if st.get("keyframes") and service not in ("kaggle", "computer"):
-        raise PlanError("keyframes are made on Kaggle or this computer (the Colab and Hugging Face runners do not keep them apart from other images): choose one of those")
+    if st.get("keyframes") and service not in ("kaggle", "computer", "cloud_api"):
+        raise PlanError("keyframes are made on Kaggle, this computer, or Cloud API (the Colab and Hugging Face runners do not keep them apart from other images): choose one of those")
     i2v = [m for m in vmodels if m in I2V_MODELS] if st.get("video") else []
     if (st.get("keyframes") or i2v) and chapters_mode:
         raise PlanError("keyframes and the 'from keyframes' video models work per shot: choose 'Every shot'")

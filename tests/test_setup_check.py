@@ -85,6 +85,15 @@ class TestSave:
         assert sc.save({"hf_token": "hf_" + "a" * 20}, home, env) == ["hf_token"]
         assert env["HF_TOKEN"] == "hf_" + "a" * 20 and mode(sc.settings_path(home)) == 0o600
 
+    def test_fal_and_replicate_keys_saved_and_put_in_env(self, home, env):
+        res = sc.save({"fal_key": "fal_" + "k" * 20, "replicate_token": "r8_" + "t" * 20}, home, env)
+        assert "fal_key" in res and "replicate_token" in res
+        assert env["FAL_KEY"] == "fal_" + "k" * 20
+        assert env["REPLICATE_API_TOKEN"] == "r8_" + "t" * 20
+        data = json.loads(sc.settings_path(home).read_text())
+        assert data["FAL_KEY"] == "fal_" + "k" * 20
+        assert data["REPLICATE_API_TOKEN"] == "r8_" + "t" * 20
+
     def test_clear_removes_only_what_the_studio_set(self, home, env):
         sc.save({"hf_token": "hf_" + "a" * 20}, home, env)
         assert sc.save({"clear": ["hf_token"]}, home, env) == ["hf_token_removed"]

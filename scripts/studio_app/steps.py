@@ -186,6 +186,8 @@ def make_runner(service, gpu, user, slug):
             return ["scripts/run_hf_space.sh", model, str(s), str(e)], env
         if service == "computer":
             return ["python3", "scripts/run_local_model.py", model, str(s), str(e)], env
+        if service == "cloud_api":
+            return ["python3", "scripts/run_cloud_api.py", model, str(s), str(e)], env
         env.update({"KAGGLE_USER": user, "KAGGLE_ACCELERATOR": gpu})
         return ["scripts/run_kaggle_model.sh", model, str(s), str(e)], env
     return runner

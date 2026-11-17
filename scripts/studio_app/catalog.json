@@ -88,6 +88,12 @@
     "local",
     "This computer's GPU"
    ]
+  ],
+  "cloud_api": [
+   [
+    "fast",
+    "Direct Cloud API (Fast / Serverless - Fal.ai / Replicate)"
+   ]
   ]
  },
  "upscale_models": {

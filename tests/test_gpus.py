@@ -72,3 +72,22 @@ def test_suggestions_validate_input():
         g.suggestions(look, "kaggle", "NoSuchGpu")
     out = g.suggestions(look, "kaggle", "NvidiaTeslaT4")
     assert out["service"] == "kaggle" and "steps" in out
+
+
+def test_cloud_api_service_memory_and_blocker(monkeypatch):
+    assert gpus.gpu_memory("cloud_api", "fast") == (80, True)
+    import run_cloud_api
+    monkeypatch.setattr(run_cloud_api, "load_api_keys", lambda: {})
+    assert "FAL_KEY" in gpus.gpu_blocker("cloud_api", "fast")
+    monkeypatch.setattr(run_cloud_api, "load_api_keys", lambda: {"fal": "key123"})
+    assert gpus.gpu_blocker("cloud_api", "fast") is None
+
+
+def test_apple_silicon_local_gpu_on_darwin(monkeypatch):
+    # Undo fixture monkeypatch for local_gpus
+    monkeypatch.undo()
+    monkeypatch.setattr(gpus.sys, "platform", "darwin")
+    apple_gpu = {"name": "Apple M3 Pro", "vendor": "Apple", "gb": 18.0, "shared": True, "cap": "MPS", "nvidia_ready": False, "rocm_ready": False, "mps_ready": True}
+    monkeypatch.setattr(gpus, "all_gpus", lambda: [apple_gpu])
+    assert gpus.local_gpus() == [("Apple M3 Pro", 18.0, "MPS")]
+
