@@ -32,9 +32,18 @@ KEEP_JOBS = 20             # job folders kept in logs/jobs
 POLL = 0.2                 # seconds between looks at a step's log file
 
 
+def step_python() -> str:
+    """The Studio's own .venv Python when there is one. Not sys.executable: started from a shell with the OSS CAD Suite set up, that is the
+    suite's wrapper script (it sets PYTHONHOME), and everything the step starts would inherit it ("No module named 'encodings'")."""
+    for p in (ROOT / ".venv" / "bin" / "python", ROOT / ".venv" / "Scripts" / "python.exe"):
+        if p.is_file():
+            return str(p)
+    return sys.executable
+
+
 def step_command(argv: list[str]) -> list[str]:
     """The command that runs one step and records its exit code in $STUDIO_EXIT_FILE (scripts/run_step.py: no shell, so Windows works)."""
-    return [sys.executable, str(ROOT / "scripts" / "run_step.py"), *argv]
+    return [step_python(), str(ROOT / "scripts" / "run_step.py"), *argv]
 
 
 def job_dir() -> Path:

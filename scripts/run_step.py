@@ -13,13 +13,26 @@ import subprocess
 import sys
 
 
+# Settings of another Python that must not reach the step: a wrapper (the OSS CAD Suite's tabbypy3) sets them, and a different Python that
+# inherits PYTHONHOME stops at once with "No module named 'encodings'". The suite's folders also leave PATH, so "python3" is never its Python.
+DROP = ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "PYTHONSTARTUP", "__PYVENV_LAUNCHER__")
+
+
+def clean_env(env: dict[str, str]) -> dict[str, str]:
+    out = {k: v for k, v in env.items() if k not in DROP}
+    if "PATH" in out:
+        out["PATH"] = os.pathsep.join(d for d in out["PATH"].split(os.pathsep) if d and "oss-cad-suite" not in d.lower())
+    return out
+
+
 def main(argv: list[str]) -> int:
     if not argv:
         print("usage: run_step.py PROGRAM [ARG ...]", file=sys.stderr)
         return 2
-    prog = shutil.which(argv[0]) or argv[0]               # Windows: finds kaggle.exe / uv.exe / a .cmd on PATH
+    env = clean_env(dict(os.environ))
+    prog = shutil.which(argv[0], path=env.get("PATH")) or argv[0]     # Windows: finds kaggle.exe / uv.exe / a .cmd on PATH
     try:
-        proc = subprocess.Popen([prog, *argv[1:]], stdin=subprocess.DEVNULL)
+        proc = subprocess.Popen([prog, *argv[1:]], stdin=subprocess.DEVNULL, env=env)
     except OSError as e:
         print(f"!! cannot start {argv[0]}: {e}", flush=True)
         code = 127

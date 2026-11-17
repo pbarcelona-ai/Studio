@@ -159,3 +159,40 @@ class TestQueueRoutes:
 
     def test_the_log_reports_the_queue(self, server):
         assert server.api("GET", "/api/log?since=0")[1]["queued"] == 0
+
+
+def test_a_step_never_inherits_another_pythons_settings(tmp_path):
+    """The Studio started from a shell with the OSS CAD Suite set up: its wrapper sets PYTHONHOME and PYTHONEXECUTABLE and puts its folders
+    first on PATH. The program a step runs gets none of it (a Kaggle upload stopped with "No module named 'encodings'")."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    scripts = Path(__file__).resolve().parent.parent / "scripts"
+    sys.path.insert(0, str(scripts))
+    import run_step
+    env = run_step.clean_env({"PYTHONHOME": "/Applications/oss-cad-suite", "PYTHONEXECUTABLE": "/x/tabbypy3", "PYTHONPATH": "/y", "HOME": "/h",
+                              "PATH": os.pathsep.join(["/Applications/oss-cad-suite/bin", "/usr/bin", "/Applications/OSS-CAD-Suite/py3bin"])})
+    assert env == {"HOME": "/h", "PATH": "/usr/bin"}
+    probe = tmp_path / "probe.py"
+    probe.write_text("import os, json; print(json.dumps({k: os.environ.get(k) for k in ('PYTHONEXECUTABLE', 'PATH')}))")
+    bad = str(tmp_path / "oss-cad-suite" / "bin")
+    r = subprocess.run([sys.executable, str(scripts / "run_step.py"), sys.executable, str(probe)], capture_output=True, text=True,
+                       env={**os.environ, "PYTHONEXECUTABLE": sys.executable, "PATH": bad + os.pathsep + os.environ.get("PATH", ""),
+                            "STUDIO_EXIT_FILE": str(tmp_path / "exit")}, timeout=60)
+    import json
+    got = json.loads(r.stdout.strip().splitlines()[-1])
+    assert got["PYTHONEXECUTABLE"] is None and bad not in got["PATH"]
+    assert (tmp_path / "exit").read_text().strip() == "0"
+
+
+def test_steps_start_with_the_studios_own_python(monkeypatch, tmp_path):
+    import sys
+    from studio_app import jobs as jobmod
+    monkeypatch.setattr(jobmod, "ROOT", tmp_path)
+    assert jobmod.step_python() == sys.executable                                 # no .venv: the Python that runs the Studio
+    py = tmp_path / ".venv" / "bin" / "python"
+    py.parent.mkdir(parents=True)
+    py.write_text("")
+    assert jobmod.step_python() == str(py)
+    assert jobmod.step_command(["x"])[0] == str(py)

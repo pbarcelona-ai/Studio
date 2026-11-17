@@ -11,6 +11,7 @@ if [[ "$2" == "--no-open" ]]; then
 fi
 
 cd "$(dirname "$0")" || exit 1   # run from the folder this script lives in
+unset PYTHONHOME PYTHONPATH PYTHONEXECUTABLE VIRTUAL_ENV   # another Python's settings (the OSS CAD Suite's setup) break the Studio's .venv Python
 
 echo "Starting studio.py for ${DURATION} seconds..."
 

@@ -28,7 +28,7 @@ on reopen
 end reopen
 
 on startStudio()
-	set cmd to "cd " & quoted form of studioDir & " && : > " & quoted form of logFile & " ; /bin/zsh -ic " & quoted form of "if [ -x .venv/bin/python ]; then exec .venv/bin/python scripts/studio.py --no-open --new-session; else exec python3 scripts/studio.py --no-open --new-session; fi" & " >> " & quoted form of logFile & " 2>&1 & echo \$!"
+	set cmd to "cd " & quoted form of studioDir & " && : > " & quoted form of logFile & " ; /bin/zsh -ic " & quoted form of "unset PYTHONHOME PYTHONPATH PYTHONEXECUTABLE VIRTUAL_ENV; if [ -x .venv/bin/python ]; then exec .venv/bin/python scripts/studio.py --no-open --new-session; else exec python3 scripts/studio.py --no-open --new-session; fi" & " >> " & quoted form of logFile & " 2>&1 & echo \$!"
 	set serverPid to do shell script cmd
 	repeat 60 times
 		delay 0.5
