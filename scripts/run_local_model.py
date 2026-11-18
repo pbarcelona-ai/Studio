@@ -80,6 +80,63 @@ def gpu_info():
     return gpus
 
 
+def is_blackwell_gpu(gpu_name: str, compute_cap: str) -> bool:
+    """Detect RTX 5090 / Blackwell architecture (compute capability 12.0) or newer."""
+    name = gpu_name.lower()
+    # RTX 50 series (Blackwell) = compute capability 12.0
+    # Also check for "5090", "5080", "5070" in name
+    return (compute_cap == "12.0" or
+            any(x in name for x in ("rtx 5090", "rtx 5080", "rtx 5070", "rtx 5060",
+                                    "gb202", "gb203", "gb205", "gb206", "gb207")))
+
+
+def gpu_optimizations(gpu_name: str, compute_cap: str, vram_gb: float) -> dict:
+    """Return optimization settings for the detected GPU."""
+    opts = {
+        "use_bf16": False,
+        "use_flash_attn": False,
+        "use_torch_compile": False,
+        "compile_mode": "default",
+        "attn_implementation": "auto",
+        "memory_fraction": 0.95,
+    }
+
+    is_blackwell = is_blackwell_gpu(gpu_name, compute_cap)
+    is_ampere_or_newer = compute_cap and float(compute_cap) >= 8.0  # Ampere (RTX 30) = 8.0
+
+    if is_blackwell:
+        # RTX 5090 / Blackwell: full optimization stack
+        opts["use_bf16"] = True                    # Native BF16 tensor cores
+        opts["use_flash_attn"] = True              # Flash Attention 2/3
+        opts["use_torch_compile"] = True           # torch.compile with Triton
+        opts["compile_mode"] = "max-autotune"      # Best for inference on fixed shapes
+        opts["attn_implementation"] = "flash_attention_2"
+        opts["memory_fraction"] = 0.98             # 24 GB VRAM, can use almost all
+    elif is_ampere_or_newer:
+        # RTX 30/40 / Ampere/Ada: partial optimizations
+        opts["use_bf16"] = True                    # BF16 supported
+        opts["use_flash_attn"] = True              # Flash Attention available
+        opts["use_torch_compile"] = True
+        opts["compile_mode"] = "reduce-overhead"   # Good for dynamic shapes
+        opts["attn_implementation"] = "flash_attention_2"
+        opts["memory_fraction"] = 0.90
+    else:
+        # Older GPUs (Turing, Volta): conservative
+        opts["use_bf16"] = False                   # Use FP16 instead
+        opts["use_flash_attn"] = False
+        opts["use_torch_compile"] = False
+        opts["attn_implementation"] = "auto"
+        opts["memory_fraction"] = 0.85
+
+    # Adjust for VRAM
+    if vram_gb and vram_gb < 16:
+        opts["memory_fraction"] = min(opts["memory_fraction"], 0.80)
+    if vram_gb and vram_gb < 12:
+        opts["use_torch_compile"] = False  # Compilation needs extra memory
+
+    return opts
+
+
 def rocm_info():
     """[(name, GB, gfx architecture)] for each AMD GPU that ROCm sees (rocm-smi); [] if ROCm is not installed or lists none."""
     exe = shutil.which("rocm-smi")
@@ -219,8 +276,9 @@ def find_notebook(model, tmp):
     return nb
 
 
-def to_script(nb_path, start, end, csv_name, inp, work):
-    """(script text, pip lines): the notebook's code cells as one script for this computer, and its "!pip ..." commands."""
+def to_script(nb_path, start, end, csv_name, inp, work, gpu_opts=None):
+    """(script text, pip lines): the notebook's code cells as one script for this computer, and its "!pip ..." commands.
+    gpu_opts: dict with optimization settings from gpu_optimizations()."""
     nb = json.loads(Path(nb_path).read_text(encoding="utf-8"))
     pip, lines = [], []
     for cell in nb.get("cells", []):
@@ -249,6 +307,92 @@ def to_script(nb_path, start, end, csv_name, inp, work):
             raw = raw.replace('.to("cuda")', '.to(_device)').replace("Generator('cuda')", "Generator(_device)").replace('Generator("cuda")', "Generator(_device)")
             lines.append(raw)
         lines.append("")
+
+    # Build GPU optimization prelude
+    if gpu_opts is None:
+        gpu_opts = {}
+
+    use_bf16 = gpu_opts.get("use_bf16", False)
+    use_flash_attn = gpu_opts.get("use_flash_attn", False)
+    use_torch_compile = gpu_opts.get("use_torch_compile", False)
+    compile_mode = gpu_opts.get("compile_mode", "default")
+    attn_impl = gpu_opts.get("attn_implementation", "auto")
+    mem_frac = gpu_opts.get("memory_fraction", 0.90)
+
+    # Flash Attention import check
+    flash_attn_import = ""
+    if use_flash_attn:
+        flash_attn_import = '''
+try:
+    from flash_attn import flash_attn_func
+    _HAS_FLASH_ATTN = True
+except ImportError:
+    _HAS_FLASH_ATTN = False
+    print("!! flash_attn not installed, falling back to default attention", flush=True)
+'''
+
+    # Torch compile wrapper
+    compile_wrapper = ""
+    if use_torch_compile:
+        compile_wrapper = f'''
+def _maybe_compile(model, mode="{compile_mode}"):
+    """Wrap model with torch.compile if available and beneficial."""
+    try:
+        import torch._dynamo
+        torch._dynamo.reset()
+        return torch.compile(model, mode=mode, fullgraph=False, dynamic=False)
+    except Exception as e:
+        print(f"!! torch.compile failed: {{e}}; running without compilation", flush=True)
+        return model
+'''
+
+    # BF16 autocast context
+    autocast_ctx = ""
+    if use_bf16:
+        autocast_ctx = '''
+from contextlib import nullcontext
+_autocast = torch.autocast(device_type="cuda", dtype=torch.bfloat16) if _device == "cuda" else nullcontext()
+'''
+    else:
+        autocast_ctx = '''
+from contextlib import nullcontext
+_autocast = nullcontext()
+'''
+
+    # Flash attention SDPA override
+    flash_sdpa = ""
+    if use_flash_attn and attn_impl == "flash_attention_2":
+        flash_sdpa = '''
+# Prefer Flash Attention 2 for SDPA on supported GPUs
+try:
+    import torch.nn.functional as F
+    _orig_sdpa = F.scaled_dot_product_attention
+    def _flash_sdpa(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None, enable_gqa=False):
+        if _HAS_FLASH_ATTN and query.is_cuda and query.dtype in (torch.float16, torch.bfloat16):
+            # Flash Attention expects (batch, seqlen, nheads, headdim)
+            if query.ndim == 4:
+                batch, nheads, seqlen, headdim = query.shape
+                query = query.transpose(1, 2).contiguous()
+                key = key.transpose(1, 2).contiguous()
+                value = value.transpose(1, 2).contiguous()
+                out = flash_attn_func(query, key, value, dropout_p=dropout_p, causal=is_causal)
+                return out.transpose(1, 2).contiguous()
+        return _orig_sdpa(query, key, value, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal, scale=scale, enable_gqa=enable_gqa)
+    F.scaled_dot_product_attention = _flash_sdpa
+    print("== Flash Attention 2 enabled for SDPA", flush=True)
+except Exception as e:
+    print(f"!! Flash Attention SDPA override failed: {{e}}", flush=True)
+'''
+
+    # Memory fraction setting
+    mem_setting = ""
+    if mem_frac < 1.0:
+        mem_setting = f'''
+# Limit GPU memory allocation
+torch.cuda.set_per_process_memory_fraction({mem_frac})
+print(f"== GPU memory fraction set to {mem_frac:.0%}", flush=True)
+'''
+
     prelude = f'''# Generated by run_local_model.py from {Path(nb_path).name}: runs on this computer's GPU.
 import os as _os, shutil as _shutil, subprocess as _subprocess
 _os.chdir({work.as_posix()!r})
@@ -274,6 +418,17 @@ _has_mps = hasattr(_torch.backends, "mps") and _torch.backends.mps.is_available(
 if not _torch.cuda.is_available() and not _has_mps:
     raise SystemExit("PyTorch in this environment cannot see the GPU (check the NVIDIA driver, ROCm, or Apple Metal MPS, or set STUDIO_TORCH_INDEX to the PyTorch build for your CUDA / ROCm version)")
 _device = "mps" if _has_mps and not _torch.cuda.is_available() else "cuda"
+
+{autocast_ctx}
+{mem_setting}
+{flash_attn_import}
+{flash_sdpa}
+{compile_wrapper}
+
+# Helper: run generation with autocast and optional compile
+def _run_with_opts(gen_fn, *args, **kwargs):
+    with _autocast:
+        return gen_fn(*args, **kwargs)
 '''
     return prelude + "\n".join(lines) + "\n", pip
 
@@ -310,9 +465,13 @@ def keep_torch(cmd):
     return " ".join(words) if any(not w.startswith("-") for w in words[2:]) else ""
 
 
-def make_env(pip_lines, log):
+def make_env(pip_lines, log, gpu_opts=None):
     """The Python for this recipe: STUDIO_GPU_PYTHON, or .gpu_envs/<hash of the pip lines>/, made once."""
     pip_lines = [c for c in (keep_torch(x) for x in pip_lines) if c]
+    # Add flash-attn if GPU optimizations require it
+    if gpu_opts and gpu_opts.get("use_flash_attn"):
+        if "flash-attn" not in " ".join(pip_lines):
+            pip_lines.append("pip install -q flash-attn --no-build-isolation")
     own = os.environ.get("STUDIO_GPU_PYTHON", "").strip()
     if own:
         py = Path(own)
@@ -323,7 +482,12 @@ def make_env(pip_lines, log):
                 die(f"failed: {cmd}")
         return py
     index = os.environ.get("STUDIO_TORCH_INDEX", "").strip()
-    recipe = json.dumps({"py": PY_VERSION, "base": BASE_PACKAGES, "torch_index": index, "pip": pip_lines})
+    # Include gpu_opts in recipe hash only when it has meaningful content (non-empty and not just defaults)
+    # This keeps backward compatibility with existing environments
+    recipe_dict = {"py": PY_VERSION, "base": BASE_PACKAGES, "torch_index": index, "pip": pip_lines}
+    if gpu_opts and any(v for v in gpu_opts.values() if v not in (False, "auto", "default", 0.90)):
+        recipe_dict["gpu_opts"] = gpu_opts
+    recipe = json.dumps(recipe_dict)
     key = hashlib.sha1(recipe.encode()).hexdigest()[:12]
     envs = Path(os.environ.get("STUDIO_GPU_ENVS") or ROOT / ".gpu_envs")
     env = envs / key
@@ -401,6 +565,15 @@ def main(argv=None):
     if amd and not os.environ.get("STUDIO_TORCH_INDEX"):
         os.environ["STUDIO_TORCH_INDEX"] = ROCM_TORCH_INDEX          # PyTorch's ROCm build; it answers to torch.cuda like CUDA does
 
+    # Compute GPU optimizations for the primary GPU
+    gpu_opts = {}
+    if gpus[0].get("nvidia_ready"):
+        gpu_opts = gpu_optimizations(gpus[0]["name"], gpus[0].get("cap", ""), gpus[0].get("gb"))
+        if gpu_opts.get("use_bf16"):
+            print("== RTX 5090 / Blackwell optimizations: BF16, Flash Attention, torch.compile", flush=True)
+        elif gpu_opts.get("use_flash_attn"):
+            print("== Ampere/Ada optimizations: BF16, Flash Attention, torch.compile", flush=True)
+
     base = {"audio": pd / "audio" / model.removeprefix("audio_"), "image": pd / "images" / model.removeprefix("image_")}.get(kind, pd / "videos" / model)
     outdir, mode = base, ""
     if "chapters" in shots_csv:
@@ -464,9 +637,9 @@ def main(argv=None):
         for src_file, name in copies:
             shutil.copyfile(src_file, inp / name)
 
-        script, pip_lines = to_script(find_notebook(model, tmp), start, end, shots_csv, tmp / "input", work)
+        script, pip_lines = to_script(find_notebook(model, tmp), start, end, shots_csv, tmp / "input", work, gpu_opts)
         (tmp / "run.py").write_text(script, encoding="utf-8")
-        py = make_env(pip_lines, log)
+        py = make_env(pip_lines, log, gpu_opts)
         cache = Path(os.environ.get("STUDIO_GPU_ENVS") or ROOT / ".gpu_envs") / "cache"     # programs the upscalers install, kept between runs
         cache.mkdir(parents=True, exist_ok=True)
         env = {k: v for k, v in os.environ.items() if k not in ("PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV")}
