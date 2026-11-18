@@ -21,7 +21,7 @@ def rig(book, fake_root, monkeypatch, tmp_path):
     nb = tmp_path / "nb.ipynb"
     nb.write_text(json.dumps(NB))
     monkeypatch.setattr(rl, "find_notebook", lambda model, tmp: nb)
-    monkeypatch.setattr(rl, "make_env", lambda pip, log: Path(sys.executable))
+    monkeypatch.setattr(rl, "make_env", lambda pip, log, gpu_opts=None: Path(sys.executable))
     monkeypatch.setenv("PROJECT", "demo")
     monkeypatch.setenv("STUDIO_GPU_ENVS", str(tmp_path / "envs"))
     for k in ("SHOTS_CSV", "KEYFRAME_MODEL", "UPSCALE_SOURCE", "STUDIO_TORCH_INDEX"):

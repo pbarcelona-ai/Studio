@@ -32,7 +32,7 @@ class TestLocalAudio:
             (out / f"narration-{n:04d}.wav").write_bytes(b"x")
         calls.clear()
         la.narration(book)
-        assert calls == [] and "all 5 line(s) are here" in capsys.readouterr().out
+        assert calls == [] and "all 5 active audio line(s) are here" in capsys.readouterr().out
 
     def test_music_with_every_cue_present(self, book, capsys):
         (book / "audio_chapters.csv").write_text("chapter,music\n1,calm\n")

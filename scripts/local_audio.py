@@ -27,13 +27,40 @@ def kokoro_worker():
     return next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "KOKORO_WORKER")
 
 
-def narration(d, csv_name="audio_shots.csv", folder="kokoro"):
-    rows = sum(1 for _ in csv.DictReader(open(d / csv_name, newline="", encoding="utf-8")))
+def narration(d, csv_name="audio_shots.csv", folder="kokoro", force=False):
+    d = Path(d)
+    rows_data = list(csv.DictReader(open(d / csv_name, newline="", encoding="utf-8")))
     out = d / "audio" / folder
     out.mkdir(parents=True, exist_ok=True)
-    missing = [n for n in range(1, rows + 1) if not (out / f"narration-{n:04d}.wav").is_file()]
+
+    import json
+    active_rows: list[int] = []
+    for i, r in enumerate(rows_data, 1):
+        # Check for lines_json (new format with dialogue/narration lines)
+        try:
+            lines = json.loads(r.get("lines_json") or "[]")
+        except Exception:
+            lines = []
+        if lines:
+            active_rows.append(i)
+        elif r.get("narration"):
+            # Backward compatibility: if no lines_json but narration column has content, treat as active
+            active_rows.append(i)
+        else:
+            # Clean up stale audio file for silent / line-free shots (e.g. in dialect-only mode)
+            stale = out / f"narration-{i:04d}.wav"
+            if stale.is_file():
+                stale.unlink()
+
+    if force:
+        for i in active_rows:
+            f = out / f"narration-{i:04d}.wav"
+            if f.is_file():
+                f.unlink()
+
+    missing = [n for n in active_rows if not (out / f"narration-{n:04d}.wav").is_file()]
     if not missing:
-        print(f"narration: all {rows} line(s) are here")
+        print(f"narration: all {len(active_rows)} active audio line(s) are here")
         return
     with tempfile.TemporaryDirectory() as tmp:
         worker = Path(tmp) / "kokoro_worker.py"

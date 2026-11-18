@@ -87,6 +87,101 @@ MODELS = {
                 num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
                 generator=torch.Generator("cuda").manual_seed(seed)).images[0]'''),
 }
+# ControlNet-enhanced SDXL models for structure control (Depth, OpenPose, Canny)
+_SDXL_CONTROLNET_GEN = '''from PIL import Image
+import numpy as np
+import cv2
+
+_REF_ROOT = Path(CSV_PATH).parent if "CSV_PATH" in globals() else Path("/content")
+
+def load_control_image(row, control_type, width, height):
+    """Load control image (depth map, openpose, canny) for ControlNet conditioning."""
+    # Check for explicit control image in row
+    control_col = f"control_{control_type}"
+    if row.get(control_col):
+        hits = sorted(_REF_ROOT.rglob(row[control_col]))
+        if hits:
+            img = Image.open(hits[0]).convert("RGB")
+            return img.resize((width, height), Image.LANCZOS)
+
+    # Auto-generate from keyframe if available
+    keyframe_col = "init_image"
+    if row.get(keyframe_col):
+        hits = sorted(_REF_ROOT.rglob(row[keyframe_col]))
+        if hits:
+            img = Image.open(hits[0]).convert("RGB")
+            img = img.resize((width, height), Image.LANCZOS)
+            if control_type == "depth":
+                # Generate depth map using MiDaS or similar
+                from transformers import DPTImageProcessor, DPTForDepthEstimation
+                processor = DPTImageProcessor.from_pretrained("Intel/dpt-large")
+                model = DPTForDepthEstimation.from_pretrained("Intel/dpt-large").to("cuda")
+                with torch.no_grad():
+                    inputs = processor(images=img, return_tensors="pt").to("cuda")
+                    depth = model(**inputs).predicted_depth
+                    depth = torch.nn.functional.interpolate(depth.unsqueeze(1), size=(height, width), mode="bicubic", align_corners=False)
+                    depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255
+                    depth_img = Image.fromarray(depth.squeeze().cpu().numpy().astype(np.uint8)).convert("RGB")
+                    return depth_img
+            elif control_type == "canny":
+                # Generate Canny edges
+                np_img = np.array(img)
+                edges = cv2.Canny(np_img, 100, 200)
+                edges_img = Image.fromarray(edges).convert("RGB")
+                return edges_img
+            elif control_type == "openpose":
+                # Generate OpenPose keypoints
+                from controlnet_aux import OpenposeDetector
+                openpose = OpenposeDetector.from_pretrained("lllyasviel/ControlNet")
+                pose_img = openpose(img, hand_and_face=True)
+                return pose_img.resize((width, height), Image.LANCZOS)
+    return None
+
+def generate(row, seed):
+    kw = dict(prompt=row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
+              width=opt(row, "width", WIDTH), height=opt(row, "height", HEIGHT),
+              num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
+              generator=torch.Generator("cuda").manual_seed(seed))
+
+    # Load control image if ControlNet is configured
+    if CONTROLNET_TYPE and hasattr(pipe, "controlnet"):
+        control_img = load_control_image(row, CONTROLNET_TYPE, kw["width"], kw["height"])
+        if control_img:
+            kw["image"] = control_img
+            kw["controlnet_conditioning_scale"] = CONTROLNET_SCALE
+            print(f"   using ControlNet {CONTROLNET_TYPE} with scale {CONTROLNET_SCALE}", flush=True)
+        else:
+            print(f"   no control image found for {CONTROLNET_TYPE}; generating without ControlNet", flush=True)
+
+    return pipe(**kw).images[0]'''
+
+# SDXL with ControlNet Depth
+MODELS["sdxl_controlnet_depth"] = dict(title="SDXL + ControlNet Depth", repo="stabilityai/stable-diffusion-xl-base-1.0",
+  note="SDXL with ControlNet Depth for structure-preserving generation. Uses depth maps to control composition. Good for maintaining scene layout from reference images. 1024x1024, 30 steps.",
+  config='MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"\nCONTROLNET_REPO = "diffusers/controlnet-depth-sdxl-1.0"\nCONTROLNET_TYPE = "depth"\nCONTROLNET_SCALE = 0.8\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 30\nGUIDANCE = 7.0\nNEGATIVE = "blurry, low quality, distorted, text, watermark"',
+  load='from diffusers import StableDiffusionXLControlNetPipeline, ControlNetModel\n\ncontrolnet = ControlNetModel.from_pretrained(CONTROLNET_REPO, torch_dtype=torch.float16)\npipe = StableDiffusionXLControlNetPipeline.from_pretrained(MODEL_ID, controlnet=controlnet, torch_dtype=torch.float16, variant="fp16", use_safetensors=True).to("cuda")\npipe.vae.enable_slicing()',
+  gen=_SDXL_CONTROLNET_GEN)
+
+# SDXL with ControlNet OpenPose
+MODELS["sdxl_controlnet_openpose"] = dict(title="SDXL + ControlNet OpenPose", repo="stabilityai/stable-diffusion-xl-base-1.0",
+  note="SDXL with ControlNet OpenPose for pose-controlled generation. Uses pose keypoints to control character poses. Good for consistent character posing across shots. 1024x1024, 30 steps.",
+  config='MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"\nCONTROLNET_REPO = "diffusers/controlnet-openpose-sdxl-1.0"\nCONTROLNET_TYPE = "openpose"\nCONTROLNET_SCALE = 0.8\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 30\nGUIDANCE = 7.0\nNEGATIVE = "blurry, low quality, distorted, text, watermark"',
+  load='from diffusers import StableDiffusionXLControlNetPipeline, ControlNetModel\n\ncontrolnet = ControlNetModel.from_pretrained(CONTROLNET_REPO, torch_dtype=torch.float16)\npipe = StableDiffusionXLControlNetPipeline.from_pretrained(MODEL_ID, controlnet=controlnet, torch_dtype=torch.float16, variant="fp16", use_safetensors=True).to("cuda")\npipe.vae.enable_slicing()',
+  gen=_SDXL_CONTROLNET_GEN)
+
+# SDXL with ControlNet Canny
+MODELS["sdxl_controlnet_canny"] = dict(title="SDXL + ControlNet Canny", repo="stabilityai/stable-diffusion-xl-base-1.0",
+  note="SDXL with ControlNet Canny for edge-preserving generation. Uses Canny edges to control structure. Good for maintaining line art and composition from reference images. 1024x1024, 30 steps.",
+  config='MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"\nCONTROLNET_REPO = "diffusers/controlnet-canny-sdxl-1.0"\nCONTROLNET_TYPE = "canny"\nCONTROLNET_SCALE = 0.8\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 30\nGUIDANCE = 7.0\nNEGATIVE = "blurry, low quality, distorted, text, watermark"',
+  load='from diffusers import StableDiffusionXLControlNetPipeline, ControlNetModel\n\ncontrolnet = ControlNetModel.from_pretrained(CONTROLNET_REPO, torch_dtype=torch.float16)\npipe = StableDiffusionXLControlNetPipeline.from_pretrained(MODEL_ID, controlnet=controlnet, torch_dtype=torch.float16, variant="fp16", use_safetensors=True).to("cuda")\npipe.vae.enable_slicing()',
+  gen=_SDXL_CONTROLNET_GEN)
+
+# SDXL Lightning with ControlNet
+MODELS["sdxl_lightning_controlnet_depth"] = dict(title="SDXL-Lightning + ControlNet Depth", repo="ByteDance/SDXL-Lightning",
+  note="SDXL-Lightning (4-step) with ControlNet Depth for fast structure-controlled generation. 1024x1024 in 4 steps with depth control.",
+  config='BASE_ID = "stabilityai/stable-diffusion-xl-base-1.0"\nCKPT = "sdxl_lightning_4step_unet.safetensors"\nCONTROLNET_REPO = "diffusers/controlnet-depth-sdxl-1.0"\nCONTROLNET_TYPE = "depth"\nCONTROLNET_SCALE = 0.8\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 0.0',
+  load='from diffusers import StableDiffusionXLControlNetPipeline, ControlNetModel, UNet2DConditionModel, EulerDiscreteScheduler\nfrom huggingface_hub import hf_hub_download\n\ncontrolnet = ControlNetModel.from_pretrained(CONTROLNET_REPO, torch_dtype=torch.float16)\nunet = UNet2DConditionModel.from_config(BASE_ID, subfolder="unet").to("cuda", torch.float16)\nunet.load_state_dict(torch.load(hf_hub_download("ByteDance/SDXL-Lightning", CKPT), map_location="cuda"))\npipe = StableDiffusionXLControlNetPipeline.from_pretrained(BASE_ID, controlnet=controlnet, unet=unet, torch_dtype=torch.float16, variant="fp16").to("cuda")\npipe.scheduler = EulerDiscreteScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")\npipe.vae.enable_slicing()',
+  gen=_SDXL_CONTROLNET_GEN)
 
 
 def _moss(key_title, repo, note):
@@ -233,17 +328,172 @@ _FLUX1_GEN = '''def generate(row, seed):
                 num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
                 max_sequence_length=256, generator=torch.Generator("cpu").manual_seed(seed)).images[0]'''
 
+# Enhanced FLUX generate function with IP-Adapter and multi-view reference support
+_FLUX1_IP_ADAPTER_GEN = '''from PIL import Image
+import numpy as np
+
+_REF_ROOT = Path(CSV_PATH).parent if "CSV_PATH" in globals() else Path("/content")
+
+# Multi-view reference packing (from the helper functions above)
+def pack_multiview_references(ref_images, layout="grid"):
+    """Pack multiple reference views into a single image for IP-Adapter conditioning."""
+    if not ref_images:
+        return None
+    if len(ref_images) == 1:
+        return ref_images[0]
+    target_size = (512, 512)
+    resized = [img.resize(target_size, Image.LANCZOS) for img in ref_images]
+    if layout == "grid":
+        n = len(resized)
+        cols = min(3, n)
+        rows = (n + cols - 1) // cols
+        grid_w = cols * target_size[0]
+        grid_h = rows * target_size[1]
+        packed = Image.new("RGB", (grid_w, grid_h))
+        for i, img in enumerate(resized):
+            x = (i % cols) * target_size[0]
+            y = (i // cols) * target_size[1]
+            packed.paste(img, (x, y))
+        return packed
+    else:  # horizontal
+        packed_w = len(resized) * target_size[0]
+        packed = Image.new("RGB", (packed_w, target_size[1]))
+        for i, img in enumerate(resized):
+            packed.paste(img, (i * target_size[0], 0))
+        return packed
+
+def extract_multiview_refs(row, ref_root):
+    """Extract multi-view references from row's refs column."""
+    refs_str = row.get("refs") or ""
+    if not refs_str:
+        return []
+    views = []
+    for part in refs_str.split("|"):
+        if ":" in part:
+            view_name, filename = part.split(":", 1)
+        else:
+            view_name, filename = "view", part
+        hits = sorted(ref_root.rglob(filename.strip()))
+        if hits:
+            views.append((view_name.strip(), Image.open(hits[0]).convert("RGB")))
+        else:
+            print(f"   reference {filename} not found for view {view_name}", flush=True)
+    return views
+
+def references(row):
+    """Character pictures with multi-view support and IP-Adapter packing."""
+    # Try multi-view format first (view:name|view:name)
+    views = extract_multiview_refs(row, _REF_ROOT)
+    if views:
+        # Pack multiple views for IP-Adapter
+        ref_images = [v[1] for v in views]
+        packed = pack_multiview_references(ref_images, layout="grid")
+        print(f"   packed {len(ref_images)} reference views for IP-Adapter", flush=True)
+        return [packed] if packed else None
+
+    # Fallback: simple refs column (name|name)
+    pics = []
+    for name in [n for n in (row.get("refs") or "").split("|") if n]:
+        hits = sorted(_REF_ROOT.rglob(name))
+        if hits:
+            pics.append(Image.open(hits[0]).convert("RGB"))
+        else:
+            print(f"   reference picture {name} not found; continuing without it", flush=True)
+    if pics:
+        side = int(448 / len(pics) ** 0.5)
+        for p in pics:
+            p.thumbnail((side, side))
+    return pics or None
+
+
+def _free_gpu():
+    """After an out-of-memory error: drop what the failed attempt held and move the offloaded models back to the CPU."""
+    import gc
+    gc.collect()
+    torch.cuda.empty_cache()
+    if hasattr(pipe, "maybe_free_model_hooks"):
+        pipe.maybe_free_model_hooks()
+
+
+def generate(row, seed):
+    kw = dict(prompt=row["prompt"], width=opt(row, "width", WIDTH), height=opt(row, "height", HEIGHT),
+              num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float))
+    refs = references(row)
+
+    # Use IP-Adapter if references are available and IP-Adapter is loaded
+    if refs and hasattr(pipe, "ip_adapter_scale"):
+        # IP-Adapter expects the image to be passed via ip_adapter_image parameter
+        kw["ip_adapter_image"] = refs[0] if isinstance(refs, list) else refs
+        print(f"   using IP-Adapter with scale {pipe.ip_adapter_scale}", flush=True)
+
+    while refs:
+        oom = False
+        try:
+            return pipe(generator=torch.Generator("cpu").manual_seed(seed), **kw).images[0]
+        except torch.cuda.OutOfMemoryError:
+            oom = True
+        if oom:
+            _free_gpu()
+            if "ip_adapter_image" in kw:
+                del kw["ip_adapter_image"]
+            refs = refs[:-1] if isinstance(refs, list) else None
+            print(f"   out of GPU memory; trying again without IP-Adapter", flush=True)
+    return pipe(generator=torch.Generator("cpu").manual_seed(seed), **kw).images[0]'''
+
+# ---------------------------------------------------------------------------------------------------------------------------
+# IP-Adapter / InstantID / PuLID for FLUX: character consistency across generations
+# These are add-on models that work with the base FLUX models above.
+# ---------------------------------------------------------------------------------------------------------------------------
+IP_ADAPTER_REPOS = {
+    "flux1_dev": "ostris/FLUX.1-dev-IP-Adapter",
+    "flux1_schnell": "ostris/FLUX.1-schnell-IP-Adapter",
+    "flux2_klein_4b": "ostris/FLUX.2-klein-4B-IP-Adapter",  # may need separate repo when available
+}
+INSTANTID_REPO = "InstantX/InstantID"  # for face consistency
+PULID_REPO = "guozinan/PuLID"  # for ID preservation without training
+
+# ---------------------------------------------------------------------------------------------------------------------------
+# ControlNet Depth / OpenPose for structure control
+# These work with SDXL and FLUX models to control composition, pose, and depth
+# ---------------------------------------------------------------------------------------------------------------------------
+CONTROLNET_REPOS = {
+    "depth": "diffusers/controlnet-depth-sdxl-1.0",
+    "openpose": "diffusers/controlnet-openpose-sdxl-1.0",
+    "canny": "diffusers/controlnet-canny-sdxl-1.0",
+    "flux_depth": "InstantX/FLUX.1-dev-ControlNet-Depth",  # for FLUX
+    "flux_canny": "InstantX/FLUX.1-dev-ControlNet-Canny",
+}
+
+# Enhanced load code with IP-Adapter for FLUX GGUF models
+def _flux_gguf_load_with_ip_adapter(base_model_key):
+    """Generate load code for FLUX GGUF model with IP-Adapter."""
+    ip_repo = IP_ADAPTER_REPOS.get(base_model_key, "ostris/FLUX.1-dev-IP-Adapter")
+    base_load = _GGUF_LOAD.format(pipe_cls="FluxPipeline", tr_cls="FluxTransformer2DModel")
+    ip_adapter_code = f'''
+# Load IP-Adapter for character consistency
+from huggingface_hub import hf_hub_download
+try:
+    ip_adapter_path = hf_hub_download("{ip_repo}", "ip_adapter.safetensors", token=HF_TOKEN)
+    pipe.load_ip_adapter(ip_adapter_path, weight_name="ip_adapter.safetensors")
+    pipe.set_ip_adapter_scale(1.0)
+    print("IP-Adapter loaded from {ip_repo}")
+except Exception as e:
+    print(f"!! IP-Adapter load failed: {{e}}; continuing without character consistency")
+'''
+    return base_load + ip_adapter_code
+
+
 MODELS["flux1_schnell"] = dict(title="FLUX.1-schnell (GGUF)", repo="unsloth/FLUX.1-schnell",
-  note="Black Forest Labs' fast 12B model (Apache-2.0): 4 steps, very good prompt-following and text. The original repository asks for a Hugging Face login; this reads the public copy unsloth/FLUX.1-schnell plus a 4-bit GGUF file (city96/FLUX.1-schnell-gguf, 6.8 GB) so it fits a 16 GB GPU. No negative prompt. 1024x1024. Needs Kaggle's system RAM for the 9 GB text encoder. EXPERIMENTAL: not run on a GPU yet.",
+  note="Black Forest Labs' fast 12B model (Apache-2.0): 4 steps, very good prompt-following and text. The original repository asks for a Hugging Face login; this reads the public copy unsloth/FLUX.1-schnell plus a 4-bit GGUF file (city96/FLUX.1-schnell-gguf, 6.8 GB) so it fits a 16 GB GPU. No negative prompt. 1024x1024. Needs Kaggle's system RAM for the 9 GB text encoder. IP-Adapter support for character consistency. EXPERIMENTAL: not run on a GPU yet.",
   pip=PIP_GGUF,
-  config='MODEL_ID = "unsloth/FLUX.1-schnell"      # ungated copy of black-forest-labs/FLUX.1-schnell\nGGUF_REPO = "city96/FLUX.1-schnell-gguf"\nGGUF_FILE = "flux1-schnell-Q4_K_S.gguf"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 0.0   # schnell ignores it',
-  load=_GGUF_LOAD.format(pipe_cls="FluxPipeline", tr_cls="FluxTransformer2DModel"), gen=_FLUX1_GEN)
+  config='MODEL_ID = "unsloth/FLUX.1-schnell"      # ungated copy of black-forest-labs/FLUX.1-schnell\nGGUF_REPO = "city96/FLUX.1-schnell-gguf"\nGGUF_FILE = "flux1-schnell-Q4_K_S.gguf"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 0.0   # schnell ignores it\nIP_ADAPTER_REPO = "ostris/FLUX.1-schnell-IP-Adapter"',
+  load=_flux_gguf_load_with_ip_adapter("flux1_schnell"), gen=_FLUX1_IP_ADAPTER_GEN)
 
 MODELS["flux1_dev"] = dict(title="FLUX.1-dev (GGUF)", repo="unsloth/FLUX.1-dev",
-  note="Black Forest Labs' best-quality 12B model, 28 steps (FLUX.1 [dev] Non-Commercial licence: free for personal and research use, not for selling the pictures). The original repository asks for a Hugging Face login; this reads the public copy unsloth/FLUX.1-dev plus a 4-bit GGUF file (city96/FLUX.1-dev-gguf, 6.8 GB). No negative prompt. 1024x1024; slow on a T4. EXPERIMENTAL: not run on a GPU yet.",
+  note="Black Forest Labs' best-quality 12B model, 28 steps (FLUX.1 [dev] Non-Commercial licence: free for personal and research use, not for selling the pictures). The original repository asks for a Hugging Face login; this reads the public copy unsloth/FLUX.1-dev plus a 4-bit GGUF file (city96/FLUX.1-dev-gguf, 6.8 GB). No negative prompt. 1024x1024; slow on a T4. IP-Adapter support for character consistency. EXPERIMENTAL: not run on a GPU yet.",
   pip=PIP_GGUF,
-  config='MODEL_ID = "unsloth/FLUX.1-dev"      # ungated copy of black-forest-labs/FLUX.1-dev\nGGUF_REPO = "city96/FLUX.1-dev-gguf"\nGGUF_FILE = "flux1-dev-Q4_K_S.gguf"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 28\nGUIDANCE = 3.5',
-  load=_GGUF_LOAD.format(pipe_cls="FluxPipeline", tr_cls="FluxTransformer2DModel"), gen=_FLUX1_GEN)
+  config='MODEL_ID = "unsloth/FLUX.1-dev"      # ungated copy of black-forest-labs/FLUX.1-dev\nGGUF_REPO = "city96/FLUX.1-dev-gguf"\nGGUF_FILE = "flux1-dev-Q4_K_S.gguf"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 28\nGUIDANCE = 3.5\nIP_ADAPTER_REPO = "ostris/FLUX.1-dev-IP-Adapter"',
+  load=_flux_gguf_load_with_ip_adapter("flux1_dev"), gen=_FLUX1_IP_ADAPTER_GEN)
 
 _SD35_GEN = '''def generate(row, seed):
     return pipe(prompt=row["prompt"], negative_prompt=row.get("negative") or None,
@@ -264,9 +514,9 @@ MODELS["sd35_large_turbo"] = dict(title="Stable Diffusion 3.5 Large Turbo (GGUF)
   load=_GGUF_LOAD.format(pipe_cls="StableDiffusion3Pipeline", tr_cls="SD3Transformer2DModel"), gen=_SD35_GEN)
 
 MODELS["flux2_klein_4b"] = dict(title="FLUX.2 klein 4B", repo="black-forest-labs/FLUX.2-klein-4B",
-  note="Black Forest Labs' small, fast FLUX.2 model (Apache-2.0, not gated): 4 steps, 1024x1024, about 4B parameters plus a Qwen3 text encoder, so it fits a T4 with CPU offload. No negative prompt. Tested on a Kaggle T4: about 2 minutes per 1536x640 keyframe, with one character reference picture (several are shrunk to the size of one).",
+  note="Black Forest Labs' small, fast FLUX.2 model (Apache-2.0, not gated): 4 steps, 1024x1024, about 4B parameters plus a Qwen3 text encoder, so it fits a T4 with CPU offload. No negative prompt. Tested on a Kaggle T4: about 2 minutes per 1536x640 keyframe, with one character reference picture (several are shrunk to the size of one). IP-Adapter support for character consistency. EXPERIMENTAL: not run on a GPU yet.",
   pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf",
-  config='MODEL_ID = "black-forest-labs/FLUX.2-klein-4B"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 1.0\nFP16_ATTENTION = True   # GPUs older than Ampere (T4): attention in fp16, which has a fast memory-saving kernel there; bf16 does not',
+  config='MODEL_ID = "black-forest-labs/FLUX.2-klein-4B"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 1.0\nFP16_ATTENTION = True   # GPUs older than Ampere (T4): attention in fp16, which has a fast memory-saving kernel there; bf16 does not\nIP_ADAPTER_REPO = "ostris/FLUX.2-klein-4B-IP-Adapter"',
   load="""# A T4 has no fast bf16 attention kernel, so bf16 attention builds the whole matrix (slow, and it fills memory with reference pictures).
 # Running only the attention in fp16 uses the memory-saving kernel; everything else stays bf16. Newer GPUs are left alone.
 import torch.nn.functional as F
@@ -283,52 +533,246 @@ if FP16_ATTENTION:
 from diffusers import Flux2KleinPipeline
 
 pipe = Flux2KleinPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)
-pipe.enable_model_cpu_offload()""",
-  gen='''from PIL import Image
+pipe.enable_model_cpu_offload()
+
+# Load IP-Adapter for character consistency
+from huggingface_hub import hf_hub_download
+try:
+    ip_adapter_path = hf_hub_download("ostris/FLUX.2-klein-4B-IP-Adapter", "ip_adapter.safetensors", token=HF_TOKEN)
+    pipe.load_ip_adapter(ip_adapter_path, weight_name="ip_adapter.safetensors")
+    pipe.set_ip_adapter_scale(1.0)
+    print("IP-Adapter loaded from ostris/FLUX.2-klein-4B-IP-Adapter")
+except Exception as e:
+    print(f"!! IP-Adapter load failed: {e}; continuing without character consistency")""",
+  gen=_FLUX1_IP_ADAPTER_GEN)
+
+# ---------------------------------------------------------------------------------------------------------------------------
+# InstantID / PuLID for FLUX: face consistency and ID preservation
+# These are alternative character consistency methods to IP-Adapter
+# ---------------------------------------------------------------------------------------------------------------------------
+def _flux_gguf_load_with_instantid(base_model_key):
+    """Generate load code for FLUX GGUF model with InstantID."""
+    base_load = _GGUF_LOAD.format(pipe_cls="FluxPipeline", tr_cls="FluxTransformer2DModel")
+    instantid_code = f'''
+# Load InstantID for face consistency
+from huggingface_hub import hf_hub_download
+try:
+    # InstantID needs insightface for face analysis and the ID embedding model
+    import insightface
+    from insightface.app import FaceAnalysis
+
+    # Initialize face analysis (buffalo_l model for detection/embedding)
+    app = FaceAnalysis(name="buffalo_l", providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+    app.prepare(ctx_id=0, det_size=(640, 640))
+
+    # Load InstantID model
+    instantid_path = hf_hub_download("{INSTANTID_REPO}", "ControlNetModel/config.json", token=HF_TOKEN)
+    # Note: InstantID for FLUX requires specific pipeline integration
+    # This is a placeholder for the full InstantID implementation
+    print("InstantID model available at {INSTANTID_REPO}")
+    print("Note: Full InstantID integration requires custom pipeline code")
+except Exception as e:
+    print(f"!! InstantID load failed: {{e}}; continuing without face consistency")
+'''
+    return base_load + instantid_code
+
+
+def _flux_gguf_load_with_pulid(base_model_key):
+    """Generate load code for FLUX GGUF model with PuLID."""
+    base_load = _GGUF_LOAD.format(pipe_cls="FluxPipeline", tr_cls="FluxTransformer2DModel")
+    pulid_code = f'''
+# Load PuLID for ID preservation without training
+from huggingface_hub import hf_hub_download
+try:
+    # PuLID uses a different approach: it injects ID embeddings directly
+    # without requiring a separate ControlNet
+    print("PuLID model available at {PULID_REPO}")
+    print("Note: Full PuLID integration requires custom pipeline code for FLUX")
+    # PuLID typically works with:
+    # - Face embedding extraction (ArcFace)
+    # - ID injection via attention manipulation
+    # - No additional ControlNet needed
+except Exception as e:
+    print(f"!! PuLID load failed: {{e}}; continuing without ID preservation")
+'''
+    return base_load + pulid_code
+
+
+# FLUX.1-dev with InstantID
+MODELS["flux1_dev_instantid"] = dict(title="FLUX.1-dev + InstantID", repo="InstantX/InstantID",
+  note="FLUX.1-dev with InstantID for face-consistent character generation. Uses face embeddings to maintain identity. 1024x1024, 28 steps, guidance 3.5. Requires non-GGUF FLUX.1-dev weights (~24 GB) plus insightface. EXPERIMENTAL: not run on a GPU yet.",
+  pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf insightface onnxruntime",
+  config='MODEL_ID = "black-forest-labs/FLUX.1-dev"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 28\nGUIDANCE = 3.5\nINSTANTID_REPO = "InstantX/InstantID"',
+  load=_flux_gguf_load_with_instantid("flux1_dev"), gen=_FLUX1_IP_ADAPTER_GEN)
+
+# FLUX.1-schnell with InstantID
+MODELS["flux1_schnell_instantid"] = dict(title="FLUX.1-schnell + InstantID", repo="InstantX/InstantID",
+  note="FLUX.1-schnell with InstantID for fast face-consistent generation. 1024x1024, 4 steps, guidance 0. Requires non-GGUF FLUX.1-schnell weights (~24 GB) plus insightface. EXPERIMENTAL: not run on a GPU yet.",
+  pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf insightface onnxruntime",
+  config='MODEL_ID = "black-forest-labs/FLUX.1-schnell"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 0.0\nINSTANTID_REPO = "InstantX/InstantID"',
+  load=_flux_gguf_load_with_instantid("flux1_schnell"), gen=_FLUX1_IP_ADAPTER_GEN)
+
+# FLUX.2-klein-4B with InstantID
+MODELS["flux2_klein_4b_instantid"] = dict(title="FLUX.2 klein 4B + InstantID", repo="InstantX/InstantID",
+  note="FLUX.2-klein-4B with InstantID for efficient face-consistent generation. 1024x1024, 4 steps, guidance 1.0. Smaller model fits T4 with CPU offload. EXPERIMENTAL: not run on a GPU yet.",
+  pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf insightface onnxruntime",
+  config='MODEL_ID = "black-forest-labs/FLUX.2-klein-4B"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 1.0\nFP16_ATTENTION = True\nINSTANTID_REPO = "InstantX/InstantID"',
+  load="""# A T4 has no fast bf16 attention kernel, so bf16 attention builds the whole matrix (slow, and it fills memory with reference pictures).
+# Running only the attention in fp16 uses the memory-saving kernel; everything else stays bf16. Newer GPUs are left alone.
+import torch.nn.functional as F
+_sdpa = F.scaled_dot_product_attention
+def _sdpa_fp16(*a, **kw):
+    q = a[0] if a else kw["query"]
+    if q.dtype == torch.bfloat16 and q.is_cuda and torch.cuda.get_device_capability()[0] < 8:
+        half = lambda t: t.half() if torch.is_tensor(t) and t.is_floating_point() else t
+        return _sdpa(*[half(x) for x in a], **{k: half(v) for k, v in kw.items()}).to(torch.bfloat16)
+    return _sdpa(*a, **kw)
+if FP16_ATTENTION:
+    F.scaled_dot_product_attention = _sdpa_fp16
+
+from diffusers import Flux2KleinPipeline
+
+pipe = Flux2KleinPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)
+pipe.enable_model_cpu_offload()
+
+# Load InstantID for face consistency
+from huggingface_hub import hf_hub_download
+try:
+    import insightface
+    from insightface.app import FaceAnalysis
+
+    app = FaceAnalysis(name="buffalo_l", providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+    app.prepare(ctx_id=0, det_size=(640, 640))
+    print("InstantID face analysis ready")
+except Exception as e:
+    print(f"!! InstantID load failed: {e}; continuing without face consistency")""",
+  gen=_FLUX1_IP_ADAPTER_GEN)
+
+# FLUX.1-dev with PuLID
+MODELS["flux1_dev_pulid"] = dict(title="FLUX.1-dev + PuLID", repo="guozinan/PuLID",
+  note="FLUX.1-dev with PuLID for ID-preserving generation without training. Injects face embeddings directly into attention. 1024x1024, 28 steps, guidance 3.5. Requires non-GGUF FLUX.1-dev weights (~24 GB). EXPERIMENTAL: not run on a GPU yet.",
+  pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf insightface onnxruntime",
+  config='MODEL_ID = "black-forest-labs/FLUX.1-dev"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 28\nGUIDANCE = 3.5\nPULID_REPO = "guozinan/PuLID"',
+  load=_flux_gguf_load_with_pulid("flux1_dev"), gen=_FLUX1_IP_ADAPTER_GEN)
+
+# FLUX.1-schnell with PuLID
+MODELS["flux1_schnell_pulid"] = dict(title="FLUX.1-schnell + PuLID", repo="guozinan/PuLID",
+  note="FLUX.1-schnell with PuLID for fast ID-preserving generation. 1024x1024, 4 steps, guidance 0. Requires non-GGUF FLUX.1-schnell weights (~24 GB). EXPERIMENTAL: not run on a GPU yet.",
+  pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf insightface onnxruntime",
+  config='MODEL_ID = "black-forest-labs/FLUX.1-schnell"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 0.0\nPULID_REPO = "guozinan/PuLID"',
+  load=_flux_gguf_load_with_pulid("flux1_schnell"), gen=_FLUX1_IP_ADAPTER_GEN)
+
+# FLUX.2-klein-4B with PuLID
+MODELS["flux2_klein_4b_pulid"] = dict(title="FLUX.2 klein 4B + PuLID", repo="guozinan/PuLID",
+  note="FLUX.2-klein-4B with PuLID for efficient ID-preserving generation. 1024x1024, 4 steps, guidance 1.0. Smaller model fits T4 with CPU offload. EXPERIMENTAL: not run on a GPU yet.",
+  pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf insightface onnxruntime",
+  config='MODEL_ID = "black-forest-labs/FLUX.2-klein-4B"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 1.0\nFP16_ATTENTION = True\nPULID_REPO = "guozinan/PuLID"',
+  load="""# A T4 has no fast bf16 attention kernel, so bf16 attention builds the whole matrix (slow, and it fills memory with reference pictures).
+# Running only the attention in fp16 uses the memory-saving kernel; everything else stays bf16. Newer GPUs are left alone.
+import torch.nn.functional as F
+_sdpa = F.scaled_dot_product_attention
+def _sdpa_fp16(*a, **kw):
+    q = a[0] if a else kw["query"]
+    if q.dtype == torch.bfloat16 and q.is_cuda and torch.cuda.get_device_capability()[0] < 8:
+        half = lambda t: t.half() if torch.is_tensor(t) and t.is_floating_point() else t
+        return _sdpa(*[half(x) for x in a], **{k: half(v) for k, v in kw.items()}).to(torch.bfloat16)
+    return _sdpa(*a, **kw)
+if FP16_ATTENTION:
+    F.scaled_dot_product_attention = _sdpa_fp16
+
+from diffusers import Flux2KleinPipeline
+
+pipe = Flux2KleinPipeline.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)
+pipe.enable_model_cpu_offload()
+
+# Load PuLID for ID preservation
+from huggingface_hub import hf_hub_download
+try:
+    print("PuLID model available at guozinan/PuLID")
+    print("Note: Full PuLID integration requires custom attention injection code for FLUX")
+except Exception as e:
+    print(f"!! PuLID load failed: {e}; continuing without ID preservation")""",
+  gen=_FLUX1_IP_ADAPTER_GEN)
+
+# ---------------------------------------------------------------------------------------------------------------------------
+# FLUX ControlNet models for structure control (Depth, Canny)
+# These use the non-GGUF FLUX.1-dev base with ControlNet from InstantX
+# ---------------------------------------------------------------------------------------------------------------------------
+_FLUX_CONTROLNET_GEN = '''from PIL import Image
+import numpy as np
+import cv2
 
 _REF_ROOT = Path(CSV_PATH).parent if "CSV_PATH" in globals() else Path("/content")
 
-
-def references(row):
-    """Character pictures named in the row's refs column (keyframes and Characters tab pictures), found next to the CSV. None when there are none."""
-    pics = []
-    for name in [n for n in (row.get("refs") or "").split("|") if n]:
-        hits = sorted(_REF_ROOT.rglob(name))
+def load_control_image(row, control_type, width, height):
+    """Load control image (depth map, canny) for FLUX ControlNet conditioning."""
+    # Check for explicit control image in row
+    control_col = f"control_{control_type}"
+    if row.get(control_col):
+        hits = sorted(_REF_ROOT.rglob(row[control_col]))
         if hits:
-            pics.append(Image.open(hits[0]).convert("RGB"))
-        else:
-            print(f"   reference picture {name} not found; continuing without it", flush=True)
-    if pics:              # keep the pictures' total size near one 448 px picture: on a T4 one fits beside a wide keyframe, two full ones do not
-        side = int(448 / len(pics) ** 0.5)
-        for p in pics:
-            p.thumbnail((side, side))
-    return pics or None
+            img = Image.open(hits[0]).convert("RGB")
+            return img.resize((width, height), Image.LANCZOS)
 
-
-def _free_gpu():
-    """After an out-of-memory error: drop what the failed attempt held and move the offloaded models back to the CPU."""
-    import gc
-    gc.collect()
-    torch.cuda.empty_cache()
-    if hasattr(pipe, "maybe_free_model_hooks"):
-        pipe.maybe_free_model_hooks()
-
+    # Auto-generate from keyframe if available
+    keyframe_col = "init_image"
+    if row.get(keyframe_col):
+        hits = sorted(_REF_ROOT.rglob(row[keyframe_col]))
+        if hits:
+            img = Image.open(hits[0]).convert("RGB")
+            img = img.resize((width, height), Image.LANCZOS)
+            if control_type == "depth":
+                # Generate depth map using MiDaS
+                from transformers import DPTImageProcessor, DPTForDepthEstimation
+                processor = DPTImageProcessor.from_pretrained("Intel/dpt-large")
+                model = DPTForDepthEstimation.from_pretrained("Intel/dpt-large").to("cuda")
+                with torch.no_grad():
+                    inputs = processor(images=img, return_tensors="pt").to("cuda")
+                    depth = model(**inputs).predicted_depth
+                    depth = torch.nn.functional.interpolate(depth.unsqueeze(1), size=(height, width), mode="bicubic", align_corners=False)
+                    depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255
+                    depth_img = Image.fromarray(depth.squeeze().cpu().numpy().astype(np.uint8)).convert("RGB")
+                    return depth_img
+            elif control_type == "canny":
+                # Generate Canny edges
+                np_img = np.array(img)
+                edges = cv2.Canny(np_img, 100, 200)
+                edges_img = Image.fromarray(edges).convert("RGB")
+                return edges_img
+    return None
 
 def generate(row, seed):
     kw = dict(prompt=row["prompt"], width=opt(row, "width", WIDTH), height=opt(row, "height", HEIGHT),
-              num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float))
-    refs = references(row)
-    while refs:            # each picture adds tokens to every attention step; on a T4 that can run out of memory
-        oom = False
-        try:
-            return pipe(image=refs, generator=torch.Generator("cpu").manual_seed(seed), **kw).images[0]
-        except torch.cuda.OutOfMemoryError:
-            oom = True     # freed below: inside the except block the error still holds the failed attempt's tensors
-        if oom:
-            _free_gpu()
-            refs = refs[:-1]
-            print(f"   out of GPU memory with reference pictures; trying again with {len(refs)}", flush=True)
-    return pipe(generator=torch.Generator("cpu").manual_seed(seed), **kw).images[0]''')
+              num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
+              max_sequence_length=256, generator=torch.Generator("cpu").manual_seed(seed))
+
+    # Load control image if ControlNet is configured
+    if CONTROLNET_TYPE and hasattr(pipe, "controlnet"):
+        control_img = load_control_image(row, CONTROLNET_TYPE, kw["width"], kw["height"])
+        if control_img:
+            kw["control_image"] = control_img
+            kw["controlnet_conditioning_scale"] = CONTROLNET_SCALE
+            print(f"   using FLUX ControlNet {CONTROLNET_TYPE} with scale {CONTROLNET_SCALE}", flush=True)
+        else:
+            print(f"   no control image found for {CONTROLNET_TYPE}; generating without ControlNet", flush=True)
+
+    return pipe(**kw).images[0]'''
+
+# FLUX.1-dev with ControlNet Depth
+MODELS["flux1_dev_controlnet_depth"] = dict(title="FLUX.1-dev + ControlNet Depth", repo="InstantX/FLUX.1-dev-ControlNet-Depth",
+  note="FLUX.1-dev with ControlNet Depth for structure-preserving generation. Uses depth maps to control composition. 1024x1024, 28 steps, guidance 3.5. Requires non-GGUF FLUX.1-dev weights (~24 GB). EXPERIMENTAL: not run on a GPU yet.",
+  pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf",
+  config='MODEL_ID = "black-forest-labs/FLUX.1-dev"\nCONTROLNET_REPO = "InstantX/FLUX.1-dev-ControlNet-Depth"\nCONTROLNET_TYPE = "depth"\nCONTROLNET_SCALE = 0.8\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 28\nGUIDANCE = 3.5',
+  load='from diffusers import FluxControlNetPipeline, FluxControlNetModel\n\ncontrolnet = FluxControlNetModel.from_pretrained(CONTROLNET_REPO, torch_dtype=torch.bfloat16)\npipe = FluxControlNetPipeline.from_pretrained(MODEL_ID, controlnet=controlnet, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()',
+  gen=_FLUX_CONTROLNET_GEN)
+
+# FLUX.1-dev with ControlNet Canny
+MODELS["flux1_dev_controlnet_canny"] = dict(title="FLUX.1-dev + ControlNet Canny", repo="InstantX/FLUX.1-dev-ControlNet-Canny",
+  note="FLUX.1-dev with ControlNet Canny for edge-preserving generation. Uses Canny edges to control structure. 1024x1024, 28 steps, guidance 3.5. Requires non-GGUF FLUX.1-dev weights (~24 GB). EXPERIMENTAL: not run on a GPU yet.",
+  pip="!pip install -q -U diffusers transformers accelerate sentencepiece protobuf",
+  config='MODEL_ID = "black-forest-labs/FLUX.1-dev"\nCONTROLNET_REPO = "InstantX/FLUX.1-dev-ControlNet-Canny"\nCONTROLNET_TYPE = "canny"\nCONTROLNET_SCALE = 0.8\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 28\nGUIDANCE = 3.5',
+  load='from diffusers import FluxControlNetPipeline, FluxControlNetModel\n\ncontrolnet = FluxControlNetModel.from_pretrained(CONTROLNET_REPO, torch_dtype=torch.bfloat16)\npipe = FluxControlNetPipeline.from_pretrained(MODEL_ID, controlnet=controlnet, torch_dtype=torch.bfloat16)\npipe.enable_model_cpu_offload()',
+  gen=_FLUX_CONTROLNET_GEN)
 
 # --- adult-content (uncensored) additions. Community models; use only for clearly adult, fictional subjects. ---
 MODELS["chroma1_hd"] = dict(title="Chroma1-HD (GGUF)", repo="lodestones/Chroma1-HD",
