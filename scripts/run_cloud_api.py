@@ -185,10 +185,16 @@ def generate_row(
         if ref_path and ref_path.is_file():
             payload["image_url"] = file_to_data_uri(ref_path)
             payload["strength"] = float(row.get("strength") or 0.65)
-            if "flux" in endpoint and not endpoint.endswith("/image-to-image"):
-                endpoint = f"{endpoint}/image-to-image"
-            elif "fast-sdxl" in endpoint and not endpoint.endswith("/image-to-image"):
-                endpoint = f"{endpoint}/image-to-image"
+            # Switch to image-to-image variant for models that support it
+            if not endpoint.endswith("/image-to-image"):
+                if "flux" in endpoint:
+                    endpoint = f"{endpoint}/image-to-image"
+                elif "fast-sdxl" in endpoint:
+                    endpoint = f"{endpoint}/image-to-image"
+                elif "stable-diffusion-v35" in endpoint:
+                    endpoint = f"{endpoint}/image-to-image"
+                elif "qwen-image" in endpoint:
+                    endpoint = f"{endpoint}/image-to-image"
 
         res = call_fal_api(endpoint, payload, keys["fal"])
         images = res.get("images") or []

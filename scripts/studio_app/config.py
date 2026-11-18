@@ -33,7 +33,16 @@ VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_
 I2V_MODELS = {"ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "wan21_i2v_14b", "pika_h3_flex_i2v"}     # a model joins these lists once it has really run: skyreels_v2_i2v, svd_i2v, svd_xt_i2v and ltx25_i2v are in make_video.py, untested
 SPACE_ONLY_MODELS = {"pika_h3_flex_i2v"}     # too big for any GPU here: only a Hugging Face Space runs them
 UPSCALE_SUFFIXES = tuple("_" + m.removeprefix("upscale_") for m in UPSCALE_MODELS)      # videos/<source>_x2, _flashvsr, ...: already upscaled
-REF_IMAGE_MODELS = {"flux2_klein_4b", "flux1_dev", "flux1_schnell", "sdxl", "sdxl_lightning"}                                    # keyframe models that take character reference pictures                      # need keyframes (images/<model>_keyframes) for every row they make
+REF_IMAGE_MODELS = {
+    "flux2_klein_4b", "flux1_dev", "flux1_schnell",  # FLUX family - uses refs column for character references
+    "sdxl", "sdxl_lightning", "sdxl_turbo",           # SDXL family - uses init_image for image-to-image
+    "sd35_large", "sd35_large_turbo",                 # SD3.5 - supports image conditioning
+    "qwen_image_21", "qwen_image_21_turbo",           # Qwen-Image - supports init_image
+    "chroma1_hd",                                     # Chroma1-HD - FLUX-based, supports image conditioning
+    "z_image_turbo", "z_image",                       # Z-Image - supports image conditioning
+    "ernie_image_turbo",                              # ERNIE-Image - supports image conditioning
+    "realvisxl_v5", "illustrious_xl", "noobai_xl",    # Other SDXL-based models
+}
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
 VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning", "wan21_i2v_14b"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
                 ("CogVideoX", ["cogvideox", "cogvideox_5b"]), ("Uncensored (adult content)", ["wan22_t2v_a14b_lora", "hunyuan_video_lora"]),
@@ -91,6 +100,7 @@ MODEL_DEFAULTS: dict[str, dict[str, Any]] = {
     "tpu_mage_flow": {"width": 512, "height": 512, "steps": 4, "guidance": 0.0, "locked": ["height", "steps", "guidance", "negative"]},   # width picks 512/768/1024
     "tpu_flux_jax": {"width": 512, "height": 512, "steps": 20, "guidance": 4.0, "locked": ["negative"]},
     "sdxl_turbo": {"width": 512, "height": 512, "steps": 4, "guidance": 0.0},
+    "sdxl_lightning": {"width": 1024, "height": 1024, "steps": 4, "guidance": 0.0},
     "sdxl": {"width": 1024, "height": 1024, "steps": 30, "guidance": 7.0},
     "sd35_large": {"width": 768, "height": 768, "steps": 28, "guidance": 3.5},
     "sd35_large_turbo": {"width": 1024, "height": 1024, "steps": 4, "guidance": 0.0},
