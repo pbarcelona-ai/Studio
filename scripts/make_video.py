@@ -331,6 +331,22 @@ pipe.enable_model_cpu_offload()""",
                 num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
                 generator=torch.Generator("cuda").manual_seed(seed)).frames[0])''')
 
+MODELS["wan21_i2v_14b"] = dict(
+  title="Wan 2.1 (I2V 14B 720P)", repo="Wan-AI/Wan2.1-I2V-14B-720P-Diffusers", fps=16,
+  note="Wan 2.1's 14B 720P image-to-video foundation model (Apache-2.0): animates keyframes with cinematic motion at 720P (1280x720 or 960x544) and 16 fps. Exceptional physics, temporal coherence, and detail. Requires GPU with CPU offloading or Cloud API runner. Kaggle, local GPU, or Cloud API.",
+  config='MODEL_ID = "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers"\nWIDTH, HEIGHT = 960, 544    # multiples of 16\nNUM_FRAMES = 81            # 4*k+1, 5.0 s at 16 fps\nFPS = 16\nSTEPS = 40\nGUIDANCE = 5.0\nPROMPT_PREFIX = ""',
+  load="""from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
+
+vae = AutoencoderKLWan.from_pretrained(MODEL_ID, subfolder="vae", torch_dtype=torch.float32)
+pipe = WanImageToVideoPipeline.from_pretrained(MODEL_ID, vae=vae, torch_dtype=torch.bfloat16)
+pipe.enable_model_cpu_offload()""",
+  gen=OPT + _KEYFRAME + '''def generate(row, seed):
+    w, h = opt(row, "width", WIDTH), opt(row, "height", HEIGHT)
+    return remember(row, pipe(image=keyframe(row, w, h), prompt=PROMPT_PREFIX + row["prompt"], negative_prompt=row.get("negative") or NEGATIVE,
+                width=w, height=h, num_frames=opt(row, "frames", NUM_FRAMES),
+                num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
+                generator=torch.Generator("cuda").manual_seed(seed)).frames[0])''')
+
 
 # ---------------------------------------------------------------------------------------------------------------------------
 # Upscaling: not a generator. Each row's existing clip (uploaded by the run script next to the CSV as in-NNNN.mp4, from

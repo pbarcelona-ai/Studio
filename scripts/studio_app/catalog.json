@@ -26,6 +26,8 @@
   "claude-haiku-5-5"
  ],
  "hf_models": [
+  "Qwen/Qwen2.5-72B-Instruct",
+  "meta-llama/Llama-3.3-70B-Instruct",
   "Qwen/Qwen3.8-27B",
   "zai-org/GLM-5.3-Flash",
   "deepseek-ai/DeepSeek-V4.1-Flash",

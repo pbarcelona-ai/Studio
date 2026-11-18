@@ -102,3 +102,28 @@ def test_main_cli_execution(tmp_path, monkeypatch):
     img2 = book_dir / "images" / "flux1_schnell" / "image-0002.png"
     assert img1.is_file()
     assert img2.is_file()
+
+
+def test_generate_image_with_character_reference(tmp_path, monkeypatch):
+    out_dir = tmp_path / "images" / "flux1_dev"
+    refs_dir = tmp_path / "keyframe_refs"
+    refs_dir.mkdir(parents=True)
+    ref_img = refs_dir / "ref-hero.png"
+    ref_img.write_bytes(b"\x89PNG\r\n\x1a\nfakeimage")
+
+    row = {"prompt": "hero walking in city", "refs": "ref-hero.png", "strength": "0.6"}
+    captured = {}
+
+    def fake_call(ep, payload, key):
+        captured["endpoint"] = ep
+        captured["payload"] = payload
+        return {"images": [{"url": "https://example.com/steered.png"}]}
+
+    monkeypatch.setattr(rca, "call_fal_api", fake_call)
+    monkeypatch.setattr(rca, "download_file", lambda url, dest: dest.write_text("ok") or dest)
+
+    res = rca.generate_row("flux1_dev", row, 1, out_dir, keys={"fal": "mock_key"}, refs_dir=refs_dir)
+    assert res.is_file()
+    assert captured["endpoint"] == "fal-ai/flux/dev/image-to-image"
+    assert captured["payload"]["image_url"].startswith("data:image/png;base64,")
+    assert captured["payload"]["strength"] == 0.6

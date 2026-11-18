@@ -49,6 +49,32 @@ _DEPTH: dict = {}
 DEPTH_LOCK = threading.Lock()
 
 
+def get_depth_device() -> str:
+    """Best device for local depth estimation (mps for Apple Silicon, cuda for Nvidia, cpu fallback)."""
+    try:
+        import torch
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            try:
+                torch.zeros(1, device="mps")
+                return "mps"
+            except Exception:
+                pass
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+
+def _hf_is_online() -> bool:
+    import socket
+    try:
+        socket.create_connection(("huggingface.co", 443), timeout=0.4).close()
+        return True
+    except OSError:
+        return False
+
+
 def make_depth(src, dest):
     """A grey depth map (white = near) for the Studio's 3D view, made on this computer by Depth Anything V2 Small."""
     import numpy as np
@@ -56,9 +82,25 @@ def make_depth(src, dest):
     im = load_rgb(src)
     im.thumbnail((1024, 1024))
     with DEPTH_LOCK:                                          # one at a time: the model is loaded once and shared
+        if _DEPTH.get("failed"):
+            raise RuntimeError(f"Depth model unavailable: {_DEPTH['failed']}")
         if "pipe" not in _DEPTH:
-            from transformers import pipeline
-            _DEPTH["pipe"] = pipeline("depth-estimation", model=DEPTH_MODEL, device="cpu")
+            try:
+                from transformers import pipeline
+                dev = get_depth_device()
+                online = _hf_is_online()
+                if not online:
+                    import os
+                    os.environ["HF_HUB_OFFLINE"] = "1"
+                    try:
+                        import huggingface_hub.constants
+                        huggingface_hub.constants.HF_HUB_OFFLINE = True
+                    except Exception:
+                        pass
+                _DEPTH["pipe"] = pipeline("depth-estimation", model=DEPTH_MODEL, device=dev)
+            except Exception as e:
+                _DEPTH["failed"] = str(e)
+                raise
         depth = _DEPTH["pipe"](im)["depth"]
     arr = np.asarray(depth.resize(im.size), dtype="float32")
     lo, hi = np.percentile(arr, 1), np.percentile(arr, 99)

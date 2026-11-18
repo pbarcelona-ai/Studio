@@ -77,6 +77,15 @@ MODELS = {
                 width=opt(row, "width", WIDTH), height=opt(row, "height", HEIGHT),
                 num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
                 generator=torch.Generator("cuda").manual_seed(seed)).images[0]'''),
+"sdxl_lightning": dict(title="SDXL-Lightning", repo="ByteDance/SDXL-Lightning",
+  note="Ultra-fast 4-step distilled SDXL: 1024x1024 in 4 steps with full SDXL quality. Not gated.",
+  config='BASE_ID = "stabilityai/stable-diffusion-xl-base-1.0"\nCKPT = "sdxl_lightning_4step_unet.safetensors"\nWIDTH, HEIGHT = 1024, 1024\nSTEPS = 4\nGUIDANCE = 0.0',
+  load='from diffusers import StableDiffusionXLPipeline, UNet2DConditionModel, EulerDiscreteScheduler\nfrom huggingface_hub import hf_hub_download\n\nunet = UNet2DConditionModel.from_config(BASE_ID, subfolder="unet").to("cuda", torch.float16)\nunet.load_state_dict(torch.load(hf_hub_download("ByteDance/SDXL-Lightning", CKPT), map_location="cuda"))\npipe = StableDiffusionXLPipeline.from_pretrained(BASE_ID, unet=unet, torch_dtype=torch.float16, variant="fp16").to("cuda")\npipe.scheduler = EulerDiscreteScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")\npipe.vae.enable_slicing()',
+  gen='''def generate(row, seed):
+    return pipe(prompt=row["prompt"], negative_prompt=row.get("negative") or None,
+                width=opt(row, "width", WIDTH), height=opt(row, "height", HEIGHT),
+                num_inference_steps=opt(row, "steps", STEPS), guidance_scale=opt(row, "guidance", GUIDANCE, float),
+                generator=torch.Generator("cuda").manual_seed(seed)).images[0]'''),
 }
 
 

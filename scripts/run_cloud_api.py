@@ -36,6 +36,7 @@ FAL_IMAGE_MODELS = {
     "flux2_klein_4b": "fal-ai/flux/schnell",
     "sdxl": "fal-ai/fast-sdxl",
     "sdxl_turbo": "fal-ai/fast-sdxl",
+    "sdxl_lightning": "fal-ai/fast-sdxl",
     "sd35_large": "fal-ai/stable-diffusion-v35-large",
     "sd35_large_turbo": "fal-ai/stable-diffusion-v35-large",
     "qwen_image_21": "fal-ai/qwen-image",
@@ -48,6 +49,7 @@ FAL_VIDEO_MODELS = {
     "wan": ("fal-ai/wan/text-to-video", False),
     "wan22_ti2v_5b": ("fal-ai/wan/text-to-video", False),
     "wan22_ti2v_5b_i2v": ("fal-ai/wan/image-to-video", True),
+    "wan21_i2v_14b": ("fal-ai/wan/image-to-video", True),
     "pika_h3_flex_i2v": ("fal-ai/minimax/video-01/image-to-video", True),
 }
 
@@ -133,6 +135,7 @@ def generate_row(
     out_dir: Path,
     keys: dict[str, str],
     keyframe_dir: Path | None = None,
+    refs_dir: Path | None = None,
 ) -> Path:
     """Generate image or video for a single row and save to disk."""
     clean_model = model.removeprefix("image_")
@@ -141,6 +144,7 @@ def generate_row(
     w = int(row.get("width", 1024)) if row.get("width") not in (None, "") else 1024
     h = int(row.get("height", 1024)) if row.get("height") not in (None, "") else 1024
     negative = row.get("negative") or ""
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     # Image models
     if clean_model in FAL_IMAGE_MODELS or model.startswith("image_"):
@@ -152,7 +156,7 @@ def generate_row(
         if not keys.get("fal"):
             raise RunError("Fal.ai API key is missing. Set FAL_KEY in your environment or ~/.pistachios_studio/cloud_keys.json")
 
-        payload = {
+        payload: dict[str, Any] = {
             "prompt": prompt,
             "image_size": {"width": w, "height": h},
             "num_inference_steps": int(row.get("steps", 4 if "schnell" in endpoint else 28)),
@@ -161,6 +165,30 @@ def generate_row(
         }
         if negative and "flux" not in endpoint:
             payload["negative_prompt"] = negative
+
+        # Character reference / Structure image conditioning
+        ref_path: Path | None = None
+        if row.get("init_image") and refs_dir:
+            cand = refs_dir / str(row["init_image"])
+            if cand.is_file():
+                ref_path = cand
+        elif row.get("refs") and refs_dir and refs_dir.is_dir():
+            ref_names = [n for n in str(row["refs"]).split("|") if n.strip()]
+            for rname in ref_names:
+                for cand in refs_dir.glob(f"*{rname}*"):
+                    if cand.is_file():
+                        ref_path = cand
+                        break
+                if ref_path:
+                    break
+
+        if ref_path and ref_path.is_file():
+            payload["image_url"] = file_to_data_uri(ref_path)
+            payload["strength"] = float(row.get("strength") or 0.65)
+            if "flux" in endpoint and not endpoint.endswith("/image-to-image"):
+                endpoint = f"{endpoint}/image-to-image"
+            elif "fast-sdxl" in endpoint and not endpoint.endswith("/image-to-image"):
+                endpoint = f"{endpoint}/image-to-image"
 
         res = call_fal_api(endpoint, payload, keys["fal"])
         images = res.get("images") or []
@@ -263,6 +291,7 @@ def main() -> None:
             )
             kf_dir = candidates[0] if candidates else None
 
+    refs_dir = pd / "keyframe_refs" if (pd / "keyframe_refs").is_dir() else (csv_file.parent / "keyframe_refs")
     keys = load_api_keys()
     print(f"== Cloud API generation: {model} rows {start}-{end} into {out_dir}", flush=True)
 
@@ -270,7 +299,7 @@ def main() -> None:
     for i in range(start, end + 1):
         t0 = time.time()
         try:
-            generate_row(model, rows[i - 1], i, out_dir, keys, kf_dir)
+            generate_row(model, rows[i - 1], i, out_dir, keys, kf_dir, refs_dir)
             print(f"[{i}/{end}] ok ({time.time() - t0:.1f}s)", flush=True)
         except Exception as e:
             failed.append(i)

@@ -29,15 +29,15 @@ GPUS = {k: [tuple(x) for x in v] for k, v in CATALOG["gpus"].items()}
 
 VIDEO_MODELS = ["ltx_video", "wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "hunyuan_video", "cogvideox", "cogvideox_5b",
                 "wan22_t2v_a14b_lora", "wan22_t2v_a14b_lightning", "hunyuan_video_lora", "hunyuan_video_15", "tpu_wan",     # tpu_wan = Kaggle TPU experiment
-                "ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "pika_h3_flex_i2v"]          # image-to-video: animate each shot's keyframe
-I2V_MODELS = {"ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "pika_h3_flex_i2v"}     # a model joins these lists once it has really run: skyreels_v2_i2v, svd_i2v, svd_xt_i2v and ltx25_i2v are in make_video.py, untested
+                "ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "wan21_i2v_14b", "pika_h3_flex_i2v"]          # image-to-video: animate each shot's keyframe
+I2V_MODELS = {"ltx_video_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "wan21_i2v_14b", "pika_h3_flex_i2v"}     # a model joins these lists once it has really run: skyreels_v2_i2v, svd_i2v, svd_xt_i2v and ltx25_i2v are in make_video.py, untested
 SPACE_ONLY_MODELS = {"pika_h3_flex_i2v"}     # too big for any GPU here: only a Hugging Face Space runs them
 UPSCALE_SUFFIXES = tuple("_" + m.removeprefix("upscale_") for m in UPSCALE_MODELS)      # videos/<source>_x2, _flashvsr, ...: already upscaled
-REF_IMAGE_MODELS = {"flux2_klein_4b"}                                    # keyframe models that take character reference pictures                      # need keyframes (images/<model>_keyframes) for every row they make
+REF_IMAGE_MODELS = {"flux2_klein_4b", "flux1_dev", "flux1_schnell", "sdxl", "sdxl_lightning"}                                    # keyframe models that take character reference pictures                      # need keyframes (images/<model>_keyframes) for every row they make
 # How the Models tab groups them: (title, [models]). A model missing here lands in "Other" on the page.
-VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
+VIDEO_GROUPS = [("LTX-Video", ["ltx_video"]), ("Wan", ["wan", "wan22_ti2v_5b", "wan22_t2v_a14b", "wan22_t2v_a14b_lightning", "wan21_i2v_14b"]), ("HunyuanVideo", ["hunyuan_video_15", "hunyuan_video"]),
                 ("CogVideoX", ["cogvideox", "cogvideox_5b"]), ("Uncensored (adult content)", ["wan22_t2v_a14b_lora", "hunyuan_video_lora"]),
-                ("TPU (Kaggle only)", ["tpu_wan"]), ("From keyframes (image-to-video, Kaggle or this computer)", ["pika_h3_flex_i2v", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "ltx_video_i2v"])]
+                ("TPU (Kaggle only)", ["tpu_wan"]), ("From keyframes (image-to-video, Kaggle or this computer)", ["pika_h3_flex_i2v", "wan21_i2v_14b", "ltx_video_fast_i2v", "wan22_ti2v_5b_i2v", "ltx_video_i2v"])]
 # Audio models: name -> (role, label, short note). The role decides which sound it makes (narration / sfx / music) and the file prefix it writes.
 AUDIO_MODELS = {
     "kokoro": ("narration", "Kokoro", "fast, light narration voices"),
@@ -49,12 +49,12 @@ AUDIO_MODELS = {
 }
 AUDIO_KINDS = list(AUDIO_MODELS)
 AUDIO_ROLE_TITLES = {"narration": "Narration", "sfx": "Sound effects", "music": "Music"}
-IMAGE_MODELS = ["sdxl_turbo", "sdxl", "sd35_large", "sd35_large_turbo", "flux1_schnell", "flux1_dev", "flux2_klein_4b", "qwen_image_21",
+IMAGE_MODELS = ["sdxl_turbo", "sdxl_lightning", "sdxl", "sd35_large", "sd35_large_turbo", "flux1_schnell", "flux1_dev", "flux2_klein_4b", "qwen_image_21",
                 "moss_image_sft", "moss_image_base", "moss_sharpness_slider",
                 "qwen_image_21_uc", "qwen_image_21_lora", "moss_image_sft_lora", "chroma1_hd", "noobai_xl", "realvisxl_v5", "illustrious_xl",
                 "z_image_turbo", "z_image", "ernie_image_turbo", "qwen_image_21_turbo",
                 "tpu_mage_flow", "tpu_flux_jax"]                          # the tpu_ ones run only on Kaggle's TPU
-IMAGE_GROUPS = [("Stable Diffusion", ["sdxl_turbo", "sdxl", "sd35_large", "sd35_large_turbo"]), ("FLUX", ["flux1_schnell", "flux1_dev", "flux2_klein_4b"]),
+IMAGE_GROUPS = [("Stable Diffusion", ["sdxl_turbo", "sdxl_lightning", "sdxl", "sd35_large", "sd35_large_turbo"]), ("FLUX", ["flux1_schnell", "flux1_dev", "flux2_klein_4b"]),
                 ("Qwen-Image", ["qwen_image_21", "qwen_image_21_turbo"]), ("Z-Image", ["z_image_turbo", "z_image"]), ("ERNIE-Image", ["ernie_image_turbo"]), ("MOSS-Image", ["moss_image_sft", "moss_image_base", "moss_sharpness_slider"]),
                 ("Uncensored (adult content)", ["qwen_image_21_uc", "qwen_image_21_lora", "moss_image_sft_lora", "chroma1_hd", "noobai_xl", "realvisxl_v5", "illustrious_xl"]),
                 ("TPU (Kaggle only)", ["tpu_mage_flow", "tpu_flux_jax"])]
