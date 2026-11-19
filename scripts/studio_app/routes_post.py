@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 
 import character_tokens
+import detect_scene_changes
+import redo_audio
 import setup_check
 from bookkit import SLUG_RE
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
@@ -563,3 +565,57 @@ def _characters(r: Request):
     if fn is None:
         raise HttpError(400, f"unknown action: {action}")
     return fn(r.body)
+
+
+@route("POST", "/api/save_story")
+def _save_story(r: Request):
+    filename = str(r.body.get("filename") or "").strip()
+    text = str(r.body.get("text") or "").strip()
+    if not filename:
+        filename = "my_story.txt"
+    if not filename.endswith(".txt"):
+        filename += ".txt"
+    safe_name = "".join(c for c in filename if c.isalnum() or c in "._- ")
+    if not safe_name or safe_name.startswith("."):
+        safe_name = "my_story.txt"
+
+    books_dir = ROOT / "books"
+    books_dir.mkdir(parents=True, exist_ok=True)
+    target = books_dir / safe_name
+    target.write_text(text, encoding="utf-8")
+    return {"saved": True, "filename": safe_name, "path": str(target.relative_to(ROOT)), "bytes": len(text)}
+
+
+@route("POST", "/api/redo_audio")
+def _redo_audio(r: Request):
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    mode = str(r.body.get("mode") or "dialogue")
+    dialect = r.body.get("dialect")
+    narrator_voice = r.body.get("narrator_voice")
+    cast = r.body.get("cast")
+    rows = r.body.get("rows")
+
+    res = redo_audio.apply_audio_reconfiguration(
+        pd,
+        mode=mode,
+        narrator_voice=narrator_voice,
+        cast=cast,
+        dialect=dialect,
+        rows=rows,
+    )
+    return {"status": "ok", "result": res}
+
+
+@route("POST", "/api/redo_storyline")
+def _redo_storyline(r: Request):
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    scenes = r.body.get("scenes") or []
+    changes = detect_scene_changes.detect_changed_scenes(pd)
+    return {"status": "ok", "project": slug, "scenes": scenes, "changes": changes}
+

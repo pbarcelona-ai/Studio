@@ -1,5 +1,8 @@
 """GET routes of the JSON API."""
 import character_tokens
+import detect_scene_changes
+import model_advisor
+from layout import project_dir as pdir
 from bookkit import SLUG_RE
 
 from .api import HttpError, Request, route
@@ -285,3 +288,25 @@ def _characters(r: Request):
     if fn is None:
         raise HttpError(400, f"unknown action: {action}")
     return fn(r)
+
+
+@route("GET", "/api/storyline_changes")
+def _storyline_changes(r: Request):
+    slug = r.q("project")
+    if not slug:
+        raise HttpError(400, "project is required")
+    try:
+        pd = pdir(slug, "book")
+    except Exception as e:
+        raise HttpError(400, str(e))
+    return detect_scene_changes.detect_changed_scenes(pd)
+
+
+@route("GET", "/api/autopilot_recommend")
+def _autopilot_recommend(r: Request):
+    look = r.q("look", "live_action")
+    step = r.q("step", "keyframe")
+    shot_type = r.q("shot_type")
+    hardware = r.q("hardware")
+    return model_advisor.autopilot_recommend(look, step, shot_type, hardware)
+

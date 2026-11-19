@@ -96,22 +96,958 @@
 
     <div id="msg" class="warn" role="status" aria-live="polite"></div>
 
-    <!-- Book-to-film rail: where the selected book is, shown on every tab. Each step opens the tab where it is done. -->
-    <nav class="stepper" id="pipelineStepper" aria-label="Book to film progress">
-      <button type="button" class="stepper__step" data-step="ingest" data-go="project" data-target="stepRead"><span class="stepper__circle">1</span><span class="stepper__label">Read book</span></button>
-      <button type="button" class="stepper__step" data-step="continuity" data-go="project" data-target="stepContinuity"><span class="stepper__circle">2</span><span class="stepper__label">Continuity book</span></button>
-      <button type="button" class="stepper__step optional" data-step="cast" data-go="characters" data-target="castCard"><span class="stepper__circle">3</span><span class="stepper__label">Cast (optional)</span></button>
-      <button type="button" class="stepper__step" data-step="write" data-go="project" data-target="stepWrite"><span class="stepper__circle">4</span><span class="stepper__label">Write shots</span></button>
-      <button type="button" class="stepper__step" data-step="build" data-go="project" data-target="stepBuild"><span class="stepper__circle">5</span><span class="stepper__label">Build CSVs</span></button>
-      <button type="button" class="stepper__step optional" data-step="board" data-go="movies" data-target="storyboardCard"><span class="stepper__circle">6</span><span class="stepper__label">Storyboard (optional)</span></button>
-      <button type="button" class="stepper__step" data-step="video" data-go="movies" data-target="videoAudioCard"><span class="stepper__circle">7</span><span class="stepper__label">Video</span></button>
-      <button type="button" class="stepper__step" data-step="audio" data-go="movies" data-target="videoAudioCard"><span class="stepper__circle">8</span><span class="stepper__label">Audio</span></button>
-      <button type="button" class="stepper__step" data-step="film" data-go="results" data-target="finalFilmCard"><span class="stepper__circle">9</span><span class="stepper__label">Final film</span></button>
+    <div id="msg" class="warn" role="status" aria-live="polite"></div>
+
+    <!-- 5 PRODUCTION PHASES BAR & CREATIVE WORKBENCH TOGGLE -->
+    <nav class="pipeline-phases-bar" id="pipelinePhasesBar" aria-label="Studio Production Pipeline">
+      <div class="phase-group phase-active" data-phase="1">
+        <div class="phase-header"><span class="phase-num">PHASE 1</span><span class="phase-name">Story & Script</span></div>
+        <div class="phase-steps">
+          <button type="button" class="step-pill active" data-step="1" title="Step 01: Ingest & Source">01 Ingest</button>
+          <button type="button" class="step-pill" data-step="2" title="Step 02: Format & Scope">02 Format</button>
+          <button type="button" class="step-pill" data-step="3" title="Step 03: Coverage & Logline">03 Coverage</button>
+          <button type="button" class="step-pill" data-step="4" title="Step 04: Story Structure">04 Beats</button>
+          <button type="button" class="step-pill" data-step="5" title="Step 05: Screenplay Editor">05 Script</button>
+        </div>
+      </div>
+      <div class="phase-group" data-phase="2">
+        <div class="phase-header"><span class="phase-num">PHASE 2</span><span class="phase-name">Cast & World</span></div>
+        <div class="phase-steps">
+          <button type="button" class="step-pill" data-step="6" title="Step 06: Shot List">06 Shots</button>
+          <button type="button" class="step-pill" data-step="7" title="Step 07: Continuity & Rules">07 Continuity</button>
+          <button type="button" class="step-pill" data-step="8" title="Step 08: Cast & Characters">08 Cast</button>
+          <button type="button" class="step-pill" data-step="9" title="Step 09: Locations & Sets">09 Sets</button>
+          <button type="button" class="step-pill" data-step="10" title="Step 10: Art Direction">10 Look</button>
+          <button type="button" class="step-pill" data-step="11" title="Step 11: Look Development">11 Turnaround</button>
+        </div>
+      </div>
+      <div class="phase-group" data-phase="3">
+        <div class="phase-header"><span class="phase-num">PHASE 3</span><span class="phase-name">Sound & Voices</span></div>
+        <div class="phase-steps">
+          <button type="button" class="step-pill" data-step="12" title="Step 12: Voice Casting & Dialects">12 Voices</button>
+          <button type="button" class="step-pill" data-step="13" title="Step 13: Spoken Dialogue">13 Dialogue</button>
+          <button type="button" class="step-pill" data-step="14" title="Step 14: Score & Foley">14 Score & Foley</button>
+        </div>
+      </div>
+      <div class="phase-group" data-phase="4">
+        <div class="phase-header"><span class="phase-num">PHASE 4</span><span class="phase-name">Visuals & Motion</span></div>
+        <div class="phase-steps">
+          <button type="button" class="step-pill" data-step="15" title="Step 15: Storyboard Keyframes">15 Keyframes</button>
+          <button type="button" class="step-pill" data-step="16" title="Step 16: Motion & Video Synthesis">16 Video</button>
+          <button type="button" class="step-pill" data-step="17" title="Step 17: Lip-Sync & Polish">17 Polish</button>
+        </div>
+      </div>
+      <div class="phase-group" data-phase="5">
+        <div class="phase-header"><span class="phase-num">PHASE 5</span><span class="phase-name">Post & Premiere</span></div>
+        <div class="phase-steps">
+          <button type="button" class="step-pill" data-step="18" title="Step 18: Timeline Sequence">18 Timeline</button>
+          <button type="button" class="step-pill" data-step="19" title="Step 19: Audio Stem Mix">19 Audio Mix</button>
+          <button type="button" class="step-pill" data-step="20" title="Step 20: Premiere & Export">20 Premiere</button>
+        </div>
+      </div>
+
+      <div class="workbench-toggle-group">
+        <button type="button" class="workbench-toggle-btn" id="workbenchToggle" title="Open Single Prompts, Models, Compare, and Library">
+          🔬 Creative Workbench ▾
+        </button>
+        <div class="workbench-dropdown hidden" id="workbenchDropdown">
+          <button type="button" class="wb-tab-btn" data-target="panel-prompts">⚡ Single Prompts</button>
+          <button type="button" class="wb-tab-btn" data-target="panel-models">🧠 Models & Hardware</button>
+          <button type="button" class="wb-tab-btn" data-target="panel-compare">⚖️ Compare View</button>
+          <button type="button" class="wb-tab-btn" data-target="panel-library">📚 Prompt Library</button>
+        </div>
+      </div>
     </nav>
-    <p id="stepperHint" class="warn" aria-live="polite"></p>
 
+    <!-- 20 GUIDED TOP-TO-BOTTOM STEP WORKSPACES -->
+    <main class="studio-pipeline-viewport" id="pipelineViewport">
 
-    <!-- TAB PANELS -->
+      <!-- STEP 01: INGEST & SOURCE -->
+      <section class="step-panel active" id="panel-step-1" data-step="1" aria-labelledby="step1Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step1Title">Step 01: Ingest & Source</h2>
+            <p class="step-goal">Write or paste your story, choose a pre-loaded sample book, or upload a document to begin your film.</p>
+          </div>
+          <span class="status-badge status-badge--synced" id="step1Status">✓ Ready to Ingest</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Qwen 2.5 72B &mdash; <em>Dialogue-first screenplay ingestion with automatic character speech separation.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <!-- Direct Story Input Card (User Request) -->
+          <div class="direct-story-card">
+            <div class="story-input-header">
+              <h3 style="margin:0;font-size:var(--text-base);color:#f8fafc">Write or Paste Your Story</h3>
+              <div class="story-filename-box">
+                <label for="storyFilename" style="font-size:var(--text-xs);color:#94a3b8">Save to books/:</label>
+                <input type="text" id="storyFilename" placeholder="my_story.txt" value="my_story.txt" spellcheck="false">
+                <button type="button" class="btn btn--primary" id="bSaveStory" style="padding:6px 14px">💾 Save Story as Book</button>
+              </div>
+            </div>
+            <textarea id="storyInputText" rows="6" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:8px;padding:12px;font:inherit" placeholder="Type or paste your story text here... (e.g. Tommy and Judah boarded their vessel bound for the shimmering rings of Saturn...)"></textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <span id="storySaveStatus" class="status-badge" style="display:inline-block"></span>
+              <small style="color:#64748b">Saved directly to <code>books/&lt;filename&gt;.txt</code> for automatic chapter, dialogue & scene extraction.</small>
+            </div>
+          </div>
+
+          <!-- Sample Stories Shelf & Dropdown -->
+          <div class="card" style="margin-top:var(--space-3)">
+            <div class="card__header">
+              <h3 class="card__title" style="font-size:var(--text-base)">Or Select from Your Library & Sample Shelf</h3>
+            </div>
+            <div class="card__body">
+              <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                <label class="f" for="proj" style="margin:0">Active Story Project:</label>
+                <select id="proj" style="padding:8px 14px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit;flex:1 1 240px"></select>
+                <span class="warn" id="libcount"></span>
+              </div>
+              <div class="upload-block" style="margin-top:12px">
+                <label for="file" class="f">Or drag and drop a book file (.pdf, .epub, .docx, .txt):</label>
+                <input type="file" id="file" accept="application/pdf,.pdf,.epub,.docx,.txt">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo" onclick="document.getElementById('storyInputText').value='';">↺ Clear Story</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Format & Scope ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 02: FORMAT & SCOPE -->
+      <section class="step-panel" id="panel-step-2" data-step="2" aria-labelledby="step2Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step2Title">Step 02: Format & Scope</h2>
+            <p class="step-goal">Select your film aspect ratio, target runtime, and narrative pace.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Format Locked</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> 16:9 Cinema Widescreen (1920x1080) &mdash; <em>Standard cinematic presentation for feature films and web streaming.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Aspect Ratio</span>
+              <p class="deliverable-desc">Frame geometry for keyframes and video rendering.</p>
+              <select id="v2Aspect" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                <option value="16:9" selected>16:9 Cinema Widescreen (Landscape)</option>
+                <option value="9:16">9:16 Vertical Video (TikTok / YouTube Shorts)</option>
+                <option value="1:1">1:1 Square (Instagram)</option>
+                <option value="2.39:1">2.39:1 Anamorphic Scope</option>
+              </select>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Target Scope & Duration</span>
+              <p class="deliverable-desc">Estimated film length and shot pacing.</p>
+              <select id="v2Duration" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                <option value="short" selected>Short Film (3-5 minutes, ~15-25 shots)</option>
+                <option value="scene">Single Scene / Teaser (1-2 minutes, ~8-12 shots)</option>
+                <option value="feature">Full Chapter / Episode (10-15 minutes)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Ingest</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Coverage & Logline ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 03: COVERAGE & LOGLINE -->
+      <section class="step-panel" id="panel-step-3" data-step="3" aria-labelledby="step3Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step3Title">Step 03: Coverage & Logline</h2>
+            <p class="step-goal">Review your story's dramatic logline, commercial premise, and tone analysis.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Coverage Generated</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Qwen 2.5 72B &mdash; <em>Narrative analysis and character motivations.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <div class="direct-story-card">
+            <label class="f">Commercial Logline</label>
+            <input type="text" id="v2Logline" style="width:100%;padding:10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-base)" value="Two adventurous companions journey through Saturn's rings to uncover ancient mysteries hidden among the moons.">
+            <label class="f" style="margin-top:10px">One-Paragraph Synopsis</label>
+            <textarea id="v2Synopsis" rows="4" style="width:100%;padding:10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit">When Tommy and Judah embark on an expedition across the icy surface of Titan and the sulfur plumes of Enceladus, they encounter wonders beyond their imagination and discover what true courage requires.</textarea>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Story Structure ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 04: STORY STRUCTURE & BEATS -->
+      <section class="step-panel" id="panel-step-4" data-step="4" aria-labelledby="step4Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step4Title">Step 04: Story Structure & Beats</h2>
+            <p class="step-goal">Three-Act dramatic arc and 8-sequence beat sheet extracted from your book.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Beats Balanced</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Standard 3-Act Structure (25% Setup / 50% Confrontation / 25% Climax & Resolution)
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Act I: The Launch</span>
+              <p class="deliverable-desc">Status quo, inciting incident, and crossing the threshold into the Saturnian system.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Act II: The Rings & Titan</span>
+              <p class="deliverable-desc">Rising tension, navigation through the ice debris, and touchdown on Titan's methane seas.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Act III: Discovery & Return</span>
+              <p class="deliverable-desc">Climactic revelation, escape from an unexpected ring storm, and safe voyage home.</p>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Screenplay Editor ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 05: SCREENPLAY EDITOR (DIALOGUE DEFAULT) -->
+      <section class="step-panel" id="panel-step-5" data-step="5" aria-labelledby="step5Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step5Title">Step 05: Screenplay Editor</h2>
+            <p class="step-goal">Review and refine scene descriptions and character dialogue. Spoken dialogue is prioritized by default.</p>
+          </div>
+          <span class="status-badge status-badge--synced storyline-drift-badge" id="screenplayDriftBadge">✓ Storyline in sync</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Dialogue-First Parser &mdash; <em>Character speech lines mapped directly to vocal actors.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <!-- Storyline Drift Warning Banner -->
+          <div class="card storyline-redo-banner hidden" style="border-color:#f59e0b;background:rgba(245,158,11,0.08);margin-bottom:var(--space-3)">
+            <div class="card__body" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div>
+                <strong>⚠️ Storyline Changed:</strong>
+                <span class="drift-msg" style="margin-left:6px;color:#fbbf24">Scenes have been edited since shots were generated.</span>
+              </div>
+              <button type="button" class="btn btn--primary btn-resync-storyline" style="background:#f59e0b;color:#0b0e14;font-weight:700">↺ Re-sync Only Changed Scenes</button>
+            </div>
+          </div>
+
+          <div class="direct-story-card">
+            <div style="font-family:var(--font-mono);font-size:var(--text-sm);line-height:1.6;background:#0a0d14;padding:16px;border-radius:8px;border:1px solid #1e293b;max-height:400px;overflow:auto">
+              <p style="color:#f59e0b;font-weight:700;margin:0 0 8px">SCENE 1: EXT. SATURN ORBIT - DAY</p>
+              <p style="color:#94a3b8;margin:0 0 12px">The exploration ship glides silently above the amber-banded clouds of Saturn. Massive ice rings stretch beyond the horizon.</p>
+              <p style="margin:0 0 4px;color:#38bdf8;font-weight:700">TOMMY</p>
+              <p style="margin:0 0 12px;color:#f8fafc;padding-left:16px">"Judah, look at the shadow from the rings! It covers the entire northern hemisphere."</p>
+              <p style="margin:0 0 4px;color:#38bdf8;font-weight:700">JUDAH</p>
+              <p style="margin:0 0 12px;color:#f8fafc;padding-left:16px">"Navigation computer is locked on Titan. Preparing atmospheric entry thrusters."</p>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Shot List ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 06: SHOT LIST & CINEMATOGRAPHY -->
+      <section class="step-panel" id="panel-step-6" data-step="6" aria-labelledby="step6Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step6Title">Step 06: Shot List & Cinematography</h2>
+            <p class="step-goal">Framing, lens choices, and camera motions planned for every scene.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ 18 Shots Planned</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> 35mm Anamorphic Lens + Dynamic Camera Tracking & Panning
+        </div>
+        <div class="step-zone-workspace">
+          <div class="direct-story-card">
+            <table style="width:100%;border-collapse:collapse;font-size:var(--text-sm)">
+              <thead>
+                <tr style="border-bottom:1px solid #334155;text-align:left;color:#94a3b8">
+                  <th style="padding:8px">Shot</th>
+                  <th style="padding:8px">Framing</th>
+                  <th style="padding:8px">Subject & Action</th>
+                  <th style="padding:8px">Camera Movement</th>
+                </tr>
+              </thead>
+              <tbody style="color:#e2e8f0">
+                <tr style="border-bottom:1px solid #1e293b">
+                  <td style="padding:8px;font-weight:700;color:#f59e0b">Shot 1</td>
+                  <td style="padding:8px">Extreme Wide</td>
+                  <td style="padding:8px">Exploration vessel approaching Saturn's rings</td>
+                  <td style="padding:8px">Slow cinematic dolly forward</td>
+                </tr>
+                <tr style="border-bottom:1px solid #1e293b">
+                  <td style="padding:8px;font-weight:700;color:#f59e0b">Shot 2</td>
+                  <td style="padding:8px">Medium Two-Shot</td>
+                  <td style="padding:8px">Tommy and Judah at the observation deck</td>
+                  <td style="padding:8px">Gentle orbital arc</td>
+                </tr>
+                <tr>
+                  <td style="padding:8px;font-weight:700;color:#f59e0b">Shot 3</td>
+                  <td style="padding:8px">Close-Up Dialogue</td>
+                  <td style="padding:8px">Tommy speaking while gazing at Titan</td>
+                  <td style="padding:8px">Static shallow focus</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Continuity & Rules ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 07: CONTINUITY & WORLD RULES -->
+      <section class="step-panel" id="panel-step-7" data-step="7" aria-labelledby="step7Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step7Title">Step 07: Continuity & World Rules</h2>
+            <p class="step-goal">Lock wardrobe, equipment, and environmental consistency rules across all cuts.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Consistency Rules Active</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Persistent Character Tokens & Lighting Continuity Engine
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Wardrobe Consistency</span>
+              <p class="deliverable-desc">Tommy: Deep navy flight suit with gold astronaut insignia. Judah: Slate-gray explorer vest with holographic wrist communicator.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Lighting & Palette</span>
+              <p class="deliverable-desc">Warm golden sunlight reflected from Saturn's atmosphere against the deep black of space with subtle blue rim lighting.</p>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Cast & Characters ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 08: CAST & CHARACTERS -->
+      <section class="step-panel" id="panel-step-8" data-step="8" aria-labelledby="step8Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step8Title">Step 08: Cast & Characters</h2>
+            <p class="step-goal">Character dossiers and archetypes extracted directly from your book text.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Cast Extracted</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Automatic Character Token Extraction & Identity Dossiers
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Tommy (Lead Explorer)</span>
+              <p class="deliverable-desc">Curious, adventurous young explorer with keen observation skills and passion for astronomy.</p>
+              <small style="color:#f59e0b">Token: <code>tommy_lead_explorer</code></small>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Judah (Navigator / Co-Pilot)</span>
+              <p class="deliverable-desc">Calm, analytical companion and skilled spacecraft pilot who keeps the mission on course.</p>
+              <small style="color:#f59e0b">Token: <code>judah_pilot_navigator</code></small>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Locations & Sets ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 09: LOCATIONS & SETS -->
+      <section class="step-panel" id="panel-step-9" data-step="9" aria-labelledby="step9Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step9Title">Step 09: Locations & Sets</h2>
+            <p class="step-goal">Environmental keycards and set geography for consistent background rendering.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Sets Configured</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Sci-Fi Cinematic Set Keycards
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Set 1: Observation Deck</span>
+              <p class="deliverable-desc">Wide panoramic glass dome, soft ambient instrument illumination, floating navigation charts.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Set 2: Titan Methane Sea</span>
+              <p class="deliverable-desc">Orange haze atmosphere, dark reflective liquid methane shoreline, distant ice ridges.</p>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Art Direction & Look ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 10: ART DIRECTION & LOOK -->
+      <section class="step-panel" id="panel-step-10" data-step="10" aria-labelledby="step10Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step10Title">Step 10: Art Direction & Look Recipe</h2>
+            <p class="step-goal">Select your aesthetic style recipe: Live Action, Pixar 3D, Claymation, Cyberpunk, or Travel Poster.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Style Locked</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Realistic Live Action &mdash; <em>35mm cinema camera, natural film grain, realistic practical lighting.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:var(--space-2)">
+            <div class="deliverable-card" style="border-color:#f59e0b">
+              <span class="deliverable-title">🎬 Live Action</span>
+              <p class="deliverable-desc">Cinematic, natural light, real actors and places.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">🧸 Claymation</span>
+              <p class="deliverable-desc">Handmade plasticine stop-motion aesthetic.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">✨ 3D Pixar</span>
+              <p class="deliverable-desc">Expressive animated characters and soft global light.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">🌆 Cyberpunk 3D</span>
+              <p class="deliverable-desc">Neon reflections, rain, fog, and volumetric lighting.</p>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Look Development ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 11: LOOK DEVELOPMENT (TURNAROUNDS) -->
+      <section class="step-panel" id="panel-step-11" data-step="11" aria-labelledby="step11Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step11Title">Step 11: Look Development & Turnarounds</h2>
+            <p class="step-goal">Generate 3-view turnaround reference sheets (Front, 3/4, Profile) using FLUX + InstantID to lock actor identities.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ InstantID Ready</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> FLUX.1-dev + InstantX/InstantID &mdash; <em>Zero-shot facial identity preservation.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <div class="direct-story-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <h3 style="margin:0;font-size:var(--text-base);color:#f8fafc">Actor Likeness & Turnaround Sheets</h3>
+              <label class="btn btn--secondary" style="margin:0;cursor:pointer">
+                📷 Upload Real Actor Reference Photo
+                <input type="file" accept="image/*" style="display:none">
+              </label>
+            </div>
+            <p style="color:#94a3b8;font-size:var(--text-sm)">Studio generates 3-view reference turnarounds from character descriptions or your uploaded likeness to lock the actor's face across all shots.</p>
+            <div style="display:flex;gap:12px;margin-top:8px">
+              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
+                Front View Reference (Locked)
+              </div>
+              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
+                Three-Quarter Profile (Locked)
+              </div>
+              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
+                Side Profile (Locked)
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Voice Casting ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 12: VOICE CASTING & DIALECTS (DIALOGUE DEFAULT) -->
+      <section class="step-panel" id="panel-step-12" data-step="12" aria-labelledby="step12Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step12Title">Step 12: Voice Casting & Dialects</h2>
+            <p class="step-goal">Dialogue-first voice casting with Kokoro-82M. Seamlessly switch between American and British dialects.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Dialogue Default</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Kokoro-82M (Dialogue-First) &mdash; <em>Fast neural character speech with American vs British dialect mapping.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <!-- Project-wide Dialect Switcher Bar -->
+          <div class="card" style="margin-bottom:var(--space-3);background:rgba(255,255,255,0.02)">
+            <div class="card__body" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div>
+                <strong>Global Dialect Preset:</strong>
+                <span style="color:#94a3b8;margin-left:6px">Switch all character voices project-wide:</span>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button type="button" class="btn btn--secondary btn-audio-dialect" data-dialect="british">🇬🇧 British Dialect (RP)</button>
+                <button type="button" class="btn btn--secondary btn-audio-dialect" data-dialect="american">🇺🇸 American Dialect</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">TOMMY</span>
+              <p class="deliverable-desc">Assigned Voice: <code>am_puck</code> (Energetic youth) / <code>bm_fable</code> (British)</p>
+              <div style="display:flex;gap:8px;margin-top:6px">
+                <select style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;flex:1">
+                  <option selected>am_puck (American Youth)</option>
+                  <option>bm_fable (British Expressive)</option>
+                  <option>am_adam (American Warm)</option>
+                  <option>bm_george (British Classic)</option>
+                </select>
+                <button type="button" class="btn btn--ghost" style="padding:4px 8px">▶ Test</button>
+              </div>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">JUDAH</span>
+              <p class="deliverable-desc">Assigned Voice: <code>am_michael</code> (Calm, grounded) / <code>bm_george</code> (British)</p>
+              <div style="display:flex;gap:8px;margin-top:6px">
+                <select style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;flex:1">
+                  <option selected>am_michael (American Deep)</option>
+                  <option>bm_george (British RP)</option>
+                  <option>am_eric (American Resonant)</option>
+                  <option>bm_daniel (British Soft)</option>
+                </select>
+                <button type="button" class="btn btn--ghost" style="padding:4px 8px">▶ Test</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Spoken Dialogue ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 13: SPOKEN DIALOGUE DELIVERY -->
+      <section class="step-panel" id="panel-step-13" data-step="13" aria-labelledby="step13Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step13Title">Step 13: Spoken Dialogue Delivery</h2>
+            <p class="step-goal">Fine-tune spoken lines, inflection, pacing, and perform audio-only redos per shot.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Dialogue Ready</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Kokoro-82M &mdash; <em>Dialogue mode active (narration muted unless explicitly selected).</em>
+        </div>
+        <div class="step-zone-workspace">
+          <div class="direct-story-card">
+            <!-- Shot 1 Dialogue Card -->
+            <div style="border-bottom:1px solid #232d3f;padding-bottom:12px;margin-bottom:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <strong style="color:#f59e0b">Shot 2 &middot; TOMMY</strong>
+                <div style="display:flex;gap:6px">
+                  <button type="button" class="btn btn--ghost" style="font-size:var(--text-xs)">↺ Redo This Line Only</button>
+                </div>
+              </div>
+              <p style="margin:0 0 8px;font-size:var(--text-base);color:#f8fafc">"Judah, look at the shadow from the rings! It covers the entire northern hemisphere."</p>
+              <div style="display:flex;align-items:center;gap:12px;background:#0a0d14;padding:8px 12px;border-radius:6px">
+                <button type="button" class="btn btn--primary" style="padding:4px 10px;font-size:var(--text-xs)">▶ Play Line</button>
+                <div style="flex:1;height:24px;background:#1e293b;border-radius:4px;display:flex;align-items:center;padding:0 8px;color:#64748b;font-size:var(--text-xs)">
+                  ─── ∿∿∿ Waveform Scrubbing (0.0s - 4.2s) ───
+                </div>
+                <small style="color:#94a3b8">Voice: am_puck &middot; 4.2s</small>
+              </div>
+            </div>
+
+            <!-- Shot 2 Dialogue Card -->
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <strong style="color:#f59e0b">Shot 3 &middot; JUDAH</strong>
+                <div style="display:flex;gap:6px">
+                  <button type="button" class="btn btn--ghost" style="font-size:var(--text-xs)">↺ Redo This Line Only</button>
+                </div>
+              </div>
+              <p style="margin:0 0 8px;font-size:var(--text-base);color:#f8fafc">"Navigation computer is locked on Titan. Preparing atmospheric entry thrusters."</p>
+              <div style="display:flex;align-items:center;gap:12px;background:#0a0d14;padding:8px 12px;border-radius:6px">
+                <button type="button" class="btn btn--primary" style="padding:4px 10px;font-size:var(--text-xs)">▶ Play Line</button>
+                <div style="flex:1;height:24px;background:#1e293b;border-radius:4px;display:flex;align-items:center;padding:0 8px;color:#64748b;font-size:var(--text-xs)">
+                  ─── ∿∿∿ Waveform Scrubbing (0.0s - 3.8s) ───
+                </div>
+                <small style="color:#94a3b8">Voice: am_michael &middot; 3.8s</small>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Score & Foley ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 14: SCORE & FOLEY SOUND DESIGN -->
+      <section class="step-panel" id="panel-step-14" data-step="14" aria-labelledby="step14Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step14Title">Step 14: Score & Foley Sound Design</h2>
+            <p class="step-goal">Video-aligned sound effects (MMAudio) and cinematic orchestral score (MusicGen).</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Sound Plan Ready</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> hkchengrex/MMAudio (Foley) + MusicGen Stereo Large (Cinematic Score)
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Video-Aligned Foley (SFX)</span>
+              <p class="deliverable-desc">Thruster hum, cabin ambient ventilation, cockpit console beeps, ice ring collisions.</p>
+              <button type="button" class="btn btn--secondary" style="margin-top:6px">▶ Preview Foley Track</button>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Cinematic Soundtrack Score</span>
+              <p class="deliverable-desc">Dramatic orchestral cue with sweeping strings, French horns, and cosmic synthesizers.</p>
+              <button type="button" class="btn btn--secondary" style="margin-top:6px">▶ Preview Music Score</button>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Storyboard Keyframes ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 15: STORYBOARD KEYFRAMES -->
+      <section class="step-panel" id="panel-step-15" data-step="15" aria-labelledby="step15Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step15Title">Step 15: Storyboard Keyframes</h2>
+            <p class="step-goal">Scene-by-scene filmstrip showing master keyframes. Review each shot before motion synthesis.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Keyframes Rendered</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> FLUX.1-dev &mdash; <em>Cinematic master still generation with Depth-Anything-V2 spatial geometry.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <!-- Scene Selector Strip -->
+          <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:var(--space-3)">
+            <button type="button" class="btn btn--secondary" style="white-space:nowrap;background:#f59e0b;color:#0b0e14;font-weight:700">Scene 1: Orbiting Saturn (3 shots)</button>
+            <button type="button" class="btn btn--ghost" style="white-space:nowrap">Scene 2: Titan Descent (4 shots)</button>
+            <button type="button" class="btn btn--ghost" style="white-space:nowrap">Scene 3: Ice Shoreline (3 shots)</button>
+          </div>
+
+          <!-- Scene Filmstrip (3 shots in a row, zero vertical hunting!) -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#64748b">
+                <span>[Keyframe 1: Ship at Rings]</span>
+              </div>
+              <strong style="color:#f59e0b;margin-top:6px">Shot 1 &middot; Wide</strong>
+              <small style="color:#94a3b8">Ship approaching rings with sunlight flare</small>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">↺ Re-roll</button>
+              </div>
+            </div>
+            <div class="deliverable-card">
+              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#64748b">
+                <span>[Keyframe 2: Tommy & Judah]</span>
+              </div>
+              <strong style="color:#f59e0b;margin-top:6px">Shot 2 &middot; Medium Two-Shot</strong>
+              <small style="color:#94a3b8">Tommy pointing, Judah at console</small>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">↺ Re-roll</button>
+              </div>
+            </div>
+            <div class="deliverable-card">
+              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#64748b">
+                <span>[Keyframe 3: Tommy Close-Up]</span>
+              </div>
+              <strong style="color:#f59e0b;margin-top:6px">Shot 3 &middot; Close-Up Dialogue</strong>
+              <small style="color:#94a3b8">Tommy speaking (InstantID face locked)</small>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">↺ Re-roll</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Motion & Video ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 16: MOTION & VIDEO SYNTHESIS -->
+      <section class="step-panel" id="panel-step-16" data-step="16" aria-labelledby="step16Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step16Title">Step 16: Motion & Video Synthesis</h2>
+            <p class="step-goal">Animate approved keyframes into cinematic video clips with camera movement and physics.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Video Synthesized</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Wan-AI/Wan2.1-I2V-14B-720P-Diffusers &mdash; <em>Best physical dynamics, cloth motion, and camera tracking.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#38bdf8">
+                <span>▶ [Clip 1: Dolly Forward 5.0s]</span>
+              </div>
+              <strong style="color:#f59e0b;margin-top:6px">Clip 1 &middot; 720p 24fps</strong>
+              <button type="button" class="btn btn--ghost" style="margin-top:4px;font-size:var(--text-xs)">↺ Redo Clip</button>
+            </div>
+            <div class="deliverable-card">
+              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#38bdf8">
+                <span>▶ [Clip 2: Orbit Pan 5.0s]</span>
+              </div>
+              <strong style="color:#f59e0b;margin-top:6px">Clip 2 &middot; 720p 24fps</strong>
+              <button type="button" class="btn btn--ghost" style="margin-top:4px;font-size:var(--text-xs)">↺ Redo Clip</button>
+            </div>
+            <div class="deliverable-card">
+              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#38bdf8">
+                <span>▶ [Clip 3: Subtle Speech Motion 4.2s]</span>
+              </div>
+              <strong style="color:#f59e0b;margin-top:6px">Clip 3 &middot; 720p 24fps</strong>
+              <button type="button" class="btn btn--ghost" style="margin-top:4px;font-size:var(--text-xs)">↺ Redo Clip</button>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Lip-Sync & Polish ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 17: LIP-SYNC & VISUAL POLISH -->
+      <section class="step-panel" id="panel-step-17" data-step="17" aria-labelledby="step17Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step17Title">Step 17: Lip-Sync & Visual Polish</h2>
+            <p class="step-goal">Phoneme mouth synchronization for speaking actors and Real-ESRGAN super-resolution upscaling.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Polish Applied</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> LivePortrait (Lip-Sync) + Real-ESRGAN x2 (2x Crisp Upscaling)
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Mouth Synchronization (Lip-Sync)</span>
+              <p class="deliverable-desc">Applied to Shot 3 (Tommy) and Shot 4 (Judah). Mouth movement locked to Kokoro speech waveform.</p>
+              <button type="button" class="btn btn--secondary" style="margin-top:6px">▶ Preview Lip-Sync</button>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Super-Resolution Upscaling</span>
+              <p class="deliverable-desc">Clips upscaled to 1080p/4K resolution with temporal de-flickering.</p>
+              <button type="button" class="btn btn--secondary" style="margin-top:6px">✓ Upscale Complete</button>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Timeline Sequence ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 18: TIMELINE SEQUENCE ASSEMBLY -->
+      <section class="step-panel" id="panel-step-18" data-step="18" aria-labelledby="step18Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step18Title">Step 18: Timeline Sequence Assembly</h2>
+            <p class="step-goal">Visual 3-track timeline editor for video, dialogue, and score sequencing.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Timeline Assembled</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Automatic EDL Stitching with 0.5s Crossfade Audio Transitions
+        </div>
+        <div class="step-zone-workspace">
+          <div class="direct-story-card">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="background:#0f172a;padding:8px 12px;border-radius:4px;display:flex;align-items:center;gap:12px">
+                <span style="font-weight:700;color:#f59e0b;min-width:80px">TRACK 1: VIDEO</span>
+                <div style="flex:1;background:#1e293b;height:24px;border-radius:4px;display:flex;gap:2px;overflow:hidden">
+                  <div style="flex:5;background:#3b82f6;padding:4px;font-size:10px;color:#fff">Clip 1 (5s)</div>
+                  <div style="flex:5;background:#2563eb;padding:4px;font-size:10px;color:#fff">Clip 2 (5s)</div>
+                  <div style="flex:4;background:#1d4ed8;padding:4px;font-size:10px;color:#fff">Clip 3 (4s)</div>
+                </div>
+              </div>
+              <div style="background:#0f172a;padding:8px 12px;border-radius:4px;display:flex;align-items:center;gap:12px">
+                <span style="font-weight:700;color:#10b981;min-width:80px">TRACK 2: DIALOGUE</span>
+                <div style="flex:1;background:#1e293b;height:24px;border-radius:4px;display:flex;gap:2px;overflow:hidden">
+                  <div style="flex:5;background:transparent"></div>
+                  <div style="flex:5;background:#059669;padding:4px;font-size:10px;color:#fff">Tommy: "Judah, look..." (4.2s)</div>
+                  <div style="flex:4;background:#047857;padding:4px;font-size:10px;color:#fff">Judah: "Navigation..." (3.8s)</div>
+                </div>
+              </div>
+              <div style="background:#0f172a;padding:8px 12px;border-radius:4px;display:flex;align-items:center;gap:12px">
+                <span style="font-weight:700;color:#8b5cf6;min-width:80px">TRACK 3: SCORE</span>
+                <div style="flex:1;background:#7c3aed;height:24px;border-radius:4px;padding:4px;font-size:10px;color:#fff">
+                  MusicGen Orbital Theme (14.0s Full Length)
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Audio Mix ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 19: AUDIO STEM MIX & MASTERING -->
+      <section class="step-panel" id="panel-step-19" data-step="19" aria-labelledby="step19Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step19Title">Step 19: Audio Stem Mix & Mastering</h2>
+            <p class="step-goal">Mix Dialogue, Foley SFX, and Music stems with automatic loudness balancing to -16 LUFS.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Mixed to -16 LUFS</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Broadcast Standard (-16 LUFS Integrated Loudness &middot; Dialogue Ducking -6dB)
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Dialogue Stem</span>
+              <p class="deliverable-desc">Vocal clarity and presence.</p>
+              <label class="f">Volume: 0 dB</label>
+              <input type="range" min="-12" max="6" value="0" style="width:100%">
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Foley SFX Stem</span>
+              <p class="deliverable-desc">Environmental effects and action sounds.</p>
+              <label class="f">Volume: -3 dB</label>
+              <input type="range" min="-18" max="6" value="-3" style="width:100%">
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Music Score Stem</span>
+              <p class="deliverable-desc">Cinematic soundtrack with auto-ducking during speech.</p>
+              <label class="f">Volume: -6 dB</label>
+              <input type="range" min="-24" max="0" value="-6" style="width:100%">
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Premiere & Export ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 20: PREMIERE & MULTI-FORMAT EXPORT (ALL THREE OPTIONS HARMONIZED) -->
+      <section class="step-panel" id="panel-step-20" data-step="20" aria-labelledby="step20Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step20Title">Step 20: Cinema Premiere & Multi-Format Export</h2>
+            <p class="step-goal">Watch your finished film, download one-click master deliverables, or export pro NLE project files.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Master Cut Ready</span>
+        </div>
+
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Master Premiere Ready &mdash; <em>4K/1080p MP4, 9:16 Shorts, M4B Audiobook, and PDF Screenplay.</em>
+        </div>
+
+        <div class="step-zone-workspace">
+          <!-- 1. CINEMA THEATER PLAYER (Top) -->
+          <div class="cinema-theater-box">
+            <div style="aspect-ratio:16/9;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">
+              <div style="font-size:3rem;cursor:pointer;color:#f59e0b" title="Play Film">▶</div>
+              <p style="color:#e2e8f0;margin-top:8px;font-weight:600">Tommy and Judah visit Saturn's Moons (Director's Cut)</p>
+              <div style="position:absolute;bottom:12px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center">
+                <span style="color:#94a3b8;font-size:var(--text-xs)">00:00 / 03:45</span>
+                <div style="display:flex;gap:8px">
+                  <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">CC Subtitles: ON</button>
+                  <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">Audio: Full Mix</button>
+                  <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">⛶ Fullscreen</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. ONE-CLICK DELIVERABLE CARDS (Novice-Friendly Middle) -->
+          <div class="export-deliverables-grid">
+            <div class="deliverable-card">
+              <span class="deliverable-title">🎬 4K Master Cinema Film</span>
+              <p class="deliverable-desc">Full 16:9 widescreen master with mixed audio, titles, and burned or toggleable subtitles.</p>
+              <button type="button" class="btn btn--primary" style="margin-top:auto">Download MP4 Master</button>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">📱 Mobile / Social Shorts</span>
+              <p class="deliverable-desc">Vertical 9:16 cut optimized for TikTok, Instagram Reels, and YouTube Shorts.</p>
+              <button type="button" class="btn btn--secondary" style="margin-top:auto">Download Shorts (9:16)</button>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">🎧 Illustrated M4B Audiobook</span>
+              <p class="deliverable-desc">Audiobook with embedded chapter keyframes, dialogue, and synchronized audio.</p>
+              <button type="button" class="btn btn--secondary" style="margin-top:auto">Download M4B Book</button>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">📄 Screenplay & Storyboard</span>
+              <p class="deliverable-desc">Formatted Industry Standard PDF and Fountain screenplay with storyboard shots.</p>
+              <button type="button" class="btn btn--secondary" style="margin-top:auto">Download PDF / Fountain</button>
+            </div>
+          </div>
+
+          <!-- 3. PRO TECHNICAL & NLE CONSOLE (Collapsible Drawer for Editors) -->
+          <details style="margin-top:var(--space-4);background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px">
+            <summary style="cursor:pointer;font-weight:700;color:#cbd5e1;font-size:var(--text-sm)">
+              ⚙️ Pro Studio NLE & Transcode Console (DaVinci Resolve / Premiere / ProRes)
+            </summary>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;margin-top:12px">
+              <div>
+                <label class="f">Master Codec</label>
+                <select style="width:100%;padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px">
+                  <option selected>Apple ProRes 422 HQ</option>
+                  <option>H.265 / HEVC (10-bit 4:2:2)</option>
+                  <option>H.264 (Maximum Compatibility)</option>
+                  <option>AV1 (Next-Gen Open Web)</option>
+                </select>
+              </div>
+              <div>
+                <label class="f">NLE Timeline Export</label>
+                <div style="display:flex;gap:6px">
+                  <button type="button" class="btn btn--secondary" style="flex:1">Export EDL</button>
+                  <button type="button" class="btn btn--secondary" style="flex:1">Export Final Cut XML</button>
+                </div>
+              </div>
+              <div>
+                <label class="f">Uncompressed Audio Stems</label>
+                <button type="button" class="btn btn--secondary" style="width:100%">Download 24-bit WAV Stems (ZIP)</button>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Audio Mix</button>
+          <button type="button" class="btn-dock-next" onclick="alert('Film generation complete! All deliverables ready.')" style="background:#10b981;color:#0b0e14">✓ Film Master Approved</button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- CLASSIC TAB PANELS (Preserving Workbench Tabs: Prompts, Models, Compare, Library) -->
+
 
     <!-- IMPORT TAB -->
     <div class="tab-panel active" id="panel-project" role="tabpanel" aria-labelledby="tab-project">
@@ -1573,5 +2509,6 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/pizazz.js" defer></script>
 <script src="/static/js/progress.js" defer></script>
 <script src="/static/js/setup.js" defer></script>
+<script src="/static/js/studio_v2.js" defer></script>
 </body>
 </html>

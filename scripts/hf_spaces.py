@@ -25,6 +25,16 @@ SPACES = {
     "pika_h3_flex_i2v": {"kind": "video", "space": "Pika-Labs/pika-h3-flex", "style": "pika", "api": "/generate", "defaults": {"seconds": 5, "resolution": "480p"}, "status": "checked"},
     "cogvideox_5b": {"kind": "video", "space": "zai-org/CogVideoX-5B-Space", "style": "cogvideox", "api": "/generate",
                      "defaults": {}, "status": "api"},
+    "sdxl_lightning": {"kind": "image", "space": "ByteDance/SDXL-Lightning", "style": "flux", "api": "/infer",
+                       "defaults": {"width": 1024, "height": 1024, "steps": 4}, "status": "api"},
+    "wan21_i2v_14b": {"kind": "video", "space": "Wan-AI/Wan2.1-I2V-14B", "style": "wan", "api": "/generate",
+                      "defaults": {"seconds": 5, "resolution": "720p"}, "status": "api"},
+    "ltx_video": {"kind": "video", "space": "Lightricks/LTX-Video", "style": "ltx", "api": "/generate",
+                  "defaults": {"seconds": 5}, "status": "api"},
+    "mmaudio": {"kind": "audio", "space": "hkchengrex/MMAudio", "style": "mmaudio", "api": "/generate",
+                "defaults": {"seconds": 5}, "status": "api"},
+    "f5_tts": {"kind": "audio", "space": "SWivid/F5-TTS", "style": "f5_tts", "api": "/infer",
+               "defaults": {}, "status": "api"},
 }
 
 # aspect ratios the Qwen AIO Space offers

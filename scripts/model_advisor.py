@@ -54,38 +54,71 @@ STYLE = {
 }
 
 STEPS = {   # id -> (title, where it is chosen on the page)
-    "image": ("Pictures", "Models tab: Image Models (Single Prompts and the Characters tab use them)"),
-    "keyframe": ("Keyframe stills", "Movies tab: Keyframe image model"),
-    "video_i2v": ("Video clips from keyframes", "Models tab: Video Models, From keyframes group"),
+    "screenplay": ("Screenplay & Story Beats", "Step 05: Screenplay Editor"),
+    "image": ("Pictures & Turnarounds", "Step 11: Look Development"),
+    "keyframe": ("Keyframe stills", "Step 15: Storyboard Keyframes"),
+    "video_i2v": ("Video clips from keyframes", "Step 16: Motion & Video Synthesis"),
     "video_t2v": ("Video clips from text", "Models tab: Video Models"),
-    "narration": ("Narration", "Models tab: Audio Models"),
-    "music": ("Music", "Models tab: Audio Models"),
-    "upscale": ("Upscaling", "Results tab: Final film, Upscaler"),
+    "dialogue": ("Spoken Dialogue", "Step 12: Voice Casting & Step 13: Dialogue Delivery"),
+    "narration": ("Narration", "Step 12: Voice Casting"),
+    "foley": ("Sound FX & Foley", "Step 14: Score & Foley"),
+    "music": ("Music Score", "Step 14: Score & Foley"),
+    "upscale": ("Upscaling & Polish", "Step 17: Visual Polish & Step 20: Premiere"),
 }
 
 # Per step, in order of preference: (model, why, least GPU GB for this to be the pick or None). An entry with a GB figure is skipped
 # when the chosen GPU is known to be smaller (it would be slow or swap), so a T4 gets the next one; unknown GPUs skip nothing.
-_FLUX2 = ("flux2_klein_4b", "newest small FLUX: 4 steps, about 2 minutes a picture on a T4, and it takes character pictures", None)
-_SDXL = ("sdxl", "older but light: runs anywhere, Colab's free T4 included (tested on a T4)", None)
-_KEYFRAMES = [("flux2_klein_4b", "the only keyframe model here that takes each character's picture, so faces and costumes stay the same; tested on a T4", None),
-              ("z_image_turbo", "good detail in few steps, no character pictures (tested on a T4, about 16 minutes)", None),
-              ("flux1_schnell", "fast FLUX, no character pictures (tested on a T4)", None)]
-_I2V = [("pika_h3_flex_i2v", "by far the best faces and motion we have seen, with 5 s clips; runs on its public Hugging Face Space, within the free daily quota", None),
-        ("ltx_video_fast_i2v", "tested on a T4: about 2 minutes a clip at 672x384, with cleaner faces than the 40-step LTX in our one comparison", None),
-        ("wan22_ti2v_5b_i2v", "for GPUs with room: on a T4 it took about 13 minutes for a 1.4 s clip and smeared small faces", 22),
-        ("ltx_video_i2v", "tested on a T4: about 10 minutes a clip, opens exactly on its keyframe", None)]
-_STYLISED_T2V = [("wan22_t2v_a14b_lightning", "Wan 2.2 14B in 4 steps: the best Wan quality at about 8 minutes (tested on a T4)", None),
-                 ("wan22_ti2v_5b", "Wan 2.2 5B at 24 fps (tested on a T4, about 20 minutes)", None),
-                 ("ltx_video", "fastest video model, for trying ideas", None)]
-_VOICE = {"narration": [("kokoro", "uses your Voice Cast (one voice per character); fast, tested", None),
-                        ("chatterbox_turbo", "more natural single voice; ignores the Voice Cast", None),
-                        ("qwen3_tts", "newer natural voices; ignores the Voice Cast", None)],
-          "music": [("musicgen", "background score from the shot's music line (tested)", None)]}
-_UP_CLEAN = [("upscale_seedvr2_3b", "diffusion upscaler: real detail for camera footage; wants 24 GB for full speed", 22),
-             ("upscale_flashvsr", "near SeedVR2 detail, much faster; Ampere or newer GPU only", 16),
-             ("upscale_x2", "Real-ESRGAN: quick and light, works on any GPU (tested on a T4)", None)]
-_UP_STYLISED = [("upscale_x2", "Real-ESRGAN keeps flat colour and clean edges as they are (tested on a T4)", None),
-                ("upscale_seedvr2_3b", "more detail, but a diffusion upscaler may add photo-like texture to a stylised look", 22)]
+_FLUX_DEV = ("flux1_dev", "FLUX.1-dev: State-of-the-art cinematic lighting, hands, and detail", None)
+_FLUX2 = ("flux2_klein_4b", "FLUX.2 Klein: Fast 4-step FLUX with character reference support (tested on a T4)", None)
+_SDXL_LIGHT = ("sdxl_lightning", "SDXL-Lightning: 4-step ultra-fast storyboard drafting", None)
+_SDXL = ("sdxl", "SDXL: Reliable baseline, runs anywhere (tested on a T4)", None)
+
+_KEYFRAMES = [
+    _FLUX_DEV,
+    _SDXL_LIGHT,
+    _FLUX2,
+    ("z_image_turbo", "good detail in few steps, no character pictures (tested on a T4, about 16 minutes)", None),
+    ("flux1_schnell", "fast FLUX, no character pictures (tested on a T4)", None),
+]
+
+_I2V = [
+    ("wan21_i2v_14b", "Wan 2.1 14B I2V: Best-in-class motion physics, cloth/hair dynamics and 720p native resolution", None),
+    ("pika_h3_flex_i2v", "by far the best faces and motion we have seen, with 5 s clips; runs on public HF Space", None),
+    ("ltx_video_fast_i2v", "tested on a T4: about 2 minutes a clip at 672x384, with cleaner faces than 40-step LTX", None),
+    ("wan22_ti2v_5b_i2v", "for GPUs with room: on a T4 it took about 13 minutes for a 1.4 s clip and smeared small faces", 22),
+    ("ltx_video_i2v", "tested on a T4: about 10 minutes a clip, opens exactly on its keyframe", None),
+]
+
+_STYLISED_T2V = [
+    ("wan22_t2v_a14b_lightning", "Wan 2.2 14B in 4 steps: the best Wan quality at about 8 minutes (tested on a T4)", None),
+    ("wan22_ti2v_5b", "Wan 2.2 5B at 24 fps (tested on a T4, about 20 minutes)", None),
+    ("ltx_video", "fastest video model, for trying ideas", None),
+]
+
+_VOICE = {
+    "screenplay": [("qwen25_72b", "Qwen 2.5 72B Instruct: Screenplay specialist with realistic dialogue banter", None),
+                   ("llama33_70b", "Llama 3.3 70B: High coherence scene beat extraction", None)],
+    "dialogue": [("kokoro", "Kokoro-82M: Dialogue-first default with American vs British dialect mapping", None),
+                 ("f5_tts", "F5-TTS: Zero-shot voice cloning and expressive inflection", None),
+                 ("qwen3_tts", "Qwen3 TTS: Natural multi-speaker voice delivery", None)],
+    "narration": [("kokoro", "Kokoro-82M: Uses your Voice Cast (one voice per character); fast, tested", None),
+                  ("chatterbox_turbo", "more natural single voice; ignores the Voice Cast", None),
+                  ("qwen3_tts", "newer natural voices; ignores the Voice Cast", None)],
+    "foley": [("mmaudio", "MMAudio: Synchronized video-to-audio foley effects and ambient sound", None),
+              ("audioldm2", "AudioLDM2: Text-to-SFX sound effects", None)],
+    "music": [("musicgen", "MusicGen: Background score from the shot's dramatic music cue (tested)", None),
+              ("stable_audio", "Stable Audio Open: Atmospheric soundtracks", None)],
+}
+
+_UP_CLEAN = [
+    ("upscale_seedvr2_3b", "diffusion upscaler: real detail for camera footage; wants 24 GB for full speed", 22),
+    ("upscale_flashvsr", "near SeedVR2 detail, much faster; Ampere or newer GPU only", 16),
+    ("upscale_x2", "Real-ESRGAN: quick and light, works on any GPU (tested on a T4)", None),
+]
+_UP_STYLISED = [
+    ("upscale_x2", "Real-ESRGAN keeps flat colour and clean edges as they are (tested on a T4)", None),
+    ("upscale_seedvr2_3b", "more detail, but a diffusion upscaler may add photo-like texture to a stylised look", 22),
+]
 
 SUGGEST: dict[str, dict[str, list[tuple]]] = {
     "live_action": {
@@ -193,3 +226,109 @@ def suggest(look, blocker=None, gpu_gb=None):
                 alts = [a for a in alts if a is not ok]
         out[step] = {"title": title, "where": where, "pick": pick, "alternatives": alts}
     return out
+
+
+def autopilot_recommend(look, step, shot_type=None, hardware=None):
+    """Intelligent Autopilot model recommendation for any step, shot type, and hardware.
+
+    Returns a dict with model, label, why, execution_target, dialect, and voice_mode.
+    """
+    look = look_or_default(look)
+    shot_type = (shot_type or "").lower()
+    hardware = (hardware or "auto").lower()
+
+    # Step-specific autopilot rules
+    if step in ("dialogue", "voice", "step_12", "step_13"):
+        return {
+            "model": "kokoro",
+            "label": "Kokoro-82M (Dialogue-First)",
+            "why": "Ultra-fast neural speech synthesis with American and British dialect switching per character.",
+            "execution_target": "local",
+            "dialect": "american",
+            "voice_mode": "dialogue",
+        }
+    elif step in ("keyframe", "step_15"):
+        if "close" in shot_type or "face" in shot_type:
+            return {
+                "model": "flux1_dev",
+                "label": "FLUX.1-dev + InstantID",
+                "why": "High-fidelity facial detail and character consistency for dialogue close-ups.",
+                "execution_target": "huggingface" if hardware in ("auto", "mac", "cpu") else "local",
+                "dialect": "american",
+                "voice_mode": "dialogue",
+            }
+        return {
+            "model": "flux1_dev",
+            "label": "FLUX.1-dev (Cinematic)",
+            "why": "Cinematic lighting, depth, and anatomical accuracy aligned to your style recipe.",
+            "execution_target": "huggingface" if hardware in ("auto", "mac", "cpu") else "local",
+            "dialect": "american",
+            "voice_mode": "dialogue",
+        }
+    elif step in ("video", "video_i2v", "step_16"):
+        if "fast" in hardware or "t4" in hardware:
+            return {
+                "model": "ltx_video_fast_i2v",
+                "label": "LTX-Video (High Speed)",
+                "why": "Rapid motion synthesis optimized for responsive preview on lightweight GPUs.",
+                "execution_target": "kaggle" if "kaggle" in hardware else "huggingface",
+                "dialect": "american",
+                "voice_mode": "dialogue",
+            }
+        return {
+            "model": "wan21_i2v_14b",
+            "label": "Wan 2.1 14B I2V (720p Master)",
+            "why": "Leading physical dynamics, cloth motion, and camera stability.",
+            "execution_target": "huggingface" if hardware in ("auto", "mac", "cpu") else "cloud_api",
+            "dialect": "american",
+            "voice_mode": "dialogue",
+        }
+    elif step in ("foley", "sfx"):
+        return {
+            "model": "mmaudio",
+            "label": "MMAudio (Video-Aligned Foley)",
+            "why": "Synchronized footsteps, atmospheric ambiances, and movement effects keyed directly to video frames.",
+            "execution_target": "local",
+            "dialect": "american",
+            "voice_mode": "dialogue",
+        }
+    elif step in ("music", "score"):
+        return {
+            "model": "musicgen",
+            "label": "MusicGen Stereo (Cinematic Score)",
+            "why": "Orchestral and thematic cues matched to scene emotion and pacing.",
+            "execution_target": "local",
+            "dialect": "american",
+            "voice_mode": "dialogue",
+        }
+    elif step in ("screenplay", "step_05"):
+        return {
+            "model": "qwen25_72b",
+            "label": "Qwen 2.5 72B Instruct (Screenplay Specialist)",
+            "why": "Dialogue-first adaptation preserving story tone, character banter, and dramatic beats.",
+            "execution_target": "cloud_api",
+            "dialect": "american",
+            "voice_mode": "dialogue",
+        }
+    elif step in ("upscale", "step_17", "step_20"):
+        return {
+            "model": "upscale_x2",
+            "label": "Real-ESRGAN x2 (Clean Super-Resolution)",
+            "why": "Fast artifact-free 2x super-resolution for final film mastering.",
+            "execution_target": "local",
+            "dialect": "american",
+            "voice_mode": "dialogue",
+        }
+
+    # Default fallback to standard suggest()
+    s = suggest(look)
+    step_key = step if step in s else "keyframe"
+    pick = s.get(step_key, {}).get("pick") or {"model": "flux1_dev", "why": "Default studio visual recommendation."}
+    return {
+        "model": pick["model"],
+        "label": pick["model"].replace("_", " ").title(),
+        "why": pick["why"],
+        "execution_target": "local",
+        "dialect": "american",
+        "voice_mode": "dialogue",
+    }
