@@ -1,47 +1,54 @@
-// studio_v2.js - Studio v2 Architecture: 20-Step Guided Pipeline + Creative Workbench,
-// Top-to-Bottom Flow, Direct Story Input Saving, Audio Redo, Storyline Drift Sync,
-// and Autopilot Model Recommendations.
+// studio_v2.js - Studio v2 Architecture: 22-Step Guided Pipeline + Creative Workbench,
+// Strict Top-to-Bottom Flow (Zero Cards Below Approve), Direct Story Input Saving,
+// Audio Redo, Storyline Drift Sync, Chapter Editing in Flow, and Autopilot Model Recommendations.
 
 (function () {
   "use strict";
 
-  // ===== CONFIG & STATE =====
+  // ===== COMPLETE 22-STEP GUIDED FLOW =====
   const V2_STEPS = [
+    // Phase 1: Story & Script
     { num: 1, id: "ingest", name: "01 Ingest", title: "Story Ingest & Source", phase: 1, phaseName: "Story & Script" },
-    { num: 2, id: "format", name: "02 Format", title: "Format & Scope", phase: 1, phaseName: "Story & Script" },
+    { num: 2, id: "chapters", name: "02 Chapters", title: "Check & Split Chapters", phase: 1, phaseName: "Story & Script" },
     { num: 3, id: "coverage", name: "03 Coverage", title: "Coverage & Logline", phase: 1, phaseName: "Story & Script" },
-    { num: 4, id: "structure", name: "04 Beats", title: "Story Structure & Beats", phase: 1, phaseName: "Story & Script" },
-    { num: 5, id: "screenplay", name: "05 Script", title: "Screenplay Editor (Dialogue Default)", phase: 1, phaseName: "Story & Script" },
+    { num: 4, id: "format", name: "04 Scope", title: "Format & Runtime Scope", phase: 1, phaseName: "Story & Script" },
+    { num: 5, id: "structure", name: "05 Beats", title: "Story Structure & Beats", phase: 1, phaseName: "Story & Script" },
+    { num: 6, id: "screenplay", name: "06 Script", title: "Screenplay Editor (Dialogue Default)", phase: 1, phaseName: "Story & Script" },
 
-    { num: 6, id: "shots", name: "06 Shots", title: "Shot List & Cinematography", phase: 2, phaseName: "Cast & World" },
+    // Phase 2: Cast & World
     { num: 7, id: "continuity", name: "07 Continuity", title: "Continuity & World Rules", phase: 2, phaseName: "Cast & World" },
     { num: 8, id: "cast", name: "08 Cast", title: "Cast & Characters", phase: 2, phaseName: "Cast & World" },
-    { num: 9, id: "locations", name: "09 Sets", title: "Locations & Sets", phase: 2, phaseName: "Cast & World" },
-    { num: 10, id: "look", name: "10 Look", title: "Art Direction & Style Recipe", phase: 2, phaseName: "Cast & World" },
-    { num: 11, id: "lookdev", name: "11 Turnaround", title: "Look Development & Turnarounds", phase: 2, phaseName: "Cast & World" },
+    { num: 9, id: "look", name: "09 Style", title: "Art Direction & Style Recipe", phase: 2, phaseName: "Cast & World" },
+    { num: 10, id: "lookdev", name: "10 Turnaround", title: "Look Development & Turnarounds", phase: 2, phaseName: "Cast & World" },
+    { num: 11, id: "locations", name: "11 Sets", title: "Locations & Environment Sets", phase: 2, phaseName: "Cast & World" },
 
-    { num: 12, id: "voices", name: "12 Voice Cast", title: "Voice Casting & Dialects", phase: 3, phaseName: "Sound & Voices" },
-    { num: 13, id: "dialogue", name: "13 Dialogue", title: "Dialogue Delivery & Inflection", phase: 3, phaseName: "Sound & Voices" },
-    { num: 14, id: "score", name: "14 Score & Foley", title: "Cinematic Score & MMAudio Foley", phase: 3, phaseName: "Sound & Voices" },
+    // Phase 3: Cinematography & Hardware
+    { num: 12, id: "shots", name: "12 Shots", title: "Shot List & Cinematography", phase: 3, phaseName: "Camera & Compute" },
+    { num: 13, id: "hardware", name: "13 Hardware", title: "Hardware & Where to Run", phase: 3, phaseName: "Camera & Compute" },
 
-    { num: 15, id: "keyframes", name: "15 Keyframes", title: "Storyboard Keyframes (FLUX/SDXL)", phase: 4, phaseName: "Visuals & Motion" },
-    { num: 16, id: "video", name: "16 Video", title: "Motion & Video Synthesis (Wan 2.1)", phase: 4, phaseName: "Visuals & Motion" },
-    { num: 17, id: "polish", name: "17 Polish", title: "Lip-Sync & Real-ESRGAN Polish", phase: 4, phaseName: "Visuals & Motion" },
+    // Phase 4: Audio & Voices
+    { num: 14, id: "voices", name: "14 Voice Cast", title: "Voice Casting & Dialects", phase: 4, phaseName: "Audio & Voices" },
+    { num: 15, id: "dialogue", name: "15 Dialogue", title: "Spoken Dialogue Delivery", phase: 4, phaseName: "Audio & Voices" },
+    { num: 16, id: "score", name: "16 Score & Foley", title: "Cinematic Score & Foley Sound Design", phase: 4, phaseName: "Audio & Voices" },
 
-    { num: 18, id: "timeline", name: "18 Timeline", title: "Sequence Timeline Assembly", phase: 5, phaseName: "Post & Premiere" },
-    { num: 19, id: "mix", name: "19 Audio Mix", title: "Stem Audio Mix (-16 LUFS)", phase: 5, phaseName: "Post & Premiere" },
-    { num: 20, id: "premiere", name: "20 Premiere", title: "Cinema Premiere & Multi-Format Export", phase: 5, phaseName: "Post & Premiere" },
+    // Phase 5: Visuals & Motion
+    { num: 17, id: "keyframes", name: "17 Keyframes", title: "Storyboard Keyframes (FLUX/SDXL)", phase: 5, phaseName: "Visuals & Motion" },
+    { num: 18, id: "video", name: "18 Video", title: "Motion & Video Synthesis (Wan 2.1)", phase: 5, phaseName: "Visuals & Motion" },
+    { num: 19, id: "polish", name: "19 Polish", title: "Lip-Sync & Real-ESRGAN Polish", phase: 5, phaseName: "Visuals & Motion" },
+
+    // Phase 6: Post & Premiere
+    { num: 20, id: "timeline", name: "20 Timeline", title: "Sequence Timeline Assembly", phase: 6, phaseName: "Post & Premiere" },
+    { num: 21, id: "mix", name: "21 Audio Mix", title: "Stem Audio Mix (-16 LUFS)", phase: 6, phaseName: "Post & Premiere" },
+    { num: 22, id: "premiere", name: "22 Premiere", title: "Cinema Premiere & Multi-Format Export", phase: 6, phaseName: "Post & Premiere" },
   ];
 
   let currentStep = 1;
   let activeProject = "";
 
-  // Helper for DOM access
   function $(id) {
     return document.getElementById(id);
   }
 
-  // Helper for JSON fetch
   async function callApi(url, body) {
     const opts = body !== undefined ? {
       method: "POST",
@@ -54,7 +61,7 @@
     return j;
   }
 
-  // ===== DIRECT STORY INPUT BOX SAVING (User's feature request) =====
+  // ===== DIRECT STORY INPUT BOX SAVING =====
   function initDirectStoryInput() {
     const btnSave = $("bSaveStory");
     const inputFn = $("storyFilename");
@@ -128,7 +135,11 @@
 
   // ===== NAVIGATION & TOP-TO-BOTTOM STEP CONTROLLER =====
   function activateStep(stepNum) {
-    currentStep = Math.max(1, Math.min(20, stepNum));
+    currentStep = Math.max(1, Math.min(V2_STEPS.length, stepNum));
+
+    // Ensure we are in pipeline mode so zero legacy cards render below the approve button
+    document.body.classList.remove("mode-workbench");
+    document.body.classList.add("mode-pipeline");
 
     // Update Step Pills
     document.querySelectorAll(".step-pill").forEach(pill => {
@@ -148,25 +159,27 @@
       panel.setAttribute("aria-hidden", String(!isCurrent));
     });
 
-    // Update Phase Indicator Highlights
+    // Update Phase Highlights
     document.querySelectorAll(".phase-group").forEach(group => {
       const phaseNum = parseInt(group.dataset.phase, 10);
       const stepMeta = V2_STEPS.find(s => s.num === currentStep);
       group.classList.toggle("phase-active", stepMeta && stepMeta.phase === phaseNum);
     });
 
-    // Smooth scroll to top of workspace (Zero vertical hunting!)
-    const activePanel = document.querySelector(`.step-panel[data-step="${currentStep}"]`);
-    if (activePanel) {
-      activePanel.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    // Top-to-bottom rule: Always scroll to top of page when changing steps
+    window.scrollTo({ top: 0, behavior: "smooth" });
 
     // Save step progress to localStorage
     try {
       localStorage.setItem("studio_v2_active_step", String(currentStep));
-    } catch (e) { /* ignore in private window */ }
+    } catch (e) {}
 
-    // Check for storyline drift or load step autopilot
+    // If entering Step 2 (Chapters), load chapter data
+    if (currentStep === 2 && typeof window.loadChapters === "function") {
+      try { window.loadChapters(); } catch (e) {}
+    }
+
+    // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
   }
@@ -200,9 +213,7 @@
         });
         redoBanners.forEach(banner => banner.classList.add("hidden"));
       }
-    } catch (e) {
-      // Quiet fail if no book plan exists yet
-    }
+    } catch (e) {}
   }
 
   async function triggerSelectiveStorylineRedo() {
@@ -211,7 +222,7 @@
     if (!slug) return;
 
     try {
-      const res = await callApi("/api/redo_storyline", { project: slug });
+      await callApi("/api/redo_storyline", { project: slug });
       alert(`Storyline re-sync initiated for ${slug}. Invalidation updated.`);
       await checkStepStorylineDrift();
     } catch (err) {
@@ -257,12 +268,10 @@
       recBadges.forEach(b => {
         b.innerHTML = `✨ <strong>Autopilot Pick:</strong> ${rec.label} &mdash; <em>${rec.why}</em>`;
       });
-    } catch (e) {
-      // Offline or fallback
-    }
+    } catch (e) {}
   }
 
-  // ===== CREATIVE WORKBENCH TOGGLE =====
+  // ===== CREATIVE WORKBENCH TOGGLE & RETURN BANNER =====
   function initWorkbenchToggle() {
     const btn = $("workbenchToggle");
     const dropdown = $("workbenchDropdown");
@@ -277,19 +286,44 @@
       dropdown.classList.add("hidden");
     });
 
+    // Create persistent Return to Pipeline banner if not present
+    let returnBanner = $("workbenchReturnBanner");
+    if (!returnBanner) {
+      returnBanner = document.createElement("div");
+      returnBanner.id = "workbenchReturnBanner";
+      returnBanner.className = "workbench-return-banner hidden";
+      returnBanner.innerHTML = `
+        <div><strong>🔬 Creative Workbench Mode Active</strong> &mdash; <span id="wbActiveName">Single Prompts</span></div>
+        <button type="button" class="btn btn--primary" id="bReturnToPipeline" style="background:#f59e0b;color:#0b0e14;font-weight:700">🎬 Return to Guided Film Pipeline (Step ${currentStep})</button>
+      `;
+      document.body.insertBefore(returnBanner, document.body.firstChild);
+
+      $("bReturnToPipeline").addEventListener("click", () => {
+        document.body.classList.remove("mode-workbench");
+        document.body.classList.add("mode-pipeline");
+        returnBanner.classList.add("hidden");
+        activateStep(currentStep);
+      });
+    }
+
     dropdown.querySelectorAll(".wb-tab-btn").forEach(wbBtn => {
       wbBtn.addEventListener("click", () => {
         const targetId = wbBtn.dataset.target;
-        // Find existing advanced tab button or trigger click
-        const tabBtn = document.querySelector(`.tab-btn[aria-controls="${targetId}"]`) ||
-                       document.querySelector(`.tab-btn[data-tab="${targetId.replace('panel-', '')}"]`);
-        if (tabBtn) {
-          tabBtn.click();
-        } else {
-          // Switch manually
-          document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-          const targetPanel = $(targetId);
-          if (targetPanel) targetPanel.classList.add("active");
+        document.body.classList.remove("mode-pipeline");
+        document.body.classList.add("mode-workbench");
+
+        returnBanner.classList.remove("hidden");
+        const nameSpan = $("wbActiveName");
+        if (nameSpan) nameSpan.textContent = wbBtn.textContent;
+        const returnBtn = $("bReturnToPipeline");
+        if (returnBtn) returnBtn.textContent = `🎬 Return to Guided Film Pipeline (Step ${currentStep})`;
+
+        // Show the workbench tab panel
+        document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+        const targetPanel = $(targetId);
+        if (targetPanel) {
+          targetPanel.classList.add("active");
+          targetPanel.scrollIntoView({ behavior: "smooth", block: "start" });
         }
         dropdown.classList.add("hidden");
       });
@@ -298,10 +332,13 @@
 
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
+    // Pipeline mode is the default: hide all classic panels below
+    document.body.classList.add("mode-pipeline");
+
     initDirectStoryInput();
     initWorkbenchToggle();
 
-    // Bind step pills in 5-phase bar
+    // Bind step pills in 6-phase bar
     document.querySelectorAll(".step-pill").forEach(pill => {
       pill.addEventListener("click", () => {
         const stepNum = parseInt(pill.dataset.step, 10);
@@ -309,15 +346,17 @@
       });
     });
 
-    // Bind next/redo buttons in all step action docks
+    // Bind next/prev buttons in all step action docks
     document.querySelectorAll(".btn-step-next").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
         activateStep(currentStep + 1);
       });
     });
 
     document.querySelectorAll(".btn-step-prev").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
         activateStep(currentStep - 1);
       });
     });
@@ -327,7 +366,7 @@
       btn.addEventListener("click", triggerSelectiveStorylineRedo);
     });
 
-    // Bind Audio Redo buttons (Dialogue default, Dialect switches)
+    // Bind Audio Redo buttons
     document.querySelectorAll(".btn-audio-dialect").forEach(btn => {
       btn.addEventListener("click", () => {
         const dialect = btn.dataset.dialect || "british";
@@ -342,7 +381,6 @@
     } catch (e) {}
     activateStep(savedStep);
 
-    // Initial check
     setTimeout(checkStepStorylineDrift, 1200);
   });
 

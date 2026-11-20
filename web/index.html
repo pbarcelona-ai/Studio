@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,7 +16,7 @@
 <!-- favicon:end -->
 <link rel="stylesheet" href="/static/css/pizazz.css">
 </head>
-<body>
+<body class="mode-pipeline">
 <header class="studio-header">
     <video class="hero-video" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
     <div class="header-brand">
@@ -98,51 +98,58 @@
 
     <div id="msg" class="warn" role="status" aria-live="polite"></div>
 
-    <!-- 5 PRODUCTION PHASES BAR & CREATIVE WORKBENCH TOGGLE -->
+    <!-- 6 PRODUCTION PHASES BAR (22 GUIDED STEPS) & CREATIVE WORKBENCH TOGGLE -->
     <nav class="pipeline-phases-bar" id="pipelinePhasesBar" aria-label="Studio Production Pipeline">
       <div class="phase-group phase-active" data-phase="1">
         <div class="phase-header"><span class="phase-num">PHASE 1</span><span class="phase-name">Story & Script</span></div>
         <div class="phase-steps">
           <button type="button" class="step-pill active" data-step="1" title="Step 01: Ingest & Source">01 Ingest</button>
-          <button type="button" class="step-pill" data-step="2" title="Step 02: Format & Scope">02 Format</button>
+          <button type="button" class="step-pill" data-step="2" title="Step 02: Check & Split Chapters">02 Chapters</button>
           <button type="button" class="step-pill" data-step="3" title="Step 03: Coverage & Logline">03 Coverage</button>
-          <button type="button" class="step-pill" data-step="4" title="Step 04: Story Structure">04 Beats</button>
-          <button type="button" class="step-pill" data-step="5" title="Step 05: Screenplay Editor">05 Script</button>
+          <button type="button" class="step-pill" data-step="4" title="Step 04: Format & Runtime Scope">04 Scope</button>
+          <button type="button" class="step-pill" data-step="5" title="Step 05: Story Structure & Beats">05 Beats</button>
+          <button type="button" class="step-pill" data-step="6" title="Step 06: Screenplay Editor">06 Script</button>
         </div>
       </div>
       <div class="phase-group" data-phase="2">
         <div class="phase-header"><span class="phase-num">PHASE 2</span><span class="phase-name">Cast & World</span></div>
         <div class="phase-steps">
-          <button type="button" class="step-pill" data-step="6" title="Step 06: Shot List">06 Shots</button>
           <button type="button" class="step-pill" data-step="7" title="Step 07: Continuity & Rules">07 Continuity</button>
           <button type="button" class="step-pill" data-step="8" title="Step 08: Cast & Characters">08 Cast</button>
-          <button type="button" class="step-pill" data-step="9" title="Step 09: Locations & Sets">09 Sets</button>
-          <button type="button" class="step-pill" data-step="10" title="Step 10: Art Direction">10 Look</button>
-          <button type="button" class="step-pill" data-step="11" title="Step 11: Look Development">11 Turnaround</button>
+          <button type="button" class="step-pill" data-step="9" title="Step 09: Art Direction & Style">09 Style</button>
+          <button type="button" class="step-pill" data-step="10" title="Step 10: Look Development & Turnarounds">10 Turnaround</button>
+          <button type="button" class="step-pill" data-step="11" title="Step 11: Locations & Sets">11 Sets</button>
         </div>
       </div>
       <div class="phase-group" data-phase="3">
-        <div class="phase-header"><span class="phase-num">PHASE 3</span><span class="phase-name">Sound & Voices</span></div>
+        <div class="phase-header"><span class="phase-num">PHASE 3</span><span class="phase-name">Camera & Compute</span></div>
         <div class="phase-steps">
-          <button type="button" class="step-pill" data-step="12" title="Step 12: Voice Casting & Dialects">12 Voices</button>
-          <button type="button" class="step-pill" data-step="13" title="Step 13: Spoken Dialogue">13 Dialogue</button>
-          <button type="button" class="step-pill" data-step="14" title="Step 14: Score & Foley">14 Score & Foley</button>
+          <button type="button" class="step-pill" data-step="12" title="Step 12: Shot List & Cinematography">12 Shots</button>
+          <button type="button" class="step-pill" data-step="13" title="Step 13: Hardware & Where to Run">13 Hardware</button>
         </div>
       </div>
       <div class="phase-group" data-phase="4">
-        <div class="phase-header"><span class="phase-num">PHASE 4</span><span class="phase-name">Visuals & Motion</span></div>
+        <div class="phase-header"><span class="phase-num">PHASE 4</span><span class="phase-name">Audio & Voices</span></div>
         <div class="phase-steps">
-          <button type="button" class="step-pill" data-step="15" title="Step 15: Storyboard Keyframes">15 Keyframes</button>
-          <button type="button" class="step-pill" data-step="16" title="Step 16: Motion & Video Synthesis">16 Video</button>
-          <button type="button" class="step-pill" data-step="17" title="Step 17: Lip-Sync & Polish">17 Polish</button>
+          <button type="button" class="step-pill" data-step="14" title="Step 14: Voice Casting & Dialects">14 Voices</button>
+          <button type="button" class="step-pill" data-step="15" title="Step 15: Spoken Dialogue Delivery">15 Dialogue</button>
+          <button type="button" class="step-pill" data-step="16" title="Step 16: Score & Foley">16 Score & Foley</button>
         </div>
       </div>
       <div class="phase-group" data-phase="5">
-        <div class="phase-header"><span class="phase-num">PHASE 5</span><span class="phase-name">Post & Premiere</span></div>
+        <div class="phase-header"><span class="phase-num">PHASE 5</span><span class="phase-name">Visuals & Motion</span></div>
         <div class="phase-steps">
-          <button type="button" class="step-pill" data-step="18" title="Step 18: Timeline Sequence">18 Timeline</button>
-          <button type="button" class="step-pill" data-step="19" title="Step 19: Audio Stem Mix">19 Audio Mix</button>
-          <button type="button" class="step-pill" data-step="20" title="Step 20: Premiere & Export">20 Premiere</button>
+          <button type="button" class="step-pill" data-step="17" title="Step 17: Storyboard Keyframes">17 Keyframes</button>
+          <button type="button" class="step-pill" data-step="18" title="Step 18: Motion & Video Synthesis">18 Video</button>
+          <button type="button" class="step-pill" data-step="19" title="Step 19: Lip-Sync & Polish">19 Polish</button>
+        </div>
+      </div>
+      <div class="phase-group" data-phase="6">
+        <div class="phase-header"><span class="phase-num">PHASE 6</span><span class="phase-name">Post & Premiere</span></div>
+        <div class="phase-steps">
+          <button type="button" class="step-pill" data-step="20" title="Step 20: Timeline Sequence">20 Timeline</button>
+          <button type="button" class="step-pill" data-step="21" title="Step 21: Audio Stem Mix">21 Audio Mix</button>
+          <button type="button" class="step-pill" data-step="22" title="Step 22: Premiere & Export">22 Premiere</button>
         </div>
       </div>
 
@@ -159,7 +166,7 @@
       </div>
     </nav>
 
-    <!-- 20 GUIDED TOP-TO-BOTTOM STEP WORKSPACES -->
+    <!-- 22 GUIDED TOP-TO-BOTTOM STEP WORKSPACES -->
     <main class="studio-pipeline-viewport" id="pipelineViewport">
 
       <!-- STEP 01: INGEST & SOURCE -->
@@ -212,42 +219,41 @@
         </div>
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo" onclick="document.getElementById('storyInputText').value='';">↺ Clear Story</button>
-          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Format & Scope ➔</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Check Chapters ➔</button>
         </div>
       </section>
 
-      <!-- STEP 02: FORMAT & SCOPE -->
+      <!-- STEP 02: CHECK & SPLIT CHAPTERS -->
       <section class="step-panel" id="panel-step-2" data-step="2" aria-labelledby="step2Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step2Title">Step 02: Format & Scope</h2>
-            <p class="step-goal">Select your film aspect ratio, target runtime, and narrative pace.</p>
+            <h2 id="step2Title">Step 02: Check & Split Chapters</h2>
+            <p class="step-goal">Review chapter splits before anything is written: rename, join, split at cursor, or drop non-story pages (cover, contents, notes).</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Format Locked</span>
+          <span class="status-badge status-badge--synced" id="chapStepBadge">✓ Chapters Ready</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> 16:9 Cinema Widescreen (1920x1080) &mdash; <em>Standard cinematic presentation for feature films and web streaming.</em>
+          ✨ <strong>Autopilot Pick:</strong> Natural Narrative Breakpoint Detection &mdash; <em>Scene headers and chapter headings automatically parsed.</em>
         </div>
         <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">Aspect Ratio</span>
-              <p class="deliverable-desc">Frame geometry for keyframes and video rendering.</p>
-              <select id="v2Aspect" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px">
-                <option value="16:9" selected>16:9 Cinema Widescreen (Landscape)</option>
-                <option value="9:16">9:16 Vertical Video (TikTok / YouTube Shorts)</option>
-                <option value="1:1">1:1 Square (Instagram)</option>
-                <option value="2.39:1">2.39:1 Anamorphic Scope</option>
-              </select>
+          <div class="direct-story-card">
+            <p class="warn" id="chapNote" aria-live="polite">Pick a book that has been read to see its chapters.</p>
+            <div id="chapBar" class="row hidden" style="gap:8px;margin:8px 0;flex-wrap:wrap">
+              <button type="button" class="btn btn--secondary" id="chapDrop" disabled>Drop ticked</button>
+              <span class="warn" id="chapSummary"></span>
             </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">Target Scope & Duration</span>
-              <p class="deliverable-desc">Estimated film length and shot pacing.</p>
-              <select id="v2Duration" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px">
-                <option value="short" selected>Short Film (3-5 minutes, ~15-25 shots)</option>
-                <option value="scene">Single Scene / Teaser (1-2 minutes, ~8-12 shots)</option>
-                <option value="feature">Full Chapter / Episode (10-15 minutes)</option>
-              </select>
+            <div style="max-height:360px;overflow:auto">
+              <table class="data-table" id="chapTable" aria-label="Chapters of the chosen book"></table>
+            </div>
+            <div id="chapEditor" class="hidden" style="margin-top:12px">
+              <label class="f" for="chapText" id="chapTextLabel">Chapter text</label>
+              <textarea id="chapText" class="caret-box" rows="8" aria-readonly="true" spellcheck="false" autocomplete="off" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:8px;padding:8px;font:inherit"></textarea>
+              <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
+                <input type="text" id="chapSplitTitle" maxlength="80" aria-label="Title for the second half" placeholder="Title for the second half (optional)" autocomplete="off" style="flex:1;min-width:200px">
+                <button type="button" class="btn btn--secondary" id="chapSplit">Split at the cursor</button>
+                <button type="button" class="btn btn--ghost" id="chapClose">Close</button>
+              </div>
+              <small class="warn">Click in the text where the new chapter should start, then press Split. The cut moves back to the start of that word.</small>
             </div>
           </div>
         </div>
@@ -278,17 +284,58 @@
           </div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Chapters</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Format & Scope ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 04: FORMAT & RUNTIME SCOPE (CONFIGURATION STEP) -->
+      <section class="step-panel" id="panel-step-4" data-step="4" aria-labelledby="step4Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step4Title">Step 04: Format & Runtime Scope</h2>
+            <p class="step-goal">Configure your film aspect ratio, target runtime, and narrative pace.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Format Locked</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> 16:9 Cinema Widescreen (1920x1080) &mdash; <em>Standard cinematic presentation for feature films and web streaming.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Aspect Ratio</span>
+              <p class="deliverable-desc">Frame geometry for keyframes and video rendering.</p>
+              <select id="v2Aspect" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                <option value="16:9" selected>16:9 Cinema Widescreen (Landscape)</option>
+                <option value="9:16">9:16 Vertical Video (TikTok / YouTube Shorts)</option>
+                <option value="1:1">1:1 Square (Instagram)</option>
+                <option value="2.39:1">2.39:1 Anamorphic Scope</option>
+              </select>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Target Scope & Duration</span>
+              <p class="deliverable-desc">Estimated film length and shot pacing.</p>
+              <select id="v2Duration" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                <option value="short" selected>Short Film (3-5 minutes, ~15-25 shots)</option>
+                <option value="scene">Single Scene / Teaser (1-2 minutes, ~8-12 shots)</option>
+                <option value="feature">Full Chapter / Episode (10-15 minutes)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Coverage</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Story Structure ➔</button>
         </div>
       </section>
 
-      <!-- STEP 04: STORY STRUCTURE & BEATS -->
-      <section class="step-panel" id="panel-step-4" data-step="4" aria-labelledby="step4Title">
+      <!-- STEP 05: STORY STRUCTURE & BEATS -->
+      <section class="step-panel" id="panel-step-5" data-step="5" aria-labelledby="step5Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step4Title">Step 04: Story Structure & Beats</h2>
-            <p class="step-goal">Three-Act dramatic arc and 8-sequence beat sheet extracted from your book.</p>
+            <h2 id="step5Title">Step 05: Story Structure & Beats</h2>
+            <p class="step-goal">Three-Act dramatic arc and 8-sequence beat sheet built from your format and coverage.</p>
           </div>
           <span class="status-badge status-badge--synced">✓ Beats Balanced</span>
         </div>
@@ -312,16 +359,16 @@
           </div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Format</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Screenplay Editor ➔</button>
         </div>
       </section>
 
-      <!-- STEP 05: SCREENPLAY EDITOR (DIALOGUE DEFAULT) -->
-      <section class="step-panel" id="panel-step-5" data-step="5" aria-labelledby="step5Title">
+      <!-- STEP 06: SCREENPLAY EDITOR (DIALOGUE DEFAULT) -->
+      <section class="step-panel" id="panel-step-6" data-step="6" aria-labelledby="step6Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step5Title">Step 05: Screenplay Editor</h2>
+            <h2 id="step6Title">Step 06: Screenplay Editor</h2>
             <p class="step-goal">Review and refine scene descriptions and character dialogue. Spoken dialogue is prioritized by default.</p>
           </div>
           <span class="status-badge status-badge--synced storyline-drift-badge" id="screenplayDriftBadge">✓ Storyline in sync</span>
@@ -353,16 +400,187 @@
           </div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Beats</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Continuity & Rules ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 07: CONTINUITY & WORLD RULES -->
+      <section class="step-panel" id="panel-step-7" data-step="7" aria-labelledby="step7Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step7Title">Step 07: Continuity & World Rules</h2>
+            <p class="step-goal">Lock wardrobe, equipment, and environmental consistency rules across all cuts.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Consistency Rules Active</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Persistent Character Tokens & Lighting Continuity Engine
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Wardrobe Consistency</span>
+              <p class="deliverable-desc">Tommy: Deep navy flight suit with gold astronaut insignia. Judah: Slate-gray explorer vest with holographic wrist communicator.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Lighting & Palette</span>
+              <p class="deliverable-desc">Warm golden sunlight reflected from Saturn's atmosphere against the deep black of space with subtle blue rim lighting.</p>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Screenplay</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Cast & Characters ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 08: CAST & CHARACTERS -->
+      <section class="step-panel" id="panel-step-8" data-step="8" aria-labelledby="step8Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step8Title">Step 08: Cast & Characters</h2>
+            <p class="step-goal">Character dossiers and archetypes extracted directly from your screenplay.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Cast Extracted</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Automatic Character Token Extraction & Identity Dossiers
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Tommy (Lead Explorer)</span>
+              <p class="deliverable-desc">Curious, adventurous young explorer with keen observation skills and passion for astronomy.</p>
+              <small style="color:#f59e0b">Token: <code>tommy_lead_explorer</code></small>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Judah (Navigator / Co-Pilot)</span>
+              <p class="deliverable-desc">Calm, analytical companion and skilled spacecraft pilot who keeps the mission on course.</p>
+              <small style="color:#f59e0b">Token: <code>judah_pilot_navigator</code></small>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Continuity</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Art Direction & Style ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 09: ART DIRECTION & STYLE RECIPE (CONFIGURATION STEP) -->
+      <section class="step-panel" id="panel-step-9" data-step="9" aria-labelledby="step9Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step9Title">Step 09: Art Direction & Style Recipe</h2>
+            <p class="step-goal">Select your aesthetic style recipe: Live Action, Pixar 3D, Claymation, Cyberpunk, or Travel Poster.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Style Locked</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Realistic Live Action &mdash; <em>35mm cinema camera, natural film grain, realistic practical lighting.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:var(--space-2)">
+            <div class="deliverable-card" style="border-color:#f59e0b">
+              <span class="deliverable-title">🎬 Live Action</span>
+              <p class="deliverable-desc">Cinematic, natural light, real actors and places.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">🧸 Claymation</span>
+              <p class="deliverable-desc">Handmade plasticine stop-motion aesthetic.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">✨ 3D Pixar</span>
+              <p class="deliverable-desc">Expressive animated characters and soft global light.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">🌆 Cyberpunk 3D</span>
+              <p class="deliverable-desc">Neon reflections, rain, fog, and volumetric lighting.</p>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Cast</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Look Development ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 10: LOOK DEVELOPMENT (TURNAROUNDS) -->
+      <section class="step-panel" id="panel-step-10" data-step="10" aria-labelledby="step10Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step10Title">Step 10: Look Development & Turnarounds</h2>
+            <p class="step-goal">Generate 3-view turnaround reference sheets (Front, 3/4, Profile) using FLUX + InstantID to lock actor identities.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ InstantID Ready</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> FLUX.1-dev + InstantX/InstantID &mdash; <em>Zero-shot facial identity preservation.</em>
+        </div>
+        <div class="step-zone-workspace">
+          <div class="direct-story-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <h3 style="margin:0;font-size:var(--text-base);color:#f8fafc">Actor Likeness & Turnaround Sheets</h3>
+              <label class="btn btn--secondary" style="margin:0;cursor:pointer">
+                📷 Upload Real Actor Reference Photo
+                <input type="file" accept="image/*" style="display:none">
+              </label>
+            </div>
+            <p style="color:#94a3b8;font-size:var(--text-sm)">Studio generates 3-view reference turnarounds from character descriptions or your uploaded likeness to lock the actor's face across all shots.</p>
+            <div style="display:flex;gap:12px;margin-top:8px">
+              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
+                Front View Reference (Locked)
+              </div>
+              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
+                Three-Quarter Profile (Locked)
+              </div>
+              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
+                Side Profile (Locked)
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Style</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Locations & Sets ➔</button>
+        </div>
+      </section>
+
+      <!-- STEP 11: LOCATIONS & SETS -->
+      <section class="step-panel" id="panel-step-11" data-step="11" aria-labelledby="step11Title">
+        <div class="step-zone-header">
+          <div class="step-title-wrap">
+            <h2 id="step11Title">Step 11: Locations & Sets</h2>
+            <p class="step-goal">Environmental keycards and set geography for consistent background rendering.</p>
+          </div>
+          <span class="status-badge status-badge--synced">✓ Sets Configured</span>
+        </div>
+        <div class="step-zone-autopilot autopilot-badge">
+          ✨ <strong>Autopilot Pick:</strong> Sci-Fi Cinematic Set Keycards
+        </div>
+        <div class="step-zone-workspace">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card">
+              <span class="deliverable-title">Set 1: Observation Deck</span>
+              <p class="deliverable-desc">Wide panoramic glass dome, soft ambient instrument illumination, floating navigation charts.</p>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">Set 2: Titan Methane Sea</span>
+              <p class="deliverable-desc">Orange haze atmosphere, dark reflective liquid methane shoreline, distant ice ridges.</p>
+            </div>
+          </div>
+        </div>
+        <div class="step-zone-dock">
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Turnarounds</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Shot List ➔</button>
         </div>
       </section>
 
-      <!-- STEP 06: SHOT LIST & CINEMATOGRAPHY -->
-      <section class="step-panel" id="panel-step-6" data-step="6" aria-labelledby="step6Title">
+      <!-- STEP 12: SHOT LIST & CINEMATOGRAPHY -->
+      <section class="step-panel" id="panel-step-12" data-step="12" aria-labelledby="step12Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step6Title">Step 06: Shot List & Cinematography</h2>
+            <h2 id="step12Title">Step 12: Shot List & Cinematography</h2>
             <p class="step-goal">Framing, lens choices, and camera motions planned for every scene.</p>
           </div>
           <span class="status-badge status-badge--synced">✓ 18 Shots Planned</span>
@@ -405,187 +623,58 @@
           </div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
-          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Continuity & Rules ➔</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Sets</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Hardware & Where to Run ➔</button>
         </div>
       </section>
 
-      <!-- STEP 07: CONTINUITY & WORLD RULES -->
-      <section class="step-panel" id="panel-step-7" data-step="7" aria-labelledby="step7Title">
+      <!-- STEP 13: HARDWARE & WHERE TO RUN (CONFIGURATION STEP) -->
+      <section class="step-panel" id="panel-step-13" data-step="13" aria-labelledby="step13Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step7Title">Step 07: Continuity & World Rules</h2>
-            <p class="step-goal">Lock wardrobe, equipment, and environmental consistency rules across all cuts.</p>
+            <h2 id="step13Title">Step 13: Hardware & Where to Run</h2>
+            <p class="step-goal">Configure where heavy visual and video models execute (Local GPU, Hugging Face Spaces, Cloud API, or Kaggle/Colab).</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Consistency Rules Active</span>
+          <span class="status-badge status-badge--synced">✓ Hardware Configured</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Persistent Character Tokens & Lighting Continuity Engine
+          ✨ <strong>Autopilot Pick:</strong> Hybrid Smart Routing &mdash; <em>Kokoro & Audio locally; Wan 2.1 & FLUX on Hugging Face Spaces / Cloud API.</em>
         </div>
         <div class="step-zone-workspace">
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">Wardrobe Consistency</span>
-              <p class="deliverable-desc">Tommy: Deep navy flight suit with gold astronaut insignia. Judah: Slate-gray explorer vest with holographic wrist communicator.</p>
-            </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">Lighting & Palette</span>
-              <p class="deliverable-desc">Warm golden sunlight reflected from Saturn's atmosphere against the deep black of space with subtle blue rim lighting.</p>
-            </div>
-          </div>
-        </div>
-        <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
-          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Cast & Characters ➔</button>
-        </div>
-      </section>
-
-      <!-- STEP 08: CAST & CHARACTERS -->
-      <section class="step-panel" id="panel-step-8" data-step="8" aria-labelledby="step8Title">
-        <div class="step-zone-header">
-          <div class="step-title-wrap">
-            <h2 id="step8Title">Step 08: Cast & Characters</h2>
-            <p class="step-goal">Character dossiers and archetypes extracted directly from your book text.</p>
-          </div>
-          <span class="status-badge status-badge--synced">✓ Cast Extracted</span>
-        </div>
-        <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Automatic Character Token Extraction & Identity Dossiers
-        </div>
-        <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">Tommy (Lead Explorer)</span>
-              <p class="deliverable-desc">Curious, adventurous young explorer with keen observation skills and passion for astronomy.</p>
-              <small style="color:#f59e0b">Token: <code>tommy_lead_explorer</code></small>
-            </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">Judah (Navigator / Co-Pilot)</span>
-              <p class="deliverable-desc">Calm, analytical companion and skilled spacecraft pilot who keeps the mission on course.</p>
-              <small style="color:#f59e0b">Token: <code>judah_pilot_navigator</code></small>
-            </div>
-          </div>
-        </div>
-        <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
-          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Locations & Sets ➔</button>
-        </div>
-      </section>
-
-      <!-- STEP 09: LOCATIONS & SETS -->
-      <section class="step-panel" id="panel-step-9" data-step="9" aria-labelledby="step9Title">
-        <div class="step-zone-header">
-          <div class="step-title-wrap">
-            <h2 id="step9Title">Step 09: Locations & Sets</h2>
-            <p class="step-goal">Environmental keycards and set geography for consistent background rendering.</p>
-          </div>
-          <span class="status-badge status-badge--synced">✓ Sets Configured</span>
-        </div>
-        <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Sci-Fi Cinematic Set Keycards
-        </div>
-        <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">Set 1: Observation Deck</span>
-              <p class="deliverable-desc">Wide panoramic glass dome, soft ambient instrument illumination, floating navigation charts.</p>
-            </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">Set 2: Titan Methane Sea</span>
-              <p class="deliverable-desc">Orange haze atmosphere, dark reflective liquid methane shoreline, distant ice ridges.</p>
-            </div>
-          </div>
-        </div>
-        <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
-          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Art Direction & Look ➔</button>
-        </div>
-      </section>
-
-      <!-- STEP 10: ART DIRECTION & LOOK -->
-      <section class="step-panel" id="panel-step-10" data-step="10" aria-labelledby="step10Title">
-        <div class="step-zone-header">
-          <div class="step-title-wrap">
-            <h2 id="step10Title">Step 10: Art Direction & Look Recipe</h2>
-            <p class="step-goal">Select your aesthetic style recipe: Live Action, Pixar 3D, Claymation, Cyberpunk, or Travel Poster.</p>
-          </div>
-          <span class="status-badge status-badge--synced">✓ Style Locked</span>
-        </div>
-        <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Realistic Live Action &mdash; <em>35mm cinema camera, natural film grain, realistic practical lighting.</em>
-        </div>
-        <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:var(--space-2)">
             <div class="deliverable-card" style="border-color:#f59e0b">
-              <span class="deliverable-title">🎬 Live Action</span>
-              <p class="deliverable-desc">Cinematic, natural light, real actors and places.</p>
+              <span class="deliverable-title">🤗 Hugging Face Spaces (ZeroGPU)</span>
+              <p class="deliverable-desc">Free daily shared GPU quota for FLUX.1 and Wan 2.1 with zero local GPU requirements.</p>
+              <span class="status-badge status-badge--synced" style="margin-top:auto">Recommended</span>
             </div>
             <div class="deliverable-card">
-              <span class="deliverable-title">🧸 Claymation</span>
-              <p class="deliverable-desc">Handmade plasticine stop-motion aesthetic.</p>
+              <span class="deliverable-title">⚡ Direct Cloud API (Serverless)</span>
+              <p class="deliverable-desc">Fastest turnaround via Fal.ai or Replicate serverless endpoints for instant generation.</p>
+              <button type="button" class="btn btn--secondary" style="margin-top:auto">Use Cloud API</button>
             </div>
             <div class="deliverable-card">
-              <span class="deliverable-title">✨ 3D Pixar</span>
-              <p class="deliverable-desc">Expressive animated characters and soft global light.</p>
+              <span class="deliverable-title">📓 Kaggle Dual T4 / Colab</span>
+              <p class="deliverable-desc">Run batch generation through free remote Kaggle notebooks (15GB x2 VRAM).</p>
+              <button type="button" class="btn btn--secondary" style="margin-top:auto">Configure Kaggle</button>
             </div>
             <div class="deliverable-card">
-              <span class="deliverable-title">🌆 Cyberpunk 3D</span>
-              <p class="deliverable-desc">Neon reflections, rain, fog, and volumetric lighting.</p>
+              <span class="deliverable-title">💻 Local Computer GPU</span>
+              <p class="deliverable-desc">Generate on this machine's GPU or CPU (ideal for Kokoro audio and Real-ESRGAN upscaling).</p>
+              <button type="button" class="btn btn--secondary" style="margin-top:auto">Use Local Hardware</button>
             </div>
           </div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
-          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Look Development ➔</button>
-        </div>
-      </section>
-
-      <!-- STEP 11: LOOK DEVELOPMENT (TURNAROUNDS) -->
-      <section class="step-panel" id="panel-step-11" data-step="11" aria-labelledby="step11Title">
-        <div class="step-zone-header">
-          <div class="step-title-wrap">
-            <h2 id="step11Title">Step 11: Look Development & Turnarounds</h2>
-            <p class="step-goal">Generate 3-view turnaround reference sheets (Front, 3/4, Profile) using FLUX + InstantID to lock actor identities.</p>
-          </div>
-          <span class="status-badge status-badge--synced">✓ InstantID Ready</span>
-        </div>
-        <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> FLUX.1-dev + InstantX/InstantID &mdash; <em>Zero-shot facial identity preservation.</em>
-        </div>
-        <div class="step-zone-workspace">
-          <div class="direct-story-card">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-              <h3 style="margin:0;font-size:var(--text-base);color:#f8fafc">Actor Likeness & Turnaround Sheets</h3>
-              <label class="btn btn--secondary" style="margin:0;cursor:pointer">
-                📷 Upload Real Actor Reference Photo
-                <input type="file" accept="image/*" style="display:none">
-              </label>
-            </div>
-            <p style="color:#94a3b8;font-size:var(--text-sm)">Studio generates 3-view reference turnarounds from character descriptions or your uploaded likeness to lock the actor's face across all shots.</p>
-            <div style="display:flex;gap:12px;margin-top:8px">
-              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
-                Front View Reference (Locked)
-              </div>
-              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
-                Three-Quarter Profile (Locked)
-              </div>
-              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
-                Side Profile (Locked)
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Shot List</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Voice Casting ➔</button>
         </div>
       </section>
 
-      <!-- STEP 12: VOICE CASTING & DIALECTS (DIALOGUE DEFAULT) -->
-      <section class="step-panel" id="panel-step-12" data-step="12" aria-labelledby="step12Title">
+      <!-- STEP 14: VOICE CASTING & DIALECTS (DIALOGUE DEFAULT) -->
+      <section class="step-panel" id="panel-step-14" data-step="14" aria-labelledby="step14Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step12Title">Step 12: Voice Casting & Dialects</h2>
+            <h2 id="step14Title">Step 14: Voice Casting & Dialects</h2>
             <p class="step-goal">Dialogue-first voice casting with Kokoro-82M. Seamlessly switch between American and British dialects.</p>
           </div>
           <span class="status-badge status-badge--synced">✓ Dialogue Default</span>
@@ -643,11 +732,11 @@
         </div>
       </section>
 
-      <!-- STEP 13: SPOKEN DIALOGUE DELIVERY -->
-      <section class="step-panel" id="panel-step-13" data-step="13" aria-labelledby="step13Title">
+      <!-- STEP 15: SPOKEN DIALOGUE DELIVERY -->
+      <section class="step-panel" id="panel-step-15" data-step="15" aria-labelledby="step15Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step13Title">Step 13: Spoken Dialogue Delivery</h2>
+            <h2 id="step15Title">Step 15: Spoken Dialogue Delivery</h2>
             <p class="step-goal">Fine-tune spoken lines, inflection, pacing, and perform audio-only redos per shot.</p>
           </div>
           <span class="status-badge status-badge--synced">✓ Dialogue Ready</span>
@@ -700,11 +789,11 @@
         </div>
       </section>
 
-      <!-- STEP 14: SCORE & FOLEY SOUND DESIGN -->
-      <section class="step-panel" id="panel-step-14" data-step="14" aria-labelledby="step14Title">
+      <!-- STEP 16: SCORE & FOLEY SOUND DESIGN -->
+      <section class="step-panel" id="panel-step-16" data-step="16" aria-labelledby="step16Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step14Title">Step 14: Score & Foley Sound Design</h2>
+            <h2 id="step16Title">Step 16: Score & Foley Sound Design</h2>
             <p class="step-goal">Video-aligned sound effects (MMAudio) and cinematic orchestral score (MusicGen).</p>
           </div>
           <span class="status-badge status-badge--synced">✓ Sound Plan Ready</span>
@@ -732,11 +821,11 @@
         </div>
       </section>
 
-      <!-- STEP 15: STORYBOARD KEYFRAMES -->
-      <section class="step-panel" id="panel-step-15" data-step="15" aria-labelledby="step15Title">
+      <!-- STEP 17: STORYBOARD KEYFRAMES -->
+      <section class="step-panel" id="panel-step-17" data-step="17" aria-labelledby="step17Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step15Title">Step 15: Storyboard Keyframes</h2>
+            <h2 id="step17Title">Step 17: Storyboard Keyframes</h2>
             <p class="step-goal">Scene-by-scene filmstrip showing master keyframes. Review each shot before motion synthesis.</p>
           </div>
           <span class="status-badge status-badge--synced">✓ Keyframes Rendered</span>
@@ -792,11 +881,11 @@
         </div>
       </section>
 
-      <!-- STEP 16: MOTION & VIDEO SYNTHESIS -->
-      <section class="step-panel" id="panel-step-16" data-step="16" aria-labelledby="step16Title">
+      <!-- STEP 18: MOTION & VIDEO SYNTHESIS -->
+      <section class="step-panel" id="panel-step-18" data-step="18" aria-labelledby="step18Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step16Title">Step 16: Motion & Video Synthesis</h2>
+            <h2 id="step18Title">Step 18: Motion & Video Synthesis</h2>
             <p class="step-goal">Animate approved keyframes into cinematic video clips with camera movement and physics.</p>
           </div>
           <span class="status-badge status-badge--synced">✓ Video Synthesized</span>
@@ -835,11 +924,11 @@
         </div>
       </section>
 
-      <!-- STEP 17: LIP-SYNC & VISUAL POLISH -->
-      <section class="step-panel" id="panel-step-17" data-step="17" aria-labelledby="step17Title">
+      <!-- STEP 19: LIP-SYNC & VISUAL POLISH -->
+      <section class="step-panel" id="panel-step-19" data-step="19" aria-labelledby="step19Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step17Title">Step 17: Lip-Sync & Visual Polish</h2>
+            <h2 id="step19Title">Step 19: Lip-Sync & Visual Polish</h2>
             <p class="step-goal">Phoneme mouth synchronization for speaking actors and Real-ESRGAN super-resolution upscaling.</p>
           </div>
           <span class="status-badge status-badge--synced">✓ Polish Applied</span>
@@ -867,11 +956,11 @@
         </div>
       </section>
 
-      <!-- STEP 18: TIMELINE SEQUENCE ASSEMBLY -->
-      <section class="step-panel" id="panel-step-18" data-step="18" aria-labelledby="step18Title">
+      <!-- STEP 20: TIMELINE SEQUENCE ASSEMBLY -->
+      <section class="step-panel" id="panel-step-20" data-step="20" aria-labelledby="step20Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step18Title">Step 18: Timeline Sequence Assembly</h2>
+            <h2 id="step20Title">Step 20: Timeline Sequence Assembly</h2>
             <p class="step-goal">Visual 3-track timeline editor for video, dialogue, and score sequencing.</p>
           </div>
           <span class="status-badge status-badge--synced">✓ Timeline Assembled</span>
@@ -913,11 +1002,11 @@
         </div>
       </section>
 
-      <!-- STEP 19: AUDIO STEM MIX & MASTERING -->
-      <section class="step-panel" id="panel-step-19" data-step="19" aria-labelledby="step19Title">
+      <!-- STEP 21: AUDIO STEM MIX & MASTERING -->
+      <section class="step-panel" id="panel-step-21" data-step="21" aria-labelledby="step21Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step19Title">Step 19: Audio Stem Mix & Mastering</h2>
+            <h2 id="step21Title">Step 21: Audio Stem Mix & Mastering</h2>
             <p class="step-goal">Mix Dialogue, Foley SFX, and Music stems with automatic loudness balancing to -16 LUFS.</p>
           </div>
           <span class="status-badge status-badge--synced">✓ Mixed to -16 LUFS</span>
@@ -953,11 +1042,11 @@
         </div>
       </section>
 
-      <!-- STEP 20: PREMIERE & MULTI-FORMAT EXPORT (ALL THREE OPTIONS HARMONIZED) -->
-      <section class="step-panel" id="panel-step-20" data-step="20" aria-labelledby="step20Title">
+      <!-- STEP 22: PREMIERE & MULTI-FORMAT EXPORT (ALL THREE OPTIONS HARMONIZED) -->
+      <section class="step-panel" id="panel-step-22" data-step="22" aria-labelledby="step22Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step20Title">Step 20: Cinema Premiere & Multi-Format Export</h2>
+            <h2 id="step22Title">Step 22: Cinema Premiere & Multi-Format Export</h2>
             <p class="step-goal">Watch your finished film, download one-click master deliverables, or export pro NLE project files.</p>
           </div>
           <span class="status-badge status-badge--synced">✓ Master Cut Ready</span>
@@ -1047,7 +1136,7 @@
     </main>
 
     <!-- CLASSIC TAB PANELS (Preserving Workbench Tabs: Prompts, Models, Compare, Library) -->
-
+    <div id="classicPanels" class="classic-panels">
 
     <!-- IMPORT TAB -->
     <div class="tab-panel active" id="panel-project" role="tabpanel" aria-labelledby="tab-project">
@@ -1107,15 +1196,15 @@
             </div>
             <div class="card__body">
                 <section id="whatoimplement" class="bookonly">
-    <h3 style="margin:0 0 6px;font-size:var(--text-sm)">Source <span class="warn" id="libcount"></span></h3>
+    <h3 style="margin:0 0 6px;font-size:var(--text-sm)">Source <span class="warn" id="legacy_libcount"></span></h3>
     <p class="warn" style="margin-bottom:12px">Pick the book the Characters, Creative and Movies tabs work on. Stand-alone text-to-image and text-to-video prompts have their own tab: Single Prompts.</p>
     <input type="radio" name="mode" value="book" checked hidden aria-hidden="true">
     <div class="stack">
-      <div><label class="f" for="proj">Book</label><select id="proj"></select></div>
+      <div><label class="f" for="legacy_proj">Book</label><select id="legacy_proj"></select></div>
       <div id="chips"></div>
       <div class="upload-block">
-        <label for="file" class="f">Add a book file (.pdf, .epub, .docx, .html, .txt, .md): drag it onto the box below (or click the box). It is uploaded to the <code>books</code> folder when you press Import. You can also drop files into that folder yourself and reload this page.</label>
-        <input type="file" id="file" accept="application/pdf,.pdf,.epub,.odt,.rtf,application/epub+zip,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.html,.htm,text/html,text/plain,.txt,.md,text/markdown">
+        <label for="legacy_file" class="f">Add a book file (.pdf, .epub, .docx, .html, .txt, .md): drag it onto the box below (or click the box). It is uploaded to the <code>books</code> folder when you press Import. You can also drop files into that folder yourself and reload this page.</label>
+        <input type="file" id="legacy_file" accept="application/pdf,.pdf,.epub,.odt,.rtf,application/epub+zip,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.html,.htm,text/html,text/plain,.txt,.md,text/markdown">
       </div>
       <div class="text-block">
         <label class="f" for="impTitle">Or paste text (a story, a scene, a few paragraphs: only the part you paste is used)</label>
@@ -1152,27 +1241,27 @@
             </div>
         </div>
 
-        <div class="card bookonly" id="stepChapters">
+        <div class="card bookonly" id="legacy_stepChapters">
             <div class="card__header">
                 <h2 class="card__title">Chapters</h2>
                 <p class="card__subtitle">Check the split before anything is written: rename, join, cut or drop chapters (cover, contents, notes)</p>
             </div>
             <div class="card__body">
-                <p class="warn" id="chapNote" aria-live="polite">Pick a book that has been read to see its chapters.</p>
-                <div id="chapBar" class="row hidden" style="gap:8px;margin:8px 0;flex-wrap:wrap">
-                    <button type="button" class="btn btn--secondary" id="chapDrop" disabled>Drop ticked</button>
-                    <span class="warn" id="chapSummary"></span>
+                <p class="warn" id="legacy_chapNote" aria-live="polite">Pick a book that has been read to see its chapters.</p>
+                <div id="legacy_chapBar" class="row hidden" style="gap:8px;margin:8px 0;flex-wrap:wrap">
+                    <button type="button" class="btn btn--secondary" id="legacy_chapDrop" disabled>Drop ticked</button>
+                    <span class="warn" id="legacy_chapSummary"></span>
                 </div>
                 <div style="max-height:360px;overflow:auto">
-                    <table class="data-table" id="chapTable" aria-label="Chapters of the chosen book"></table>
+                    <table class="data-table" id="legacy_chapTable" aria-label="Chapters of the chosen book"></table>
                 </div>
-                <div id="chapEditor" class="hidden" style="margin-top:12px">
-                    <label class="f" for="chapText" id="chapTextLabel">Chapter text</label>
-                    <textarea id="chapText" class="caret-box" rows="10" aria-readonly="true" spellcheck="false" autocomplete="off" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit"></textarea>
+                <div id="legacy_chapEditor" class="hidden" style="margin-top:12px">
+                    <label class="f" for="legacy_chapText" id="legacy_chapTextLabel">Chapter text</label>
+                    <textarea id="legacy_chapText" class="caret-box" rows="10" aria-readonly="true" spellcheck="false" autocomplete="off" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:8px;font:inherit"></textarea>
                     <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
-                        <input type="text" id="chapSplitTitle" maxlength="80" aria-label="Title for the second half" placeholder="Title for the second half (optional)" autocomplete="off" style="flex:1;min-width:200px">
-                        <button type="button" class="btn btn--secondary" id="chapSplit">Split at the cursor</button>
-                        <button type="button" class="btn btn--ghost" id="chapClose">Close</button>
+                        <input type="text" id="legacy_chapSplitTitle" maxlength="80" aria-label="Title for the second half" placeholder="Title for the second half (optional)" autocomplete="off" style="flex:1;min-width:200px">
+                        <button type="button" class="btn btn--secondary" id="legacy_chapSplit">Split at the cursor</button>
+                        <button type="button" class="btn btn--ghost" id="legacy_chapClose">Close</button>
                     </div>
                     <small class="warn">Click in the text where the new chapter should start, then press Split. The cut moves back to the start of that word.</small>
                 </div>
@@ -2451,6 +2540,7 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
       <button type="button" id="flowNext" class="primary">Next</button>
     </div>
 </main>
+</div> <!-- #classicPanels -->
 
 <div class="modal-overlay" id="warnModal" role="alertdialog" aria-modal="true" aria-labelledby="warnTitle" aria-describedby="warnBody">
     <div class="modal">

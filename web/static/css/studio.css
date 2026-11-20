@@ -1551,6 +1551,49 @@
   .va-make { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
 
   /* ===== STUDIO V2: CINEMATIC DARK THEME & PIPELINE ARCHITECTURE ===== */
+  /* Pipeline Mode: Strict top-to-bottom layout. Hide all legacy clutter and cards below approve */
+  body.mode-pipeline #classicPanels,
+  body.mode-pipeline #flowStage,
+  body.mode-pipeline #flowFoot,
+  body.mode-pipeline #flowRun,
+  body.mode-pipeline .tab-nav,
+  body.mode-pipeline .tab-panel,
+  body.mode-pipeline #lookbar,
+  body.mode-pipeline .flow-nav,
+  body.mode-pipeline #flowNav,
+  body.mode-pipeline #flowAbout,
+  body.mode-pipeline #pipelineStepper,
+  body.mode-pipeline #stepperHint {
+    display: none !important;
+  }
+
+  body.mode-pipeline .pipeline-phases-bar,
+  body.mode-pipeline .studio-pipeline-viewport {
+    display: block !important;
+  }
+
+  /* Workbench Mode: Hide pipeline stepper, show classic workbench tab with return bar */
+  body.mode-workbench .pipeline-phases-bar,
+  body.mode-workbench .studio-pipeline-viewport {
+    display: none !important;
+  }
+  body.mode-workbench #classicPanels,
+  body.mode-workbench .tab-nav {
+    display: block !important;
+  }
+
+  .workbench-return-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #1e293b;
+    border: 1px solid #f59e0b;
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    margin: var(--space-3) 0;
+    color: #f8fafc;
+  }
+
   .pipeline-phases-bar {
     display: flex;
     flex-wrap: wrap;
