@@ -37,10 +37,11 @@ CLOUD_KEYS_FILE = Path.home() / ".pistachios_studio" / "cloud_keys.json"
 
 
 def get_gemini_api_key() -> str:
-    """Return GEMINI_API_KEY from environment or ~/.pistachios_studio/cloud_keys.json."""
-    env_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
-    if env_key:
-        return env_key
+    """Return GEMINI_API_KEY (or GOOGLE_API_KEY) from environment or ~/.pistachios_studio/cloud_keys.json."""
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        env_key = (os.environ.get(var) or "").strip()
+        if env_key:
+            return env_key
     if CLOUD_KEYS_FILE.is_file():
         try:
             data = json.loads(CLOUD_KEYS_FILE.read_text(encoding="utf-8"))
