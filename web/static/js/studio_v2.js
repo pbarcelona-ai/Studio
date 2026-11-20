@@ -225,6 +225,11 @@
       loadV2ShotList();
     }
 
+    // If entering Step 13 (Hardware) or Step 18 (Video), refresh Gemini & hardware status
+    if (currentStep === 13 || currentStep === 18) {
+      loadV2GeminiStatus();
+    }
+
     // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
@@ -1268,9 +1273,10 @@
 
     const lookOpts = document.querySelector('input[name="look"]:checked');
     const look = (typeof v2SelectedLook === "string" && v2SelectedLook) || (lookOpts ? lookOpts.value : "live_action");
+    const hw = (typeof v2SelectedHardware === "string" && v2SelectedHardware) ? v2SelectedHardware : "auto";
 
     try {
-      const rec = await callApi(`/api/autopilot_recommend?look=${encodeURIComponent(look)}&step=${encodeURIComponent(stepMeta.id)}`);
+      const rec = await callApi(`/api/autopilot_recommend?look=${encodeURIComponent(look)}&step=${encodeURIComponent(stepMeta.id)}&hardware=${encodeURIComponent(hw)}`);
       const recBadges = document.querySelectorAll(`.step-panel[data-step="${currentStep}"] .autopilot-badge`);
       recBadges.forEach(b => {
         b.innerHTML = `✨ <strong>Autopilot Pick:</strong> ${rec.label} &mdash; <em>${rec.why}</em>`;
@@ -1674,8 +1680,49 @@
     }
   }
 
-  // ===== STEP 13 & STEP 18: GEMINI OMNI 1.2 FLASH =====
+  // ===== STEP 13 & STEP 18: HARDWARE SELECTION & GEMINI OMNI 1.2 FLASH =====
+  const V2_HW_LABELS = {
+    gemini: "Google Gemini API (Omni 1.2 Flash)",
+    huggingface: "Hugging Face Spaces (ZeroGPU)",
+    cloud_api: "Direct Cloud API (Fal / Replicate)",
+    kaggle: "Kaggle Dual T4 / Colab",
+    computer: "Local Computer GPU",
+  };
+  let v2SelectedHardware = "gemini";
   let v2OmniInteractions = {};
+
+  function selectV2Hardware(hwKey) {
+    const key = V2_HW_LABELS[hwKey] ? hwKey : "gemini";
+    v2SelectedHardware = key;
+
+    document.querySelectorAll(".v2-hw-card").forEach(card => {
+      const active = card.dataset.hw === key;
+      card.style.borderColor = active ? "#f59e0b" : "#232d3f";
+      card.style.background = active ? "rgba(245, 158, 11, 0.10)" : "#141b27";
+      card.style.boxShadow = active ? "0 0 14px rgba(245, 158, 11, 0.25)" : "none";
+      const btn = card.querySelector(".v2-hw-select");
+      if (btn) {
+        btn.className = "btn v2-hw-select " + (active ? "btn--primary" : "btn--secondary");
+        btn.textContent = active ? "✓ Selected" : `Use ${V2_HW_LABELS[card.dataset.hw].split(" (")[0]}`;
+      }
+      if (active && card.dataset.svc) {
+        const svcRadio = document.querySelector(`input[name="svc"][value="${card.dataset.svc}"]`);
+        if (svcRadio) {
+          svcRadio.checked = true;
+          svcRadio.dispatchEvent(new Event("change"));
+        }
+      }
+    });
+
+    const badge = $("v2HwBadge");
+    if (badge) badge.textContent = `✓ Active: ${V2_HW_LABELS[key]}`;
+    const status = $("v2HwStatus");
+    if (status) {
+      status.innerHTML = `<strong style="color:#f59e0b">Active Backend:</strong> ${V2_HW_LABELS[key]} &mdash; Autopilot and video/image runners will target this backend.`;
+    }
+    try { localStorage.setItem("studio_v2_hardware", key); } catch (e) {}
+    loadStepAutopilot();
+  }
 
   async function loadV2GeminiStatus() {
     const badge = $("v2GeminiKeyBadge");
@@ -1721,6 +1768,23 @@
   }
 
   function initV2GeminiOmni() {
+    // Bind all 5 hardware backend cards and their Select buttons in Step 13
+    document.querySelectorAll(".v2-hw-card").forEach(card => {
+      card.addEventListener("click", (e) => {
+        if (e.target && (e.target.tagName === "INPUT" || e.target.id === "bSaveGeminiKey")) return;
+        selectV2Hardware(card.dataset.hw);
+      });
+    });
+    document.querySelectorAll(".v2-hw-select").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectV2Hardware(btn.dataset.hw);
+      });
+    });
+    let savedHw = "gemini";
+    try { savedHw = localStorage.getItem("studio_v2_hardware") || "gemini"; } catch (e) {}
+    selectV2Hardware(savedHw);
+
     const btnKey = $("bSaveGeminiKey");
     const keyInput = $("v2GeminiKeyInput");
     const btnRun = $("bRunGeminiOmni");

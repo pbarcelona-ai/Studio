@@ -892,47 +892,52 @@
       <section class="step-panel" id="panel-step-13" data-step="13" aria-labelledby="step13Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step13Title">Step 13: Hardware & Where to Run</h2>
-            <p class="step-goal">Configure where heavy visual and video models execute (Local GPU, Hugging Face Spaces, Cloud API, or Kaggle/Colab).</p>
+            <h2 id="step13Title">Step 13: Hardware &amp; Where to Run</h2>
+            <p class="step-goal">Click any compute backend below to choose where heavy visual and video models execute.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Hardware Configured</span>
+          <span class="status-badge status-badge--synced" id="v2HwBadge">✓ Active: Gemini API</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Hybrid Smart Routing &mdash; <em>Kokoro & Audio locally; Wan 2.1 & FLUX on Hugging Face Spaces / Cloud API.</em>
+          ✨ <strong>Autopilot Pick:</strong> Hybrid Smart Routing &mdash; <em>Kokoro &amp; Audio locally; Video &amp; Keyframes on your chosen compute backend.</em>
         </div>
         <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card" style="border-color:#38bdf8">
+          <div id="v2HwGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card v2-hw-card" data-hw="gemini" data-svc="cloud_api" style="cursor:pointer">
               <span class="deliverable-title">✨ Google Gemini API (Omni 1.2 Flash)</span>
               <p class="deliverable-desc">Native 3–15s video + synchronized audio (up to 4K), up to 6 character/set reference images, and conversational "Edit by Talking" redos.</p>
               <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto">
                 <span class="status-badge" id="v2GeminiKeyBadge" style="align-self:flex-start">Checking Gemini API…</span>
                 <div style="display:flex;gap:6px">
-                  <input type="password" id="v2GeminiKeyInput" placeholder="Paste GEMINI_API_KEY…" autocomplete="new-password" style="flex:1;min-width:120px;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                  <input type="password" id="v2GeminiKeyInput" placeholder="Paste GEMINI_API_KEY…" autocomplete="new-password" style="flex:1;min-width:110px;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
                   <button type="button" class="btn btn--primary" id="bSaveGeminiKey" style="padding:6px 10px;font-size:var(--text-xs)">Save Key</button>
                 </div>
+                <button type="button" class="btn btn--secondary v2-hw-select" data-hw="gemini" style="width:100%">Use Gemini Omni API</button>
               </div>
             </div>
-            <div class="deliverable-card" style="border-color:#f59e0b">
+            <div class="deliverable-card v2-hw-card" data-hw="huggingface" data-svc="huggingface" style="cursor:pointer">
               <span class="deliverable-title">🤗 Hugging Face Spaces (ZeroGPU)</span>
               <p class="deliverable-desc">Free daily shared GPU quota for FLUX.1 and Wan 2.1 with zero local GPU requirements.</p>
-              <span class="status-badge status-badge--synced" style="margin-top:auto">Recommended</span>
+              <button type="button" class="btn btn--secondary v2-hw-select" data-hw="huggingface" style="margin-top:auto;width:100%">Use Hugging Face Spaces</button>
             </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">⚡ Direct Cloud API (Serverless)</span>
+            <div class="deliverable-card v2-hw-card" data-hw="cloud_api" data-svc="cloud_api" style="cursor:pointer">
+              <span class="deliverable-title">⚡ Direct Cloud API (Fal / Replicate)</span>
               <p class="deliverable-desc">Fastest turnaround via Fal.ai or Replicate serverless endpoints for instant generation.</p>
-              <button type="button" class="btn btn--secondary" style="margin-top:auto">Use Cloud API</button>
+              <button type="button" class="btn btn--secondary v2-hw-select" data-hw="cloud_api" style="margin-top:auto;width:100%">Use Cloud API</button>
             </div>
-            <div class="deliverable-card">
+            <div class="deliverable-card v2-hw-card" data-hw="kaggle" data-svc="kaggle" style="cursor:pointer">
               <span class="deliverable-title">📓 Kaggle Dual T4 / Colab</span>
               <p class="deliverable-desc">Run batch generation through free remote Kaggle notebooks (15GB x2 VRAM).</p>
-              <button type="button" class="btn btn--secondary" style="margin-top:auto">Configure Kaggle</button>
+              <button type="button" class="btn btn--secondary v2-hw-select" data-hw="kaggle" style="margin-top:auto;width:100%">Use Kaggle / Colab</button>
             </div>
-            <div class="deliverable-card">
+            <div class="deliverable-card v2-hw-card" data-hw="computer" data-svc="computer" style="cursor:pointer">
               <span class="deliverable-title">💻 Local Computer GPU</span>
               <p class="deliverable-desc">Generate on this machine's GPU or CPU (ideal for Kokoro audio and Real-ESRGAN upscaling).</p>
-              <button type="button" class="btn btn--secondary" style="margin-top:auto">Use Local Hardware</button>
+              <button type="button" class="btn btn--secondary v2-hw-select" data-hw="computer" style="margin-top:auto;width:100%">Use Local Hardware</button>
             </div>
+          </div>
+
+          <div class="direct-story-card" style="margin-top:var(--space-3)">
+            <div id="v2HwStatus" style="font-size:var(--text-sm);color:#cbd5e1">Selected compute backend will be used for Keyframes (Step 17) and Video Synthesis (Step 18).</div>
           </div>
         </div>
         <div class="step-zone-dock">
