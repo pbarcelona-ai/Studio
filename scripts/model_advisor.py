@@ -81,8 +81,15 @@ _KEYFRAMES = [
     ("flux1_schnell", "fast FLUX, no character pictures (tested on a T4)", None),
 ]
 
+_GEMINI_OMNI = (
+    "gemini_omni_12_flash",
+    "Gemini Omni 1.2 Flash: Native 3-15s video + synchronized audio, up to 6 character/set reference images, 4K output, and conversational editing (requires GEMINI_API_KEY)",
+    None,
+)
+
 _I2V = [
     ("wan21_i2v_14b", "Wan 2.1 14B I2V: Best-in-class motion physics, cloth/hair dynamics and 720p native resolution", None),
+    _GEMINI_OMNI,
     ("pika_h3_flex_i2v", "by far the best faces and motion we have seen, with 5 s clips; runs on public HF Space", None),
     ("ltx_video_fast_i2v", "tested on a T4: about 2 minutes a clip at 672x384, with cleaner faces than 40-step LTX", None),
     ("wan22_ti2v_5b_i2v", "for GPUs with room: on a T4 it took about 13 minutes for a 1.4 s clip and smeared small faces", 22),
@@ -91,6 +98,7 @@ _I2V = [
 
 _STYLISED_T2V = [
     ("wan22_t2v_a14b_lightning", "Wan 2.2 14B in 4 steps: the best Wan quality at about 8 minutes (tested on a T4)", None),
+    _GEMINI_OMNI,
     ("wan22_ti2v_5b", "Wan 2.2 5B at 24 fps (tested on a T4, about 20 minutes)", None),
     ("ltx_video", "fastest video model, for trying ideas", None),
 ]
@@ -265,7 +273,22 @@ def autopilot_recommend(look, step, shot_type=None, hardware=None):
             "dialect": "american",
             "voice_mode": "dialogue",
         }
-    elif step in ("video", "video_i2v", "step_16"):
+    elif step in ("video", "video_i2v", "step_16", "step_18"):
+        has_gemini = False
+        try:
+            import run_gemini_omni
+            has_gemini = bool(run_gemini_omni.get_gemini_api_key())
+        except Exception:
+            has_gemini = False
+        if "gemini" in hardware or (has_gemini and "t4" not in hardware and "kaggle" not in hardware):
+            return {
+                "model": "gemini_omni_12_flash",
+                "label": "Gemini Omni 1.2 Flash (Native Video + Audio, 3-15s)",
+                "why": "Generates 3-15s clips (up to 4K) with native synchronized audio, up to 6 character/set reference images, and conversational editing.",
+                "execution_target": "gemini_api",
+                "dialect": "american",
+                "voice_mode": "dialogue",
+            }
         if "fast" in hardware or "t4" in hardware:
             return {
                 "model": "ltx_video_fast_i2v",

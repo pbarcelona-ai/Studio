@@ -25,6 +25,9 @@
   "claude-sonnet-5-5",
   "claude-haiku-5-5"
  ],
+ "gemini_models": [
+  "gemini-omni-1.2-flash"
+ ],
  "hf_models": [
   "Qwen/Qwen2.5-72B-Instruct",
   "meta-llama/Llama-3.3-70B-Instruct",

@@ -812,6 +812,17 @@
         </div>
         <div class="step-zone-workspace">
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card" style="border-color:#38bdf8">
+              <span class="deliverable-title">✨ Google Gemini API (Omni 1.2 Flash)</span>
+              <p class="deliverable-desc">Native 3–15s video + synchronized audio (up to 4K), up to 6 character/set reference images, and conversational "Edit by Talking" redos.</p>
+              <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto">
+                <span class="status-badge" id="v2GeminiKeyBadge" style="align-self:flex-start">Checking Gemini API…</span>
+                <div style="display:flex;gap:6px">
+                  <input type="password" id="v2GeminiKeyInput" placeholder="Paste GEMINI_API_KEY…" autocomplete="new-password" style="flex:1;min-width:120px;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                  <button type="button" class="btn btn--primary" id="bSaveGeminiKey" style="padding:6px 10px;font-size:var(--text-xs)">Save Key</button>
+                </div>
+              </div>
+            </div>
             <div class="deliverable-card" style="border-color:#f59e0b">
               <span class="deliverable-title">🤗 Hugging Face Spaces (ZeroGPU)</span>
               <p class="deliverable-desc">Free daily shared GPU quota for FLUX.1 and Wan 2.1 with zero local GPU requirements.</p>
@@ -1064,6 +1075,50 @@
           ✨ <strong>Autopilot Pick:</strong> Wan-AI/Wan2.1-I2V-14B-720P-Diffusers &mdash; <em>Best physical dynamics, cloth motion, and camera tracking.</em>
         </div>
         <div class="step-zone-workspace">
+          <!-- Gemini Omni 1.2 Flash Interactive Generator & Conversational Editor -->
+          <div class="direct-story-card" id="v2GeminiOmniCard" style="margin-bottom:var(--space-3);border-color:rgba(56,189,248,0.35)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <h3 style="margin:0;font-size:var(--text-base);color:#38bdf8">✨ Gemini Omni 1.2 Flash &mdash; Native Video + Audio &amp; Conversational Edit</h3>
+              <span class="status-badge" id="v2OmniBadge">Ready</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:8px">
+              <div>
+                <label class="f" for="v2OmniShot">Shot #</label>
+                <input type="number" id="v2OmniShot" min="1" max="999" value="1" style="width:100%;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+              </div>
+              <div>
+                <label class="f" for="v2OmniDuration">Duration (3–15s)</label>
+                <input type="number" id="v2OmniDuration" min="3" max="15" value="10" style="width:100%;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+              </div>
+              <div>
+                <label class="f" for="v2OmniResolution">Resolution</label>
+                <select id="v2OmniResolution" style="width:100%;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                  <option value="360p">360p (Fast Draft)</option>
+                  <option value="720p" selected>720p (Standard HD)</option>
+                  <option value="1080p">1080p (Full HD)</option>
+                  <option value="4k">4K (Cinema Master)</option>
+                </select>
+              </div>
+              <div>
+                <label class="f" for="v2OmniAspect">Aspect Ratio</label>
+                <select id="v2OmniAspect" style="width:100%;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                  <option value="16:9" selected>16:9 Landscape</option>
+                  <option value="9:16">9:16 Vertical Shorts</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="f" for="v2OmniPrompt">Shot Prompt or Conversational Edit Instruction ("Edit by Talking")</label>
+              <textarea id="v2OmniPrompt" rows="3" placeholder="Describe the shot with camera movement & native audio — or enter a follow-up edit like 'Change the jacket to dark blue and add falling snow. Keep everything else the same.'" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px;font:inherit;font-size:var(--text-sm)"></textarea>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <label class="f" for="v2OmniPrevId" style="margin:0;white-space:nowrap">Previous Interaction ID (optional edit):</label>
+              <input type="text" id="v2OmniPrevId" placeholder="Auto-filled after first generation for conversational edits" style="flex:1;min-width:200px;padding:6px 8px;background:#0a0d14;color:#94a3b8;border:1px solid #334155;border-radius:6px;font-family:var(--font-mono);font-size:var(--text-xs)">
+              <button type="button" class="btn btn--primary" id="bRunGeminiOmni" style="padding:7px 14px">🎬 Generate / Edit with Gemini Omni</button>
+            </div>
+            <div id="v2OmniStatus" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></div>
+          </div>
+
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
             <div class="deliverable-card">
               <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#38bdf8">

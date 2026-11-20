@@ -619,3 +619,76 @@ def _redo_storyline(r: Request):
     changes = detect_scene_changes.detect_changed_scenes(pd)
     return {"status": "ok", "project": slug, "scenes": scenes, "changes": changes}
 
+
+@route("POST", "/api/gemini_omni_key")
+def _gemini_omni_key(r: Request):
+    import run_gemini_omni
+
+    key = str(r.body.get("api_key") or "").strip()
+    if not key:
+        raise PlanError("api_key is required")
+    run_gemini_omni.save_gemini_api_key(key)
+    return {"saved": True, "configured": True, "sdk_installed": run_gemini_omni.sdk_available()}
+
+
+@route("POST", "/api/gemini_omni_generate")
+def _gemini_omni_generate(r: Request):
+    import run_gemini_omni
+
+    prompt = str(r.body.get("prompt") or "").strip()
+    if not prompt:
+        raise PlanError("prompt is required")
+    slug = str(r.body.get("project") or "").strip()
+    shot_num = int(r.body.get("shot") or 1)
+    duration = int(r.body.get("duration") or 10)
+    resolution = str(r.body.get("resolution") or "720p")
+    aspect_ratio = str(r.body.get("aspect_ratio") or "16:9")
+    previous_interaction_id = (r.body.get("previous_interaction_id") or "").strip() or None
+    first_frame = (r.body.get("first_frame") or "").strip() or None
+    last_frame = (r.body.get("last_frame") or "").strip() or None
+    ref_images = r.body.get("reference_images") or []
+    strip_audio = bool(r.body.get("strip_audio"))
+
+    if slug:
+        out_dir = pdir(slug, "book") / "videos" / "gemini_omni_12_flash"
+    else:
+        out_dir = PROJECTS / "prompts" / "gemini_omni" / "videos"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"shot-{shot_num:03d}.mp4"
+
+    try:
+        res = run_gemini_omni.generate_omni_video(
+            prompt=prompt,
+            output_path=out_path,
+            aspect_ratio=aspect_ratio,
+            duration=duration,
+            resolution=resolution,
+            first_frame=first_frame,
+            last_frame=last_frame,
+            reference_images=ref_images,
+            strip_audio=strip_audio,
+            previous_interaction_id=previous_interaction_id,
+        )
+    except Exception as e:
+        raise PlanError(run_gemini_omni.sanitize_error(e)) from e
+
+    # Persist interaction_id sidecar so conversational turn-by-turn edits work seamlessly
+    if res.get("interaction_id"):
+        idx_path = out_dir / "interactions.json"
+        idx = {}
+        if idx_path.is_file():
+            try:
+                idx = json.loads(idx_path.read_text(encoding="utf-8")) or {}
+            except Exception:
+                idx = {}
+        idx[f"shot-{shot_num:03d}"] = {
+            "interaction_id": res["interaction_id"],
+            "prompt": prompt,
+            "resolution": res["resolution"],
+            "duration": res["duration"],
+        }
+        idx_path.write_text(json.dumps(idx, indent=2), encoding="utf-8")
+
+    return res
+
+

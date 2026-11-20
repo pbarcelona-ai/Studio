@@ -10,6 +10,7 @@
   {"id": "huggingface", "name": "Hugging Face Spaces", "proven": true, "url": "https://huggingface.co/spaces", "note": "Free shared GPUs with a daily quota, only for models with a public Space."}
  ],
  "paid": [
+  {"id": "gemini_api", "name": "Google Gemini API (Omni 1.2 Flash)", "kind": "hosted model API", "url": "https://aistudio.google.com", "note": "Native 3-15s video + synchronized audio, up to 6 character/set reference images, 4K output, and conversational turn-by-turn editing via GEMINI_API_KEY."},
   {"id": "colab_pro", "name": "Google Colab Pro / Pro+", "kind": "notebook", "url": "https://colab.research.google.com/signup", "note": "The same Colab runner with L4, A100 or H100 GPUs. The GPU choices are in the Studio already; no paid run has been tried."},
   {"id": "runpod", "name": "RunPod", "kind": "rented GPU machine or serverless", "url": "https://www.runpod.io", "note": "Billed by the hour or second. Route to try: start a pod, run the Studio on it, and use it as 'This computer'."},
   {"id": "vast", "name": "Vast.ai", "kind": "marketplace of rented GPU machines", "url": "https://vast.ai", "note": "Cheapest listings vary by host; machines differ in speed and reliability."},

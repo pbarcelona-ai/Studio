@@ -310,3 +310,26 @@ def _autopilot_recommend(r: Request):
     hardware = r.q("hardware")
     return model_advisor.autopilot_recommend(look, step, shot_type, hardware)
 
+
+@route("GET", "/api/gemini_omni_status")
+def _gemini_omni_status(r: Request):
+    import json
+    import run_gemini_omni
+
+    slug = r.q("project")
+    interactions = {}
+    if slug:
+        try:
+            idx_path = pdir(slug, "book") / "videos" / "gemini_omni_12_flash" / "interactions.json"
+            if idx_path.is_file():
+                interactions = json.loads(idx_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            interactions = {}
+    return {
+        "model": run_gemini_omni.DEFAULT_MODEL,
+        "configured": bool(run_gemini_omni.get_gemini_api_key()),
+        "sdk_installed": run_gemini_omni.sdk_available(),
+        "interactions": interactions,
+    }
+
+

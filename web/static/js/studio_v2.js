@@ -1499,6 +1499,119 @@
     }
   }
 
+  // ===== STEP 13 & STEP 18: GEMINI OMNI 1.2 FLASH =====
+  let v2OmniInteractions = {};
+
+  async function loadV2GeminiStatus() {
+    const badge = $("v2GeminiKeyBadge");
+    const omniBadge = $("v2OmniBadge");
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    try {
+      const st = await callApi(`/api/gemini_omni_status?project=${encodeURIComponent(slug)}`);
+      v2OmniInteractions = (st && st.interactions) || {};
+      const ready = Boolean(st && st.configured && st.sdk_installed);
+      if (badge) {
+        if (ready) {
+          badge.textContent = "✓ Gemini API Connected";
+          badge.className = "status-badge status-badge--synced";
+        } else if (st && st.configured && !st.sdk_installed) {
+          badge.textContent = "⚠️ Key saved — install: pip install -U google-genai";
+          badge.className = "status-badge status-badge--drift";
+        } else {
+          badge.textContent = "API Key Not Set";
+          badge.className = "status-badge status-badge--drift";
+        }
+      }
+      if (omniBadge) {
+        omniBadge.textContent = ready ? "✓ Omni 1.2 Flash Ready" : "Configure GEMINI_API_KEY in Step 13";
+        omniBadge.className = "status-badge " + (ready ? "status-badge--synced" : "status-badge--drift");
+      }
+      syncV2OmniInteractionId();
+    } catch (e) {}
+  }
+
+  function syncV2OmniInteractionId() {
+    const shotEl = $("v2OmniShot");
+    const prevEl = $("v2OmniPrevId");
+    if (!shotEl || !prevEl) return;
+    const n = Math.max(1, parseInt(shotEl.value || "1", 10) || 1);
+    const key = `shot-${String(n).padStart(3, "0")}`;
+    const saved = v2OmniInteractions[key];
+    if (saved && saved.interaction_id) {
+      prevEl.value = saved.interaction_id;
+    } else if (!prevEl.dataset.userTyped) {
+      prevEl.value = "";
+    }
+  }
+
+  function initV2GeminiOmni() {
+    const btnKey = $("bSaveGeminiKey");
+    const keyInput = $("v2GeminiKeyInput");
+    const btnRun = $("bRunGeminiOmni");
+    const shotEl = $("v2OmniShot");
+    const prevEl = $("v2OmniPrevId");
+
+    if (btnKey && keyInput) {
+      btnKey.addEventListener("click", async () => {
+        const apiKey = keyInput.value.trim();
+        if (!apiKey) { alert("Paste your GEMINI_API_KEY from Google AI Studio first."); return; }
+        btnKey.disabled = true;
+        try {
+          await callApi("/api/gemini_omni_key", { api_key: apiKey });
+          keyInput.value = "";
+          await loadV2GeminiStatus();
+          loadStepAutopilot();
+        } catch (err) {
+          alert("Could not save Gemini API key: " + err.message);
+        } finally {
+          btnKey.disabled = false;
+        }
+      });
+    }
+
+    if (shotEl) shotEl.addEventListener("change", syncV2OmniInteractionId);
+    if (prevEl) prevEl.addEventListener("input", () => { prevEl.dataset.userTyped = prevEl.value ? "1" : ""; });
+
+    if (btnRun) {
+      btnRun.addEventListener("click", async () => {
+        const prompt = ($("v2OmniPrompt") || {}).value ? $("v2OmniPrompt").value.trim() : "";
+        const statusEl = $("v2OmniStatus");
+        if (!prompt) { alert("Enter a shot prompt or conversational edit instruction first."); return; }
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        const shot = parseInt(($("v2OmniShot") || {}).value || "1", 10) || 1;
+        const duration = parseInt(($("v2OmniDuration") || {}).value || "10", 10) || 10;
+        const resolution = ($("v2OmniResolution") || {}).value || "720p";
+        const aspect_ratio = ($("v2OmniAspect") || {}).value || "16:9";
+        const previous_interaction_id = (($("v2OmniPrevId") || {}).value || "").trim() || null;
+
+        btnRun.disabled = true;
+        if (statusEl) statusEl.textContent = `Generating Shot ${shot} (${duration}s @ ${resolution}) via Gemini Omni 1.2 Flash…`;
+        try {
+          const res = await callApi("/api/gemini_omni_generate", {
+            project: slug,
+            shot,
+            prompt,
+            duration,
+            resolution,
+            aspect_ratio,
+            previous_interaction_id
+          });
+          if (res.interaction_id && prevEl) prevEl.value = res.interaction_id;
+          if (statusEl) {
+            statusEl.textContent = `✓ Saved ${res.output} (${Math.round((res.bytes || 0) / 1024)} KB) · Interaction ID: ${res.interaction_id || "none"}`;
+          }
+          await loadV2GeminiStatus();
+        } catch (err) {
+          if (statusEl) statusEl.textContent = "Error: " + err.message;
+        } finally {
+          btnRun.disabled = false;
+        }
+      });
+    }
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
@@ -1511,6 +1624,7 @@
     initV2StoryBreakdown();
     initV2Screenplay();
     initV2Continuity();
+    initV2GeminiOmni();
 
     // Bind step pills in 6-phase bar
     document.querySelectorAll(".step-pill").forEach(pill => {
@@ -1559,6 +1673,7 @@
       checkStepStorylineDrift();
       loadV2Coverage();
       loadV2Scope();
+      loadV2GeminiStatus();
       if (currentStep === 5) loadV2StoryBreakdown();
       if (currentStep === 6) loadV2Screenplay();
       if (currentStep === 7) loadV2Continuity();
@@ -1573,6 +1688,7 @@
     loadV2StoryBreakdown,
     loadV2Screenplay,
     loadV2Continuity,
+    loadV2GeminiStatus,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,
     checkStepStorylineDrift,
