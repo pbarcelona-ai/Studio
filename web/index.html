@@ -330,33 +330,69 @@
         </div>
       </section>
 
-      <!-- STEP 05: STORY STRUCTURE & BEATS -->
+      <!-- STEP 05: STORY STRUCTURE, BEATS & SCENE BREAKDOWN -->
       <section class="step-panel" id="panel-step-5" data-step="5" aria-labelledby="step5Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step5Title">Step 05: Story Structure & Beats</h2>
-            <p class="step-goal">Three-Act dramatic arc and 8-sequence beat sheet built from your format and coverage.</p>
+            <h2 id="step5Title">Step 05: Story Structure, Beats &amp; Scene Breakdown</h2>
+            <p class="step-goal">Full act-by-act beat sheet and complete scene-by-scene story breakdown. Reorder, merge, rename, or adjust scene pacing before writing the screenplay.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Beats Balanced</span>
+          <span class="status-badge status-badge--synced" id="v2BeatsBadge">✓ Breakdown Loaded</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Standard 3-Act Structure (25% Setup / 50% Confrontation / 25% Climax & Resolution)
+          ✨ <strong>Autopilot Pick:</strong> 3-Act Narrative Arc + Scene-by-Scene Beat Breakdown (25% Setup / 50% Confrontation / 25% Climax &amp; Resolution)
         </div>
         <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">Act I: The Launch</span>
-              <p class="deliverable-desc">Status quo, inciting incident, and crossing the threshold into the Saturnian system.</p>
+          <!-- Summary & Actions Bar -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div id="v2BeatsSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading story structure and scene breakdown…</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn--secondary" id="v2BeatsBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate / Rebuild Beats</button>
+                <button type="button" class="btn btn--ghost" id="v2BeatsReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
+              </div>
             </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">Act II: The Rings & Titan</span>
-              <p class="deliverable-desc">Rising tension, navigation through the ice debris, and touchdown on Titan's methane seas.</p>
-            </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">Act III: Discovery & Return</span>
-              <p class="deliverable-desc">Climactic revelation, escape from an unexpected ring storm, and safe voyage home.</p>
+            <div id="v2BeatsEmpty" class="hidden" style="margin-top:8px;padding:12px;background:#0a0d14;border:1px dashed #334155;border-radius:8px;color:#94a3b8;font-size:var(--text-sm)">
+              No film plan or beat sheet exists yet for this book. Click <strong>✨ Generate / Rebuild Beats</strong> above to break your story into acts, beats, and scenes.
             </div>
           </div>
+
+          <!-- Act-by-Act Beat Sheet -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <h3 style="margin:0 0 8px;font-size:var(--text-base);color:#f59e0b">1. Act-by-Act Story Beat Sheet</h3>
+            <div id="v2BeatsGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:var(--space-3)"></div>
+          </div>
+
+          <!-- Full Scene-by-Scene Story Breakdown Table -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">2. Complete Scene-by-Scene Story Breakdown</h3>
+              <span id="v2BreakdownCount" style="font-size:var(--text-xs);color:#94a3b8"></span>
+            </div>
+            <div style="overflow-x:auto;max-height:460px;overflow-y:auto">
+              <table class="data-table" id="v2BreakdownTable" style="width:100%;border-collapse:collapse;font-size:var(--text-sm)" aria-label="Scene-by-scene story breakdown">
+                <thead>
+                  <tr style="border-bottom:1px solid #334155;text-align:left;color:#94a3b8">
+                    <th style="padding:8px">Scene</th>
+                    <th style="padding:8px">Act</th>
+                    <th style="padding:8px">Title</th>
+                    <th style="padding:8px">Ch.</th>
+                    <th style="padding:8px">Clips</th>
+                    <th style="padding:8px">Sec</th>
+                    <th style="padding:8px">Story Beat / What Happens</th>
+                    <th style="padding:8px">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="v2BreakdownBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Narrative Treatment (when available from Read It In) -->
+          <details id="v2TreatmentDetails" class="hidden" style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px">
+            <summary style="cursor:pointer;font-weight:700;color:#cbd5e1;font-size:var(--text-sm)">📖 Full Narrative Treatment</summary>
+            <pre id="v2TreatmentText" style="margin:10px 0 0;white-space:pre-wrap;font-family:var(--font-ui);font-size:var(--text-sm);color:#e2e8f0;line-height:1.6;max-height:360px;overflow:auto"></pre>
+          </details>
         </div>
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Format</button>

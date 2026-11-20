@@ -185,6 +185,11 @@
       try { window.loadChapters(); } catch (e) {}
     }
 
+    // If entering Step 5 (Story Structure & Beats), load full beat sheet & scene breakdown
+    if (currentStep === 5) {
+      loadV2StoryBreakdown();
+    }
+
     // If entering Step 6 (Screenplay), load all screenplay scenes
     if (currentStep === 6) {
       loadV2Screenplay();
@@ -193,6 +198,285 @@
     // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
+  }
+
+  // ===== STEP 05: STORY STRUCTURE, BEATS & SCENE BREAKDOWN =====
+  async function v2AdaptEdit(body) {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    if (!slug) return;
+    try {
+      await callApi("/api/adaptation_edit", { project: slug, ...body });
+      await loadV2StoryBreakdown();
+      checkStepStorylineDrift();
+    } catch (err) {
+      alert("Could not update scene breakdown: " + err.message);
+    }
+  }
+
+  async function loadV2StoryBreakdown() {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    const summaryEl = $("v2BeatsSummary");
+    const badgeEl = $("v2BeatsBadge");
+    const emptyEl = $("v2BeatsEmpty");
+    const gridEl = $("v2BeatsGrid");
+    const tbody = $("v2BreakdownBody");
+    const countEl = $("v2BreakdownCount");
+    const treatDetails = $("v2TreatmentDetails");
+    const treatText = $("v2TreatmentText");
+
+    if (!gridEl || !tbody) return;
+    if (!slug) {
+      if (summaryEl) summaryEl.textContent = "Pick or save a story in Step 01 first.";
+      if (emptyEl) emptyEl.classList.remove("hidden");
+      gridEl.textContent = "";
+      tbody.textContent = "";
+      return;
+    }
+
+    if (summaryEl) summaryEl.textContent = "Loading story acts, beats, and scene breakdown…";
+    let adapt = null, readin = null, chaps = null;
+    try { adapt = await callApi(`/api/adaptation?project=${encodeURIComponent(slug)}`); } catch (e) {}
+    try { readin = await callApi(`/api/readin?project=${encodeURIComponent(slug)}`); } catch (e) {}
+    if (!adapt || !adapt.exists) {
+      try { chaps = await callApi(`/api/chapters?project=${encodeURIComponent(slug)}`); } catch (e) {}
+    }
+
+    const plan = adapt && adapt.exists ? adapt.plan : null;
+    const scenes = (plan && Array.isArray(plan.scenes)) ? plan.scenes : [];
+    const beatsActs = (readin && readin.beats && Array.isArray(readin.beats.acts)) ? readin.beats.acts : [];
+    const treatment = (readin && readin.treatment) ? readin.treatment.trim() : "";
+
+    // Treatment panel
+    if (treatDetails && treatText) {
+      if (treatment) {
+        treatText.textContent = treatment;
+        treatDetails.classList.remove("hidden");
+      } else {
+        treatDetails.classList.add("hidden");
+      }
+    }
+
+    // 1. Render Act-by-Act Beat Sheet
+    gridEl.textContent = "";
+    if (beatsActs.length > 0) {
+      beatsActs.forEach((act, idx) => {
+        const card = document.createElement("div");
+        card.className = "deliverable-card";
+        const pct = act.share ? ` (${Math.round(act.share * 100)}%)` : "";
+        const h = document.createElement("span");
+        h.className = "deliverable-title";
+        h.textContent = `${act.name || `Act ${idx + 1}`}${pct}`;
+        card.appendChild(h);
+
+        if (act.purpose) {
+          const p = document.createElement("p");
+          p.className = "deliverable-desc";
+          p.style.marginBottom = "8px";
+          p.textContent = act.purpose;
+          card.appendChild(p);
+        }
+
+        const ol = document.createElement("ol");
+        ol.style.cssText = "margin:0;padding-left:18px;font-size:var(--text-xs);color:#cbd5e1;display:flex;flex-direction:column;gap:6px;";
+        (act.beats || []).forEach(b => {
+          const li = document.createElement("li");
+          li.innerHTML = `<strong style="color:#f59e0b">${b.name || `Beat ${b.n}`}</strong>: ${b.description || ""}`;
+          ol.appendChild(li);
+        });
+        card.appendChild(ol);
+        gridEl.appendChild(card);
+      });
+    } else if (scenes.length > 0) {
+      // Group plan scenes by Act so every story beat is visible even without readin beats
+      const byAct = new Map();
+      scenes.forEach(s => {
+        const a = s.act || 1;
+        if (!byAct.has(a)) byAct.set(a, []);
+        byAct.get(a).push(s);
+      });
+      [...byAct.entries()].sort((a, b) => a[0] - b[0]).forEach(([actNum, actScenes]) => {
+        const card = document.createElement("div");
+        card.className = "deliverable-card";
+        const h = document.createElement("span");
+        h.className = "deliverable-title";
+        const sec = actScenes.reduce((acc, s) => acc + (Number(s.seconds) || 0), 0);
+        h.textContent = `Act ${actNum} · ${actScenes.length} scene(s) (${Math.round(sec)}s)`;
+        card.appendChild(h);
+
+        const ol = document.createElement("ol");
+        ol.style.cssText = "margin:6px 0 0;padding-left:18px;font-size:var(--text-xs);color:#cbd5e1;display:flex;flex-direction:column;gap:6px;";
+        actScenes.forEach(s => {
+          const li = document.createElement("li");
+          li.innerHTML = `<strong style="color:#f59e0b">${s.id} ${s.title || ""}</strong>: ${s.summary || ""}`;
+          ol.appendChild(li);
+        });
+        card.appendChild(ol);
+        gridEl.appendChild(card);
+      });
+    } else {
+      const p = document.createElement("p");
+      p.style.cssText = "color:#94a3b8;font-size:var(--text-sm);margin:0;";
+      p.textContent = "No act/beat sheet generated yet. Click '✨ Generate / Rebuild Beats' above to analyze the book into acts and beats.";
+      gridEl.appendChild(p);
+    }
+
+    // 2. Render Complete Scene-by-Scene Story Breakdown Table
+    tbody.textContent = "";
+    if (scenes.length > 0) {
+      if (emptyEl) emptyEl.classList.add("hidden");
+      const rt = adapt.runtime || {};
+      const totalBeats = beatsActs.reduce((acc, a) => acc + (a.beats ? a.beats.length : 0), 0);
+      if (summaryEl) {
+        summaryEl.innerHTML = `<strong style="color:#f59e0b">${scenes.length} scenes</strong>` +
+          (totalBeats ? ` · <strong>${totalBeats} story beats</strong>` : "") +
+          ` · ${adapt.active_clips || 0} clips · ${rt.minutes || "?"} min planned` +
+          (plan.logline ? `<div style="margin-top:4px;color:#94a3b8;font-size:var(--text-xs)">${plan.logline}</div>` : "");
+      }
+      if (badgeEl) {
+        badgeEl.textContent = plan.stale ? "⚠️ Chapters Changed — Rebuild Recommended" : `✓ ${scenes.length} Scenes Planned`;
+        badgeEl.className = "status-badge " + (plan.stale ? "status-badge--drift" : "status-badge--synced");
+      }
+      if (countEl) countEl.textContent = `Showing all ${scenes.length} scenes`;
+
+      scenes.forEach((s, i) => {
+        const tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid #1e293b";
+
+        const tdId = document.createElement("td");
+        tdId.style.cssText = "padding:8px;font-weight:700;color:#f59e0b;white-space:nowrap;";
+        tdId.textContent = s.id;
+
+        const tdAct = document.createElement("td");
+        tdAct.style.padding = "8px";
+        tdAct.textContent = String(s.act || 1);
+
+        const tdTitle = document.createElement("td");
+        tdTitle.style.padding = "8px";
+        const inpTitle = document.createElement("input");
+        inpTitle.type = "text";
+        inpTitle.value = s.title || "";
+        inpTitle.maxLength = 100;
+        inpTitle.style.cssText = "width:100%;min-width:140px;padding:4px 6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;";
+        inpTitle.addEventListener("change", () => v2AdaptEdit({ action: "rename", id: s.id, title: inpTitle.value }));
+        tdTitle.appendChild(inpTitle);
+
+        const tdCh = document.createElement("td");
+        tdCh.style.cssText = "padding:8px;white-space:nowrap;color:#94a3b8;";
+        tdCh.textContent = Array.isArray(s.chapters) ? s.chapters.join(", ") : "";
+
+        const tdClips = document.createElement("td");
+        tdClips.style.padding = "8px";
+        const inpClips = document.createElement("input");
+        inpClips.type = "number";
+        inpClips.min = 1;
+        inpClips.max = 500;
+        inpClips.value = s.clips || 1;
+        inpClips.style.cssText = "width:58px;padding:4px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;";
+        inpClips.addEventListener("change", () => v2AdaptEdit({ action: "set_clips", id: s.id, clips: Number(inpClips.value) }));
+        tdClips.appendChild(inpClips);
+
+        const tdSec = document.createElement("td");
+        tdSec.style.cssText = "padding:8px;white-space:nowrap;color:#94a3b8;";
+        tdSec.textContent = `${s.seconds || 0}s`;
+
+        const tdSum = document.createElement("td");
+        tdSum.style.cssText = "padding:8px;color:#e2e8f0;min-width:220px;";
+        tdSum.textContent = s.summary || "";
+
+        const tdActs = document.createElement("td");
+        tdActs.style.cssText = "padding:8px;white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap;";
+        const mkBtn = (label, fn, cls = "btn btn--ghost") => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = cls;
+          b.style.cssText = "padding:3px 7px;font-size:var(--text-xs);";
+          b.textContent = label;
+          b.addEventListener("click", fn);
+          return b;
+        };
+        if (i > 0) tdActs.appendChild(mkBtn("↑", () => v2AdaptEdit({ action: "move", id: s.id, direction: -1 })));
+        if (i + 1 < scenes.length) {
+          tdActs.appendChild(mkBtn("↓", () => v2AdaptEdit({ action: "move", id: s.id, direction: 1 })));
+          tdActs.appendChild(mkBtn("Join", () => {
+            if (confirm(`Join ${s.id} with the next scene?`)) v2AdaptEdit({ action: "merge", id: s.id });
+          }));
+        }
+        tdActs.appendChild(mkBtn("Drop", () => {
+          if (confirm(`Drop scene ${s.id} ("${s.title}")?`)) v2AdaptEdit({ action: "drop", id: s.id });
+        }));
+        tdActs.appendChild(mkBtn("Script ➔", () => {
+          spActiveIdx = i;
+          spViewMode = "single";
+          activateStep(6);
+        }, "btn btn--secondary"));
+
+        [tdId, tdAct, tdTitle, tdCh, tdClips, tdSec, tdSum, tdActs].forEach(td => tr.appendChild(td));
+        tbody.appendChild(tr);
+      });
+    } else if (chaps && Array.isArray(chaps.chapters) && chaps.chapters.length > 0) {
+      if (emptyEl) emptyEl.classList.remove("hidden");
+      if (summaryEl) summaryEl.textContent = `No scene breakdown yet — showing ${chaps.chapters.length} source chapter(s) ready to be broken into beats & scenes.`;
+      if (badgeEl) {
+        badgeEl.textContent = `${chaps.chapters.length} Chapters (Plan Pending)`;
+        badgeEl.className = "status-badge status-badge--working";
+      }
+      if (countEl) countEl.textContent = `${chaps.chapters.length} chapters`;
+      chaps.chapters.forEach(c => {
+        const tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid #1e293b";
+        tr.innerHTML = `<td style="padding:8px;font-weight:700;color:#f59e0b">CH${String(c.n).padStart(2, "0")}</td>` +
+          `<td style="padding:8px">-</td>` +
+          `<td style="padding:8px;color:#f8fafc">${c.title || `Chapter ${c.n}`}</td>` +
+          `<td style="padding:8px">${c.n}</td>` +
+          `<td style="padding:8px">-</td>` +
+          `<td style="padding:8px">-</td>` +
+          `<td style="padding:8px;color:#94a3b8">${c.starts_with || ""} (${c.words || 0} words)</td>` +
+          `<td style="padding:8px;color:#64748b">Pending plan</td>`;
+        tbody.appendChild(tr);
+      });
+    } else {
+      if (emptyEl) emptyEl.classList.remove("hidden");
+      if (summaryEl) summaryEl.textContent = "No breakdown found yet for this project.";
+      if (badgeEl) {
+        badgeEl.textContent = "Not Planned Yet";
+        badgeEl.className = "status-badge status-badge--drift";
+      }
+      if (countEl) countEl.textContent = "0 scenes";
+    }
+  }
+
+  function initV2StoryBreakdown() {
+    const btnReload = $("v2BeatsReload");
+    const btnBuild = $("v2BeatsBuild");
+    if (btnReload) btnReload.addEventListener("click", () => loadV2StoryBreakdown());
+    if (btnBuild) {
+      btnBuild.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnBuild.disabled = true;
+        const summaryEl = $("v2BeatsSummary");
+        if (summaryEl) summaryEl.textContent = "Starting story breakdown & beat sheet generation…";
+        try {
+          const o = typeof window.options === "function" ? window.options() : {};
+          await callApi("/api/read_it_in", { project: slug, engine: o.engine || "claude", claude_model: o.claude_model });
+          if (summaryEl) summaryEl.textContent = "✓ Story breakdown job started! Reload in a moment to view updated beats and scenes.";
+        } catch (err) {
+          if (summaryEl) summaryEl.textContent = "Could not start breakdown: " + err.message;
+        } finally {
+          btnBuild.disabled = false;
+        }
+      });
+    }
+
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        if (currentStep === 5) loadV2StoryBreakdown();
+      });
+    }
   }
 
   // ===== STEP 06: MULTI-SCENE SCREENPLAY EDITOR =====
@@ -639,6 +923,7 @@
 
     initDirectStoryInput();
     initWorkbenchToggle();
+    initV2StoryBreakdown();
     initV2Screenplay();
 
     // Bind step pills in 6-phase bar
@@ -686,6 +971,7 @@
 
     setTimeout(() => {
       checkStepStorylineDrift();
+      if (currentStep === 5) loadV2StoryBreakdown();
       if (currentStep === 6) loadV2Screenplay();
     }, 1200);
   });
@@ -693,6 +979,7 @@
   // Export methods for global access
   window.StudioV2 = {
     activateStep,
+    loadV2StoryBreakdown,
     loadV2Screenplay,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,
