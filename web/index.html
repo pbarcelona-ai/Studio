@@ -765,25 +765,52 @@
       <section class="step-panel" id="panel-step-11" data-step="11" aria-labelledby="step11Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step11Title">Step 11: Locations & Sets</h2>
-            <p class="step-goal">Environmental keycards and set geography for consistent background rendering.</p>
+            <h2 id="step11Title">Step 11: Locations &amp; Sets</h2>
+            <p class="step-goal">Review, edit, or add every location and set in your story so backgrounds and lighting stay consistent across cuts.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Sets Configured</span>
+          <span class="status-badge status-badge--synced" id="v2LocBadge">Loading Sets…</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Sci-Fi Cinematic Set Keycards
+          ✨ <strong>Autopilot Pick:</strong> Continuity Set Keycards &amp; Spatial Environment Locking
         </div>
         <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">Set 1: Observation Deck</span>
-              <p class="deliverable-desc">Wide panoramic glass dome, soft ambient instrument illumination, floating navigation charts.</p>
+          <!-- Locations Toolbar -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div id="v2LocSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading locations &amp; sets for this book…</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn--primary" id="bV2LocAddToggle" style="padding:5px 12px;font-size:var(--text-xs)">➕ Add Set</button>
+                <button type="button" class="btn btn--secondary" id="bV2LocBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Extract Sets from Script</button>
+                <button type="button" class="btn btn--ghost" id="bV2LocReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
+              </div>
             </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">Set 2: Titan Methane Sea</span>
-              <p class="deliverable-desc">Orange haze atmosphere, dark reflective liquid methane shoreline, distant ice ridges.</p>
+
+            <!-- Inline Add Location Form -->
+            <div id="v2LocAddForm" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid #232d3f;display:flex;flex-direction:column;gap:8px">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:8px">
+                <div>
+                  <label class="f" for="v2LocNewName">Location / Set Name</label>
+                  <input type="text" id="v2LocNewName" placeholder="e.g. Enceladus Ice Geysers" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                </div>
+                <div>
+                  <label class="f" for="v2LocNewLight">Lighting / Time / Atmosphere</label>
+                  <input type="text" id="v2LocNewLight" placeholder="e.g. Crisp starlight, blue ice bounce" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f59e0b;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                </div>
+              </div>
+              <div>
+                <label class="f" for="v2LocNewDesc">Set Architecture, Props &amp; Visual Details</label>
+                <textarea id="v2LocNewDesc" rows="2" placeholder="Describe terrain, architecture, key landmarks, and atmosphere to keep consistent…" style="width:100%;padding:8px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit;font-size:var(--text-sm)"></textarea>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button type="button" class="btn btn--primary" id="bV2LocCreate" style="padding:6px 14px">💾 Save New Set</button>
+                <button type="button" class="btn btn--ghost" id="bV2LocAddCancel" style="padding:6px 12px">Cancel</button>
+                <span id="v2LocAddMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
+              </div>
             </div>
           </div>
+
+          <!-- Dynamic Editable Sets Grid -->
+          <div id="v2LocGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(290px, 1fr));gap:var(--space-3)"></div>
         </div>
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Turnarounds</button>

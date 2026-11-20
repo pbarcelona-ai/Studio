@@ -215,6 +215,11 @@
       loadV2Cast();
     }
 
+    // If entering Step 11 (Locations & Sets), load all story locations/sets
+    if (currentStep === 11) {
+      loadV2Locations();
+    }
+
     // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
@@ -2055,6 +2060,289 @@
     selectV2Style(savedLook);
   }
 
+  // ===== STEP 11: LOCATIONS & SETS =====
+  function getCustomSets(slug) {
+    try {
+      const raw = localStorage.getItem(`studio_v2_sets_${slug}`);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+
+  function saveCustomSet(slug, setObj) {
+    try {
+      const list = getCustomSets(slug).filter(x => x.name.toLowerCase() !== setObj.name.toLowerCase());
+      list.push(setObj);
+      localStorage.setItem(`studio_v2_sets_${slug}`, JSON.stringify(list));
+    } catch (e) {}
+  }
+
+  async function loadV2Locations() {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    const grid = $("v2LocGrid");
+    const summaryEl = $("v2LocSummary");
+    const badgeEl = $("v2LocBadge");
+
+    if (!grid) return;
+    grid.textContent = "";
+
+    if (!slug) {
+      if (summaryEl) summaryEl.textContent = "Pick or save a book in Step 01 first.";
+      if (badgeEl) {
+        badgeEl.textContent = "No Book Selected";
+        badgeEl.className = "status-badge status-badge--drift";
+      }
+      return;
+    }
+
+    if (summaryEl) summaryEl.textContent = `Loading all locations & sets for "${slug}"…`;
+    if (badgeEl) {
+      badgeEl.textContent = "Loading…";
+      badgeEl.className = "status-badge status-badge--working";
+    }
+
+    // Merge locations from ALL sources so every set in the story appears:
+    // 1. Continuity book (/api/continuity_book -> book.locations)
+    // 2. Scene cast_lock (/api/cast_lock -> scenes[].place)
+    // 3. Screenplay sluglines (/api/screenplay -> INT./EXT. LOCATION - TIME)
+    // 4. Custom sets saved locally for this book
+    const merged = new Map();
+    let hasContinuityBook = false;
+
+    const upsert = (name, info, sourceLabel) => {
+      const clean = String(name || "").trim();
+      if (!clean) return;
+      const key = clean.toLowerCase();
+      const existing = merged.get(key) || {
+        name: clean,
+        description: "",
+        lighting: "",
+        inContinuity: false,
+        sources: new Set(),
+      };
+      existing.sources.add(sourceLabel);
+      if (info.inContinuity) {
+        existing.inContinuity = true;
+        existing.name = clean;
+      }
+      if (info.description && (!existing.description || info.inContinuity)) existing.description = info.description;
+      if (info.lighting && (!existing.lighting || info.inContinuity)) existing.lighting = info.lighting;
+      merged.set(key, existing);
+    };
+
+    // 1. Continuity book locations
+    try {
+      const cb = await callApi(`/api/continuity_book?project=${encodeURIComponent(slug)}`);
+      const locs = (cb && cb.book && Array.isArray(cb.book.locations)) ? cb.book.locations : [];
+      if (cb && cb.book) hasContinuityBook = true;
+      locs.forEach(loc => {
+        if (!loc) return;
+        const name = typeof loc === "string" ? loc : (loc.name || loc.location || "");
+        const desc = typeof loc === "object" ? (loc.description || loc.details || loc.visual_description || "") : "";
+        const light = typeof loc === "object" ? (loc.lighting || loc.atmosphere || loc.time_of_day || "") : "";
+        upsert(name, { inContinuity: true, description: desc, lighting: light }, "Continuity Book");
+      });
+    } catch (e) {}
+
+    // 2. Scene cast_lock places
+    try {
+      const lk = await callApi(`/api/cast_lock?project=${encodeURIComponent(slug)}`);
+      const scenes = (lk && Array.isArray(lk.scenes)) ? lk.scenes : [];
+      scenes.forEach(s => {
+        if (s.place && s.place.name) {
+          upsert(s.place.name, { description: s.summary || "" }, "Scenes");
+        }
+      });
+    } catch (e) {}
+
+    // 3. Screenplay sluglines (INT. / EXT. LOCATION - TIME)
+    try {
+      const sp = await callApi(`/api/screenplay?project=${encodeURIComponent(slug)}`);
+      const scenes = (sp && Array.isArray(sp.scenes)) ? sp.scenes : [];
+      scenes.forEach(s => {
+        const heading = (s.screenplay && s.screenplay.heading) || "";
+        if (!heading) return;
+        const m = heading.match(/^(?:INT\.\/EXT\.|EXT\.\/INT\.|INT\.|EXT\.)\s*(.+?)(?:\s*-\s*(.+))?$/i);
+        const locName = m ? m[1].trim() : heading.trim();
+        const tod = m && m[2] ? m[2].trim() : "";
+        upsert(locName, { lighting: tod, description: s.summary || "" }, "Screenplay");
+      });
+    } catch (e) {}
+
+    // 4. Locally added custom sets
+    getCustomSets(slug).forEach(cs => {
+      upsert(cs.name, { description: cs.description || "", lighting: cs.lighting || "" }, "Custom");
+    });
+
+    const allLocs = [...merged.values()];
+    if (summaryEl) {
+      summaryEl.innerHTML = `<strong style="color:#f59e0b">${allLocs.length} location(s) / set(s)</strong> found for <strong>${slug}</strong>` +
+        (allLocs.length ? " — edit any set's details or lighting below, or add new sets." : " — click <strong>➕ Add Set</strong> or <strong>✨ Extract Sets from Script</strong> to populate your locations.");
+    }
+    if (badgeEl) {
+      badgeEl.textContent = allLocs.length ? `✓ ${allLocs.length} Sets` : "No Sets Yet";
+      badgeEl.className = "status-badge " + (allLocs.length ? "status-badge--synced" : "status-badge--drift");
+    }
+
+    if (!allLocs.length) {
+      const empty = document.createElement("div");
+      empty.className = "direct-story-card";
+      empty.style.cssText = "grid-column:1/-1;color:#94a3b8;font-size:var(--text-sm);";
+      empty.textContent = "No locations found yet for this book. Click '✨ Extract Sets from Script' to generate a continuity book, or click '➕ Add Set' to define sets manually.";
+      grid.appendChild(empty);
+      return;
+    }
+
+    allLocs.forEach((loc, idx) => {
+      const card = document.createElement("div");
+      card.className = "direct-story-card";
+
+      const head = document.createElement("div");
+      head.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;";
+      const title = document.createElement("strong");
+      title.style.cssText = "font-size:var(--text-base);color:#f8fafc;";
+      title.textContent = `Set ${idx + 1}: ${loc.name}`;
+      const srcBadge = document.createElement("span");
+      srcBadge.className = "status-badge " + (loc.inContinuity ? "status-badge--synced" : "status-badge--working");
+      srcBadge.style.fontSize = "0.7rem";
+      srcBadge.textContent = loc.inContinuity ? "✓ Continuity Book" : `From ${[...loc.sources].join(" / ")}`;
+      head.appendChild(title);
+      head.appendChild(srcBadge);
+      card.appendChild(head);
+
+      const lightLabel = document.createElement("label");
+      lightLabel.className = "f";
+      lightLabel.textContent = "Lighting / Time / Atmosphere";
+      const lightInput = document.createElement("input");
+      lightInput.type = "text";
+      lightInput.value = loc.lighting || "";
+      lightInput.placeholder = "e.g. Warm golden hour, foggy twilight, soft interior glow…";
+      lightInput.style.cssText = "width:100%;padding:6px 8px;background:#0a0d14;color:#f59e0b;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);";
+      card.appendChild(lightLabel);
+      card.appendChild(lightInput);
+
+      const descLabel = document.createElement("label");
+      descLabel.className = "f";
+      descLabel.textContent = "Set Architecture, Landmarks & Visual Details";
+      const descTa = document.createElement("textarea");
+      descTa.rows = 3;
+      descTa.value = loc.description || "";
+      descTa.placeholder = "Describe terrain, architecture, key props, and colors to keep consistent…";
+      descTa.style.cssText = "width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit;font-size:var(--text-xs);";
+      card.appendChild(descLabel);
+      card.appendChild(descTa);
+
+      const foot = document.createElement("div");
+      foot.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;";
+      const btnSave = document.createElement("button");
+      btnSave.type = "button";
+      btnSave.className = "btn btn--primary";
+      btnSave.style.cssText = "padding:5px 12px;font-size:var(--text-xs);";
+      btnSave.textContent = "💾 Save Set";
+      const msg = document.createElement("span");
+      msg.style.cssText = "font-size:var(--text-xs);color:#94a3b8;";
+
+      btnSave.addEventListener("click", async () => {
+        btnSave.disabled = true;
+        msg.textContent = "Saving…";
+        const fields = { description: descTa.value.trim(), lighting: lightInput.value.trim() };
+        saveCustomSet(slug, { name: loc.name, ...fields });
+        try {
+          if (hasContinuityBook && loc.inContinuity) {
+            await callApi("/api/continuity_edit", {
+              project: slug,
+              kind: "locations",
+              name: loc.name,
+              fields,
+            });
+            msg.textContent = "✓ Saved to continuity book";
+          } else {
+            msg.textContent = "✓ Saved to project sets";
+          }
+        } catch (err) {
+          msg.textContent = "✓ Saved locally (" + err.message + ")";
+        } finally {
+          btnSave.disabled = false;
+        }
+      });
+
+      foot.appendChild(btnSave);
+      foot.appendChild(msg);
+      card.appendChild(foot);
+      grid.appendChild(card);
+    });
+  }
+
+  function initV2Locations() {
+    const btnToggle = $("bV2LocAddToggle");
+    const btnCancel = $("bV2LocAddCancel");
+    const form = $("v2LocAddForm");
+    const btnCreate = $("bV2LocCreate");
+    const btnBuild = $("bV2LocBuild");
+    const btnReload = $("bV2LocReload");
+
+    if (btnToggle && form) {
+      btnToggle.addEventListener("click", () => {
+        const show = form.classList.contains("hidden");
+        form.classList.toggle("hidden", !show);
+        form.style.display = show ? "flex" : "none";
+        if (show && $("v2LocNewName")) $("v2LocNewName").focus();
+      });
+    }
+    if (btnCancel && form) {
+      btnCancel.addEventListener("click", () => {
+        form.classList.add("hidden");
+        form.style.display = "none";
+      });
+    }
+    if (btnReload) btnReload.addEventListener("click", () => loadV2Locations());
+
+    if (btnCreate) {
+      btnCreate.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        const name = ($("v2LocNewName") || {}).value ? $("v2LocNewName").value.trim() : "";
+        const lighting = ($("v2LocNewLight") || {}).value ? $("v2LocNewLight").value.trim() : "";
+        const description = ($("v2LocNewDesc") || {}).value ? $("v2LocNewDesc").value.trim() : "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        if (!name) { alert("Enter a location / set name first."); return; }
+        saveCustomSet(slug, { name, lighting, description });
+        if ($("v2LocNewName")) $("v2LocNewName").value = "";
+        if ($("v2LocNewLight")) $("v2LocNewLight").value = "";
+        if ($("v2LocNewDesc")) $("v2LocNewDesc").value = "";
+        if (form) { form.classList.add("hidden"); form.style.display = "none"; }
+        await loadV2Locations();
+      });
+    }
+
+    if (btnBuild) {
+      btnBuild.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnBuild.disabled = true;
+        const summaryEl = $("v2LocSummary");
+        if (summaryEl) summaryEl.textContent = `Starting continuity book & set extraction for "${slug}"…`;
+        try {
+          const o = typeof window.options === "function" ? window.options() : {};
+          await callApi("/api/continuity_book", { project: slug, engine: o.engine || "claude", claude_model: o.claude_model });
+          if (summaryEl) summaryEl.textContent = `✓ Set extraction job started for "${slug}". Click ↻ Reload in a moment to view all sets.`;
+        } catch (err) {
+          if (summaryEl) summaryEl.textContent = "Could not start extraction: " + err.message;
+        } finally {
+          btnBuild.disabled = false;
+        }
+      });
+    }
+
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        if (currentStep === 11) loadV2Locations();
+      });
+    }
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
@@ -2069,6 +2357,7 @@
     initV2Continuity();
     initV2Cast();
     initV2Styles();
+    initV2Locations();
     initV2GeminiOmni();
 
     // Bind step pills in 6-phase bar
@@ -2123,6 +2412,7 @@
       if (currentStep === 6) loadV2Screenplay();
       if (currentStep === 7) loadV2Continuity();
       if (currentStep === 8) loadV2Cast();
+      if (currentStep === 11) loadV2Locations();
     }, 1200);
   });
 
@@ -2135,6 +2425,7 @@
     loadV2Screenplay,
     loadV2Continuity,
     loadV2Cast,
+    loadV2Locations,
     loadV2GeminiStatus,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,
