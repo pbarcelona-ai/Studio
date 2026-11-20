@@ -822,46 +822,47 @@
       <section class="step-panel" id="panel-step-12" data-step="12" aria-labelledby="step12Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step12Title">Step 12: Shot List & Cinematography</h2>
-            <p class="step-goal">Framing, lens choices, and camera motions planned for every scene.</p>
+            <h2 id="step12Title">Step 12: Shot List &amp; Cinematography</h2>
+            <p class="step-goal">Browse by scene, edit shot actions, timing, and camera movement, or reorder, add, and delete shots.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ 18 Shots Planned</span>
+          <span class="status-badge status-badge--synced" id="v2ShotsBadge">Loading Shots…</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> 35mm Anamorphic Lens + Dynamic Camera Tracking & Panning
+          ✨ <strong>Autopilot Pick:</strong> 35mm Anamorphic Lens + Dynamic Camera Tracking &amp; Panning
         </div>
         <div class="step-zone-workspace">
+          <!-- Shot List Toolbar -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div id="v2ShotsSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading shot list for this book…</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn--primary" id="bV2ShotsBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate Shot List</button>
+                <button type="button" class="btn btn--secondary" id="bV2ShotsApprove" style="padding:5px 12px;font-size:var(--text-xs)">✓ Approve Shot List</button>
+                <button type="button" class="btn btn--ghost" id="bV2ShotsReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
+              </div>
+            </div>
+            <!-- Scene Filter Pills -->
+            <div id="v2ShotsPills" style="display:flex;gap:6px;overflow-x:auto;padding-top:8px" role="tablist" aria-label="Filter shots by scene"></div>
+          </div>
+
+          <!-- Dynamic Shot List Container -->
           <div class="direct-story-card">
-            <table style="width:100%;border-collapse:collapse;font-size:var(--text-sm)">
-              <thead>
-                <tr style="border-bottom:1px solid #334155;text-align:left;color:#94a3b8">
-                  <th style="padding:8px">Shot</th>
-                  <th style="padding:8px">Framing</th>
-                  <th style="padding:8px">Subject & Action</th>
-                  <th style="padding:8px">Camera Movement</th>
-                </tr>
-              </thead>
-              <tbody style="color:#e2e8f0">
-                <tr style="border-bottom:1px solid #1e293b">
-                  <td style="padding:8px;font-weight:700;color:#f59e0b">Shot 1</td>
-                  <td style="padding:8px">Extreme Wide</td>
-                  <td style="padding:8px">Exploration vessel approaching Saturn's rings</td>
-                  <td style="padding:8px">Slow cinematic dolly forward</td>
-                </tr>
-                <tr style="border-bottom:1px solid #1e293b">
-                  <td style="padding:8px;font-weight:700;color:#f59e0b">Shot 2</td>
-                  <td style="padding:8px">Medium Two-Shot</td>
-                  <td style="padding:8px">Tommy and Judah at the observation deck</td>
-                  <td style="padding:8px">Gentle orbital arc</td>
-                </tr>
-                <tr>
-                  <td style="padding:8px;font-weight:700;color:#f59e0b">Shot 3</td>
-                  <td style="padding:8px">Close-Up Dialogue</td>
-                  <td style="padding:8px">Tommy speaking while gazing at Titan</td>
-                  <td style="padding:8px">Static shallow focus</td>
-                </tr>
-              </tbody>
-            </table>
+            <div id="v2ShotsSceneNote" style="font-size:var(--text-xs);color:#94a3b8;margin-bottom:8px"></div>
+            <div style="overflow-x:auto;max-height:480px;overflow-y:auto">
+              <table class="data-table" id="v2ShotsTable" style="width:100%;border-collapse:collapse;font-size:var(--text-sm)" aria-label="Shot list for active book">
+                <thead>
+                  <tr style="border-bottom:1px solid #334155;text-align:left;color:#94a3b8">
+                    <th style="padding:8px">#</th>
+                    <th style="padding:8px">Framing &amp; Lens</th>
+                    <th style="padding:8px">Camera &amp; Motion</th>
+                    <th style="padding:8px">Subject &amp; Action</th>
+                    <th style="padding:8px">Sec</th>
+                    <th style="padding:8px">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="v2ShotsBody" style="color:#e2e8f0"></tbody>
+              </table>
+            </div>
           </div>
         </div>
         <div class="step-zone-dock">

@@ -220,6 +220,11 @@
       loadV2Locations();
     }
 
+    // If entering Step 12 (Shot List & Cinematography), load live shot list
+    if (currentStep === 12) {
+      loadV2ShotList();
+    }
+
     // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
@@ -2343,6 +2348,256 @@
     }
   }
 
+  // ===== STEP 12: SHOT LIST & CINEMATOGRAPHY =====
+  let v2ShotScenes = [];
+  let v2ShotActiveSceneIdx = 0;
+  let v2ShotSourceKind = "shot_list"; // "shot_list" | "storyboard"
+
+  async function v2ShotEdit(sceneId, n, body) {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    if (!slug) return;
+    try {
+      await callApi("/api/shot_edit", { project: slug, scene: sceneId, n, ...body });
+      await loadV2ShotList();
+    } catch (err) {
+      alert("Could not edit shot: " + err.message);
+    }
+  }
+
+  function renderV2ShotList() {
+    const pills = $("v2ShotsPills");
+    const noteEl = $("v2ShotsSceneNote");
+    const tbody = $("v2ShotsBody");
+    if (!pills || !tbody) return;
+
+    pills.textContent = "";
+    tbody.textContent = "";
+
+    if (!v2ShotScenes.length) {
+      if (noteEl) noteEl.textContent = "No shots found yet. Click '✨ Generate Shot List' above (after approving continuity), or build shots from your screenplay.";
+      return;
+    }
+
+    v2ShotActiveSceneIdx = Math.max(0, Math.min(v2ShotScenes.length - 1, v2ShotActiveSceneIdx));
+    v2ShotScenes.forEach((sc, idx) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "step-pill" + (idx === v2ShotActiveSceneIdx ? " active" : "");
+      b.textContent = `${sc.id}: ${(sc.heading || sc.title || "").slice(0, 26)} (${(sc.shots || []).length})`;
+      b.addEventListener("click", () => {
+        v2ShotActiveSceneIdx = idx;
+        renderV2ShotList();
+      });
+      pills.appendChild(b);
+    });
+
+    const sc = v2ShotScenes[v2ShotActiveSceneIdx];
+    const shots = sc.shots || [];
+    if (noteEl) {
+      const bd = sc.breakdown || {};
+      const bits = [];
+      if (sc.heading) bits.push(`<strong style="color:#f59e0b">${sc.id}</strong> ${sc.heading}`);
+      if (bd.intent) bits.push(`<strong>Intent:</strong> ${bd.intent}`);
+      if (bd.emotional_beat) bits.push(`<strong>Beat:</strong> ${bd.emotional_beat}`);
+      if (bd.blocking) bits.push(`<strong>Blocking:</strong> ${bd.blocking}`);
+      noteEl.innerHTML = bits.join(" &middot; ") || `${sc.id} — ${shots.length} shot(s)`;
+    }
+
+    shots.forEach((s, idx) => {
+      const tr = document.createElement("tr");
+      tr.style.borderBottom = "1px solid #1e293b";
+
+      const tdN = document.createElement("td");
+      tdN.style.cssText = "padding:8px;font-weight:700;color:#f59e0b;white-space:nowrap;";
+      tdN.textContent = `Shot ${s.n || idx + 1}`;
+
+      const tdFrame = document.createElement("td");
+      tdFrame.style.cssText = "padding:8px;white-space:nowrap;";
+      tdFrame.textContent = [s.type || "Shot", s.lens_mm ? `${s.lens_mm}mm` : ""].filter(Boolean).join(" · ");
+
+      const tdCam = document.createElement("td");
+      tdCam.style.cssText = "padding:8px;font-size:var(--text-xs);color:#94a3b8;min-width:160px;";
+      tdCam.textContent = [s.height, s.movement, s.lighting].filter(Boolean).join(", ") || "Standard";
+
+      const tdAct = document.createElement("td");
+      tdAct.style.cssText = "padding:8px;min-width:240px;";
+      if (v2ShotSourceKind === "shot_list") {
+        const inp = document.createElement("input");
+        inp.type = "text";
+        inp.value = s.action || "";
+        inp.style.cssText = "width:100%;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);";
+        inp.addEventListener("change", () => v2ShotEdit(sc.id, s.n, { action: "edit", fields: { action: inp.value } }));
+        tdAct.appendChild(inp);
+      } else {
+        tdAct.textContent = s.action || s.prompt || "";
+      }
+
+      const tdSec = document.createElement("td");
+      tdSec.style.padding = "8px";
+      if (v2ShotSourceKind === "shot_list") {
+        const secInp = document.createElement("input");
+        secInp.type = "number";
+        secInp.min = 1.5;
+        secInp.max = 60;
+        secInp.step = 0.5;
+        secInp.value = s.seconds || 5;
+        secInp.style.cssText = "width:60px;padding:4px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;";
+        secInp.addEventListener("change", () => v2ShotEdit(sc.id, s.n, { action: "edit", fields: { seconds: Number(secInp.value) } }));
+        tdSec.appendChild(secInp);
+      } else {
+        tdSec.textContent = `${s.seconds || 5}s`;
+      }
+
+      const tdBtns = document.createElement("td");
+      tdBtns.style.cssText = "padding:8px;white-space:nowrap;display:flex;gap:4px;";
+      if (v2ShotSourceKind === "shot_list") {
+        const mk = (lbl, fn, disabled = false) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "btn btn--ghost";
+          b.style.cssText = "padding:2px 7px;font-size:var(--text-xs);";
+          b.textContent = lbl;
+          b.disabled = disabled;
+          b.addEventListener("click", fn);
+          return b;
+        };
+        tdBtns.appendChild(mk("↑", () => v2ShotEdit(sc.id, s.n, { action: "move", to: s.n - 1 }), s.n <= 1));
+        tdBtns.appendChild(mk("↓", () => v2ShotEdit(sc.id, s.n, { action: "move", to: s.n + 1 }), s.n >= shots.length));
+        tdBtns.appendChild(mk("+", () => v2ShotEdit(sc.id, s.n, { action: "add" })));
+        tdBtns.appendChild(mk("×", () => { if (confirm(`Delete shot ${s.n}?`)) v2ShotEdit(sc.id, s.n, { action: "delete" }); }, shots.length <= 1));
+      } else {
+        tdBtns.innerHTML = `<span style="font-size:var(--text-xs);color:#64748b">CSV shot</span>`;
+      }
+
+      [tdN, tdFrame, tdCam, tdAct, tdSec, tdBtns].forEach(td => tr.appendChild(td));
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function loadV2ShotList() {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    const summaryEl = $("v2ShotsSummary");
+    const badgeEl = $("v2ShotsBadge");
+    const btnApprove = $("bV2ShotsApprove");
+
+    if (!summaryEl) return;
+    v2ShotScenes = [];
+
+    if (!slug) {
+      summaryEl.textContent = "Pick or save a book in Step 01 first.";
+      if (badgeEl) { badgeEl.textContent = "No Book Selected"; badgeEl.className = "status-badge status-badge--drift"; }
+      renderV2ShotList();
+      return;
+    }
+
+    summaryEl.textContent = `Loading shot list for "${slug}"…`;
+    if (badgeEl) { badgeEl.textContent = "Loading…"; badgeEl.className = "status-badge status-badge--working"; }
+
+    // 1. Primary: /api/shot_list
+    try {
+      const r = await callApi(`/api/shot_list?project=${encodeURIComponent(slug)}`);
+      const L = r && r.list ? r.list : null;
+      if (L && Array.isArray(L.scenes) && L.scenes.length > 0) {
+        v2ShotScenes = L.scenes;
+        v2ShotSourceKind = "shot_list";
+        const totalShots = L.scenes.reduce((a, sc) => a + (sc.shots ? sc.shots.length : 0), 0);
+        const mins = s => `${Math.floor((s || 0) / 60)}:${String(Math.round((s || 0) % 60)).padStart(2, "0")}`;
+        summaryEl.innerHTML = `<strong style="color:#f59e0b">${totalShots} shot(s)</strong> across <strong>${L.scenes.length} scene(s)</strong> · Runtime ${mins(L.runtime_seconds)} / ${mins(L.target_seconds)}`;
+        if (badgeEl) {
+          const ok = r.gate && r.gate.approved;
+          badgeEl.textContent = ok ? `✓ ${totalShots} Shots Approved` : `${totalShots} Shots (Review)`;
+          badgeEl.className = "status-badge " + (ok ? "status-badge--synced" : "status-badge--working");
+        }
+        if (btnApprove) btnApprove.disabled = Boolean(r.gate && r.gate.approved);
+        renderV2ShotList();
+        return;
+      }
+    } catch (e) {}
+
+    // 2. Fallback: /api/storyboard (shots built in all_shots.csv)
+    try {
+      const sb = await callApi(`/api/storyboard?project=${encodeURIComponent(slug)}`);
+      const shots = (sb && Array.isArray(sb.shots)) ? sb.shots : [];
+      if (shots.length > 0) {
+        const byCh = new Map();
+        shots.forEach((s, i) => {
+          const key = s.chapter ? `Ch ${s.chapter}` : "All Shots";
+          if (!byCh.has(key)) byCh.set(key, []);
+          byCh.get(key).push({
+            n: s.n || i + 1,
+            type: s.shot_type || "Shot",
+            movement: s.camera || "",
+            action: s.prompt || s.action || s.narration || "",
+            seconds: s.seconds || 5,
+          });
+        });
+        v2ShotScenes = [...byCh.entries()].map(([id, list]) => ({ id, heading: id, shots: list }));
+        v2ShotSourceKind = "storyboard";
+        summaryEl.innerHTML = `<strong style="color:#f59e0b">${shots.length} shot(s)</strong> loaded from project storyboard for <strong>${slug}</strong>.`;
+        if (badgeEl) { badgeEl.textContent = `✓ ${shots.length} Shots`; badgeEl.className = "status-badge status-badge--synced"; }
+        if (btnApprove) btnApprove.disabled = true;
+        renderV2ShotList();
+        return;
+      }
+    } catch (e) {}
+
+    summaryEl.textContent = `No shot list generated yet for "${slug}". Click ✨ Generate Shot List to break scenes into camera shots.`;
+    if (badgeEl) { badgeEl.textContent = "Not Generated Yet"; badgeEl.className = "status-badge status-badge--drift"; }
+    if (btnApprove) btnApprove.disabled = true;
+    renderV2ShotList();
+  }
+
+  function initV2ShotList() {
+    const btnReload = $("bV2ShotsReload");
+    const btnBuild = $("bV2ShotsBuild");
+    const btnApprove = $("bV2ShotsApprove");
+    if (btnReload) btnReload.addEventListener("click", () => loadV2ShotList());
+
+    if (btnBuild) {
+      btnBuild.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnBuild.disabled = true;
+        const summaryEl = $("v2ShotsSummary");
+        if (summaryEl) summaryEl.textContent = `Starting director's shot list generation for "${slug}"…`;
+        try {
+          const o = typeof window.options === "function" ? window.options() : {};
+          await callApi("/api/shot_list", { project: slug, engine: o.engine || "claude", claude_model: o.claude_model });
+          if (summaryEl) summaryEl.textContent = `✓ Shot list generation started for "${slug}". Click ↻ Reload in a moment.`;
+        } catch (err) {
+          if (summaryEl) summaryEl.textContent = "Could not start shot list: " + err.message;
+        } finally {
+          btnBuild.disabled = false;
+        }
+      });
+    }
+
+    if (btnApprove) {
+      btnApprove.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) return;
+        try {
+          await callApi("/api/shot_list_approve", { project: slug });
+          await loadV2ShotList();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    }
+
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        v2ShotActiveSceneIdx = 0;
+        if (currentStep === 12) loadV2ShotList();
+      });
+    }
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
@@ -2358,6 +2613,7 @@
     initV2Cast();
     initV2Styles();
     initV2Locations();
+    initV2ShotList();
     initV2GeminiOmni();
 
     // Bind step pills in 6-phase bar
@@ -2413,6 +2669,7 @@
       if (currentStep === 7) loadV2Continuity();
       if (currentStep === 8) loadV2Cast();
       if (currentStep === 11) loadV2Locations();
+      if (currentStep === 12) loadV2ShotList();
     }, 1200);
   });
 
@@ -2426,6 +2683,7 @@
     loadV2Continuity,
     loadV2Cast,
     loadV2Locations,
+    loadV2ShotList,
     loadV2GeminiStatus,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,
