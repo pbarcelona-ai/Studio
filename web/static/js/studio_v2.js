@@ -228,8 +228,32 @@
     });
   }
 
+  // ===== SCROLL POSITION PRESERVATION =====
+  function preserveScroll(container, fn) {
+    const x = window.scrollX || 0;
+    const y = window.scrollY || 0;
+    let prevMinH = "";
+    if (container && container.offsetHeight > 0) {
+      prevMinH = container.style.minHeight || "";
+      container.style.minHeight = container.offsetHeight + "px";
+    }
+    try {
+      return fn();
+    } finally {
+      const restore = () => {
+        window.scrollTo({ left: x, top: y, behavior: "instant" });
+      };
+      restore();
+      requestAnimationFrame(() => {
+        restore();
+        if (container) container.style.minHeight = prevMinH;
+      });
+    }
+  }
+
   // ===== NAVIGATION & TOP-TO-BOTTOM STEP CONTROLLER =====
   function activateStep(stepNum) {
+    const prevStep = currentStep;
     currentStep = Math.max(1, Math.min(V2_STEPS.length, stepNum));
 
     // Ensure we are in pipeline mode so zero legacy cards render below the approve button
@@ -261,8 +285,10 @@
       group.classList.toggle("phase-active", stepMeta && stepMeta.phase === phaseNum);
     });
 
-    // Top-to-bottom rule: Always scroll to top of page when changing steps
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    // Only scroll to top when actually navigating to a different step
+    if (prevStep !== currentStep) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
 
     // Save step progress to localStorage
     try {
@@ -1999,9 +2025,9 @@
     const badgeEl = $("v2CastBadge");
 
     if (!grid) return;
-    grid.textContent = "";
 
     if (!slug) {
+      grid.textContent = "";
       if (summaryEl) summaryEl.textContent = "Pick or save a book in Step 01 first.";
       if (badgeEl) {
         badgeEl.textContent = "No Book Selected";
@@ -2119,6 +2145,15 @@
       badgeEl.textContent = allChars.length ? `✓ ${allChars.length} Characters` : "No Characters Yet";
       badgeEl.className = "status-badge " + (allChars.length ? "status-badge--synced" : "status-badge--drift");
     }
+
+    const castScrollY = window.scrollY || 0;
+    const castPrevH = grid.offsetHeight;
+    if (castPrevH > 0) grid.style.minHeight = castPrevH + "px";
+    grid.textContent = "";
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: castScrollY, behavior: "instant" });
+      grid.style.minHeight = "";
+    });
 
     if (!allChars.length) {
       const empty = document.createElement("div");
@@ -2452,9 +2487,9 @@
     const badgeEl = $("v2LocBadge");
 
     if (!grid) return;
-    grid.textContent = "";
 
     if (!slug) {
+      grid.textContent = "";
       if (summaryEl) summaryEl.textContent = "Pick or save a book in Step 01 first.";
       if (badgeEl) {
         badgeEl.textContent = "No Book Selected";
@@ -2551,6 +2586,15 @@
       badgeEl.textContent = allLocs.length ? `✓ ${allLocs.length} Sets` : "No Sets Yet";
       badgeEl.className = "status-badge " + (allLocs.length ? "status-badge--synced" : "status-badge--drift");
     }
+
+    const locScrollY = window.scrollY || 0;
+    const locPrevH = grid.offsetHeight;
+    if (locPrevH > 0) grid.style.minHeight = locPrevH + "px";
+    grid.textContent = "";
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: locScrollY, behavior: "instant" });
+      grid.style.minHeight = "";
+    });
 
     if (!allLocs.length) {
       const empty = document.createElement("div");
@@ -2734,8 +2778,10 @@
     const tbody = $("v2ShotsBody");
     if (!pills || !tbody) return;
 
-    pills.textContent = "";
-    tbody.textContent = "";
+    preserveScroll(tbody.parentElement, () => {
+      pills.textContent = "";
+      tbody.textContent = "";
+    });
 
     if (!v2ShotScenes.length) {
       if (noteEl) noteEl.textContent = "No shots found yet. Click '✨ Generate Shot List' above (after approving continuity), or build shots from your screenplay.";
@@ -3034,9 +3080,9 @@
     const badgeEl = $("v2VoiceBadge");
 
     if (!grid) return;
-    grid.textContent = "";
 
     if (!slug) {
+      grid.textContent = "";
       if (summaryEl) summaryEl.textContent = "Pick or save a book in Step 01 first.";
       return;
     }
@@ -3094,6 +3140,15 @@
     if (badgeEl) {
       badgeEl.textContent = `✓ ${list.length} Voices · ${savedDialect === "british" ? "British RP" : "American"}`;
     }
+
+    const vcScrollY = window.scrollY || 0;
+    const vcPrevH = grid.offsetHeight;
+    if (vcPrevH > 0) grid.style.minHeight = vcPrevH + "px";
+    grid.textContent = "";
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: vcScrollY, behavior: "instant" });
+      grid.style.minHeight = "";
+    });
 
     if (!list.length) {
       const empty = document.createElement("div");
@@ -3351,6 +3406,10 @@
     const summary = $("v2DialogueSummary");
     const badge = $("v2DialogueBadge");
     if (!list) return;
+    const savedX = window.scrollX || 0;
+    const savedY = window.scrollY || 0;
+    const prevH = list.offsetHeight;
+    if (prevH > 0) list.style.minHeight = prevH + "px";
     list.innerHTML = "";
 
     const eng = v2DialogueState.engine || "gemini-tts";
@@ -3630,6 +3689,11 @@
       }
       card.appendChild(playerWrap);
       list.appendChild(card);
+    });
+    window.scrollTo({ left: savedX, top: savedY, behavior: "instant" });
+    requestAnimationFrame(() => {
+      window.scrollTo({ left: savedX, top: savedY, behavior: "instant" });
+      list.style.minHeight = "";
     });
   }
 
