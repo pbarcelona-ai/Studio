@@ -36,8 +36,30 @@ MAX_REF_IMAGES = 6
 CLOUD_KEYS_FILE = Path.home() / ".pistachios_studio" / "cloud_keys.json"
 
 
+def _key_from_shell_profiles() -> str:
+    """Safely read GEMINI_API_KEY or GOOGLE_API_KEY from shell profiles (for macOS .app icon launches)."""
+    pat = re.compile(r"^\s*(?:export\s+)?(GEMINI_API_KEY|GOOGLE_API_KEY)\s*=\s*['\"]?([^'\"#\s]+)['\"]?")
+    for name in (".zshrc", ".zprofile", ".bash_profile", ".bashrc"):
+        p = Path.home() / name
+        if not p.is_file():
+            continue
+        try:
+            found: dict[str, str] = {}
+            for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+                m = pat.match(line)
+                if m:
+                    found[m.group(1)] = m.group(2).strip()
+            if found.get("GEMINI_API_KEY"):
+                return found["GEMINI_API_KEY"]
+            if found.get("GOOGLE_API_KEY"):
+                return found["GOOGLE_API_KEY"]
+        except OSError:
+            continue
+    return ""
+
+
 def get_gemini_api_key() -> str:
-    """Return GEMINI_API_KEY (or GOOGLE_API_KEY) from environment or ~/.pistachios_studio/cloud_keys.json."""
+    """Return GEMINI_API_KEY (or GOOGLE_API_KEY) from environment, cloud_keys.json, or ~/.zshrc."""
     for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
         env_key = (os.environ.get(var) or "").strip()
         if env_key:
@@ -49,7 +71,7 @@ def get_gemini_api_key() -> str:
                 return str(data["gemini_api_key"]).strip()
         except (OSError, ValueError):
             pass
-    return ""
+    return _key_from_shell_profiles()
 
 
 def save_gemini_api_key(api_key: str) -> None:
