@@ -540,24 +540,63 @@
       <section class="step-panel" id="panel-step-7" data-step="7" aria-labelledby="step7Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step7Title">Step 07: Continuity & World Rules</h2>
-            <p class="step-goal">Lock wardrobe, equipment, and environmental consistency rules across all cuts.</p>
+            <h2 id="step7Title">Step 07: Continuity &amp; World Rules</h2>
+            <p class="step-goal">Edit and lock wardrobe, prop, world-building, and lighting/palette rules that stay consistent across every scene of your book.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Consistency Rules Active</span>
+          <span class="status-badge status-badge--synced" id="v2ContBadge">✓ Continuity Ready</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Persistent Character Tokens & Lighting Continuity Engine
+          ✨ <strong>Autopilot Pick:</strong> Persistent Character Tokens &amp; Global Visual Continuity Engine
         </div>
         <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">Wardrobe Consistency</span>
-              <p class="deliverable-desc">Tommy: Deep navy flight suit with gold astronaut insignia. Judah: Slate-gray explorer vest with holographic wrist communicator.</p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:var(--space-3)">
+            <!-- 1. Editable World, Wardrobe & Prop Continuity Rules -->
+            <div class="direct-story-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+                <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">1. Wardrobe, Props &amp; World Rules</h3>
+                <button type="button" class="btn btn--ghost" id="v2ContReload" style="padding:4px 10px;font-size:var(--text-xs)">↻ Reload</button>
+              </div>
+              <p style="margin:0;font-size:var(--text-xs);color:#94a3b8">Rules saved here are enforced by the crew across every scene (costumes, key props, historical era, physics, tone).</p>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button type="button" class="btn btn--ghost v2-cont-chip" data-snippet="- Wardrobe: Keep every character's primary outfit consistent unless a scene explicitly changes it." style="padding:3px 8px;font-size:var(--text-xs)">+ Wardrobe Rule</button>
+                <button type="button" class="btn btn--ghost v2-cont-chip" data-snippet="- Props: Track handheld items and vehicles across consecutive cuts." style="padding:3px 8px;font-size:var(--text-xs)">+ Prop Tracking</button>
+                <button type="button" class="btn btn--ghost v2-cont-chip" data-snippet="- Atmosphere: Preserve consistent weather, sky, and time-of-day within each sequence." style="padding:3px 8px;font-size:var(--text-xs)">+ Time &amp; Weather</button>
+              </div>
+              <textarea id="v2ContRules" rows="7" placeholder="Enter wardrobe, prop, and world continuity rules for this book…" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:10px;font:inherit;font-size:var(--text-sm)"></textarea>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <button type="button" class="btn btn--primary" id="v2ContRulesSave" style="padding:6px 14px">💾 Save World Rules</button>
+                <span id="v2ContRulesMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
+              </div>
             </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">Lighting & Palette</span>
-              <p class="deliverable-desc">Warm golden sunlight reflected from Saturn's atmosphere against the deep black of space with subtle blue rim lighting.</p>
+
+            <!-- 2. Editable Global Lighting, Palette & Visual Continuity -->
+            <div class="direct-story-card">
+              <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">2. Lighting, Palette &amp; Visual Continuity</h3>
+              <p style="margin:0;font-size:var(--text-xs);color:#94a3b8">Global positive and negative visual directives applied automatically to every keyframe and video shot.</p>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button type="button" class="btn btn--ghost v2-light-preset" data-pos="warm golden hour practical lighting, cinematic anamorphic rim light, rich shadow depth" style="padding:3px 8px;font-size:var(--text-xs)">☀️ Golden Hour</button>
+                <button type="button" class="btn btn--ghost v2-light-preset" data-pos="moody chiaroscuro night lighting, cool moonlight rim light, atmospheric haze" style="padding:3px 8px;font-size:var(--text-xs)">🌙 Moody Night</button>
+                <button type="button" class="btn btn--ghost v2-light-preset" data-pos="soft diffused natural daylight, true-to-life film color palette, gentle film grain" style="padding:3px 8px;font-size:var(--text-xs)">☁️ Natural Daylight</button>
+                <button type="button" class="btn btn--ghost v2-light-preset" data-pos="high-contrast cosmic lighting, warm planetary bounce light, deep starfield shadows" style="padding:3px 8px;font-size:var(--text-xs)">🪐 Cosmic Sci-Fi</button>
+              </div>
+              <label class="f" for="v2ContPositives" style="margin-top:4px">Lighting &amp; Palette Directives (Positive)</label>
+              <textarea id="v2ContPositives" rows="3" placeholder="e.g. warm practical lighting, 35mm film grain, consistent color grading…" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px;font:inherit;font-size:var(--text-sm)"></textarea>
+              <label class="f" for="v2ContNegatives" style="margin-top:4px">Things to Avoid Across All Shots (Negative)</label>
+              <textarea id="v2ContNegatives" rows="2" placeholder="e.g. inconsistent outfits, modern anachronisms, blurry, watermark…" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px;font:inherit;font-size:var(--text-sm)"></textarea>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px">
+                <button type="button" class="btn btn--primary" id="v2ContParamsSave" style="padding:6px 14px">💾 Save Lighting &amp; Palette</button>
+                <span id="v2ContParamsMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
+              </div>
             </div>
+          </div>
+
+          <!-- 3. Per-Scene Cast & Location Continuity Locks -->
+          <div class="direct-story-card" style="margin-top:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">3. Scene-by-Scene Continuity Locks</h3>
+              <span id="v2ContLocksSummary" style="font-size:var(--text-xs);color:#94a3b8">Loading locks…</span>
+            </div>
+            <div id="v2ContLocksList" style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto;font-size:var(--text-xs);color:#cbd5e1"></div>
           </div>
         </div>
         <div class="step-zone-dock">

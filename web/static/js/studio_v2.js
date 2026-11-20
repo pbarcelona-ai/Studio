@@ -205,6 +205,11 @@
       loadV2Screenplay();
     }
 
+    // If entering Step 7 (Continuity & World Rules), load rules, lighting/palette, and scene locks
+    if (currentStep === 7) {
+      loadV2Continuity();
+    }
+
     // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
@@ -1317,6 +1322,183 @@
     });
   }
 
+  // ===== STEP 07: CONTINUITY & WORLD RULES =====
+  let v2ContRulesRev = 0;
+
+  async function loadV2Continuity() {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    const rulesEl = $("v2ContRules");
+    const posEl = $("v2ContPositives");
+    const negEl = $("v2ContNegatives");
+    const badgeEl = $("v2ContBadge");
+    const locksSum = $("v2ContLocksSummary");
+    const locksList = $("v2ContLocksList");
+
+    if (!rulesEl || !posEl || !negEl) return;
+
+    // Clear previous book's continuity data immediately
+    rulesEl.value = "";
+    posEl.value = "";
+    negEl.value = "";
+    if (locksList) locksList.textContent = "";
+
+    if (!slug) {
+      if (badgeEl) {
+        badgeEl.textContent = "No Book Selected";
+        badgeEl.className = "status-badge status-badge--drift";
+      }
+      if (locksSum) locksSum.textContent = "Pick a book in Step 01 first.";
+      return;
+    }
+
+    if (badgeEl) {
+      badgeEl.textContent = "Loading…";
+      badgeEl.className = "status-badge status-badge--working";
+    }
+
+    // 1. Load project rules
+    try {
+      const r = await callApi(`/api/project_rules?project=${encodeURIComponent(slug)}`);
+      rulesEl.value = (r && r.body) || "";
+      v2ContRulesRev = (r && typeof r.rev === "number") ? r.rev : 0;
+    } catch (e) {
+      v2ContRulesRev = 0;
+    }
+
+    // 2. Load global visual/lighting parameters
+    try {
+      const gp = await callApi(`/api/global_params?project=${encodeURIComponent(slug)}`);
+      posEl.value = (gp && gp.positives) || "";
+      negEl.value = (gp && gp.negatives) || "";
+    } catch (e) {}
+
+    // 3. Load scene-by-scene cast & location locks
+    try {
+      const lk = await callApi(`/api/cast_lock?project=${encodeURIComponent(slug)}`);
+      const sm = (lk && lk.summary) || {};
+      const scenes = (lk && Array.isArray(lk.scenes)) ? lk.scenes : [];
+      if (locksSum) {
+        locksSum.textContent = scenes.length
+          ? `${scenes.length} scene(s) · ${sm.characters || 0} costume lock(s), ${sm.locations || 0} location lock(s)`
+          : "No planned scenes yet for per-scene locks.";
+      }
+      if (locksList) {
+        locksList.textContent = "";
+        scenes.forEach(s => {
+          const row = document.createElement("div");
+          row.style.cssText = "padding:8px 10px;background:#0a0d14;border:1px solid #1e293b;border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;";
+          const chars = (s.characters || []).map(c => c.name).join(", ") || "No characters listed";
+          const place = (s.place && s.place.name) ? s.place.name : "Unspecified set";
+          const locked = (s.characters || []).some(c => c.locked && (c.locked.token || c.locked.reference)) || (s.place && s.place.locked && s.place.locked.reference);
+          row.innerHTML = `<div><strong style="color:#f59e0b">${s.id}</strong> <strong style="color:#f8fafc">${s.title || ""}</strong> &mdash; <span>Cast: ${chars}</span> · <span>Set: ${place}</span></div>` +
+            `<span class="status-badge ${locked ? "status-badge--synced" : ""}" style="font-size:0.7rem">${locked ? "✓ Locked" : "Unlocked"}</span>`;
+          locksList.appendChild(row);
+        });
+      }
+    } catch (e) {
+      if (locksSum) locksSum.textContent = "Run Story Breakdown (Step 05) to populate per-scene locks.";
+    }
+
+    if (badgeEl) {
+      badgeEl.textContent = `✓ Rules Loaded (${slug})`;
+      badgeEl.className = "status-badge status-badge--synced";
+    }
+  }
+
+  function initV2Continuity() {
+    const btnReload = $("v2ContReload");
+    const btnSaveRules = $("v2ContRulesSave");
+    const btnSaveParams = $("v2ContParamsSave");
+    const rulesEl = $("v2ContRules");
+    const rulesMsg = $("v2ContRulesMsg");
+    const posEl = $("v2ContPositives");
+    const negEl = $("v2ContNegatives");
+    const paramsMsg = $("v2ContParamsMsg");
+
+    if (btnReload) btnReload.addEventListener("click", () => loadV2Continuity());
+
+    // Quick-insert world rule chips
+    document.querySelectorAll(".v2-cont-chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        if (!rulesEl) return;
+        const snippet = chip.dataset.snippet || "";
+        if (!snippet) return;
+        if (!rulesEl.value.includes(snippet)) {
+          rulesEl.value = (rulesEl.value.trim() ? rulesEl.value.trim() + "\n" : "") + snippet;
+        }
+        rulesEl.focus();
+        if (rulesMsg) rulesMsg.textContent = "Added rule — click 💾 Save World Rules to persist.";
+      });
+    });
+
+    // Quick lighting & palette preset buttons
+    document.querySelectorAll(".v2-light-preset").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (!posEl) return;
+        const preset = btn.dataset.pos || "";
+        if (!preset) return;
+        if (!posEl.value.toLowerCase().includes(preset.slice(0, 18).toLowerCase())) {
+          posEl.value = (posEl.value.trim() ? posEl.value.trim().replace(/,\s*$/, "") + ", " : "") + preset;
+        }
+        posEl.focus();
+        if (paramsMsg) paramsMsg.textContent = "Preset applied — click 💾 Save Lighting & Palette to persist.";
+      });
+    });
+
+    if (btnSaveRules) {
+      btnSaveRules.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnSaveRules.disabled = true;
+        if (rulesMsg) rulesMsg.textContent = "Saving world rules…";
+        try {
+          const r = await callApi("/api/project_rules", {
+            project: slug,
+            body: rulesEl ? rulesEl.value : "",
+            rev: v2ContRulesRev
+          });
+          if (r && typeof r.rev === "number") v2ContRulesRev = r.rev;
+          if (rulesMsg) rulesMsg.textContent = "✓ World rules saved to project.";
+        } catch (err) {
+          if (rulesMsg) rulesMsg.textContent = "Error: " + err.message;
+        } finally {
+          btnSaveRules.disabled = false;
+        }
+      });
+    }
+
+    if (btnSaveParams) {
+      btnSaveParams.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnSaveParams.disabled = true;
+        if (paramsMsg) paramsMsg.textContent = "Saving lighting & palette…";
+        try {
+          await callApi("/api/global_params", {
+            project: slug,
+            positives: posEl ? posEl.value : "",
+            negatives: negEl ? negEl.value : ""
+          });
+          if (paramsMsg) paramsMsg.textContent = "✓ Lighting & palette saved to project.";
+        } catch (err) {
+          if (paramsMsg) paramsMsg.textContent = "Error: " + err.message;
+        } finally {
+          btnSaveParams.disabled = false;
+        }
+      });
+    }
+
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        if (currentStep === 7) loadV2Continuity();
+      });
+    }
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
@@ -1328,6 +1510,7 @@
     initV2Scope();
     initV2StoryBreakdown();
     initV2Screenplay();
+    initV2Continuity();
 
     // Bind step pills in 6-phase bar
     document.querySelectorAll(".step-pill").forEach(pill => {
@@ -1378,6 +1561,7 @@
       loadV2Scope();
       if (currentStep === 5) loadV2StoryBreakdown();
       if (currentStep === 6) loadV2Screenplay();
+      if (currentStep === 7) loadV2Continuity();
     }, 1200);
   });
 
@@ -1388,6 +1572,7 @@
     loadV2Scope,
     loadV2StoryBreakdown,
     loadV2Screenplay,
+    loadV2Continuity,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,
     checkStepStorylineDrift,
