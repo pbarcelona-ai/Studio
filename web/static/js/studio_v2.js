@@ -230,6 +230,11 @@
       loadV2GeminiStatus();
     }
 
+    // If entering Step 14 (Voice Casting & Dialects), load all story characters' voices
+    if (currentStep === 14) {
+      loadV2VoiceCast();
+    }
+
     // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
@@ -1243,12 +1248,27 @@
   }
 
   // ===== DUAL-LEVEL AUDIO REDO =====
+  function collectV2VoiceCast() {
+    const out = {};
+    document.querySelectorAll(".v2-voice-select").forEach(sel => {
+      if (sel.dataset.speaker && sel.value) out[sel.dataset.speaker] = sel.value;
+    });
+    return out;
+  }
+
   async function triggerAudioRedo(mode, dialect, narratorVoice, cast, rows) {
     const selProj = $("proj");
     const slug = (selProj && selProj.value) || activeProject || "";
+    const statusEl = $("v2VoiceStatus");
     if (!slug) {
       alert("Please select a story project first.");
       return;
+    }
+
+    const activeCast = cast || collectV2VoiceCast();
+    if (statusEl) {
+      statusEl.style.color = "#94a3b8";
+      statusEl.textContent = `Updating voices (${dialect || "custom"})…`;
     }
 
     try {
@@ -1257,12 +1277,22 @@
         mode: mode || "dialogue",
         dialect: dialect || null,
         narrator_voice: narratorVoice || null,
-        cast: cast || null,
+        cast: Object.keys(activeCast).length ? activeCast : null,
         rows: rows || null,
       });
-      alert(`Audio reconfigured! Mode: ${res.result?.mode}, Dialect: ${dialect || 'kept'}.`);
+      const r = res.result || {};
+      if (statusEl) {
+        statusEl.style.color = "#34d399";
+        statusEl.textContent = `✓ Saved (${r.dialect || dialect || "custom"} · ${r.mode || "dialogue"} mode)${r.note ? " — " + r.note : ""}`;
+      }
+      if (currentStep === 14) await loadV2VoiceCast();
     } catch (err) {
-      alert("Error updating audio: " + err.message);
+      if (statusEl) {
+        statusEl.style.color = "#f87171";
+        statusEl.textContent = "Error updating audio: " + err.message;
+      } else {
+        alert("Error updating audio: " + err.message);
+      }
     }
   }
 
@@ -2822,6 +2852,168 @@
     }
   }
 
+  // ===== STEP 14: VOICE CASTING & DIALECTS =====
+  const KOKORO_VOICES = [
+    ["am_puck", "am_puck (American Youth / Energetic)"],
+    ["am_michael", "am_michael (American Male · Calm)"],
+    ["am_adam", "am_adam (American Male · Warm)"],
+    ["am_eric", "am_eric (American Male · Resonant)"],
+    ["am_onyx", "am_onyx (American Male · Deep)"],
+    ["af_bella", "af_bella (American Female · Warm)"],
+    ["af_sarah", "af_sarah (American Female · Clear)"],
+    ["af_nicole", "af_nicole (American Female · Gentle)"],
+    ["af_heart", "af_heart (American Female · Expressive)"],
+    ["bm_fable", "bm_fable (British Expressive / Storytelling)"],
+    ["bm_george", "bm_george (British Male · Classic RP)"],
+    ["bm_lewis", "bm_lewis (British Male · Warm)"],
+    ["bm_daniel", "bm_daniel (British Male · Soft)"],
+    ["bf_emma", "bf_emma (British Female · Warm RP)"],
+    ["bf_alice", "bf_alice (British Female · Clear)"],
+    ["bf_isabella", "bf_isabella (British Female · Gentle)"],
+    ["bf_lily", "bf_lily (British Female · Bright)"],
+  ];
+
+  async function loadV2VoiceCast() {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    const grid = $("v2VoiceGrid");
+    const summaryEl = $("v2VoiceSummary");
+    const badgeEl = $("v2VoiceBadge");
+
+    if (!grid) return;
+    grid.textContent = "";
+
+    if (!slug) {
+      if (summaryEl) summaryEl.textContent = "Pick or save a book in Step 01 first.";
+      return;
+    }
+
+    if (summaryEl) summaryEl.textContent = `Loading all characters for "${slug}"…`;
+
+    // 1. Load saved voice_cast.json
+    let savedCast = {}, savedDialect = "american", savedMode = "dialogue";
+    try {
+      const vc = await callApi(`/api/v2_voice_cast?project=${encodeURIComponent(slug)}`);
+      savedCast = (vc && vc.cast) || {};
+      savedDialect = (vc && vc.dialect) || "american";
+      savedMode = (vc && vc.mode) || "dialogue";
+    } catch (e) {}
+
+    // 2. Discover ALL characters from continuity_book, readin/coverage, screenplay, and savedCast
+    const chars = new Map(); // lower -> { name, hint, defaultVoice }
+    const addChar = (name, hint) => {
+      const clean = String(name || "").trim();
+      if (!clean) return;
+      const key = clean.toLowerCase();
+      if (!chars.has(key)) {
+        const low = (clean + " " + (hint || "")).toLowerCase();
+        const isFemale = /\b(mom|mother|woman|girl|she|her|female|queen|princess|aunt|sister)\b/.test(low);
+        const isYoung = /\b(boy|kid|child|5-year|young|doll|toy|puck)\b/.test(low);
+        let def = isFemale ? (savedDialect === "british" ? "bf_emma" : "af_bella")
+          : isYoung ? (savedDialect === "british" ? "bm_fable" : "am_puck")
+          : (savedDialect === "british" ? "bm_george" : "am_michael");
+        chars.set(key, { name: clean, hint: hint || "", defaultVoice: def });
+      }
+    };
+
+    try {
+      const cb = await callApi(`/api/continuity_book?project=${encodeURIComponent(slug)}`);
+      ((cb && cb.book && cb.book.characters) || []).forEach(c => addChar(c.name, `${c.voice || ""} ${c.token || ""}`));
+    } catch (e) {}
+    try {
+      const rd = await callApi(`/api/readin?project=${encodeURIComponent(slug)}`);
+      ((rd && rd.coverage && rd.coverage.characters) || []).forEach(c => addChar(c.name || c, `${c.role || ""} ${c.description || ""}`));
+    } catch (e) {}
+    try {
+      const sp = await callApi(`/api/screenplay?project=${encodeURIComponent(slug)}`);
+      ((sp && sp.scenes) || []).forEach(s => {
+        ((s.screenplay && s.screenplay.elements) || []).forEach(el => {
+          if (el && el.type === "dialogue" && el.character) addChar(el.character, "");
+        });
+      });
+    } catch (e) {}
+    Object.keys(savedCast).forEach(name => addChar(name, ""));
+
+    const list = [...chars.values()];
+    if (summaryEl) {
+      summaryEl.innerHTML = `<strong style="color:#f59e0b">${list.length} character(s)</strong> · Active dialect: <strong style="color:#f8fafc">${savedDialect}</strong> (${savedMode} mode)`;
+    }
+    if (badgeEl) {
+      badgeEl.textContent = `✓ ${list.length} Voices · ${savedDialect === "british" ? "British RP" : "American"}`;
+    }
+
+    if (!list.length) {
+      const empty = document.createElement("div");
+      empty.className = "direct-story-card";
+      empty.style.cssText = "grid-column:1/-1;color:#94a3b8;font-size:var(--text-sm);";
+      empty.textContent = "No characters found yet. Run Step 07 (Continuity Book) or Step 08 (Cast) first.";
+      grid.appendChild(empty);
+      return;
+    }
+
+    // Rotate varied male/female defaults so characters sound distinct out of the box
+    const malePool = savedDialect === "british" ? ["bm_fable", "bm_george", "bm_lewis", "bm_daniel"] : ["am_puck", "am_michael", "am_adam", "am_eric", "am_onyx"];
+    const femPool = savedDialect === "british" ? ["bf_emma", "bf_alice", "bf_isabella", "bf_lily"] : ["af_bella", "af_sarah", "af_nicole", "af_heart"];
+    let mIdx = 0, fIdx = 0;
+
+    list.forEach(c => {
+      // Find saved voice case-insensitively
+      const savedKey = Object.keys(savedCast).find(k => k.toLowerCase() === c.name.toLowerCase());
+      let assigned = savedKey ? savedCast[savedKey] : "";
+      if (!assigned) {
+        const isFem = c.defaultVoice.startsWith("af_") || c.defaultVoice.startsWith("bf_");
+        assigned = isFem ? femPool[fIdx++ % femPool.length] : malePool[mIdx++ % malePool.length];
+      }
+
+      const card = document.createElement("div");
+      card.className = "deliverable-card";
+
+      const title = document.createElement("span");
+      title.className = "deliverable-title";
+      title.textContent = c.name.toUpperCase();
+      card.appendChild(title);
+
+      const desc = document.createElement("p");
+      desc.className = "deliverable-desc";
+      desc.textContent = c.hint ? c.hint.slice(0, 110) : "Spoken dialogue voice assignment";
+      card.appendChild(desc);
+
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;gap:8px;margin-top:6px;";
+      const sel = document.createElement("select");
+      sel.className = "v2-voice-select";
+      sel.dataset.speaker = c.name;
+      sel.style.cssText = "padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;flex:1;font-size:var(--text-xs);";
+      KOKORO_VOICES.forEach(([vid, vlabel]) => {
+        const opt = document.createElement("option");
+        opt.value = vid;
+        opt.textContent = vlabel;
+        if (vid === assigned) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      row.appendChild(sel);
+      card.appendChild(row);
+      grid.appendChild(card);
+    });
+  }
+
+  function initV2VoiceCast() {
+    const btnSave = $("bV2VoiceSave");
+    const btnReload = $("bV2VoiceReload");
+    if (btnReload) btnReload.addEventListener("click", () => loadV2VoiceCast());
+    if (btnSave) {
+      btnSave.addEventListener("click", () => {
+        triggerAudioRedo("dialogue", null, null, collectV2VoiceCast());
+      });
+    }
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        if (currentStep === 14) loadV2VoiceCast();
+      });
+    }
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
@@ -2838,6 +3030,7 @@
     initV2Styles();
     initV2Locations();
     initV2ShotList();
+    initV2VoiceCast();
     initV2GeminiOmni();
 
     // Bind step pills in 6-phase bar
@@ -2894,6 +3087,7 @@
       if (currentStep === 8) loadV2Cast();
       if (currentStep === 11) loadV2Locations();
       if (currentStep === 12) loadV2ShotList();
+      if (currentStep === 14) loadV2VoiceCast();
     }, 1200);
   });
 
@@ -2908,6 +3102,7 @@
     loadV2Cast,
     loadV2Locations,
     loadV2ShotList,
+    loadV2VoiceCast,
     loadV2GeminiStatus,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,

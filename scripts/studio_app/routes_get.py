@@ -333,3 +333,25 @@ def _gemini_omni_status(r: Request):
     }
 
 
+@route("GET", "/api/v2_voice_cast")
+def _v2_voice_cast(r: Request):
+    import json
+
+    slug = r.q("project")
+    if not slug:
+        return {"cast": {}, "dialect": "american", "mode": "dialogue"}
+    try:
+        vc_path = pdir(slug, "book") / "voice_cast.json"
+        if vc_path.is_file():
+            data = json.loads(vc_path.read_text(encoding="utf-8")) or {}
+            return {
+                "cast": data.get("cast") or {},
+                "dialect": data.get("dialect") or "american",
+                "mode": data.get("mode") or "dialogue",
+            }
+    except Exception:
+        pass
+    return {"cast": {}, "dialect": "american", "mode": "dialogue"}
+
+
+

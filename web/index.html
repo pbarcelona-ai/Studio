@@ -950,60 +950,37 @@
       <section class="step-panel" id="panel-step-14" data-step="14" aria-labelledby="step14Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step14Title">Step 14: Voice Casting & Dialects</h2>
-            <p class="step-goal">Dialogue-first voice casting with Kokoro-82M. Seamlessly switch between American and British dialects.</p>
+            <h2 id="step14Title">Step 14: Voice Casting &amp; Dialects</h2>
+            <p class="step-goal">Dialogue-first voice casting with Kokoro-82M for every character in your story. Switch dialects project-wide or pick individual voices.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Dialogue Default</span>
+          <span class="status-badge status-badge--synced" id="v2VoiceBadge">✓ Dialogue Default</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
           ✨ <strong>Autopilot Pick:</strong> Kokoro-82M (Dialogue-First) &mdash; <em>Fast neural character speech with American vs British dialect mapping.</em>
         </div>
         <div class="step-zone-workspace">
-          <!-- Project-wide Dialect Switcher Bar -->
-          <div class="card" style="margin-bottom:var(--space-3);background:rgba(255,255,255,0.02)">
-            <div class="card__body" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <!-- Project-wide Dialect & Mode Switcher Bar -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
               <div>
-                <strong>Global Dialect Preset:</strong>
-                <span style="color:#94a3b8;margin-left:6px">Switch all character voices project-wide:</span>
+                <strong>Global Dialect &amp; Voice Mode:</strong>
+                <span id="v2VoiceSummary" style="color:#94a3b8;margin-left:6px">Loading characters for this book…</span>
               </div>
-              <div style="display:flex;gap:8px">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--secondary btn-audio-dialect" data-dialect="british">🇬🇧 British Dialect (RP)</button>
                 <button type="button" class="btn btn--secondary btn-audio-dialect" data-dialect="american">🇺🇸 American Dialect</button>
+                <button type="button" class="btn btn--primary" id="bV2VoiceSave">💾 Save Voice Cast</button>
+                <button type="button" class="btn btn--ghost" id="bV2VoiceReload">↻ Reload</button>
               </div>
             </div>
+            <div id="v2VoiceStatus" style="font-size:var(--text-xs);color:#34d399;margin-top:4px" aria-live="polite"></div>
           </div>
 
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">TOMMY</span>
-              <p class="deliverable-desc">Assigned Voice: <code>am_puck</code> (Energetic youth) / <code>bm_fable</code> (British)</p>
-              <div style="display:flex;gap:8px;margin-top:6px">
-                <select style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;flex:1">
-                  <option selected>am_puck (American Youth)</option>
-                  <option>bm_fable (British Expressive)</option>
-                  <option>am_adam (American Warm)</option>
-                  <option>bm_george (British Classic)</option>
-                </select>
-                <button type="button" class="btn btn--ghost" style="padding:4px 8px">▶ Test</button>
-              </div>
-            </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">JUDAH</span>
-              <p class="deliverable-desc">Assigned Voice: <code>am_michael</code> (Calm, grounded) / <code>bm_george</code> (British)</p>
-              <div style="display:flex;gap:8px;margin-top:6px">
-                <select style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;flex:1">
-                  <option selected>am_michael (American Deep)</option>
-                  <option>bm_george (British RP)</option>
-                  <option>am_eric (American Resonant)</option>
-                  <option>bm_daniel (British Soft)</option>
-                </select>
-                <button type="button" class="btn btn--ghost" style="padding:4px 8px">▶ Test</button>
-              </div>
-            </div>
-          </div>
+          <!-- Dynamic Voice Cast Grid (populated with ALL characters in the active book) -->
+          <div id="v2VoiceGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(270px, 1fr));gap:var(--space-3)"></div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Hardware</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Spoken Dialogue ➔</button>
         </div>
       </section>

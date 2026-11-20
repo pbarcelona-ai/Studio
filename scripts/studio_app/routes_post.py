@@ -592,21 +592,64 @@ def _redo_audio(r: Request):
     if not slug:
         raise PlanError("project is required")
     pd = pdir(slug, "book")
-    mode = str(r.body.get("mode") or "dialogue")
-    dialect = r.body.get("dialect")
+    if not pd.is_dir():
+        raise PlanError(f"project not found: {slug}")
+    mode = redo_audio.canonical_mode(str(r.body.get("mode") or "dialogue"))
+    dialect = (str(r.body.get("dialect") or "").strip().lower()) or None
     narrator_voice = r.body.get("narrator_voice")
-    cast = r.body.get("cast")
+    incoming_cast = r.body.get("cast")
     rows = r.body.get("rows")
 
-    res = redo_audio.apply_audio_reconfiguration(
-        pd,
-        mode=mode,
-        narrator_voice=narrator_voice,
-        cast=cast,
-        dialect=dialect,
-        rows=rows,
-    )
-    return {"status": "ok", "result": res}
+    # Load existing voice_cast.json, merge incoming cast, and apply dialect mapping
+    vc_path = pd / "voice_cast.json"
+    vc_data = {}
+    if vc_path.is_file():
+        try:
+            vc_data = json.loads(vc_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            vc_data = {}
+    merged_cast = dict(vc_data.get("cast") or {})
+    if isinstance(incoming_cast, dict):
+        for k, v in incoming_cast.items():
+            if str(k).strip() and str(v or "").strip():
+                merged_cast[str(k).strip()] = str(v).strip()
+    if dialect in redo_audio.DIALECT_MAP:
+        merged_cast = {k: redo_audio.map_voice_dialect(v, dialect) for k, v in merged_cast.items()}
+    vc_data["cast"] = merged_cast
+    vc_data["mode"] = mode
+    if dialect:
+        vc_data["dialect"] = dialect
+    vc_path.write_text(json.dumps(vc_data, indent=2), encoding="utf-8")
+
+    # If audio_shots.csv exists, also reconfigure CSVs non-destructively; otherwise return cleanly
+    has_csv = (pd / "audio_shots.csv").is_file() or (pd / "audio_shots.master.csv").is_file()
+    if has_csv:
+        try:
+            res = redo_audio.apply_audio_reconfiguration(
+                pd,
+                mode=mode,
+                narrator_voice=narrator_voice,
+                cast=merged_cast or None,
+                dialect=dialect,
+                rows=rows,
+            )
+            res["cast"] = merged_cast
+            res["dialect"] = dialect or vc_data.get("dialect") or "american"
+            res["csv_updated"] = True
+            return {"status": "ok", "result": res}
+        except Exception as e:
+            raise PlanError(str(e)) from e
+
+    return {
+        "status": "ok",
+        "result": {
+            "mode": mode,
+            "dialect": dialect or vc_data.get("dialect") or "american",
+            "cast": merged_cast,
+            "csv_updated": False,
+            "note": "Voice cast & dialect saved to voice_cast.json (will apply automatically when audio shots are generated).",
+        },
+    }
 
 
 @route("POST", "/api/redo_storyline")
