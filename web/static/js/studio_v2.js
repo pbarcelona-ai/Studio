@@ -3291,7 +3291,8 @@
   }
 
   async function loadV2Dialogue() {
-    const proj = getActiveProject();
+    const selProj = $("proj");
+    const proj = selProj ? (selProj.value || "").trim() : "";
     const summary = $("v2DialogueSummary");
     const list = $("v2DialogueList");
     if (!list) return;
