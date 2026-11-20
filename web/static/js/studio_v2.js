@@ -3303,6 +3303,7 @@
 
     const payload = {
       id: line.id,
+      character: line.character || "",
       text,
       voice: eng === "kokoro" ? pickedVoice : (line.kokoro_voice || line.voice || "am_puck"),
       gemini_voice: eng === "gemini-tts" ? pickedVoice : (line.gemini_voice || defaultGeminiForKokoro(line.voice)),

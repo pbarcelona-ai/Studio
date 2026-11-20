@@ -970,9 +970,10 @@ def _write_wav_bytes(wav_path: Path, raw: bytes, sample_rate: int = 24000):
         wf.writeframes(raw)
 
 
-def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str, note: str, wav_path: Path, persona: str = "", gemini_voice: str = "") -> str:
-    """Render one spoken line with Gemini Neural TTS (uses google-genai SDK if installed, else HTTPS REST fallback)."""
+def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str, note: str, wav_path: Path, persona: str = "", gemini_voice: str = "", character: str = "") -> str:
+    """Render one spoken line with Gemini Neural TTS using a deterministic per-character seed & low temperature for line-to-line voice consistency."""
     import base64
+    import hashlib
     import urllib.error
     import urllib.request
     import run_gemini_omni
@@ -983,14 +984,28 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
 
     g_voice = (gemini_voice or "").strip() or _gemini_voice_for_kokoro(voice_id)
     accent = "British English (RP)" if (voice_id.lower().startswith("b") or dialect == "british") else "American English"
-    style_bits = [accent]
-    if persona:
-        style_bits.append(f"character voice: {persona}")
-    if emotion and emotion != "natural":
-        style_bits.append(f"{emotion} tone")
+
+    # Deterministic per-character seed so the same character keeps a consistent vocal timbre across every line & scene
+    seed_key = f"{(character or 'speaker').strip().lower()}:{g_voice}:{persona.strip().lower()}:{accent}"
+    char_seed = (int(hashlib.sha256(seed_key.encode("utf-8")).hexdigest()[:8], 16) % 2147483646) + 1
+
+    # Structured Director's Notes prompt (keeps vocal identity anchored while honoring per-scene tone/direction)
+    profile_desc = persona.strip() if persona.strip() else f"consistent {accent} voice actor"
+    tone_desc = emotion if (emotion and emotion != "natural") else "natural, steady"
+    dir_lines = [
+        "# AUDIO PROFILE",
+        f"Character: {(character or 'Speaker').strip()}",
+        f"Voice Identity: {profile_desc}",
+        f"Accent: {accent}",
+        "",
+        "# DIRECTOR'S NOTES",
+        f"Maintain the exact same vocal pitch, age, and timbre for {(character or 'Speaker').strip()} across all lines.",
+        f"Scene Tone: {tone_desc}",
+    ]
     if note:
-        style_bits.append(note)
-    prompt = f"Speak the following dialogue line in {', '.join(style_bits)}. Speak ONLY the line itself:\n\n{text}"
+        dir_lines.append(f"Delivery Note: {note}")
+    dir_lines.extend(["", "# TRANSCRIPT (speak ONLY the line below, nothing else)", text])
+    prompt = "\n".join(dir_lines)
 
     models = ("gemini-2.5-flash-preview-tts", "gemini-3.1-flash-tts-preview", "gemini-3.8-flash-tts")
     last_err = None
@@ -1007,6 +1022,8 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
                     model=model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
+                        temperature=0.2,
+                        seed=char_seed,
                         response_modalities=["AUDIO"],
                         speech_config=types.SpeechConfig(
                             voice_config=types.VoiceConfig(
@@ -1022,7 +1039,7 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
                         if isinstance(raw, str):
                             raw = base64.b64decode(raw)
                         _write_wav_bytes(wav_path, raw, sample_rate=24000)
-                        return f"{g_voice} ({model_name})"
+                        return f"{g_voice} ({model_name}, seed={char_seed})"
             except Exception as e:
                 last_err = e
                 continue
@@ -1031,6 +1048,8 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
     payload = json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
+            "temperature": 0.2,
+            "seed": char_seed,
             "responseModalities": ["AUDIO"],
             "speechConfig": {
                 "voiceConfig": {
@@ -1057,7 +1076,7 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
                     b64 = inline.get("data")
                     if b64:
                         _write_wav_bytes(wav_path, base64.b64decode(b64), sample_rate=24000)
-                        return f"{g_voice} ({model_name})"
+                        return f"{g_voice} ({model_name}, seed={char_seed})"
         except urllib.error.HTTPError as e:
             try:
                 body = e.read().decode("utf-8", errors="ignore")[:300]
@@ -1284,8 +1303,9 @@ def _v2_dialogue_render(r: Request):
         speed = max(0.5, min(1.8, float(item.get("speed") or 1.0)))
         wav_path = out_dir / f"{safe_id}.wav"
 
+        character = str(item.get("character") or "").strip()
         if engine == "gemini-tts":
-            voice_used = _render_line_gemini_tts(text, voice_id, dialect, emotion, note, wav_path, persona=persona, gemini_voice=gemini_voice)
+            voice_used = _render_line_gemini_tts(text, voice_id, dialect, emotion, note, wav_path, persona=persona, gemini_voice=gemini_voice, character=character)
         elif engine == "kokoro":
             voice_used = _render_line_kokoro(text, voice_id, dialect, speed, wav_path, blend_voice=kokoro_blend)
         else:
