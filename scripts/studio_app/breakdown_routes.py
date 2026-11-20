@@ -60,6 +60,16 @@ def _cb_start(r: Request):
     return _job("continuity_book.py", "Write the continuity book from the screenplay", r.body)
 
 
+@route("POST", "/api/continuity_bootstrap")
+def _cb_bootstrap(r: Request):
+    d = _book(r.body.get("project"))
+    try:
+        continuity_book.bootstrap_from_readin(d)
+    except (continuity_book.ContinuityError, ValueError) as e:
+        raise PlanError(str(e)) from e
+    return _cb_view(d)
+
+
 @route("GET", "/api/continuity_book")
 def _cb_get(r: Request):
     try:

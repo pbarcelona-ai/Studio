@@ -147,6 +147,100 @@ def _dummy() -> dict:
     return {"name": "x", "token": "x", "voice": "narrator", "personality": dict.fromkeys(PERSONALITY, "x")}
 
 
+def _clean_token(text: str, fallback: str) -> str:
+    cleaned = STYLE_WORDS.sub("", str(text or "")).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,;:-")
+    if not cleaned:
+        cleaned = fallback
+    return cleaned[:195]
+
+
+def bootstrap_from_readin(pdir: Path) -> dict:
+    """Instantly build a valid, style-neutral continuity book from existing readin/coverage.json & screenplay.json."""
+    rd = pdir / "readin"
+    cov = {}
+    sp = {}
+    try:
+        cov = json.loads((rd / "coverage.json").read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError):
+        cov = {}
+    try:
+        sp = json.loads((rd / "screenplay.json").read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError):
+        sp = {}
+
+    chars_by_key: dict[str, dict] = {}
+    for c in cov.get("characters", []) or []:
+        if not isinstance(c, dict) or not str(c.get("name", "")).strip():
+            continue
+        name = str(c["name"]).strip()
+        desc = str(c.get("description") or c.get("role") or name)
+        low = desc.lower()
+        voice = "female" if any(w in low for w in ("woman", "girl", "mom", "mother", "she ", "her ")) else "male"
+        if voice not in VOICE_MAP:
+            voice = "narrator"
+        chars_by_key[name.lower()] = {
+            "name": name,
+            "token": _clean_token(desc, f"{name}, distinctive character"),
+            "voice": voice,
+            "personality": {
+                "temperament": str(c.get("role") or "expressive, consistent"),
+                "motivation": "follows the story arc",
+                "speech": "natural dialogue",
+                "mannerisms": "characteristic posture and gestures",
+                "movement": "clear, purposeful movement",
+            },
+        }
+
+    locs_by_key: dict[str, dict] = {}
+    props_by_key: dict[str, dict] = {}
+    for s in sp.get("scenes", []) or []:
+        heading = str(s.get("heading") or "").strip()
+        if heading:
+            m = re.match(r"^(?:INT\.\/EXT\.|EXT\.\/INT\.|INT\.|EXT\.)\s*(.+?)(?:\s*-\s*(.+))?$", heading, re.I)
+            loc_name = (m.group(1).strip() if m else heading)[:80]
+            if loc_name and loc_name.lower() not in locs_by_key:
+                tod = (m.group(2).strip() if m and m.group(2) else "")
+                locs_by_key[loc_name.lower()] = {
+                    "name": loc_name,
+                    "token": _clean_token(f"{loc_name}, {tod}" if tod else loc_name, loc_name),
+                }
+        blk = s.get("block") or {}
+        for cname in blk.get("characters", []) or []:
+            cn = str(cname).strip()
+            if cn and cn.lower() not in chars_by_key:
+                chars_by_key[cn.lower()] = {
+                    "name": cn,
+                    "token": _clean_token(f"{cn}, recurring character", cn),
+                    "voice": "narrator",
+                    "personality": dict.fromkeys(PERSONALITY, "consistent with screenplay"),
+                }
+        for pname in blk.get("props", []) or []:
+            pn = str(pname).strip()
+            if pn and pn.lower() not in props_by_key:
+                props_by_key[pn.lower()] = {"name": pn, "token": _clean_token(pn, pn)}
+
+    if not chars_by_key:
+        raise ContinuityError("No characters found in readin/coverage.json or screenplay.json yet. Run Read it in first.")
+
+    book = {
+        "title": pdir.name.replace("_", " ").title(),
+        "setting": _clean_token(str(cov.get("genre") or cov.get("tone") or "story world"), "story world"),
+        "music_theme": _clean_token(str(cov.get("tone") or "cinematic score"), "cinematic score"),
+        "visual_style": "",
+        "characters": list(chars_by_key.values()),
+        "locations": list(locs_by_key.values()),
+        "props": list(props_by_key.values()),
+        "style_neutral": True,
+    }
+    check(book)
+    f = continuity_file(pdir)
+    if f.is_file():
+        shutil.copy2(f, f.with_suffix(".json.bak"))
+    f.write_text(json.dumps(book, indent=1, ensure_ascii=False), encoding="utf-8")
+    return book
+
+
 def fake_ask(pdir: Path) -> Ask:
     def ask(prompt: str, roles, step: str, validate: Callable[[dict], None]) -> dict:
         names = sorted({n for n in re.findall(r"characters: ([^|]+)", prompt) for n in [x.strip() for x in n.split(",")] if n}) or ["MARA"]

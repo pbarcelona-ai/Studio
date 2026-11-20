@@ -1519,6 +1519,7 @@
 
   function initV2Continuity() {
     const btnReload = $("v2ContReload");
+    const btnBootstrap = $("bV2ContBootstrap");
     const btnGenCb = $("bV2ContGenerate");
     const btnApproveCb = $("bV2ContApprove");
     const btnSaveRules = $("v2ContRulesSave");
@@ -1530,6 +1531,25 @@
     const paramsMsg = $("v2ContParamsMsg");
 
     if (btnReload) btnReload.addEventListener("click", () => loadV2Continuity());
+
+    if (btnBootstrap) {
+      btnBootstrap.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnBootstrap.disabled = true;
+        const statusEl = $("v2ContBookStatus");
+        if (statusEl) statusEl.textContent = `Building continuity book instantly from "${slug}" script & coverage…`;
+        try {
+          await callApi("/api/continuity_bootstrap", { project: slug });
+          await loadV2Continuity();
+        } catch (err) {
+          if (statusEl) statusEl.textContent = "Error: " + err.message;
+        } finally {
+          btnBootstrap.disabled = false;
+        }
+      });
+    }
 
     if (btnGenCb) {
       btnGenCb.addEventListener("click", async () => {
