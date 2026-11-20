@@ -834,10 +834,11 @@ def _write_wav_bytes(wav_path: Path, raw: bytes, sample_rate: int = 24000):
 
 
 def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str, note: str, wav_path: Path) -> str:
-    """Render one spoken line with Gemini Neural TTS via google-genai."""
+    """Render one spoken line with Gemini Neural TTS (uses google-genai SDK if installed, else HTTPS REST fallback)."""
+    import base64
+    import urllib.error
+    import urllib.request
     import run_gemini_omni
-    from google import genai
-    from google.genai import types
 
     api_key = run_gemini_omni.get_gemini_api_key()
     if not api_key:
@@ -852,30 +853,83 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
         style_bits.append(note)
     prompt = f"Speak the following dialogue line in {', '.join(style_bits)}. Speak ONLY the line itself:\n\n{text}"
 
-    client = genai.Client(api_key=api_key)
+    models = ("gemini-2.5-flash-preview-tts", "gemini-3.1-flash-tts-preview", "gemini-3.8-flash-tts")
     last_err = None
-    for model_name in ("gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts", "gemini-3.8-flash-tts"):
-        try:
-            resp = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=types.SpeechConfig(
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=g_voice)
-                        )
+
+    # Path 1: Official google-genai SDK (when installed in this Python environment)
+    if run_gemini_omni.sdk_available():
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        for model_name in models:
+            try:
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=g_voice)
+                            )
+                        ),
                     ),
-                ),
-            )
-            for part in getattr(resp, "parts", None) or []:
-                inline = getattr(part, "inline_data", None)
-                if inline and getattr(inline, "data", None):
-                    _write_wav_bytes(wav_path, inline.data, sample_rate=24000)
-                    return f"{g_voice} ({model_name})"
+                )
+                for part in getattr(resp, "parts", None) or []:
+                    inline = getattr(part, "inline_data", None)
+                    if inline and getattr(inline, "data", None):
+                        raw = inline.data
+                        if isinstance(raw, str):
+                            raw = base64.b64decode(raw)
+                        _write_wav_bytes(wav_path, raw, sample_rate=24000)
+                        return f"{g_voice} ({model_name})"
+            except Exception as e:
+                last_err = e
+                continue
+
+    # Path 2: Zero-dependency HTTPS REST fallback (works inside .venv without google-genai installed)
+    payload = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": {
+                "voiceConfig": {
+                    "prebuiltVoiceConfig": {"voiceName": g_voice}
+                }
+            },
+        },
+    }).encode("utf-8")
+
+    for model_name in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            for cand in data.get("candidates") or []:
+                for part in (cand.get("content") or {}).get("parts") or []:
+                    inline = part.get("inlineData") or part.get("inline_data") or {}
+                    b64 = inline.get("data")
+                    if b64:
+                        _write_wav_bytes(wav_path, base64.b64decode(b64), sample_rate=24000)
+                        return f"{g_voice} ({model_name})"
+        except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode("utf-8", errors="ignore")[:300]
+            except Exception:
+                body = str(e)
+            last_err = RuntimeError(f"HTTP {e.code}: {body}")
+            continue
         except Exception as e:
             last_err = e
             continue
+
     raise PlanError(f"Gemini Neural TTS failed: {run_gemini_omni.sanitize_error(last_err) if last_err else 'no audio returned'}")
 
 

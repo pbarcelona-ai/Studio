@@ -390,7 +390,7 @@ def _v2_dialogue(r: Request):
     gemini_ready = False
     try:
         import run_gemini_omni
-        gemini_ready = bool(run_gemini_omni.get_gemini_api_key()) and run_gemini_omni.sdk_available()
+        gemini_ready = bool(run_gemini_omni.get_gemini_api_key())
     except Exception:
         pass
     kokoro_ready = bool(importlib.util.find_spec("kokoro"))
