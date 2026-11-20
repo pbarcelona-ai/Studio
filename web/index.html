@@ -297,38 +297,89 @@
         </div>
       </section>
 
-      <!-- STEP 04: FORMAT & RUNTIME SCOPE (CONFIGURATION STEP) -->
+      <!-- STEP 04: FORMAT & RUNTIME SCOPE (DYNAMIC BOOK-DRIVEN CONFIGURATION STEP) -->
       <section class="step-panel" id="panel-step-4" data-step="4" aria-labelledby="step4Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step4Title">Step 04: Format & Runtime Scope</h2>
-            <p class="step-goal">Configure your film aspect ratio, target runtime, and narrative pace.</p>
+            <h2 id="step4Title">Step 04: Format &amp; Runtime Scope</h2>
+            <p class="step-goal">Configure target runtime, chapter coverage, pacing, and aspect ratio dynamically tailored to the length of your current book.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Format Locked</span>
+          <span class="status-badge status-badge--synced" id="v2ScopeBadge">✓ Ready</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> 16:9 Cinema Widescreen (1920x1080) &mdash; <em>Standard cinematic presentation for feature films and web streaming.</em>
+          ✨ <strong>Autopilot Pick:</strong> 16:9 Cinema Widescreen &mdash; <em>Runtime and clip targets dynamically scaled from your book's word count and chapter structure.</em>
         </div>
         <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">Aspect Ratio</span>
-              <p class="deliverable-desc">Frame geometry for keyframes and video rendering.</p>
-              <select id="v2Aspect" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px">
-                <option value="16:9" selected>16:9 Cinema Widescreen (Landscape)</option>
-                <option value="9:16">9:16 Vertical Video (TikTok / YouTube Shorts)</option>
-                <option value="1:1">1:1 Square (Instagram)</option>
-                <option value="2.39:1">2.39:1 Anamorphic Scope</option>
-              </select>
+          <!-- Dynamic Book Reading Telemetry -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div id="v2ScopeBookStats" style="font-size:var(--text-sm);color:#e2e8f0">Analyzing current book reading length and chapter count…</div>
+              <button type="button" class="btn btn--ghost" id="v2ScopeReload" style="padding:4px 10px;font-size:var(--text-xs)">↻ Recalculate from Book</button>
             </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
+            <!-- 1. Dynamic Target Scope & Duration -->
             <div class="deliverable-card">
-              <span class="deliverable-title">Target Scope & Duration</span>
-              <p class="deliverable-desc">Estimated film length and shot pacing.</p>
-              <select id="v2Duration" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px">
-                <option value="short" selected>Short Film (3-5 minutes, ~15-25 shots)</option>
-                <option value="scene">Single Scene / Teaser (1-2 minutes, ~8-12 shots)</option>
-                <option value="feature">Full Chapter / Episode (10-15 minutes)</option>
+              <span class="deliverable-title">1. Target Runtime &amp; Adaptation Depth</span>
+              <p class="deliverable-desc">Options dynamically calculated from this book's reading length plus standard film formats.</p>
+              <select id="v2Duration" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;width:100%"></select>
+              <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+                <label class="f" for="v2CustomMinutes" style="margin:0;white-space:nowrap">Exact Minutes:</label>
+                <input type="number" id="v2CustomMinutes" min="0.5" max="300" step="0.5" value="5" style="width:90px;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                <span style="font-size:var(--text-xs);color:#94a3b8">min</span>
+              </div>
+            </div>
+
+            <!-- 2. Chapter & Story Coverage Scope -->
+            <div class="deliverable-card">
+              <span class="deliverable-title">2. Story &amp; Chapter Scope</span>
+              <p class="deliverable-desc">Choose whether to adapt the entire book, a specific chapter range, a single-chapter pilot, or a trailer.</p>
+              <select id="v2ScopeMode" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;width:100%">
+                <option value="full" selected>Full Book (All chapters)</option>
+                <option value="pilot_ch1">Pilot: Chapter 1 Only</option>
+                <option value="range">Custom Chapter Range</option>
+                <option value="trailer">Trailer / Key Highlights Only</option>
               </select>
+              <div id="v2ScopeRangeBox" class="hidden" style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+                <label class="f" for="v2ScopeFromCh" style="margin:0">From Ch:</label>
+                <select id="v2ScopeFromCh" style="padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;flex:1"></select>
+                <label class="f" for="v2ScopeToCh" style="margin:0">To Ch:</label>
+                <select id="v2ScopeToCh" style="padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;flex:1"></select>
+              </div>
+            </div>
+
+            <!-- 3. Aspect Ratio & Shot Pacing -->
+            <div class="deliverable-card">
+              <span class="deliverable-title">3. Aspect Ratio &amp; Shot Pacing</span>
+              <p class="deliverable-desc">Frame geometry and average clip length for video synthesis.</p>
+              <select id="v2Aspect" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;width:100%">
+                <option value="16:9" selected>16:9 Cinema Widescreen (Landscape)</option>
+                <option value="2.39:1">2.39:1 Anamorphic Scope (Cinema)</option>
+                <option value="9:16">9:16 Vertical Video (TikTok / YouTube Shorts)</option>
+                <option value="4:3">4:3 Classic Academy</option>
+                <option value="1:1">1:1 Square (Instagram)</option>
+              </select>
+              <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+                <label class="f" for="v2ClipSec" style="margin:0;white-space:nowrap">Clip Pace:</label>
+                <select id="v2ClipSec" style="padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;flex:1">
+                  <option value="3">3s / clip (Fast-paced action)</option>
+                  <option value="5" selected>5s / clip (Standard cinema)</option>
+                  <option value="8">8s / clip (Deliberate / atmospheric)</option>
+                  <option value="10">10s / clip (Long sweeping takes)</option>
+                </select>
+              </div>
+              <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:var(--text-xs);color:#cbd5e1;cursor:pointer">
+                <input type="checkbox" id="v2ChainShots" checked>
+                <span>Chain consecutive shots from previous ending frame</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Live Calculated Output Estimate -->
+          <div class="direct-story-card" style="margin-top:var(--space-3);border-color:rgba(245,158,11,0.35)">
+            <div id="v2ScopeEstimate" style="font-size:var(--text-sm);color:#fbbf24;font-weight:600">
+              Calculating runtime and clip estimate…
             </div>
           </div>
         </div>

@@ -190,6 +190,11 @@
       loadV2Coverage();
     }
 
+    // If entering Step 4 (Format & Runtime Scope), load dynamic book-based scope options
+    if (currentStep === 4) {
+      loadV2Scope();
+    }
+
     // If entering Step 5 (Story Structure & Beats), load full beat sheet & scene breakdown
     if (currentStep === 5) {
       loadV2StoryBreakdown();
@@ -341,10 +346,259 @@
     if (selProj) {
       selProj.addEventListener("change", () => {
         activeProject = selProj.value || "";
-        // Always refresh coverage immediately on book change so it is never stale
+        // Always refresh coverage & dynamic scope immediately on book change
         loadV2Coverage();
+        loadV2Scope();
       });
     }
+  }
+
+  // ===== STEP 04: DYNAMIC BOOK-BASED FORMAT & RUNTIME SCOPE =====
+  let v2ScopeChapters = [];
+  let v2ScopeTotalWords = 0;
+
+  function roundHalf(n) {
+    return Math.max(0.5, Math.round(n * 2) / 2);
+  }
+
+  function updateV2ScopeEstimate() {
+    const minEl = $("v2CustomMinutes");
+    const clipEl = $("v2ClipSec");
+    const aspectEl = $("v2Aspect");
+    const modeEl = $("v2ScopeMode");
+    const fromEl = $("v2ScopeFromCh");
+    const toEl = $("v2ScopeToCh");
+    const rangeBox = $("v2ScopeRangeBox");
+    const estEl = $("v2ScopeEstimate");
+    const badgeEl = $("v2ScopeBadge");
+
+    const mode = modeEl ? modeEl.value : "full";
+    if (rangeBox) {
+      const showRange = mode === "range";
+      rangeBox.classList.toggle("hidden", !showRange);
+      rangeBox.style.display = showRange ? "flex" : "none";
+    }
+
+    const minutes = Math.max(0.5, parseFloat(minEl ? minEl.value : "5") || 5);
+    const clipSec = Math.max(1, parseInt(clipEl ? clipEl.value : "5", 10) || 5);
+    const aspect = aspectEl ? aspectEl.value : "16:9";
+    const clips = Math.max(1, Math.ceil((minutes * 60) / clipSec));
+
+    let scopeLabel = "Full Book";
+    if (mode === "pilot_ch1") {
+      scopeLabel = "Pilot (Chapter 1 only)";
+    } else if (mode === "trailer") {
+      scopeLabel = "Trailer / Key Highlights";
+    } else if (mode === "range" && fromEl && toEl && fromEl.value && toEl.value) {
+      scopeLabel = `Chapters ${fromEl.value}–${toEl.value}`;
+    } else if (v2ScopeChapters.length > 0) {
+      scopeLabel = `All ${v2ScopeChapters.length} chapter(s)`;
+    }
+
+    if (estEl) {
+      estEl.textContent = `Estimated Output: ${minutes} min · ~${clips} video clips (at ${clipSec}s/clip) · ${aspect} · Scope: ${scopeLabel}`;
+    }
+    if (badgeEl) {
+      badgeEl.textContent = `✓ ${minutes} min · ${aspect}`;
+    }
+
+    // Keep underlying legacy adaptation runtime box synced if present
+    const legacyMin = $("adapt_minutes");
+    if (legacyMin) legacyMin.value = String(Math.round(minutes));
+  }
+
+  function rebuildV2DurationOptions(slug, chapters, savedMinutes) {
+    const sel = $("v2Duration");
+    const minEl = $("v2CustomMinutes");
+    const clipEl = $("v2ClipSec");
+    if (!sel) return;
+
+    const clipSec = Math.max(1, parseInt(clipEl ? clipEl.value : "5", 10) || 5);
+    const mkClips = m => Math.max(1, Math.ceil((m * 60) / clipSec));
+    const totalWords = chapters.reduce((acc, c) => acc + (Number(c.words) || 0), 0);
+    v2ScopeChapters = chapters;
+    v2ScopeTotalWords = totalWords;
+
+    sel.textContent = "";
+
+    // Group 1: Dynamic options computed directly from the current book's reading
+    if (totalWords > 0) {
+      const grpBook = document.createElement("optgroup");
+      grpBook.label = `Dynamic Options for "${slug}" (${totalWords.toLocaleString()} words)`;
+
+      const readMin = roundHalf(totalWords / 145);          // ~145 wpm spoken reading pace
+      const faithfulMin = roundHalf(readMin * 0.7);         // ~70% dramatic adaptation
+      const condensedMin = roundHalf(readMin * 0.3);        // ~30% fast-cut highlights
+      const dynamicOpts = [
+        { val: `book_faithful:${faithfulMin}`, min: faithfulMin, label: `🎬 Faithful Adaptation (~${faithfulMin} min · ~${mkClips(faithfulMin)} clips — 70% of this book)` },
+        { val: `book_unabridged:${readMin}`, min: readMin, label: `📖 Unabridged / Full Reading (~${readMin} min · ~${mkClips(readMin)} clips — 100% of ${totalWords.toLocaleString()} words)` },
+        { val: `book_condensed:${condensedMin}`, min: condensedMin, label: `⚡ Condensed Highlights (~${condensedMin} min · ~${mkClips(condensedMin)} clips — 30% fast cut)` },
+      ];
+
+      if (chapters.length > 1) {
+        const epMin = roundHalf(faithfulMin / chapters.length);
+        dynamicOpts.push({
+          val: `book_episodic:${faithfulMin}`,
+          min: faithfulMin,
+          label: `📚 Episodic Series (${chapters.length} episodes × ~${epMin} min/ch · ${faithfulMin} min total)`
+        });
+        const ch1Words = Number(chapters[0].words) || Math.round(totalWords / chapters.length);
+        const ch1Min = roundHalf(ch1Words / 145);
+        dynamicOpts.push({
+          val: `book_ch1:${ch1Min}`,
+          min: ch1Min,
+          label: `🎯 Chapter 1 Pilot (~${ch1Min} min · ~${mkClips(ch1Min)} clips — "${(chapters[0].title || "Chapter 1").slice(0, 32)}")`
+        });
+      }
+
+      dynamicOpts.forEach(o => {
+        const opt = document.createElement("option");
+        opt.value = o.val;
+        opt.dataset.minutes = String(o.min);
+        opt.textContent = o.label;
+        grpBook.appendChild(opt);
+      });
+      sel.appendChild(grpBook);
+    }
+
+    // Group 2: Standard film, short, episode, and feature formats
+    const grpStd = document.createElement("optgroup");
+    grpStd.label = "Standard Film & Short Formats";
+    const stdOpts = [
+      { id: "std_trailer", min: 1, label: `Trailer / Teaser (1 min · ~${mkClips(1)} clips)` },
+      { id: "std_reel", min: 1.5, label: `Social Short / Reel (90 sec · ~${mkClips(1.5)} clips)` },
+      { id: "std_mini", min: 3, label: `Mini-Short (3 min · ~${mkClips(3)} clips)` },
+      { id: "std_short", min: 5, label: `Short Film (5 min · ~${mkClips(5)} clips)` },
+      { id: "std_ext_short", min: 10, label: `Extended Short (10 min · ~${mkClips(10)} clips)` },
+      { id: "std_ep22", min: 22, label: `Half-Hour Episode (22 min · ~${mkClips(22)} clips)` },
+      { id: "std_ep45", min: 45, label: `Featurette / TV Hour (45 min · ~${mkClips(45)} clips)` },
+      { id: "std_feature90", min: 90, label: `Feature Film (90 min · ~${mkClips(90)} clips)` },
+      { id: "std_epic120", min: 120, label: `Epic Feature (120 min · ~${mkClips(120)} clips)` },
+      { id: "custom", min: savedMinutes || 5, label: "✂️ Custom Minutes (enter exact runtime below)" },
+    ];
+    stdOpts.forEach(o => {
+      const opt = document.createElement("option");
+      opt.value = `${o.id}:${o.min}`;
+      opt.dataset.minutes = String(o.min);
+      opt.textContent = o.label;
+      grpStd.appendChild(opt);
+    });
+    sel.appendChild(grpStd);
+
+    // Select best default: saved plan minutes if present, otherwise Faithful Adaptation (or 5 min short)
+    if (savedMinutes && savedMinutes > 0) {
+      if (minEl) minEl.value = String(savedMinutes);
+      sel.value = `custom:${savedMinutes}`;
+    } else if (sel.options.length > 0) {
+      sel.selectedIndex = 0;
+      const pickedMin = parseFloat(sel.options[0].dataset.minutes || "5") || 5;
+      if (minEl) minEl.value = String(pickedMin);
+    }
+
+    // Populate chapter range dropdowns from this book's chapters
+    const fromEl = $("v2ScopeFromCh");
+    const toEl = $("v2ScopeToCh");
+    if (fromEl && toEl) {
+      fromEl.textContent = "";
+      toEl.textContent = "";
+      chapters.forEach(c => {
+        const label = `Ch ${c.n}: ${(c.title || "").slice(0, 28)} (${c.words || 0}w)`;
+        const o1 = document.createElement("option");
+        o1.value = String(c.n);
+        o1.textContent = label;
+        const o2 = document.createElement("option");
+        o2.value = String(c.n);
+        o2.textContent = label;
+        fromEl.appendChild(o1);
+        toEl.appendChild(o2);
+      });
+      if (chapters.length > 0) {
+        fromEl.value = String(chapters[0].n);
+        toEl.value = String(chapters[chapters.length - 1].n);
+      }
+    }
+
+    updateV2ScopeEstimate();
+  }
+
+  async function loadV2Scope() {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    const statsEl = $("v2ScopeBookStats");
+
+    if (!slug) {
+      if (statsEl) statsEl.textContent = "Pick or save a book in Step 01 to dynamically calculate runtime options from its text.";
+      rebuildV2DurationOptions("", [], null);
+      return;
+    }
+
+    if (statsEl) statsEl.textContent = `Reading "${slug}" word count and chapters…`;
+    let chaps = [], savedMinutes = null;
+    try {
+      const ch = await callApi(`/api/chapters?project=${encodeURIComponent(slug)}`);
+      if (ch && Array.isArray(ch.chapters)) chaps = ch.chapters;
+    } catch (e) {}
+    try {
+      const ad = await callApi(`/api/adaptation?project=${encodeURIComponent(slug)}`);
+      if (ad && ad.exists && ad.plan && ad.plan.runtime_minutes) {
+        savedMinutes = Number(ad.plan.runtime_minutes);
+      }
+    } catch (e) {}
+
+    const totalWords = chaps.reduce((acc, c) => acc + (Number(c.words) || 0), 0);
+    if (statsEl) {
+      if (totalWords > 0) {
+        const readMin = roundHalf(totalWords / 145);
+        statsEl.innerHTML = `<strong style="color:#f59e0b">${slug}</strong> · <strong>${chaps.length}</strong> chapter(s) · <strong>${totalWords.toLocaleString()}</strong> words · ~<strong>${readMin} min</strong> unabridged spoken reading time`;
+      } else {
+        statsEl.textContent = `Book "${slug}" has not been split into chapters yet — showing standard film formats. Run Read Book in Step 01/02 to unlock word-count-based options.`;
+      }
+    }
+
+    rebuildV2DurationOptions(slug, chaps, savedMinutes);
+  }
+
+  function initV2Scope() {
+    const sel = $("v2Duration");
+    const minEl = $("v2CustomMinutes");
+    const clipEl = $("v2ClipSec");
+    const aspectEl = $("v2Aspect");
+    const modeEl = $("v2ScopeMode");
+    const fromEl = $("v2ScopeFromCh");
+    const toEl = $("v2ScopeToCh");
+    const btnReload = $("v2ScopeReload");
+
+    if (sel) {
+      sel.addEventListener("change", () => {
+        const opt = sel.options[sel.selectedIndex];
+        if (opt && opt.dataset.minutes && minEl) {
+          minEl.value = opt.dataset.minutes;
+        }
+        // If user picks the Chapter 1 Pilot preset, auto-sync Scope Mode
+        if (opt && opt.value.startsWith("book_ch1:") && modeEl) {
+          modeEl.value = "pilot_ch1";
+        } else if (opt && opt.value.startsWith("std_trailer:") && modeEl) {
+          modeEl.value = "trailer";
+        }
+        updateV2ScopeEstimate();
+      });
+    }
+
+    if (minEl) {
+      minEl.addEventListener("input", updateV2ScopeEstimate);
+    }
+    if (clipEl) {
+      clipEl.addEventListener("change", () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        const curMin = parseFloat(minEl ? minEl.value : "5") || 5;
+        rebuildV2DurationOptions(slug, v2ScopeChapters, curMin);
+      });
+    }
+    [aspectEl, modeEl, fromEl, toEl].forEach(el => {
+      if (el) el.addEventListener("change", updateV2ScopeEstimate);
+    });
+    if (btnReload) btnReload.addEventListener("click", () => loadV2Scope());
   }
 
   // ===== STEP 05: STORY STRUCTURE, BEATS & SCENE BREAKDOWN =====
@@ -1071,6 +1325,7 @@
     initDirectStoryInput();
     initWorkbenchToggle();
     initV2Coverage();
+    initV2Scope();
     initV2StoryBreakdown();
     initV2Screenplay();
 
@@ -1120,6 +1375,7 @@
     setTimeout(() => {
       checkStepStorylineDrift();
       loadV2Coverage();
+      loadV2Scope();
       if (currentStep === 5) loadV2StoryBreakdown();
       if (currentStep === 6) loadV2Screenplay();
     }, 1200);
@@ -1129,6 +1385,7 @@
   window.StudioV2 = {
     activateStep,
     loadV2Coverage,
+    loadV2Scope,
     loadV2StoryBreakdown,
     loadV2Screenplay,
     triggerAudioRedo,
