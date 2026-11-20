@@ -185,6 +185,11 @@
       try { window.loadChapters(); } catch (e) {}
     }
 
+    // If entering Step 3 (Coverage & Logline), load active book's coverage
+    if (currentStep === 3) {
+      loadV2Coverage();
+    }
+
     // If entering Step 5 (Story Structure & Beats), load full beat sheet & scene breakdown
     if (currentStep === 5) {
       loadV2StoryBreakdown();
@@ -198,6 +203,148 @@
     // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
+  }
+
+  // ===== STEP 03: COVERAGE & LOGLINE =====
+  async function loadV2Coverage() {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    const loglineEl = $("v2Logline");
+    const synopsisEl = $("v2Synopsis");
+    const metaEl = $("v2CovMeta");
+    const badgeEl = $("v2CovBadge");
+    const extraEl = $("v2CovExtra");
+
+    if (!loglineEl || !synopsisEl) return;
+
+    // Immediately clear previous book's values so stale text never persists
+    loglineEl.value = "";
+    synopsisEl.value = "";
+    if (extraEl) {
+      extraEl.textContent = "";
+      extraEl.classList.add("hidden");
+    }
+
+    if (!slug) {
+      if (metaEl) metaEl.textContent = "Pick or save a book in Step 01 first.";
+      if (badgeEl) {
+        badgeEl.textContent = "No Book Selected";
+        badgeEl.className = "status-badge status-badge--drift";
+      }
+      return;
+    }
+
+    if (metaEl) metaEl.textContent = `Loading coverage for "${slug}"…`;
+    if (badgeEl) {
+      badgeEl.textContent = "Loading…";
+      badgeEl.className = "status-badge status-badge--working";
+    }
+
+    let readin = null, adapt = null;
+    try { readin = await callApi(`/api/readin?project=${encodeURIComponent(slug)}`); } catch (e) {}
+    try { adapt = await callApi(`/api/adaptation?project=${encodeURIComponent(slug)}`); } catch (e) {}
+
+    const cov = readin && readin.coverage ? readin.coverage : null;
+    const plan = adapt && adapt.exists ? adapt.plan : null;
+
+    if (cov && (cov.logline || cov.genre || (cov.key_events && cov.key_events.length))) {
+      loglineEl.value = cov.logline || (plan && plan.logline) || "";
+      const synParts = [];
+      if (readin && readin.treatment && readin.treatment.trim()) {
+        synParts.push(readin.treatment.trim().slice(0, 1200));
+      } else if (Array.isArray(cov.key_events) && cov.key_events.length) {
+        synParts.push("Key Events:\n" + cov.key_events.map(e => `• ${e}`).join("\n"));
+      } else if (plan && plan.ending) {
+        synParts.push(`Ending: ${plan.ending}`);
+      }
+      synopsisEl.value = synParts.join("\n\n");
+
+      const metaBits = [`Book: ${slug}`];
+      if (cov.genre) metaBits.push(`Genre: ${cov.genre}`);
+      if (cov.tone) metaBits.push(`Tone: ${cov.tone}`);
+      if (cov.length) metaBits.push(`Target: ${cov.length}`);
+      if (metaEl) metaEl.textContent = metaBits.join(" · ");
+
+      if (extraEl) {
+        const extras = [];
+        if (Array.isArray(cov.themes) && cov.themes.length) {
+          extras.push(`<div><strong style="color:#f59e0b">Themes:</strong> ${cov.themes.join(", ")}</div>`);
+        }
+        if (Array.isArray(cov.characters) && cov.characters.length) {
+          extras.push(`<div><strong style="color:#f59e0b">Key Characters:</strong> ${cov.characters.map(c => `${c.name}${c.role ? ` (${c.role})` : ""}`).join(", ")}</div>`);
+        }
+        if (cov.filmable) {
+          extras.push(`<div><strong style="color:#f59e0b">Filmability Notes:</strong> ${cov.filmable}</div>`);
+        }
+        if (extras.length) {
+          extraEl.innerHTML = extras.join("");
+          extraEl.classList.remove("hidden");
+        }
+      }
+
+      if (badgeEl) {
+        badgeEl.textContent = "✓ Coverage Loaded";
+        badgeEl.className = "status-badge status-badge--synced";
+      }
+      return;
+    }
+
+    if (plan && (plan.logline || (plan.scenes && plan.scenes.length))) {
+      loglineEl.value = plan.logline || "";
+      const lines = [];
+      if (plan.ending) lines.push(`Ending: ${plan.ending}`);
+      if (Array.isArray(plan.scenes) && plan.scenes.length) {
+        lines.push("Scenes Overview:\n" + plan.scenes.slice(0, 8).map(s => `• ${s.id} ${s.title}: ${s.summary || ""}`).join("\n"));
+      }
+      synopsisEl.value = lines.join("\n\n");
+      if (metaEl) metaEl.textContent = `Book: ${slug} · Loaded from Film Plan (${(plan.scenes || []).length} scenes)`;
+      if (badgeEl) {
+        badgeEl.textContent = "✓ Plan Logline Loaded";
+        badgeEl.className = "status-badge status-badge--synced";
+      }
+      return;
+    }
+
+    // No coverage or plan generated yet for this book
+    if (metaEl) metaEl.textContent = `Book: "${slug}" — No coverage or logline generated yet. Click ✨ Generate Coverage to analyze this book.`;
+    if (badgeEl) {
+      badgeEl.textContent = "Not Generated Yet";
+      badgeEl.className = "status-badge status-badge--drift";
+    }
+  }
+
+  function initV2Coverage() {
+    const btnReload = $("v2CovReload");
+    const btnBuild = $("v2CovBuild");
+    if (btnReload) btnReload.addEventListener("click", () => loadV2Coverage());
+    if (btnBuild) {
+      btnBuild.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnBuild.disabled = true;
+        const metaEl = $("v2CovMeta");
+        if (metaEl) metaEl.textContent = `Starting coverage analysis for "${slug}"…`;
+        try {
+          const o = typeof window.options === "function" ? window.options() : {};
+          await callApi("/api/read_it_in", { project: slug, engine: o.engine || "claude", claude_model: o.claude_model });
+          if (metaEl) metaEl.textContent = `✓ Coverage job started for "${slug}". Click ↻ Reload in a moment to view results.`;
+        } catch (err) {
+          if (metaEl) metaEl.textContent = "Could not start coverage: " + err.message;
+        } finally {
+          btnBuild.disabled = false;
+        }
+      });
+    }
+
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        activeProject = selProj.value || "";
+        // Always refresh coverage immediately on book change so it is never stale
+        loadV2Coverage();
+      });
+    }
   }
 
   // ===== STEP 05: STORY STRUCTURE, BEATS & SCENE BREAKDOWN =====
@@ -923,6 +1070,7 @@
 
     initDirectStoryInput();
     initWorkbenchToggle();
+    initV2Coverage();
     initV2StoryBreakdown();
     initV2Screenplay();
 
@@ -971,6 +1119,7 @@
 
     setTimeout(() => {
       checkStepStorylineDrift();
+      loadV2Coverage();
       if (currentStep === 5) loadV2StoryBreakdown();
       if (currentStep === 6) loadV2Screenplay();
     }, 1200);
@@ -979,6 +1128,7 @@
   // Export methods for global access
   window.StudioV2 = {
     activateStep,
+    loadV2Coverage,
     loadV2StoryBreakdown,
     loadV2Screenplay,
     triggerAudioRedo,

@@ -267,20 +267,28 @@
       <section class="step-panel" id="panel-step-3" data-step="3" aria-labelledby="step3Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step3Title">Step 03: Coverage & Logline</h2>
-            <p class="step-goal">Review your story's dramatic logline, commercial premise, and tone analysis.</p>
+            <h2 id="step3Title">Step 03: Coverage &amp; Logline</h2>
+            <p class="step-goal">Review your story's dramatic logline, commercial premise, genre, tone, and key story elements.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Coverage Generated</span>
+          <span class="status-badge status-badge--synced" id="v2CovBadge">Loading…</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
           ✨ <strong>Autopilot Pick:</strong> Qwen 2.5 72B &mdash; <em>Narrative analysis and character motivations.</em>
         </div>
         <div class="step-zone-workspace">
           <div class="direct-story-card">
-            <label class="f">Commercial Logline</label>
-            <input type="text" id="v2Logline" style="width:100%;padding:10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-base)" value="Two adventurous companions journey through Saturn's rings to uncover ancient mysteries hidden among the moons.">
-            <label class="f" style="margin-top:10px">One-Paragraph Synopsis</label>
-            <textarea id="v2Synopsis" rows="4" style="width:100%;padding:10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit">When Tommy and Judah embark on an expedition across the icy surface of Titan and the sulfur plumes of Enceladus, they encounter wonders beyond their imagination and discover what true courage requires.</textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <div id="v2CovMeta" style="font-size:var(--text-xs);color:#94a3b8">Select a book in Step 01 to load its coverage.</div>
+              <div style="display:flex;gap:8px">
+                <button type="button" class="btn btn--secondary" id="v2CovBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate Coverage</button>
+                <button type="button" class="btn btn--ghost" id="v2CovReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
+              </div>
+            </div>
+            <label class="f" for="v2Logline">Commercial Logline</label>
+            <input type="text" id="v2Logline" style="width:100%;padding:10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-base)" placeholder="No logline generated yet for this book.">
+            <label class="f" for="v2Synopsis" style="margin-top:10px">Synopsis / Premise &amp; Key Events</label>
+            <textarea id="v2Synopsis" rows="5" style="width:100%;padding:10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit" placeholder="No synopsis generated yet for this book."></textarea>
+            <div id="v2CovExtra" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid #232d3f;font-size:var(--text-xs);color:#cbd5e1;display:flex;flex-direction:column;gap:6px"></div>
           </div>
         </div>
         <div class="step-zone-dock">
