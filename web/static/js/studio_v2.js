@@ -50,14 +50,20 @@
   }
 
   async function callApi(url, body) {
+    if (typeof window.api === "function") {
+      return window.api(url, body);
+    }
+    const token = (document.querySelector('meta[name="studio-token"]') || {}).content || "";
+    const headers = { "Content-Type": "application/json" };
+    if (token && token !== "__TOKEN__") headers["X-Studio-Token"] = token;
     const opts = body !== undefined ? {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body)
-    } : { method: "GET" };
+    } : { method: "GET", headers };
     const r = await fetch(url, opts);
     const j = await r.json();
-    if (!r.ok) throw new Error(j.detail || j.message || r.statusText);
+    if (!r.ok) throw new Error(j.error || j.detail || j.message || r.statusText);
     return j;
   }
 
@@ -179,9 +185,305 @@
       try { window.loadChapters(); } catch (e) {}
     }
 
+    // If entering Step 6 (Screenplay), load all screenplay scenes
+    if (currentStep === 6) {
+      loadV2Screenplay();
+    }
+
     // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
+  }
+
+  // ===== STEP 06: MULTI-SCENE SCREENPLAY EDITOR =====
+  let spScenesData = [];
+  let spFlagsData = {};
+  let spActiveIdx = 0;
+  let spViewMode = "single"; // "single" | "all"
+  let spSourceKind = "adaptation"; // "adaptation" | "readin" | "chapters"
+
+  function spElementsToText(els) {
+    if (!Array.isArray(els)) return "";
+    return els.map(e => {
+      if (e.type === "dialogue") {
+        return `D ${e.character}${e.note ? ` (${e.note})` : ""}: ${e.text}`;
+      }
+      return `${e.type === "transition" ? "T" : "A"}: ${e.text}`;
+    }).join("\n");
+  }
+
+  function spTextToElements(text) {
+    const els = [];
+    for (const raw of String(text || "").split("\n")) {
+      const line = raw.trim();
+      if (!line) continue;
+      let m;
+      if ((m = line.match(/^A:\s*(.+)$/))) {
+        els.push({ type: "action", text: m[1] });
+      } else if ((m = line.match(/^T:\s*(.+)$/))) {
+        els.push({ type: "transition", text: m[1] });
+      } else if ((m = line.match(/^D\s+([^():]+?)\s*(?:\(([^)]*)\))?\s*:\s*(.+)$/))) {
+        els.push({ type: "dialogue", character: m[1].trim(), note: m[2] || undefined, text: m[3] });
+      } else {
+        // Treat plain lines as action so novices don't get blocked by syntax errors
+        els.push({ type: "action", text: line });
+      }
+    }
+    return els;
+  }
+
+  function renderV2Screenplay() {
+    const pills = $("v2SpPills");
+    const countEl = $("v2SpCount");
+    const emptyEl = $("v2SpEmpty");
+    const singleBox = $("v2SpSingleBox");
+    const allBox = $("v2SpAllBox");
+    const prevBtn = $("v2SpPrev");
+    const nextBtn = $("v2SpNext");
+    const btnSingle = $("v2SpViewSingle");
+    const btnAll = $("v2SpViewAll");
+
+    if (!pills || !countEl) return;
+
+    if (!spScenesData.length) {
+      pills.innerHTML = "";
+      countEl.textContent = "0 scenes";
+      if (emptyEl) emptyEl.classList.remove("hidden");
+      if (singleBox) singleBox.classList.add("hidden");
+      if (allBox) allBox.classList.add("hidden");
+      if (prevBtn) prevBtn.disabled = true;
+      if (nextBtn) nextBtn.disabled = true;
+      return;
+    }
+
+    if (emptyEl) emptyEl.classList.add("hidden");
+    spActiveIdx = Math.max(0, Math.min(spScenesData.length - 1, spActiveIdx));
+    countEl.textContent = `Scene ${spActiveIdx + 1} of ${spScenesData.length}`;
+    if (prevBtn) prevBtn.disabled = spActiveIdx <= 0;
+    if (nextBtn) nextBtn.disabled = spActiveIdx >= spScenesData.length - 1;
+
+    // Render scene pills
+    pills.textContent = "";
+    spScenesData.forEach((s, idx) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "step-pill" + (idx === spActiveIdx && spViewMode === "single" ? " active" : "");
+      const hasFlag = spFlagsData && spFlagsData[s.id] && spFlagsData[s.id].length > 0;
+      b.textContent = `${s.id}: ${s.title || "Untitled"}${hasFlag ? " ⚠️" : ""}`;
+      b.title = s.summary || s.title || s.id;
+      b.addEventListener("click", () => {
+        spActiveIdx = idx;
+        spViewMode = "single";
+        renderV2Screenplay();
+      });
+      pills.appendChild(b);
+    });
+
+    // View mode toggle buttons
+    if (btnSingle) {
+      btnSingle.className = "btn " + (spViewMode === "single" ? "btn--primary" : "btn--ghost");
+    }
+    if (btnAll) {
+      btnAll.className = "btn " + (spViewMode === "all" ? "btn--primary" : "btn--ghost");
+    }
+
+    if (spViewMode === "single") {
+      if (singleBox) singleBox.classList.remove("hidden");
+      if (allBox) {
+        allBox.classList.add("hidden");
+        allBox.style.display = "none";
+      }
+      const s = spScenesData[spActiveIdx];
+      const meta = $("v2SpSceneMeta");
+      const heading = $("v2SpHeading");
+      const body = $("v2SpBody");
+      const saveBtn = $("v2SpSave");
+      const saveMsg = $("v2SpSaveMsg");
+
+      if (meta) {
+        const dur = s.seconds ? ` · ${s.seconds}s` : "";
+        const summary = s.summary ? ` — ${s.summary}` : "";
+        meta.innerHTML = `<strong style="color:#f59e0b">${s.id}</strong>: <strong style="color:#f8fafc">${s.title || ""}</strong>${dur}${summary}`;
+      }
+      if (heading) {
+        heading.value = (s.screenplay && s.screenplay.heading) || s.heading || "";
+      }
+      if (body) {
+        body.value = s.screenplay
+          ? spElementsToText(s.screenplay.elements)
+          : (s.text || "");
+      }
+      if (saveBtn) {
+        saveBtn.disabled = spSourceKind !== "adaptation";
+        saveBtn.title = spSourceKind === "adaptation" ? "Save changes to this scene" : "Read-only preview (plan/write screenplay to edit)";
+      }
+      if (saveMsg) saveMsg.textContent = "";
+    } else {
+      if (singleBox) singleBox.classList.add("hidden");
+      if (allBox) {
+        allBox.classList.remove("hidden");
+        allBox.style.display = "flex";
+        allBox.textContent = "";
+        spScenesData.forEach((s, idx) => {
+          const card = document.createElement("div");
+          card.style.cssText = "background:#0a0d14;border:1px solid #232d3f;border-radius:8px;padding:12px;";
+          const headRow = document.createElement("div");
+          headRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;";
+          const title = document.createElement("strong");
+          title.style.color = "#f59e0b";
+          title.textContent = `${s.id}: ${s.title || "Untitled"}${s.seconds ? ` (${s.seconds}s)` : ""}`;
+          const editBtn = document.createElement("button");
+          editBtn.type = "button";
+          editBtn.className = "btn btn--secondary";
+          editBtn.style.cssText = "padding:3px 10px;font-size:var(--text-xs)";
+          editBtn.textContent = "Edit Scene";
+          editBtn.addEventListener("click", () => {
+            spActiveIdx = idx;
+            spViewMode = "single";
+            renderV2Screenplay();
+          });
+          headRow.appendChild(title);
+          headRow.appendChild(editBtn);
+          card.appendChild(headRow);
+
+          const slugLine = document.createElement("div");
+          slugLine.style.cssText = "font-family:var(--font-mono);font-size:var(--text-xs);color:#38bdf8;margin-bottom:6px;";
+          slugLine.textContent = (s.screenplay && s.screenplay.heading) || s.heading || "(No heading yet)";
+          card.appendChild(slugLine);
+
+          const pre = document.createElement("pre");
+          pre.style.cssText = "margin:0;white-space:pre-wrap;font-family:var(--font-mono);font-size:var(--text-xs);color:#e2e8f0;line-height:1.5;max-height:180px;overflow:auto;";
+          pre.textContent = s.screenplay
+            ? spElementsToText(s.screenplay.elements)
+            : (s.text || s.summary || "(Not written yet)");
+          card.appendChild(pre);
+          allBox.appendChild(card);
+        });
+      }
+    }
+  }
+
+  async function loadV2Screenplay() {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    const countEl = $("v2SpCount");
+    if (!slug) {
+      spScenesData = [];
+      renderV2Screenplay();
+      return;
+    }
+    if (countEl) countEl.textContent = "Loading scenes…";
+
+    // 1. Try /api/screenplay (adaptation film plan scenes)
+    try {
+      const r = await callApi(`/api/screenplay?project=${encodeURIComponent(slug)}`);
+      if (r && Array.isArray(r.scenes) && r.scenes.length > 0) {
+        spScenesData = r.scenes;
+        spFlagsData = r.flags || {};
+        spSourceKind = "adaptation";
+        renderV2Screenplay();
+        return;
+      }
+    } catch (e) { /* fall through */ }
+
+    // 2. Fallback: try /api/readin script
+    try {
+      const rd = await callApi(`/api/readin?project=${encodeURIComponent(slug)}`);
+      if (rd && rd.script && rd.script.trim()) {
+        const blocks = rd.script.split(/\n(?=(?:INT\.|EXT\.|INT\/EXT\.|SCENE\s+\d+))/i).filter(b => b.trim());
+        spScenesData = blocks.map((blk, i) => {
+          const lines = blk.trim().split("\n");
+          return {
+            id: `S${String(i + 1).padStart(2, "0")}`,
+            title: lines[0].slice(0, 60),
+            heading: lines[0],
+            text: lines.slice(1).join("\n").trim(),
+            summary: ""
+          };
+        });
+        spFlagsData = {};
+        spSourceKind = "readin";
+        renderV2Screenplay();
+        return;
+      }
+    } catch (e) { /* fall through */ }
+
+    // 3. Fallback: try /api/chapters so user can still browse every chapter/scene
+    try {
+      const ch = await callApi(`/api/chapters?project=${encodeURIComponent(slug)}`);
+      if (ch && Array.isArray(ch.chapters) && ch.chapters.length > 0) {
+        spScenesData = ch.chapters.map(c => ({
+          id: `CH${String(c.n).padStart(2, "0")}`,
+          title: c.title || `Chapter ${c.n}`,
+          heading: `CHAPTER ${c.n}: ${c.title || ""}`,
+          text: c.starts_with || "",
+          summary: `${c.words || 0} words`
+        }));
+        spFlagsData = {};
+        spSourceKind = "chapters";
+        renderV2Screenplay();
+        return;
+      }
+    } catch (e) { /* fall through */ }
+
+    spScenesData = [];
+    renderV2Screenplay();
+  }
+
+  function initV2Screenplay() {
+    const prevBtn = $("v2SpPrev");
+    const nextBtn = $("v2SpNext");
+    const btnSingle = $("v2SpViewSingle");
+    const btnAll = $("v2SpViewAll");
+    const btnRefresh = $("v2SpRefresh");
+    const btnSave = $("v2SpSave");
+
+    if (prevBtn) prevBtn.addEventListener("click", () => { if (spActiveIdx > 0) { spActiveIdx--; spViewMode = "single"; renderV2Screenplay(); } });
+    if (nextBtn) nextBtn.addEventListener("click", () => { if (spActiveIdx < spScenesData.length - 1) { spActiveIdx++; spViewMode = "single"; renderV2Screenplay(); } });
+    if (btnSingle) btnSingle.addEventListener("click", () => { spViewMode = "single"; renderV2Screenplay(); });
+    if (btnAll) btnAll.addEventListener("click", () => { spViewMode = "all"; renderV2Screenplay(); });
+    if (btnRefresh) btnRefresh.addEventListener("click", () => loadV2Screenplay());
+
+    if (btnSave) {
+      btnSave.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        const s = spScenesData[spActiveIdx];
+        const msg = $("v2SpSaveMsg");
+        if (!slug || !s || spSourceKind !== "adaptation") return;
+
+        btnSave.disabled = true;
+        if (msg) msg.textContent = "Saving scene…";
+        try {
+          const heading = ($("v2SpHeading") || {}).value || "";
+          const elements = spTextToElements(($("v2SpBody") || {}).value || "");
+          await callApi("/api/screenplay_edit", {
+            project: slug,
+            action: "save_scene",
+            scene: s.id,
+            heading,
+            elements
+          });
+          if (msg) msg.textContent = `✓ Saved ${s.id}. Storyline drift updated.`;
+          await loadV2Screenplay();
+          await checkStepStorylineDrift();
+        } catch (err) {
+          if (msg) msg.textContent = "Error: " + err.message;
+        } finally {
+          btnSave.disabled = false;
+        }
+      });
+    }
+
+    // Reload scenes whenever the selected book changes
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        spActiveIdx = 0;
+        if (currentStep === 6) loadV2Screenplay();
+        checkStepStorylineDrift();
+      });
+    }
   }
 
   // ===== STORYLINE CHANGE DETECTION & SELECTIVE REDO =====
@@ -337,6 +639,7 @@
 
     initDirectStoryInput();
     initWorkbenchToggle();
+    initV2Screenplay();
 
     // Bind step pills in 6-phase bar
     document.querySelectorAll(".step-pill").forEach(pill => {
@@ -381,12 +684,16 @@
     } catch (e) {}
     activateStep(savedStep);
 
-    setTimeout(checkStepStorylineDrift, 1200);
+    setTimeout(() => {
+      checkStepStorylineDrift();
+      if (currentStep === 6) loadV2Screenplay();
+    }, 1200);
   });
 
   // Export methods for global access
   window.StudioV2 = {
     activateStep,
+    loadV2Screenplay,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,
     checkStepStorylineDrift,

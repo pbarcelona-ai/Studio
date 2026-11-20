@@ -388,15 +388,51 @@
             </div>
           </div>
 
-          <div class="direct-story-card">
-            <div style="font-family:var(--font-mono);font-size:var(--text-sm);line-height:1.6;background:#0a0d14;padding:16px;border-radius:8px;border:1px solid #1e293b;max-height:400px;overflow:auto">
-              <p style="color:#f59e0b;font-weight:700;margin:0 0 8px">SCENE 1: EXT. SATURN ORBIT - DAY</p>
-              <p style="color:#94a3b8;margin:0 0 12px">The exploration ship glides silently above the amber-banded clouds of Saturn. Massive ice rings stretch beyond the horizon.</p>
-              <p style="margin:0 0 4px;color:#38bdf8;font-weight:700">TOMMY</p>
-              <p style="margin:0 0 12px;color:#f8fafc;padding-left:16px">"Judah, look at the shadow from the rings! It covers the entire northern hemisphere."</p>
-              <p style="margin:0 0 4px;color:#38bdf8;font-weight:700">JUDAH</p>
-              <p style="margin:0 0 12px;color:#f8fafc;padding-left:16px">"Navigation computer is locked on Titan. Preparing atmospheric entry thrusters."</p>
+          <div class="direct-story-card" id="v2ScreenplayCard">
+            <!-- Scene Switcher & View Toggle -->
+            <div class="v2-sp-toolbar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding-bottom:10px;border-bottom:1px solid #232d3f">
+              <div style="display:flex;align-items:center;gap:8px">
+                <button type="button" class="btn btn--secondary" id="v2SpPrev" style="padding:4px 10px;font-size:var(--text-xs)">⬅ Prev Scene</button>
+                <span id="v2SpCount" style="font-size:var(--text-sm);font-weight:700;color:#f59e0b">Loading scenes…</span>
+                <button type="button" class="btn btn--secondary" id="v2SpNext" style="padding:4px 10px;font-size:var(--text-xs)">Next Scene ➔</button>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <button type="button" class="btn btn--primary" id="v2SpViewSingle" style="padding:4px 10px;font-size:var(--text-xs)">Edit One Scene</button>
+                <button type="button" class="btn btn--ghost" id="v2SpViewAll" style="padding:4px 10px;font-size:var(--text-xs)">View All Scenes</button>
+                <button type="button" class="btn btn--ghost" id="v2SpRefresh" style="padding:4px 10px;font-size:var(--text-xs)" title="Reload scenes from project">↻ Reload</button>
+              </div>
             </div>
+
+            <!-- Horizontal Scene Pills Strip -->
+            <div id="v2SpPills" style="display:flex;gap:6px;overflow-x:auto;padding:6px 0" role="tablist" aria-label="Screenplay scenes"></div>
+
+            <!-- Empty State (shown if project has no screenplay yet) -->
+            <div id="v2SpEmpty" class="hidden" style="padding:16px;background:#0a0d14;border:1px dashed #334155;border-radius:8px;color:#94a3b8;font-size:var(--text-sm)">
+              No screenplay scenes found yet for this book. Select a planned book in Step 01, or run <strong>Plan &amp; Write Screenplay</strong> to generate all scenes.
+            </div>
+
+            <!-- Single Scene Editor -->
+            <div id="v2SpSingleBox">
+              <div id="v2SpSceneMeta" style="margin-bottom:8px;font-size:var(--text-sm);color:#94a3b8"></div>
+              <div style="margin-bottom:8px">
+                <label class="f" for="v2SpHeading">Scene Heading (Slugline)</label>
+                <input type="text" id="v2SpHeading" maxlength="140" placeholder="INT./EXT. LOCATION - TIME" style="width:100%;padding:8px 10px;background:#0a0d14;color:#f59e0b;font-family:var(--font-mono);font-weight:700;border:1px solid #334155;border-radius:6px">
+              </div>
+              <div>
+                <label class="f" for="v2SpBody">Scene Action &amp; Dialogue (<code>A:</code> Action, <code>D CHARACTER (note):</code> Dialogue, <code>T:</code> Transition)</label>
+                <textarea id="v2SpBody" rows="12" spellcheck="false" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:8px;padding:12px;font-family:var(--font-mono);font-size:var(--text-sm);line-height:1.6"></textarea>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <button type="button" class="btn btn--primary" id="v2SpSave" style="padding:6px 16px">💾 Save Scene Changes</button>
+                  <span id="v2SpSaveMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
+                </div>
+                <small style="color:#64748b">Editing a scene automatically flags downstream shots/audio for selective re-sync.</small>
+              </div>
+            </div>
+
+            <!-- All Scenes Overview (toggled via View All Scenes) -->
+            <div id="v2SpAllBox" class="hidden" style="display:flex;flex-direction:column;gap:12px;max-height:520px;overflow-y:auto;padding-right:4px"></div>
           </div>
         </div>
         <div class="step-zone-dock">
