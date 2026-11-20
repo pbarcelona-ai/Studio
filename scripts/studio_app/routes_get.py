@@ -376,12 +376,27 @@ def _v2_dialogue(r: Request):
     vc_lc = {str(k).lower(): v for k, v in vc.items()}
 
     saved = {}
+    saved_engine = ""
     dl_path = pd / "dialogue_lines.json"
     if dl_path.is_file():
         try:
-            saved = (json.loads(dl_path.read_text(encoding="utf-8")) or {}).get("lines") or {}
+            ddata = json.loads(dl_path.read_text(encoding="utf-8")) or {}
+            saved = ddata.get("lines") or {}
+            saved_engine = str(ddata.get("engine") or "").strip()
         except Exception:
             pass
+
+    import importlib.util, shutil
+    gemini_ready = False
+    try:
+        import run_gemini_omni
+        gemini_ready = bool(run_gemini_omni.get_gemini_api_key()) and run_gemini_omni.sdk_available()
+    except Exception:
+        pass
+    kokoro_ready = bool(importlib.util.find_spec("kokoro"))
+    macos_ready = bool(shutil.which("say"))
+    if not saved_engine:
+        saved_engine = "gemini-tts" if gemini_ready else ("kokoro" if kokoro_ready else "macos-say")
 
     lines = []
     scenes_seen = []
@@ -423,7 +438,18 @@ def _v2_dialogue(r: Request):
                     "has_audio": has_audio,
                     "audio_url": f"/file/{slug}/{wav_rel}" if has_audio else "",
                 })
-    return {"lines": lines, "scenes": scenes_seen, "dialect": dialect, "cast": vc}
+    return {
+        "lines": lines,
+        "scenes": scenes_seen,
+        "dialect": dialect,
+        "cast": vc,
+        "engine": saved_engine,
+        "engines": {
+            "gemini_tts": gemini_ready,
+            "kokoro": kokoro_ready,
+            "macos_say": macos_ready,
+        },
+    }
 
 
 

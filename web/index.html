@@ -998,6 +998,31 @@
           ✨ <strong>Autopilot Pick:</strong> Dialogue-First Synthesis &mdash; <em>Uses your Step 14 voice cast &amp; dialect (narration muted unless explicitly selected).</em>
         </div>
         <div class="step-zone-workspace">
+          <!-- Voice Synthesis Engine Selector (3 Selectable Options) -->
+          <div id="v2DialogueEngineBar" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:10px;margin-bottom:var(--space-3)">
+            <div class="deliverable-card v2-dlg-engine-card" data-engine="gemini-tts" style="cursor:pointer;padding:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                <span class="deliverable-title" style="font-size:var(--text-sm)">✨ Gemini Neural TTS</span>
+                <span class="status-badge" id="v2DlgEngBadgeGemini" style="font-size:10px">Studio Final</span>
+              </div>
+              <p class="deliverable-desc" style="margin:4px 0 0;font-size:var(--text-xs)">Expressive studio-quality voices via your Google API key with tone, accent &amp; acting direction.</p>
+            </div>
+            <div class="deliverable-card v2-dlg-engine-card" data-engine="kokoro" style="cursor:pointer;padding:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                <span class="deliverable-title" style="font-size:var(--text-sm)">🎙️ Kokoro-82M Local</span>
+                <span class="status-badge" id="v2DlgEngBadgeKokoro" style="font-size:10px">Local Neural</span>
+              </div>
+              <p class="deliverable-desc" style="margin:4px 0 0;font-size:var(--text-xs)">Open-weights neural voices (am_puck, af_bella, bm_fable) rendered offline on your machine.</p>
+            </div>
+            <div class="deliverable-card v2-dlg-engine-card" data-engine="macos-say" style="cursor:pointer;padding:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                <span class="deliverable-title" style="font-size:var(--text-sm)">⚡ Fast Scratch Preview</span>
+                <span class="status-badge" id="v2DlgEngBadgeMacos" style="font-size:10px">Instant Offline</span>
+              </div>
+              <p class="deliverable-desc" style="margin:4px 0 0;font-size:var(--text-xs)">Instant macOS scratch track for checking pacing &amp; line edits before final neural rendering.</p>
+            </div>
+          </div>
+
           <!-- Controls & Scene Filter Bar -->
           <div class="direct-story-card" style="margin-bottom:var(--space-3)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">

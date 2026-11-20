@@ -737,19 +737,21 @@ def _gemini_omni_generate(r: Request):
 
 @route("POST", "/api/v2_dialogue_save")
 def _v2_dialogue_save(r: Request):
-    """Save edited dialogue text, voice, emotion, speed, and delivery notes to dialogue_lines.json."""
+    """Save edited dialogue text, voice, emotion, speed, delivery notes, and selected engine to dialogue_lines.json."""
     slug = str(r.body.get("project") or "").strip()
     if not slug:
         raise PlanError("project is required")
     pd = pdir(slug, "book")
     pd.mkdir(parents=True, exist_ok=True)
     dl_path = pd / "dialogue_lines.json"
-    existing = {}
+    existing_doc = {}
     if dl_path.is_file():
         try:
-            existing = (json.loads(dl_path.read_text(encoding="utf-8")) or {}).get("lines") or {}
+            existing_doc = json.loads(dl_path.read_text(encoding="utf-8")) or {}
         except Exception:
-            existing = {}
+            existing_doc = {}
+    existing = existing_doc.get("lines") if isinstance(existing_doc.get("lines"), dict) else {}
+    engine = str(r.body.get("engine") or existing_doc.get("engine") or "").strip()
     incoming = r.body.get("lines")
     if isinstance(incoming, list):
         for item in incoming:
@@ -772,8 +774,8 @@ def _v2_dialogue_save(r: Request):
             "emotion": str(r.body.get("emotion") or "natural").strip(),
             "speed": max(0.5, min(1.8, float(r.body.get("speed") or 1.0))),
         }
-    dl_path.write_text(json.dumps({"lines": existing}, indent=2), encoding="utf-8")
-    return {"status": "ok", "saved": len(existing)}
+    dl_path.write_text(json.dumps({"engine": engine, "lines": existing}, indent=2), encoding="utf-8")
+    return {"status": "ok", "saved": len(existing), "engine": engine}
 
 
 def _macos_voice_for_kokoro(voice_id: str, dialect: str = "american") -> str:
@@ -790,9 +792,120 @@ def _macos_voice_for_kokoro(voice_id: str, dialect: str = "american") -> str:
     return {"am_puck": "Alex", "am_michael": "Tom", "am_adam": "Aaron", "am_eric": "Fred", "am_onyx": "Alex"}.get(v, "Samantha" if is_fem else "Alex")
 
 
+def _gemini_voice_for_kokoro(voice_id: str) -> str:
+    """Map Kokoro voice IDs to distinct Gemini prebuilt neural voices."""
+    v = (voice_id or "").lower()
+    mapping = {
+        "am_puck": "Puck",
+        "am_michael": "Charon",
+        "am_adam": "Fenrir",
+        "am_eric": "Orus",
+        "am_onyx": "Charon",
+        "bm_fable": "Puck",
+        "bm_george": "Charon",
+        "bm_lewis": "Orus",
+        "bm_daniel": "Fenrir",
+        "af_bella": "Aoede",
+        "af_sarah": "Kore",
+        "af_nicole": "Leda",
+        "af_heart": "Zephyr",
+        "bf_emma": "Aoede",
+        "bf_alice": "Kore",
+        "bf_isabella": "Leda",
+        "bf_lily": "Zephyr",
+    }
+    if v in mapping:
+        return mapping[v]
+    return "Aoede" if (v.startswith("af_") or v.startswith("bf_")) else "Puck"
+
+
+def _write_wav_bytes(wav_path: Path, raw: bytes, sample_rate: int = 24000):
+    """Write WAV bytes directly if already RIFF/WAVE, otherwise wrap raw 16-bit mono PCM in a WAV header."""
+    import wave
+
+    if raw[:4] == b"RIFF":
+        wav_path.write_bytes(raw)
+        return
+    with wave.open(str(wav_path), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(raw)
+
+
+def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str, note: str, wav_path: Path) -> str:
+    """Render one spoken line with Gemini Neural TTS via google-genai."""
+    import run_gemini_omni
+    from google import genai
+    from google.genai import types
+
+    api_key = run_gemini_omni.get_gemini_api_key()
+    if not api_key:
+        raise PlanError("Gemini API key is not configured. Save your key in Step 13 (or ~/.zshrc) first.")
+
+    g_voice = _gemini_voice_for_kokoro(voice_id)
+    accent = "British English (RP)" if (voice_id.lower().startswith("b") or dialect == "british") else "American English"
+    style_bits = [accent]
+    if emotion and emotion != "natural":
+        style_bits.append(f"{emotion} tone")
+    if note:
+        style_bits.append(note)
+    prompt = f"Speak the following dialogue line in {', '.join(style_bits)}. Speak ONLY the line itself:\n\n{text}"
+
+    client = genai.Client(api_key=api_key)
+    last_err = None
+    for model_name in ("gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts", "gemini-3.8-flash-tts"):
+        try:
+            resp = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=g_voice)
+                        )
+                    ),
+                ),
+            )
+            for part in getattr(resp, "parts", None) or []:
+                inline = getattr(part, "inline_data", None)
+                if inline and getattr(inline, "data", None):
+                    _write_wav_bytes(wav_path, inline.data, sample_rate=24000)
+                    return f"{g_voice} ({model_name})"
+        except Exception as e:
+            last_err = e
+            continue
+    raise PlanError(f"Gemini Neural TTS failed: {run_gemini_omni.sanitize_error(last_err) if last_err else 'no audio returned'}")
+
+
+def _render_line_kokoro(text: str, voice_id: str, dialect: str, speed: float, wav_path: Path) -> str:
+    """Render one spoken line locally using Kokoro-82M if installed."""
+    import importlib.util
+
+    if not importlib.util.find_spec("kokoro"):
+        raise PlanError("Kokoro-82M is not installed locally yet. Install with: pip install kokoro soundfile — or select Gemini Neural TTS or Fast Scratch Preview above.")
+    import numpy as np
+    from kokoro import KPipeline
+
+    vid = voice_id or ("bm_fable" if dialect == "british" else "am_puck")
+    lang = "b" if vid.lower().startswith("b") else "a"
+    pipe = KPipeline(lang_code=lang)
+    chunks = []
+    for _, _, audio in pipe(text, voice=vid, speed=speed):
+        if audio is not None:
+            chunks.append(np.asarray(audio, dtype=np.float32))
+    if not chunks:
+        raise PlanError("Kokoro-82M returned empty audio for this line.")
+    pcm = np.clip(np.concatenate(chunks), -1.0, 1.0)
+    pcm16 = (pcm * 32767.0).astype(np.int16).tobytes()
+    _write_wav_bytes(wav_path, pcm16, sample_rate=24000)
+    return vid
+
+
 @route("POST", "/api/v2_dialogue_render")
 def _v2_dialogue_render(r: Request):
-    """Render one or more dialogue lines to WAV files in <project>/audio/dialogue/<id>.wav."""
+    """Render one or more dialogue lines to WAV files using the selected engine: gemini-tts, kokoro, or macos-say."""
     import tempfile
 
     slug = str(r.body.get("project") or "").strip()
@@ -810,20 +923,24 @@ def _v2_dialogue_render(r: Request):
             raise PlanError("lines (or id + text) required")
 
     dialect = str(r.body.get("dialect") or "american").strip().lower()
-    say_bin = shutil.which("say")
-    afconvert_bin = shutil.which("afconvert")
-    if not say_bin:
-        raise PlanError("Local speech synthesis ('say') is unavailable on this machine; install Kokoro-82M or use macOS.")
+    engine = str(r.body.get("engine") or "macos-say").strip().lower()
+    if engine not in ("gemini-tts", "kokoro", "macos-say"):
+        engine = "macos-say"
 
+    say_bin = shutil.which("say") if engine == "macos-say" else None
+    afconvert_bin = shutil.which("afconvert") if engine == "macos-say" else None
     avail = set()
-    try:
-        out = subprocess.check_output([say_bin, "-v", "?"], text=True, timeout=5)
-        for ln in out.splitlines():
-            parts = ln.strip().split()
-            if parts:
-                avail.add(parts[0])
-    except Exception:
-        pass
+    if engine == "macos-say":
+        if not say_bin:
+            raise PlanError("Local scratch speech ('say') is unavailable on this machine; choose Gemini Neural TTS or Kokoro-82M.")
+        try:
+            out = subprocess.check_output([say_bin, "-v", "?"], text=True, timeout=5)
+            for ln in out.splitlines():
+                parts = ln.strip().split()
+                if parts:
+                    avail.add(parts[0])
+        except Exception:
+            pass
 
     rendered = []
     for item in items:
@@ -835,38 +952,47 @@ def _v2_dialogue_render(r: Request):
         if not safe_id:
             continue
         voice_id = str(item.get("voice") or "").strip()
+        emotion = str(item.get("emotion") or "natural").strip()
+        note = str(item.get("note") or "").strip()
         speed = max(0.5, min(1.8, float(item.get("speed") or 1.0)))
-        rate = int(round(185 * speed))
-        mac_voice = _macos_voice_for_kokoro(voice_id, dialect)
-        if avail and mac_voice not in avail:
-            if (voice_id.lower().startswith("b") or dialect == "british") and "Daniel" in avail:
-                mac_voice = "Daniel"
-            elif "Samantha" in avail:
-                mac_voice = "Samantha"
-            else:
-                mac_voice = ""
-
         wav_path = out_dir / f"{safe_id}.wav"
-        with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as tf:
-            aiff_path = Path(tf.name)
-        try:
-            cmd = [say_bin, "-r", str(rate), "-o", str(aiff_path)]
-            if mac_voice:
-                cmd.extend(["-v", mac_voice])
-            cmd.append(text)
-            subprocess.run(cmd, check=True, timeout=30)
-            if afconvert_bin:
-                subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@22050", str(aiff_path), str(wav_path)], check=True, timeout=20)
-            else:
-                shutil.copyfile(aiff_path, wav_path)
-            rendered.append({
-                "id": safe_id,
-                "audio_url": f"/file/{slug}/audio/dialogue/{safe_id}.wav",
-                "voice_used": mac_voice or "system-default",
-            })
-        finally:
-            aiff_path.unlink(missing_ok=True)
 
-    return {"status": "ok", "engine": "macos-say", "rendered": rendered}
+        if engine == "gemini-tts":
+            voice_used = _render_line_gemini_tts(text, voice_id, dialect, emotion, note, wav_path)
+        elif engine == "kokoro":
+            voice_used = _render_line_kokoro(text, voice_id, dialect, speed, wav_path)
+        else:
+            rate = int(round(185 * speed))
+            mac_voice = _macos_voice_for_kokoro(voice_id, dialect)
+            if avail and mac_voice not in avail:
+                if (voice_id.lower().startswith("b") or dialect == "british") and "Daniel" in avail:
+                    mac_voice = "Daniel"
+                elif "Samantha" in avail:
+                    mac_voice = "Samantha"
+                else:
+                    mac_voice = ""
+            with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as tf:
+                aiff_path = Path(tf.name)
+            try:
+                cmd = [say_bin, "-r", str(rate), "-o", str(aiff_path)]
+                if mac_voice:
+                    cmd.extend(["-v", mac_voice])
+                cmd.append(text)
+                subprocess.run(cmd, check=True, timeout=30)
+                if afconvert_bin:
+                    subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@22050", str(aiff_path), str(wav_path)], check=True, timeout=20)
+                else:
+                    shutil.copyfile(aiff_path, wav_path)
+            finally:
+                aiff_path.unlink(missing_ok=True)
+            voice_used = mac_voice or "system-default"
+
+        rendered.append({
+            "id": safe_id,
+            "audio_url": f"/file/{slug}/audio/dialogue/{safe_id}.wav",
+            "voice_used": voice_used,
+        })
+
+    return {"status": "ok", "engine": engine, "rendered": rendered}
 
 

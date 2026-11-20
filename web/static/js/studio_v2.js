@@ -3020,7 +3020,49 @@
   }
 
   // ===== STEP 15: SPOKEN DIALOGUE DELIVERY =====
-  let v2DialogueState = { project: "", lines: [], scenes: [], dialect: "american", activeScene: "ALL" };
+  let v2DialogueState = { project: "", lines: [], scenes: [], dialect: "american", activeScene: "ALL", engine: "gemini-tts", engines: {} };
+
+  function renderV2DialogueEngineUI() {
+    const active = v2DialogueState.engine || "gemini-tts";
+    const eng = v2DialogueState.engines || {};
+    const bGem = $("v2DlgEngBadgeGemini");
+    const bKok = $("v2DlgEngBadgeKokoro");
+    const bMac = $("v2DlgEngBadgeMacos");
+    if (bGem) {
+      bGem.textContent = eng.gemini_tts ? "✓ Ready (Studio Final)" : "Needs API Key";
+      bGem.className = "status-badge " + (eng.gemini_tts ? "status-badge--synced" : "");
+    }
+    if (bKok) {
+      bKok.textContent = eng.kokoro ? "✓ Installed" : "Not Installed";
+      bKok.className = "status-badge " + (eng.kokoro ? "status-badge--synced" : "");
+    }
+    if (bMac) {
+      bMac.textContent = eng.macos_say ? "✓ Ready (Scratch)" : "Unavailable";
+      bMac.className = "status-badge " + (eng.macos_say ? "status-badge--synced" : "");
+    }
+    document.querySelectorAll("#v2DialogueEngineBar .v2-dlg-engine-card").forEach(card => {
+      const isSel = card.dataset.engine === active;
+      card.style.borderColor = isSel ? "#f59e0b" : "";
+      card.style.boxShadow = isSel ? "0 0 0 1px rgba(245,158,11,0.5)" : "";
+      card.style.background = isSel ? "rgba(245,158,11,0.08)" : "";
+    });
+  }
+
+  async function selectV2DialogueEngine(engine, persist = true) {
+    v2DialogueState.engine = engine;
+    renderV2DialogueEngineUI();
+    const labels = {
+      "gemini-tts": "✨ Gemini Neural TTS (Studio Final)",
+      "kokoro": "🎙️ Kokoro-82M Local Neural",
+      "macos-say": "⚡ Fast Scratch Preview (macOS)",
+    };
+    setV2DialogueStatus(`Selected dialogue engine: ${labels[engine] || engine}. Click ↺ Redo This Line Only or 🎙️ Render Scene Audio to synthesize with it.`);
+    if (persist && v2DialogueState.project) {
+      try {
+        await callApi("/api/v2_dialogue_save", { project: v2DialogueState.project, engine });
+      } catch (e) {}
+    }
+  }
 
   function setV2DialogueStatus(msg, isErr) {
     const st = $("v2DialogueStatus");
@@ -3047,12 +3089,14 @@
   async function renderV2DialogueLines(linesToRender, autoPlayId) {
     const proj = v2DialogueState.project;
     if (!proj || !linesToRender.length) return;
-    setV2DialogueStatus(`Rendering ${linesToRender.length} dialogue line${linesToRender.length === 1 ? "" : "s"}…`);
+    const engine = v2DialogueState.engine || "gemini-tts";
+    setV2DialogueStatus(`Rendering ${linesToRender.length} dialogue line${linesToRender.length === 1 ? "" : "s"} via ${engine}…`);
     try {
-      await callApi("/api/v2_dialogue_save", { project: proj, lines: linesToRender });
+      await callApi("/api/v2_dialogue_save", { project: proj, engine, lines: linesToRender });
       const res = await callApi("/api/v2_dialogue_render", {
         project: proj,
         dialect: v2DialogueState.dialect || "american",
+        engine,
         lines: linesToRender,
       });
       const rendered = res.rendered || [];
@@ -3308,9 +3352,12 @@
       v2DialogueState.lines = data.lines || [];
       v2DialogueState.scenes = data.scenes || [];
       v2DialogueState.dialect = data.dialect || "american";
+      v2DialogueState.engine = data.engine || "gemini-tts";
+      v2DialogueState.engines = data.engines || {};
       if (v2DialogueState.activeScene !== "ALL" && !v2DialogueState.scenes.includes(v2DialogueState.activeScene)) {
         v2DialogueState.activeScene = v2DialogueState.scenes[0] || "ALL";
       }
+      renderV2DialogueEngineUI();
       renderV2DialogueScenes();
       renderV2DialogueList();
     } catch (e) {
@@ -3319,6 +3366,12 @@
   }
 
   function initV2Dialogue() {
+    document.querySelectorAll("#v2DialogueEngineBar .v2-dlg-engine-card").forEach(card => {
+      card.addEventListener("click", () => {
+        const eng = card.dataset.engine;
+        if (eng) selectV2DialogueEngine(eng, true);
+      });
+    });
     const btnReload = $("bV2DialogueReload");
     const btnSaveAll = $("bV2DialogueSaveAll");
     const btnRenderScene = $("bV2DialogueRenderScene");
@@ -3331,7 +3384,7 @@
         if (!edits.length) return;
         setV2DialogueStatus("Saving dialogue edits…");
         try {
-          const res = await callApi("/api/v2_dialogue_save", { project: proj, lines: edits });
+          const res = await callApi("/api/v2_dialogue_save", { project: proj, engine: v2DialogueState.engine, lines: edits });
           setV2DialogueStatus(`✓ Saved ${res.saved || edits.length} dialogue line edits.`);
         } catch (e) {
           setV2DialogueStatus("Save failed: " + (e.message || e), true);
