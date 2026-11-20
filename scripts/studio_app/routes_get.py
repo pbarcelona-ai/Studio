@@ -354,4 +354,77 @@ def _v2_voice_cast(r: Request):
     return {"cast": {}, "dialect": "american", "mode": "dialogue"}
 
 
+@route("GET", "/api/v2_dialogue")
+def _v2_dialogue(r: Request):
+    """Extract all spoken dialogue lines from screenplay/scene-*.json merged with voice_cast.json and dialogue_lines.json."""
+    import json
+
+    slug = r.q("project")
+    if not slug:
+        return {"lines": [], "scenes": [], "dialect": "american", "cast": {}}
+    pd = pdir(slug, "book")
+    vc = {}
+    dialect = "american"
+    vc_path = pd / "voice_cast.json"
+    if vc_path.is_file():
+        try:
+            vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
+            vc = vdata.get("cast") or {}
+            dialect = vdata.get("dialect") or "american"
+        except Exception:
+            pass
+    vc_lc = {str(k).lower(): v for k, v in vc.items()}
+
+    saved = {}
+    dl_path = pd / "dialogue_lines.json"
+    if dl_path.is_file():
+        try:
+            saved = (json.loads(dl_path.read_text(encoding="utf-8")) or {}).get("lines") or {}
+        except Exception:
+            pass
+
+    lines = []
+    scenes_seen = []
+    sp_dir = pd / "screenplay"
+    if sp_dir.is_dir():
+        for sp_file in sorted(sp_dir.glob("scene-*.json")):
+            try:
+                sc = json.loads(sp_file.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            sc_id = str(sc.get("scene") or sp_file.stem.replace("scene-", ""))
+            heading = str(sc.get("heading") or "")
+            idx = 0
+            for el in sc.get("elements") or []:
+                if not isinstance(el, dict) or el.get("type") != "dialogue":
+                    continue
+                idx += 1
+                lid = f"{sc_id}-{idx:02d}"
+                char = str(el.get("character") or "SPEAKER").strip()
+                text = str(el.get("text") or "").strip()
+                note = str(el.get("note") or "").strip()
+                ov = saved.get(lid) if isinstance(saved.get(lid), dict) else {}
+                voice = ov.get("voice") or vc_lc.get(char.lower()) or ("bm_fable" if dialect == "british" else "am_puck")
+                wav_rel = f"audio/dialogue/{lid}.wav"
+                wav_path = pd / wav_rel
+                has_audio = wav_path.is_file() and wav_path.stat().st_size > 100
+                if sc_id not in scenes_seen:
+                    scenes_seen.append(sc_id)
+                lines.append({
+                    "id": lid,
+                    "scene": sc_id,
+                    "heading": heading,
+                    "character": char,
+                    "text": ov.get("text", text),
+                    "note": ov.get("note", note),
+                    "voice": voice,
+                    "emotion": ov.get("emotion", "natural"),
+                    "speed": float(ov.get("speed", 1.0)),
+                    "has_audio": has_audio,
+                    "audio_url": f"/file/{slug}/{wav_rel}" if has_audio else "",
+                })
+    return {"lines": lines, "scenes": scenes_seen, "dialect": dialect, "cast": vc}
+
+
+
 

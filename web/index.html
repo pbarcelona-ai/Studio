@@ -990,54 +990,33 @@
         <div class="step-zone-header">
           <div class="step-title-wrap">
             <h2 id="step15Title">Step 15: Spoken Dialogue Delivery</h2>
-            <p class="step-goal">Fine-tune spoken lines, inflection, pacing, and perform audio-only redos per shot.</p>
+            <p class="step-goal">Edit spoken lines, adjust emotion &amp; pacing, and render or play real dialogue audio per line or scene.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Dialogue Ready</span>
+          <span class="status-badge status-badge--synced" id="v2DialogueBadge">✓ Dialogue Ready</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Kokoro-82M &mdash; <em>Dialogue mode active (narration muted unless explicitly selected).</em>
+          ✨ <strong>Autopilot Pick:</strong> Dialogue-First Synthesis &mdash; <em>Uses your Step 14 voice cast &amp; dialect (narration muted unless explicitly selected).</em>
         </div>
         <div class="step-zone-workspace">
-          <div class="direct-story-card">
-            <!-- Shot 1 Dialogue Card -->
-            <div style="border-bottom:1px solid #232d3f;padding-bottom:12px;margin-bottom:12px">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                <strong style="color:#f59e0b">Shot 2 &middot; TOMMY</strong>
-                <div style="display:flex;gap:6px">
-                  <button type="button" class="btn btn--ghost" style="font-size:var(--text-xs)">↺ Redo This Line Only</button>
-                </div>
-              </div>
-              <p style="margin:0 0 8px;font-size:var(--text-base);color:#f8fafc">"Judah, look at the shadow from the rings! It covers the entire northern hemisphere."</p>
-              <div style="display:flex;align-items:center;gap:12px;background:#0a0d14;padding:8px 12px;border-radius:6px">
-                <button type="button" class="btn btn--primary" style="padding:4px 10px;font-size:var(--text-xs)">▶ Play Line</button>
-                <div style="flex:1;height:24px;background:#1e293b;border-radius:4px;display:flex;align-items:center;padding:0 8px;color:#64748b;font-size:var(--text-xs)">
-                  ─── ∿∿∿ Waveform Scrubbing (0.0s - 4.2s) ───
-                </div>
-                <small style="color:#94a3b8">Voice: am_puck &middot; 4.2s</small>
+          <!-- Controls & Scene Filter Bar -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <div id="v2DialogueSummary" style="font-size:var(--text-sm);color:#cbd5e1">Loading spoken dialogue lines from screenplay…</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn--primary" id="bV2DialogueRenderScene">🎙️ Render Scene Audio</button>
+                <button type="button" class="btn btn--secondary" id="bV2DialogueSaveAll">💾 Save Line Edits</button>
+                <button type="button" class="btn btn--ghost" id="bV2DialogueReload">↻ Reload</button>
               </div>
             </div>
-
-            <!-- Shot 2 Dialogue Card -->
-            <div>
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                <strong style="color:#f59e0b">Shot 3 &middot; JUDAH</strong>
-                <div style="display:flex;gap:6px">
-                  <button type="button" class="btn btn--ghost" style="font-size:var(--text-xs)">↺ Redo This Line Only</button>
-                </div>
-              </div>
-              <p style="margin:0 0 8px;font-size:var(--text-base);color:#f8fafc">"Navigation computer is locked on Titan. Preparing atmospheric entry thrusters."</p>
-              <div style="display:flex;align-items:center;gap:12px;background:#0a0d14;padding:8px 12px;border-radius:6px">
-                <button type="button" class="btn btn--primary" style="padding:4px 10px;font-size:var(--text-xs)">▶ Play Line</button>
-                <div style="flex:1;height:24px;background:#1e293b;border-radius:4px;display:flex;align-items:center;padding:0 8px;color:#64748b;font-size:var(--text-xs)">
-                  ─── ∿∿∿ Waveform Scrubbing (0.0s - 3.8s) ───
-                </div>
-                <small style="color:#94a3b8">Voice: am_michael &middot; 3.8s</small>
-              </div>
-            </div>
+            <div id="v2DialogueScenes" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+            <div id="v2DialogueStatus" style="font-size:var(--text-xs);color:#34d399" aria-live="polite"></div>
           </div>
+
+          <!-- Dynamic Dialogue Cards Container -->
+          <div id="v2DialogueList" style="display:flex;flex-direction:column;gap:12px"></div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Voice Casting</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Score & Foley ➔</button>
         </div>
       </section>

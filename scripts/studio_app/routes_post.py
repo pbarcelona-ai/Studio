@@ -735,3 +735,138 @@ def _gemini_omni_generate(r: Request):
     return res
 
 
+@route("POST", "/api/v2_dialogue_save")
+def _v2_dialogue_save(r: Request):
+    """Save edited dialogue text, voice, emotion, speed, and delivery notes to dialogue_lines.json."""
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    dl_path = pd / "dialogue_lines.json"
+    existing = {}
+    if dl_path.is_file():
+        try:
+            existing = (json.loads(dl_path.read_text(encoding="utf-8")) or {}).get("lines") or {}
+        except Exception:
+            existing = {}
+    incoming = r.body.get("lines")
+    if isinstance(incoming, list):
+        for item in incoming:
+            if not isinstance(item, dict) or not item.get("id"):
+                continue
+            lid = str(item["id"]).strip()
+            existing[lid] = {
+                "text": str(item.get("text") or "").strip(),
+                "note": str(item.get("note") or "").strip(),
+                "voice": str(item.get("voice") or "").strip(),
+                "emotion": str(item.get("emotion") or "natural").strip(),
+                "speed": max(0.5, min(1.8, float(item.get("speed") or 1.0))),
+            }
+    elif isinstance(r.body.get("id"), str) and r.body["id"].strip():
+        lid = r.body["id"].strip()
+        existing[lid] = {
+            "text": str(r.body.get("text") or "").strip(),
+            "note": str(r.body.get("note") or "").strip(),
+            "voice": str(r.body.get("voice") or "").strip(),
+            "emotion": str(r.body.get("emotion") or "natural").strip(),
+            "speed": max(0.5, min(1.8, float(r.body.get("speed") or 1.0))),
+        }
+    dl_path.write_text(json.dumps({"lines": existing}, indent=2), encoding="utf-8")
+    return {"status": "ok", "saved": len(existing)}
+
+
+def _macos_voice_for_kokoro(voice_id: str, dialect: str = "american") -> str:
+    """Map Kokoro voice IDs to distinct built-in macOS speech voices for instant local preview/render."""
+    v = (voice_id or "").lower()
+    is_uk = v.startswith("b") or dialect == "british"
+    is_fem = v.startswith("af_") or v.startswith("bf_")
+    if is_uk:
+        if is_fem:
+            return {"bf_emma": "Serena", "bf_alice": "Kate", "bf_isabella": "Martha", "bf_lily": "Serena"}.get(v, "Serena")
+        return {"bm_fable": "Daniel", "bm_george": "Oliver", "bm_lewis": "Arthur", "bm_daniel": "Daniel"}.get(v, "Daniel")
+    if is_fem:
+        return {"af_bella": "Samantha", "af_sarah": "Allison", "af_nicole": "Ava", "af_heart": "Samantha"}.get(v, "Samantha")
+    return {"am_puck": "Alex", "am_michael": "Tom", "am_adam": "Aaron", "am_eric": "Fred", "am_onyx": "Alex"}.get(v, "Samantha" if is_fem else "Alex")
+
+
+@route("POST", "/api/v2_dialogue_render")
+def _v2_dialogue_render(r: Request):
+    """Render one or more dialogue lines to WAV files in <project>/audio/dialogue/<id>.wav."""
+    import tempfile
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    out_dir = pd / "audio" / "dialogue"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    items = r.body.get("lines")
+    if not isinstance(items, list) or not items:
+        if r.body.get("id") and r.body.get("text"):
+            items = [r.body]
+        else:
+            raise PlanError("lines (or id + text) required")
+
+    dialect = str(r.body.get("dialect") or "american").strip().lower()
+    say_bin = shutil.which("say")
+    afconvert_bin = shutil.which("afconvert")
+    if not say_bin:
+        raise PlanError("Local speech synthesis ('say') is unavailable on this machine; install Kokoro-82M or use macOS.")
+
+    avail = set()
+    try:
+        out = subprocess.check_output([say_bin, "-v", "?"], text=True, timeout=5)
+        for ln in out.splitlines():
+            parts = ln.strip().split()
+            if parts:
+                avail.add(parts[0])
+    except Exception:
+        pass
+
+    rendered = []
+    for item in items:
+        lid = str(item.get("id") or "").strip()
+        text = str(item.get("text") or "").strip()
+        if not lid or not text:
+            continue
+        safe_id = "".join(c for c in lid if c.isalnum() or c in "-_")
+        if not safe_id:
+            continue
+        voice_id = str(item.get("voice") or "").strip()
+        speed = max(0.5, min(1.8, float(item.get("speed") or 1.0)))
+        rate = int(round(185 * speed))
+        mac_voice = _macos_voice_for_kokoro(voice_id, dialect)
+        if avail and mac_voice not in avail:
+            if (voice_id.lower().startswith("b") or dialect == "british") and "Daniel" in avail:
+                mac_voice = "Daniel"
+            elif "Samantha" in avail:
+                mac_voice = "Samantha"
+            else:
+                mac_voice = ""
+
+        wav_path = out_dir / f"{safe_id}.wav"
+        with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as tf:
+            aiff_path = Path(tf.name)
+        try:
+            cmd = [say_bin, "-r", str(rate), "-o", str(aiff_path)]
+            if mac_voice:
+                cmd.extend(["-v", mac_voice])
+            cmd.append(text)
+            subprocess.run(cmd, check=True, timeout=30)
+            if afconvert_bin:
+                subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@22050", str(aiff_path), str(wav_path)], check=True, timeout=20)
+            else:
+                shutil.copyfile(aiff_path, wav_path)
+            rendered.append({
+                "id": safe_id,
+                "audio_url": f"/file/{slug}/audio/dialogue/{safe_id}.wav",
+                "voice_used": mac_voice or "system-default",
+            })
+        finally:
+            aiff_path.unlink(missing_ok=True)
+
+    return {"status": "ok", "engine": "macos-say", "rendered": rendered}
+
+

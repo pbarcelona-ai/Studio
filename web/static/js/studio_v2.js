@@ -235,6 +235,11 @@
       loadV2VoiceCast();
     }
 
+    // If entering Step 15 (Spoken Dialogue Delivery), load all spoken lines from screenplay
+    if (currentStep === 15) {
+      loadV2Dialogue();
+    }
+
     // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
@@ -3014,6 +3019,339 @@
     }
   }
 
+  // ===== STEP 15: SPOKEN DIALOGUE DELIVERY =====
+  let v2DialogueState = { project: "", lines: [], scenes: [], dialect: "american", activeScene: "ALL" };
+
+  function setV2DialogueStatus(msg, isErr) {
+    const st = $("v2DialogueStatus");
+    if (!st) return;
+    st.textContent = msg || "";
+    st.style.color = isErr ? "#f87171" : "#34d399";
+  }
+
+  function collectVisibleDialogueEdits() {
+    const out = [];
+    document.querySelectorAll("#v2DialogueList .v2-dlg-card").forEach(card => {
+      const id = card.dataset.lineId;
+      if (!id) return;
+      const text = (card.querySelector(".v2-dlg-text")?.value || "").trim();
+      const voice = card.querySelector(".v2-dlg-voice")?.value || "";
+      const emotion = card.querySelector(".v2-dlg-emotion")?.value || "natural";
+      const speed = parseFloat(card.querySelector(".v2-dlg-speed")?.value || "1.0") || 1.0;
+      const note = (card.querySelector(".v2-dlg-note")?.value || "").trim();
+      out.push({ id, text, voice, emotion, speed, note });
+    });
+    return out;
+  }
+
+  async function renderV2DialogueLines(linesToRender, autoPlayId) {
+    const proj = v2DialogueState.project;
+    if (!proj || !linesToRender.length) return;
+    setV2DialogueStatus(`Rendering ${linesToRender.length} dialogue line${linesToRender.length === 1 ? "" : "s"}…`);
+    try {
+      await callApi("/api/v2_dialogue_save", { project: proj, lines: linesToRender });
+      const res = await callApi("/api/v2_dialogue_render", {
+        project: proj,
+        dialect: v2DialogueState.dialect || "american",
+        lines: linesToRender,
+      });
+      const rendered = res.rendered || [];
+      const ts = Date.now();
+      rendered.forEach(r => {
+        const entry = v2DialogueState.lines.find(l => l.id === r.id);
+        if (entry) {
+          entry.has_audio = true;
+          entry.audio_url = r.audio_url + "?t=" + ts;
+        }
+        const edited = linesToRender.find(x => x.id === r.id);
+        if (entry && edited) {
+          entry.text = edited.text;
+          entry.voice = edited.voice;
+          entry.emotion = edited.emotion;
+          entry.speed = edited.speed;
+          entry.note = edited.note;
+        }
+      });
+      renderV2DialogueList();
+      setV2DialogueStatus(`✓ Rendered ${rendered.length} line${rendered.length === 1 ? "" : "s"} (${res.engine || "audio"})`);
+      if (autoPlayId) {
+        const audioEl = document.querySelector(`#v2DialogueList .v2-dlg-card[data-line-id="${autoPlayId}"] audio`);
+        if (audioEl) {
+          audioEl.currentTime = 0;
+          audioEl.play().catch(() => {});
+        }
+      }
+    } catch (e) {
+      setV2DialogueStatus("Render failed: " + (e.message || e), true);
+    }
+  }
+
+  function renderV2DialogueScenes() {
+    const bar = $("v2DialogueScenes");
+    if (!bar) return;
+    bar.innerHTML = "";
+    const scenes = v2DialogueState.scenes || [];
+    const allBtn = document.createElement("button");
+    allBtn.type = "button";
+    allBtn.className = "btn " + (v2DialogueState.activeScene === "ALL" ? "btn--primary" : "btn--ghost");
+    allBtn.style.cssText = "padding:4px 10px;font-size:var(--text-xs)";
+    allBtn.textContent = `All Scenes (${v2DialogueState.lines.length} lines)`;
+    allBtn.addEventListener("click", () => {
+      v2DialogueState.activeScene = "ALL";
+      renderV2DialogueScenes();
+      renderV2DialogueList();
+    });
+    bar.appendChild(allBtn);
+
+    scenes.forEach(sc => {
+      const count = v2DialogueState.lines.filter(l => l.scene === sc).length;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn " + (v2DialogueState.activeScene === sc ? "btn--primary" : "btn--ghost");
+      b.style.cssText = "padding:4px 10px;font-size:var(--text-xs)";
+      b.textContent = `${sc} (${count})`;
+      b.addEventListener("click", () => {
+        v2DialogueState.activeScene = sc;
+        renderV2DialogueScenes();
+        renderV2DialogueList();
+      });
+      bar.appendChild(b);
+    });
+  }
+
+  function renderV2DialogueList() {
+    const list = $("v2DialogueList");
+    const summary = $("v2DialogueSummary");
+    const badge = $("v2DialogueBadge");
+    if (!list) return;
+    list.innerHTML = "";
+
+    const filtered = v2DialogueState.activeScene === "ALL"
+      ? v2DialogueState.lines
+      : v2DialogueState.lines.filter(l => l.scene === v2DialogueState.activeScene);
+
+    const renderedCount = v2DialogueState.lines.filter(l => l.has_audio).length;
+    if (summary) {
+      summary.textContent = v2DialogueState.lines.length
+        ? `${v2DialogueState.lines.length} spoken dialogue lines across ${v2DialogueState.scenes.length} scenes · ${renderedCount} rendered`
+        : "No spoken dialogue lines found in screenplay yet. Complete Step 06 (Screenplay) first.";
+    }
+    if (badge) {
+      badge.textContent = renderedCount > 0 ? `✓ ${renderedCount}/${v2DialogueState.lines.length} Rendered` : `${v2DialogueState.lines.length} Lines Ready`;
+    }
+
+    if (!filtered.length) {
+      const empty = document.createElement("div");
+      empty.className = "direct-story-card";
+      empty.style.color = "#94a3b8";
+      empty.textContent = "No dialogue lines in this selection.";
+      list.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach(line => {
+      const card = document.createElement("div");
+      card.className = "direct-story-card v2-dlg-card";
+      card.dataset.lineId = line.id;
+
+      // Header row
+      const hdr = document.createElement("div");
+      hdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px";
+      const left = document.createElement("div");
+      const strong = document.createElement("strong");
+      strong.style.color = "#f59e0b";
+      strong.textContent = `${line.id} · ${line.character.toUpperCase()}`;
+      left.appendChild(strong);
+      if (line.heading) {
+        const sub = document.createElement("span");
+        sub.style.cssText = "color:#94a3b8;font-size:var(--text-xs);margin-left:8px";
+        sub.textContent = line.heading;
+        left.appendChild(sub);
+      }
+      hdr.appendChild(left);
+
+      const actions = document.createElement("div");
+      actions.style.cssText = "display:flex;gap:6px;flex-wrap:wrap";
+      const btnPlay = document.createElement("button");
+      btnPlay.type = "button";
+      btnPlay.className = "btn btn--primary";
+      btnPlay.style.cssText = "padding:4px 10px;font-size:var(--text-xs)";
+      btnPlay.textContent = line.has_audio ? "▶ Play Line" : "▶ Render & Play";
+      btnPlay.addEventListener("click", async () => {
+        const existingAudio = card.querySelector("audio");
+        const curText = (card.querySelector(".v2-dlg-text")?.value || "").trim();
+        const curVoice = card.querySelector(".v2-dlg-voice")?.value || line.voice;
+        const curSpeed = parseFloat(card.querySelector(".v2-dlg-speed")?.value || "1.0") || 1.0;
+        const changed = curText !== line.text || curVoice !== line.voice || Math.abs(curSpeed - (line.speed || 1.0)) > 0.01;
+        if (existingAudio && line.has_audio && !changed) {
+          existingAudio.currentTime = 0;
+          existingAudio.play().catch(() => {});
+          return;
+        }
+        const curEmotion = card.querySelector(".v2-dlg-emotion")?.value || "natural";
+        const curNote = (card.querySelector(".v2-dlg-note")?.value || "").trim();
+        await renderV2DialogueLines([{ id: line.id, text: curText, voice: curVoice, emotion: curEmotion, speed: curSpeed, note: curNote }], line.id);
+      });
+
+      const btnRedo = document.createElement("button");
+      btnRedo.type = "button";
+      btnRedo.className = "btn btn--ghost";
+      btnRedo.style.cssText = "padding:4px 10px;font-size:var(--text-xs)";
+      btnRedo.textContent = "↺ Redo This Line Only";
+      btnRedo.addEventListener("click", async () => {
+        const curText = (card.querySelector(".v2-dlg-text")?.value || "").trim();
+        const curVoice = card.querySelector(".v2-dlg-voice")?.value || line.voice;
+        const curEmotion = card.querySelector(".v2-dlg-emotion")?.value || "natural";
+        const curSpeed = parseFloat(card.querySelector(".v2-dlg-speed")?.value || "1.0") || 1.0;
+        const curNote = (card.querySelector(".v2-dlg-note")?.value || "").trim();
+        await renderV2DialogueLines([{ id: line.id, text: curText, voice: curVoice, emotion: curEmotion, speed: curSpeed, note: curNote }], line.id);
+      });
+
+      actions.appendChild(btnPlay);
+      actions.appendChild(btnRedo);
+      hdr.appendChild(actions);
+      card.appendChild(hdr);
+
+      // Editable line textarea
+      const ta = document.createElement("textarea");
+      ta.className = "v2-dlg-text";
+      ta.rows = 2;
+      ta.value = line.text || "";
+      ta.style.cssText = "width:100%;padding:8px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-sm);margin-bottom:8px;resize:vertical;";
+      card.appendChild(ta);
+
+      // Voice, Emotion, Speed, Direction note row
+      const ctrl = document.createElement("div");
+      ctrl.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px";
+
+      const selVoice = document.createElement("select");
+      selVoice.className = "v2-dlg-voice";
+      selVoice.style.cssText = "padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+      KOKORO_VOICES.forEach(([vid, vlabel]) => {
+        const opt = document.createElement("option");
+        opt.value = vid;
+        opt.textContent = vlabel;
+        if (vid === line.voice) opt.selected = true;
+        selVoice.appendChild(opt);
+      });
+      ctrl.appendChild(selVoice);
+
+      const selEmo = document.createElement("select");
+      selEmo.className = "v2-dlg-emotion";
+      selEmo.style.cssText = "padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+      ["natural", "excited", "warm", "whisper", "dramatic", "sad", "curious"].forEach(em => {
+        const opt = document.createElement("option");
+        opt.value = em;
+        opt.textContent = "Tone: " + em;
+        if (em === (line.emotion || "natural")) opt.selected = true;
+        selEmo.appendChild(opt);
+      });
+      ctrl.appendChild(selEmo);
+
+      const selSpd = document.createElement("select");
+      selSpd.className = "v2-dlg-speed";
+      selSpd.style.cssText = "padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+      [0.8, 0.9, 1.0, 1.1, 1.2, 1.3].forEach(sp => {
+        const opt = document.createElement("option");
+        opt.value = String(sp);
+        opt.textContent = `Speed: ${sp.toFixed(1)}x`;
+        if (Math.abs(sp - (line.speed || 1.0)) < 0.05) opt.selected = true;
+        selSpd.appendChild(opt);
+      });
+      ctrl.appendChild(selSpd);
+
+      const noteIn = document.createElement("input");
+      noteIn.type = "text";
+      noteIn.className = "v2-dlg-note";
+      noteIn.placeholder = "Delivery direction (e.g. excited, soft whisper)…";
+      noteIn.value = line.note || "";
+      noteIn.style.cssText = "flex:1;min-width:160px;padding:5px 8px;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+      ctrl.appendChild(noteIn);
+      card.appendChild(ctrl);
+
+      // Audio player bar
+      const playerWrap = document.createElement("div");
+      playerWrap.style.cssText = "display:flex;align-items:center;gap:10px;background:#0a0d14;padding:6px 10px;border-radius:6px";
+      if (line.has_audio && line.audio_url) {
+        const aud = document.createElement("audio");
+        aud.controls = true;
+        aud.preload = "none";
+        aud.src = line.audio_url;
+        aud.style.cssText = "flex:1;height:30px";
+        playerWrap.appendChild(aud);
+      } else {
+        const ph = document.createElement("span");
+        ph.style.cssText = "flex:1;color:#64748b;font-size:var(--text-xs)";
+        ph.textContent = "Not rendered yet — click ▶ Render & Play or 🎙️ Render Scene Audio";
+        playerWrap.appendChild(ph);
+      }
+      card.appendChild(playerWrap);
+      list.appendChild(card);
+    });
+  }
+
+  async function loadV2Dialogue() {
+    const proj = getActiveProject();
+    const summary = $("v2DialogueSummary");
+    const list = $("v2DialogueList");
+    if (!list) return;
+    if (!proj) {
+      if (summary) summary.textContent = "Select a book in Step 01 first to load its spoken dialogue.";
+      list.innerHTML = "";
+      return;
+    }
+    if (summary) summary.textContent = "Loading spoken dialogue lines…";
+    try {
+      const data = await callApi(`/api/v2_dialogue?project=${encodeURIComponent(proj)}`);
+      v2DialogueState.project = proj;
+      v2DialogueState.lines = data.lines || [];
+      v2DialogueState.scenes = data.scenes || [];
+      v2DialogueState.dialect = data.dialect || "american";
+      if (v2DialogueState.activeScene !== "ALL" && !v2DialogueState.scenes.includes(v2DialogueState.activeScene)) {
+        v2DialogueState.activeScene = v2DialogueState.scenes[0] || "ALL";
+      }
+      renderV2DialogueScenes();
+      renderV2DialogueList();
+    } catch (e) {
+      setV2DialogueStatus("Could not load dialogue: " + (e.message || e), true);
+    }
+  }
+
+  function initV2Dialogue() {
+    const btnReload = $("bV2DialogueReload");
+    const btnSaveAll = $("bV2DialogueSaveAll");
+    const btnRenderScene = $("bV2DialogueRenderScene");
+    if (btnReload) btnReload.addEventListener("click", () => loadV2Dialogue());
+    if (btnSaveAll) {
+      btnSaveAll.addEventListener("click", async () => {
+        const proj = v2DialogueState.project;
+        if (!proj) return;
+        const edits = collectVisibleDialogueEdits();
+        if (!edits.length) return;
+        setV2DialogueStatus("Saving dialogue edits…");
+        try {
+          const res = await callApi("/api/v2_dialogue_save", { project: proj, lines: edits });
+          setV2DialogueStatus(`✓ Saved ${res.saved || edits.length} dialogue line edits.`);
+        } catch (e) {
+          setV2DialogueStatus("Save failed: " + (e.message || e), true);
+        }
+      });
+    }
+    if (btnRenderScene) {
+      btnRenderScene.addEventListener("click", async () => {
+        const edits = collectVisibleDialogueEdits();
+        if (!edits.length) return;
+        await renderV2DialogueLines(edits, null);
+      });
+    }
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        if (currentStep === 15) loadV2Dialogue();
+      });
+    }
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
@@ -3031,6 +3369,7 @@
     initV2Locations();
     initV2ShotList();
     initV2VoiceCast();
+    initV2Dialogue();
     initV2GeminiOmni();
 
     // Bind step pills in 6-phase bar
@@ -3088,6 +3427,7 @@
       if (currentStep === 11) loadV2Locations();
       if (currentStep === 12) loadV2ShotList();
       if (currentStep === 14) loadV2VoiceCast();
+      if (currentStep === 15) loadV2Dialogue();
     }, 1200);
   });
 
@@ -3103,6 +3443,7 @@
     loadV2Locations,
     loadV2ShotList,
     loadV2VoiceCast,
+    loadV2Dialogue,
     loadV2GeminiStatus,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,
