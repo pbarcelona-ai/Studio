@@ -933,28 +933,153 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
     raise PlanError(f"Gemini Neural TTS failed: {run_gemini_omni.sanitize_error(last_err) if last_err else 'no audio returned'}")
 
 
-def _render_line_kokoro(text: str, voice_id: str, dialect: str, speed: float, wav_path: Path) -> str:
-    """Render one spoken line locally using Kokoro-82M if installed."""
+def find_kokoro_python() -> str:
+    """Return path to a Python executable that has `kokoro` installed (current venv first, then PATH / ~/.zshrc)."""
     import importlib.util
+    import os
+    import re
+    import sys
 
-    if not importlib.util.find_spec("kokoro"):
-        raise PlanError("Kokoro-82M is not installed locally yet. Install with: pip install kokoro soundfile — or select Gemini Neural TTS or Fast Scratch Preview above.")
-    import numpy as np
-    from kokoro import KPipeline
+    if importlib.util.find_spec("kokoro"):
+        return sys.executable
+
+    candidates: list[str] = []
+    # 1. Check `kokoro` binary on current PATH or paths exported in ~/.zshrc / ~/.zprofile
+    search_dirs = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d]
+    for prof in (".zshrc", ".zprofile", ".bash_profile", ".bashrc"):
+        p = Path.home() / prof
+        try:
+            if not p.is_file():
+                continue
+            txt = p.read_text(encoding="utf-8", errors="ignore")
+            for m in re.finditer(r"(/[^\s:'\"$]+/(?:bin|py3bin))", txt):
+                d = m.group(1)
+                if d not in search_dirs:
+                    search_dirs.append(d)
+        except OSError:
+            continue
+
+    def _safe_exec(path: Path) -> bool:
+        try:
+            return path.is_file() and os.access(path, os.X_OK)
+        except OSError:
+            return False
+
+    for d in search_dirs:
+        kb = Path(d) / "kokoro"
+        if _safe_exec(kb):
+            try:
+                first = kb.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
+                if first.startswith("#!"):
+                    interp = first[2:].strip().split()[0]
+                    if _safe_exec(Path(interp)) and interp not in candidates:
+                        candidates.append(interp)
+            except Exception:
+                pass
+        for pyname in ("python3", "python"):
+            pyb = Path(d) / pyname
+            if _safe_exec(pyb) and str(pyb) not in candidates:
+                candidates.append(str(pyb))
+
+    for extra in ("/Applications/oss-cad-suite/py3bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"):
+        if _safe_exec(Path(extra)) and extra not in candidates:
+            candidates.append(extra)
+
+    for py in candidates:
+        if py == sys.executable:
+            continue
+        try:
+            r = subprocess.run(
+                [py, "-c", "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('kokoro') else 1)"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=4,
+            )
+            if r.returncode == 0:
+                return py
+        except Exception:
+            continue
+    return ""
+
+
+def _render_line_kokoro(text: str, voice_id: str, dialect: str, speed: float, wav_path: Path) -> str:
+    """Render one spoken line locally using Kokoro-82M (in-process if in .venv, else via detected Kokoro Python)."""
+    import sys
+
+    py = find_kokoro_python()
+    if not py:
+        raise PlanError("Kokoro-82M is not installed yet. Click '⬇ Install Kokoro-82M' on the Kokoro card above to install it.")
 
     vid = voice_id or ("bm_fable" if dialect == "british" else "am_puck")
     lang = "b" if vid.lower().startswith("b") else "a"
-    pipe = KPipeline(lang_code=lang)
-    chunks = []
-    for _, _, audio in pipe(text, voice=vid, speed=speed):
-        if audio is not None:
-            chunks.append(np.asarray(audio, dtype=np.float32))
-    if not chunks:
-        raise PlanError("Kokoro-82M returned empty audio for this line.")
-    pcm = np.clip(np.concatenate(chunks), -1.0, 1.0)
-    pcm16 = (pcm * 32767.0).astype(np.int16).tobytes()
-    _write_wav_bytes(wav_path, pcm16, sample_rate=24000)
+
+    if py == sys.executable:
+        import numpy as np
+        from kokoro import KPipeline
+
+        pipe = KPipeline(lang_code=lang)
+        chunks = []
+        for _, _, audio in pipe(text, voice=vid, speed=speed):
+            if audio is not None:
+                chunks.append(np.asarray(audio, dtype=np.float32))
+        if not chunks:
+            raise PlanError("Kokoro-82M returned empty audio for this line.")
+        pcm = np.clip(np.concatenate(chunks), -1.0, 1.0)
+        pcm16 = (pcm * 32767.0).astype(np.int16).tobytes()
+        _write_wav_bytes(wav_path, pcm16, sample_rate=24000)
+        return vid
+
+    # Subprocess render using the detected external Python where Kokoro is installed
+    script = (
+        "import sys, wave, numpy as np\n"
+        "from kokoro import KPipeline\n"
+        "lang, vid, spd, text, out_path = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4], sys.argv[5]\n"
+        "pipe = KPipeline(lang_code=lang)\n"
+        "chunks = [np.asarray(a, dtype=np.float32) for _, _, a in pipe(text, voice=vid, speed=spd) if a is not None]\n"
+        "if not chunks:\n"
+        "    raise SystemExit('empty audio')\n"
+        "pcm = (np.clip(np.concatenate(chunks), -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()\n"
+        "with wave.open(out_path, 'wb') as wf:\n"
+        "    wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(24000); wf.writeframes(pcm)\n"
+    )
+    proc = subprocess.run(
+        [py, "-c", script, lang, vid, str(speed), text, str(wav_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if proc.returncode != 0 or not wav_path.is_file():
+        err = (proc.stderr or proc.stdout or "Kokoro synthesis failed").strip()[-300:]
+        raise PlanError(f"Kokoro-82M render failed: {err}")
     return vid
+
+
+@route("POST", "/api/v2_install_engine")
+def _v2_install_engine(r: Request):
+    """User-approved in-app installer for optional local engines (kokoro or gemini-sdk) into Studio's Python env."""
+    import sys
+
+    engine = str(r.body.get("engine") or "").strip().lower()
+    if not r.body.get("approved"):
+        raise PlanError("User approval is required before installing packages.")
+    pkg_map = {
+        "kokoro": ["kokoro", "soundfile"],
+        "gemini-sdk": ["google-genai"],
+    }
+    pkgs = pkg_map.get(engine)
+    if not pkgs:
+        raise PlanError(f"Unknown installable engine: {engine}")
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-U", *pkgs],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "pip install failed").strip()[-400:]
+        raise PlanError(f"Could not install {', '.join(pkgs)}: {err}")
+    return {"status": "ok", "engine": engine, "packages": pkgs, "installed": True}
 
 
 @route("POST", "/api/v2_dialogue_render")

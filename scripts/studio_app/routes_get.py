@@ -386,14 +386,17 @@ def _v2_dialogue(r: Request):
         except Exception:
             pass
 
-    import importlib.util, shutil
+    import shutil
+    from .routes_post import find_kokoro_python
+
     gemini_ready = False
     try:
         import run_gemini_omni
         gemini_ready = bool(run_gemini_omni.get_gemini_api_key())
     except Exception:
         pass
-    kokoro_ready = bool(importlib.util.find_spec("kokoro"))
+    kokoro_py = find_kokoro_python()
+    kokoro_ready = bool(kokoro_py)
     macos_ready = bool(shutil.which("say"))
     if not saved_engine:
         saved_engine = "gemini-tts" if gemini_ready else ("kokoro" if kokoro_ready else "macos-say")

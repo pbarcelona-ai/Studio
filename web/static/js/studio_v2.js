@@ -3036,6 +3036,10 @@
       bKok.textContent = eng.kokoro ? "✓ Installed" : "Not Installed";
       bKok.className = "status-badge " + (eng.kokoro ? "status-badge--synced" : "");
     }
+    const btnInstKok = $("bV2InstallKokoro");
+    if (btnInstKok) {
+      btnInstKok.style.display = eng.kokoro ? "none" : "block";
+    }
     if (bMac) {
       bMac.textContent = eng.macos_say ? "✓ Ready (Scratch)" : "Unavailable";
       bMac.className = "status-badge " + (eng.macos_say ? "status-badge--synced" : "");
@@ -3367,11 +3371,33 @@
 
   function initV2Dialogue() {
     document.querySelectorAll("#v2DialogueEngineBar .v2-dlg-engine-card").forEach(card => {
-      card.addEventListener("click", () => {
+      card.addEventListener("click", (e) => {
+        if (e.target && e.target.id === "bV2InstallKokoro") return;
         const eng = card.dataset.engine;
         if (eng) selectV2DialogueEngine(eng, true);
       });
     });
+    const btnInstKok = $("bV2InstallKokoro");
+    if (btnInstKok) {
+      btnInstKok.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm("Install Kokoro-82M (kokoro + soundfile) into Studio's Python environment now?")) return;
+        btnInstKok.disabled = true;
+        btnInstKok.textContent = "⏳ Installing Kokoro-82M…";
+        setV2DialogueStatus("Installing kokoro and soundfile into Studio's Python environment (this may take a minute)…");
+        try {
+          await callApi("/api/v2_install_engine", { engine: "kokoro", approved: true });
+          v2DialogueState.engines.kokoro = true;
+          selectV2DialogueEngine("kokoro", true);
+          setV2DialogueStatus("✓ Kokoro-82M installed and selected!");
+        } catch (err) {
+          setV2DialogueStatus("Install failed: " + (err.message || err), true);
+          btnInstKok.textContent = "⬇ Install Kokoro-82M (Approved)";
+        } finally {
+          btnInstKok.disabled = false;
+        }
+      });
+    }
     const btnReload = $("bV2DialogueReload");
     const btnSaveAll = $("bV2DialogueSaveAll");
     const btnRenderScene = $("bV2DialogueRenderScene");
