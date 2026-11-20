@@ -49,7 +49,78 @@
     return document.getElementById(id);
   }
 
-  async function callApi(url, body) {
+  const INSTALLABLE_ENGINES = [
+    { key: "gemini-sdk", label: "Google Gemini SDK", pkgs: "google-genai", match: /google-genai|no module named ['"]?google\.genai/i },
+    { key: "kokoro", label: "Kokoro-82M Neural TTS", pkgs: "kokoro, soundfile", match: /kokoro(?:-82m)?.*not installed|pip install kokoro|no module named ['"]?kokoro/i },
+    { key: "huggingface", label: "Hugging Face Spaces Client", pkgs: "gradio_client, huggingface_hub", match: /gradio_client|huggingface_hub/i },
+    { key: "pillow", label: "Pillow Image Library", pkgs: "pillow", match: /no module named ['"]?pil['"]?|pip install pillow/i },
+  ];
+
+  function showInstallApprovalModal(title, message) {
+    return new Promise((resolve) => {
+      const existing = $("v2InstallApprovalBackdrop");
+      if (existing) existing.remove();
+
+      const backdrop = document.createElement("div");
+      backdrop.id = "v2InstallApprovalBackdrop";
+      backdrop.style.cssText = "position:fixed;inset:0;background:rgba(2,6,23,0.78);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;";
+
+      const box = document.createElement("div");
+      box.style.cssText = "background:#0f172a;border:1px solid #334155;border-radius:12px;max-width:460px;width:100%;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,0.6);color:#f8fafc;";
+
+      const h = document.createElement("h3");
+      h.style.cssText = "margin:0 0 8px;font-size:16px;color:#f59e0b;";
+      h.textContent = title;
+
+      const p = document.createElement("p");
+      p.style.cssText = "margin:0 0 18px;font-size:13px;line-height:1.5;color:#cbd5e1;white-space:pre-line;";
+      p.textContent = message;
+
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;justify-content:flex-end;gap:10px;";
+
+      const btnCancel = document.createElement("button");
+      btnCancel.type = "button";
+      btnCancel.className = "btn btn--ghost";
+      btnCancel.textContent = "Cancel";
+
+      const btnOk = document.createElement("button");
+      btnOk.type = "button";
+      btnOk.className = "btn btn--primary";
+      btnOk.textContent = "OK";
+
+      const cleanup = (val) => {
+        backdrop.remove();
+        resolve(val);
+      };
+      btnCancel.addEventListener("click", () => cleanup(false));
+      btnOk.addEventListener("click", () => cleanup(true));
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) cleanup(false);
+      });
+
+      row.appendChild(btnCancel);
+      row.appendChild(btnOk);
+      box.appendChild(h);
+      box.appendChild(p);
+      box.appendChild(row);
+      backdrop.appendChild(box);
+      document.body.appendChild(backdrop);
+      btnOk.focus();
+    });
+  }
+
+  async function requestInstallWithApproval(engineKey, label, pkgs) {
+    const ok = await showInstallApprovalModal(
+      `Install ${label}?`,
+      `This feature requires ${label} (${pkgs}) in Studio's Python environment.\n\nClick OK to install it automatically now, or Cancel to skip.`
+    );
+    if (!ok) return false;
+    await rawCallApi("/api/v2_install_engine", { engine: engineKey, approved: true });
+    return true;
+  }
+
+  async function rawCallApi(url, body) {
     if (typeof window.api === "function") {
       return window.api(url, body);
     }
@@ -65,6 +136,24 @@
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || j.detail || j.message || r.statusText);
     return j;
+  }
+
+  async function callApi(url, body) {
+    try {
+      return await rawCallApi(url, body);
+    } catch (err) {
+      const msg = String((err && err.message) || err || "");
+      if (url !== "/api/v2_install_engine") {
+        const hit = INSTALLABLE_ENGINES.find(e => e.match.test(msg));
+        if (hit) {
+          const installed = await requestInstallWithApproval(hit.key, hit.label, hit.pkgs);
+          if (installed) {
+            return await rawCallApi(url, body);
+          }
+        }
+      }
+      throw err;
+    }
   }
 
   // ===== DIRECT STORY INPUT BOX SAVING =====
@@ -1773,8 +1862,23 @@
           badge.textContent = "✓ Gemini API Connected";
           badge.className = "status-badge status-badge--synced";
         } else if (st && st.configured && !st.sdk_installed) {
-          badge.textContent = "⚠️ Key saved — install: pip install -U google-genai";
+          badge.textContent = "⬇ Key saved — Click to Install Gemini SDK";
           badge.className = "status-badge status-badge--drift";
+          badge.style.cursor = "pointer";
+          badge.onclick = async (e) => {
+            e.stopPropagation();
+            badge.textContent = "⏳ Installing google-genai…";
+            try {
+              const ok = await requestInstallWithApproval("gemini-sdk", "Google Gemini SDK", "google-genai");
+              if (ok) {
+                await loadV2GeminiStatus();
+              } else {
+                badge.textContent = "⬇ Key saved — Click to Install Gemini SDK";
+              }
+            } catch (err) {
+              badge.textContent = "Install failed: " + (err.message || err);
+            }
+          };
         } else {
           badge.textContent = "API Key Not Set";
           badge.className = "status-badge status-badge--drift";
@@ -3381,12 +3485,16 @@
     if (btnInstKok) {
       btnInstKok.addEventListener("click", async (e) => {
         e.stopPropagation();
-        if (!confirm("Install Kokoro-82M (kokoro + soundfile) into Studio's Python environment now?")) return;
         btnInstKok.disabled = true;
         btnInstKok.textContent = "⏳ Installing Kokoro-82M…";
-        setV2DialogueStatus("Installing kokoro and soundfile into Studio's Python environment (this may take a minute)…");
+        setV2DialogueStatus("Waiting for approval to install Kokoro-82M…");
         try {
-          await callApi("/api/v2_install_engine", { engine: "kokoro", approved: true });
+          const ok = await requestInstallWithApproval("kokoro", "Kokoro-82M Neural TTS", "kokoro, soundfile");
+          if (!ok) {
+            btnInstKok.textContent = "⬇ Install Kokoro-82M (Approved)";
+            setV2DialogueStatus("Installation cancelled.");
+            return;
+          }
           v2DialogueState.engines.kokoro = true;
           selectV2DialogueEngine("kokoro", true);
           setV2DialogueStatus("✓ Kokoro-82M installed and selected!");

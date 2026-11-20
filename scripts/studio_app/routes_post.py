@@ -1056,7 +1056,7 @@ def _render_line_kokoro(text: str, voice_id: str, dialect: str, speed: float, wa
 
 @route("POST", "/api/v2_install_engine")
 def _v2_install_engine(r: Request):
-    """User-approved in-app installer for optional local engines (kokoro or gemini-sdk) into Studio's Python env."""
+    """User-approved in-app installer for optional local engines/packages into Studio's Python environment."""
     import sys
 
     engine = str(r.body.get("engine") or "").strip().lower()
@@ -1065,6 +1065,9 @@ def _v2_install_engine(r: Request):
     pkg_map = {
         "kokoro": ["kokoro", "soundfile"],
         "gemini-sdk": ["google-genai"],
+        "huggingface": ["gradio_client", "huggingface_hub"],
+        "pillow": ["pillow"],
+        "ffmpeg": ["imageio-ffmpeg"],
     }
     pkgs = pkg_map.get(engine)
     if not pkgs:
