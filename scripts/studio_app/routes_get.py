@@ -364,16 +364,19 @@ def _v2_dialogue(r: Request):
         return {"lines": [], "scenes": [], "dialect": "american", "cast": {}}
     pd = pdir(slug, "book")
     vc = {}
+    profiles = {}
     dialect = "american"
     vc_path = pd / "voice_cast.json"
     if vc_path.is_file():
         try:
             vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
             vc = vdata.get("cast") or {}
+            profiles = vdata.get("profiles") or {}
             dialect = vdata.get("dialect") or "american"
         except Exception:
             pass
     vc_lc = {str(k).lower(): v for k, v in vc.items()}
+    prof_lc = {str(k).lower(): v for k, v in profiles.items() if isinstance(v, dict)}
 
     saved = {}
     saved_engine = ""
@@ -387,6 +390,7 @@ def _v2_dialogue(r: Request):
             pass
 
     import shutil
+    import subprocess
     from .routes_post import find_kokoro_python
 
     gemini_ready = False
@@ -397,7 +401,21 @@ def _v2_dialogue(r: Request):
         pass
     kokoro_py = find_kokoro_python()
     kokoro_ready = bool(kokoro_py)
-    macos_ready = bool(shutil.which("say"))
+    say_bin = shutil.which("say")
+    macos_ready = bool(say_bin)
+    macos_voices = []
+    if say_bin:
+        try:
+            out = subprocess.check_output([say_bin, "-v", "?"], text=True, timeout=5)
+            for ln in out.splitlines():
+                parts = ln.split()
+                if len(parts) >= 2 and parts[1].startswith("en_"):
+                    vname = parts[0]
+                    locale = parts[1]
+                    if vname not in [x["id"] for x in macos_voices]:
+                        macos_voices.append({"id": vname, "label": f"{vname} ({locale})"})
+        except Exception:
+            pass
     if not saved_engine:
         saved_engine = "gemini-tts" if gemini_ready else ("kokoro" if kokoro_ready else "macos-say")
 
@@ -422,6 +440,7 @@ def _v2_dialogue(r: Request):
                 text = str(el.get("text") or "").strip()
                 note = str(el.get("note") or "").strip()
                 ov = saved.get(lid) if isinstance(saved.get(lid), dict) else {}
+                cp = prof_lc.get(char.lower()) or {}
                 voice = ov.get("voice") or vc_lc.get(char.lower()) or ("bm_fable" if dialect == "british" else "am_puck")
                 wav_rel = f"audio/dialogue/{lid}.wav"
                 wav_path = pd / wav_rel
@@ -436,6 +455,11 @@ def _v2_dialogue(r: Request):
                     "text": ov.get("text", text),
                     "note": ov.get("note", note),
                     "voice": voice,
+                    "gemini_voice": ov.get("gemini_voice") or cp.get("gemini_voice") or "",
+                    "kokoro_voice": ov.get("kokoro_voice") or cp.get("kokoro_voice") or voice,
+                    "kokoro_blend": ov.get("kokoro_blend") or cp.get("kokoro_blend") or "",
+                    "macos_voice": ov.get("macos_voice") or cp.get("macos_voice") or "",
+                    "persona": ov.get("persona") if "persona" in ov else cp.get("persona", ""),
                     "emotion": ov.get("emotion", "natural"),
                     "speed": float(ov.get("speed", 1.0)),
                     "has_audio": has_audio,
@@ -446,7 +470,9 @@ def _v2_dialogue(r: Request):
         "scenes": scenes_seen,
         "dialect": dialect,
         "cast": vc,
+        "profiles": profiles,
         "engine": saved_engine,
+        "macos_voices": macos_voices,
         "engines": {
             "gemini_tts": gemini_ready,
             "kokoro": kokoro_ready,

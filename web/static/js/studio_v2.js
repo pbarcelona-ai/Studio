@@ -2963,23 +2963,67 @@
 
   // ===== STEP 14: VOICE CASTING & DIALECTS =====
   const KOKORO_VOICES = [
-    ["am_puck", "am_puck (American Youth / Energetic)"],
-    ["am_michael", "am_michael (American Male · Calm)"],
-    ["am_adam", "am_adam (American Male · Warm)"],
-    ["am_eric", "am_eric (American Male · Resonant)"],
-    ["am_onyx", "am_onyx (American Male · Deep)"],
-    ["af_bella", "af_bella (American Female · Warm)"],
-    ["af_sarah", "af_sarah (American Female · Clear)"],
-    ["af_nicole", "af_nicole (American Female · Gentle)"],
-    ["af_heart", "af_heart (American Female · Expressive)"],
-    ["bm_fable", "bm_fable (British Expressive / Storytelling)"],
-    ["bm_george", "bm_george (British Male · Classic RP)"],
-    ["bm_lewis", "bm_lewis (British Male · Warm)"],
-    ["bm_daniel", "bm_daniel (British Male · Soft)"],
-    ["bf_emma", "bf_emma (British Female · Warm RP)"],
-    ["bf_alice", "bf_alice (British Female · Clear)"],
-    ["bf_isabella", "bf_isabella (British Female · Gentle)"],
-    ["bf_lily", "bf_lily (British Female · Bright)"],
+    ["am_puck", "am_puck (US Male · Youthful / Energetic)"],
+    ["am_michael", "am_michael (US Male · Calm)"],
+    ["am_adam", "am_adam (US Male · Warm)"],
+    ["am_echo", "am_echo (US Male · Clear)"],
+    ["am_eric", "am_eric (US Male · Resonant)"],
+    ["am_fenrir", "am_fenrir (US Male · Bold)"],
+    ["am_liam", "am_liam (US Male · Natural)"],
+    ["am_onyx", "am_onyx (US Male · Deep)"],
+    ["am_santa", "am_santa (US Male · Storytelling / Jolly)"],
+    ["af_heart", "af_heart (US Female · Expressive)"],
+    ["af_bella", "af_bella (US Female · Warm)"],
+    ["af_alloy", "af_alloy (US Female · Crisp)"],
+    ["af_aoede", "af_aoede (US Female · Melodic)"],
+    ["af_jessica", "af_jessica (US Female · Friendly)"],
+    ["af_kore", "af_kore (US Female · Firm)"],
+    ["af_nicole", "af_nicole (US Female · Gentle / Soft)"],
+    ["af_nova", "af_nova (US Female · Bright)"],
+    ["af_river", "af_river (US Female · Calm)"],
+    ["af_sarah", "af_sarah (US Female · Clear)"],
+    ["af_sky", "af_sky (US Female · Light / Young)"],
+    ["bm_fable", "bm_fable (UK Male · Expressive / Storytelling)"],
+    ["bm_george", "bm_george (UK Male · Classic RP)"],
+    ["bm_lewis", "bm_lewis (UK Male · Warm)"],
+    ["bm_daniel", "bm_daniel (UK Male · Soft)"],
+    ["bf_emma", "bf_emma (UK Female · Warm RP)"],
+    ["bf_alice", "bf_alice (UK Female · Clear)"],
+    ["bf_isabella", "bf_isabella (UK Female · Gentle)"],
+    ["bf_lily", "bf_lily (UK Female · Bright)"],
+  ];
+
+  const GEMINI_VOICES = [
+    ["Puck", "Puck — Upbeat, youthful & lively"],
+    ["Zephyr", "Zephyr — Bright, airy & friendly"],
+    ["Leda", "Leda — Youthful, light & clear"],
+    ["Fenrir", "Fenrir — Excitable & energetic"],
+    ["Aoede", "Aoede — Breezy & expressive"],
+    ["Kore", "Kore — Firm, warm & steady"],
+    ["Charon", "Charon — Deep & informative"],
+    ["Orus", "Orus — Firm & grounded"],
+    ["Callirrhoe", "Callirrhoe — Easy-going & relaxed"],
+    ["Autonoe", "Autonoe — Bright & optimistic"],
+    ["Enceladus", "Enceladus — Breathy & gentle"],
+    ["Iapetus", "Iapetus — Clear & articulate"],
+    ["Umbriel", "Umbriel — Easy-going & smooth"],
+    ["Algieba", "Algieba — Smooth & warm"],
+    ["Despina", "Despina — Smooth & poised"],
+    ["Erinome", "Erinome — Clear & expressive"],
+    ["Algenib", "Algenib — Gravelly & characterful"],
+    ["Rasalgethi", "Rasalgethi — Informative & calm"],
+    ["Laomedeia", "Laomedeia — Upbeat & cheerful"],
+    ["Achernar", "Achernar — Soft & gentle"],
+    ["Alnilam", "Alnilam — Firm & resonant"],
+    ["Schedar", "Schedar — Even & steady"],
+    ["Gacrux", "Gacrux — Mature & seasoned"],
+    ["Pulcherrima", "Pulcherrima — Forward & lively"],
+    ["Achird", "Achird — Friendly & approachable"],
+    ["Zubenelgenubi", "Zubenelgenubi — Casual & conversational"],
+    ["Vindemiatrix", "Vindemiatrix — Gentle & soothing"],
+    ["Sadachbia", "Sadachbia — Lively & animated"],
+    ["Sadaltager", "Sadaltager — Knowledgeable & warm"],
+    ["Sulafat", "Sulafat — Warm & comforting"],
   ];
 
   async function loadV2VoiceCast() {
@@ -3159,12 +3203,13 @@
   async function selectV2DialogueEngine(engine, persist = true) {
     v2DialogueState.engine = engine;
     renderV2DialogueEngineUI();
+    renderV2DialogueList();
     const labels = {
-      "gemini-tts": "✨ Gemini Neural TTS (Studio Final)",
-      "kokoro": "🎙️ Kokoro-82M Local Neural",
-      "macos-say": "⚡ Fast Scratch Preview (macOS)",
+      "gemini-tts": "✨ Gemini Neural TTS (30 Studio Voices + Persona)",
+      "kokoro": "🎙️ Kokoro-82M Local Neural (28 Voices + Blending)",
+      "macos-say": "⚡ Fast Scratch Preview (All Installed macOS Voices)",
     };
-    setV2DialogueStatus(`Selected dialogue engine: ${labels[engine] || engine}. Click ↺ Redo This Line Only or 🎙️ Render Scene Audio to synthesize with it.`);
+    setV2DialogueStatus(`Selected engine: ${labels[engine] || engine}. Voice menus updated below.`);
     if (persist && v2DialogueState.project) {
       try {
         await callApi("/api/v2_dialogue_save", { project: v2DialogueState.project, engine });
@@ -3179,17 +3224,51 @@
     st.style.color = isErr ? "#f87171" : "#34d399";
   }
 
+  function defaultGeminiForKokoro(kVoice) {
+    const v = String(kVoice || "").toLowerCase();
+    const map = {
+      am_puck: "Puck", am_michael: "Charon", am_adam: "Fenrir", am_eric: "Orus", am_onyx: "Charon",
+      bm_fable: "Puck", bm_george: "Charon", bm_lewis: "Orus", bm_daniel: "Fenrir",
+      af_bella: "Aoede", af_sarah: "Kore", af_nicole: "Leda", af_heart: "Zephyr",
+      bf_emma: "Aoede", bf_alice: "Kore", bf_isabella: "Leda", bf_lily: "Zephyr",
+    };
+    if (map[v]) return map[v];
+    return (v.startsWith("af_") || v.startsWith("bf_")) ? "Aoede" : "Puck";
+  }
+
+  function extractCardPayload(card, line) {
+    const eng = v2DialogueState.engine || "gemini-tts";
+    const text = (card.querySelector(".v2-dlg-text")?.value || "").trim();
+    const pickedVoice = card.querySelector(".v2-dlg-voice")?.value || "";
+    const blend = card.querySelector(".v2-dlg-blend")?.value || "";
+    const persona = (card.querySelector(".v2-dlg-persona")?.value || "").trim();
+    const emotion = card.querySelector(".v2-dlg-emotion")?.value || "natural";
+    const speed = parseFloat(card.querySelector(".v2-dlg-speed")?.value || "1.0") || 1.0;
+    const note = (card.querySelector(".v2-dlg-note")?.value || "").trim();
+
+    const payload = {
+      id: line.id,
+      text,
+      voice: eng === "kokoro" ? pickedVoice : (line.kokoro_voice || line.voice || "am_puck"),
+      gemini_voice: eng === "gemini-tts" ? pickedVoice : (line.gemini_voice || defaultGeminiForKokoro(line.voice)),
+      kokoro_voice: eng === "kokoro" ? pickedVoice : (line.kokoro_voice || line.voice || "am_puck"),
+      kokoro_blend: eng === "kokoro" ? blend : (line.kokoro_blend || ""),
+      macos_voice: eng === "macos-say" ? pickedVoice : (line.macos_voice || ""),
+      persona,
+      emotion,
+      speed,
+      note,
+    };
+    return payload;
+  }
+
   function collectVisibleDialogueEdits() {
     const out = [];
     document.querySelectorAll("#v2DialogueList .v2-dlg-card").forEach(card => {
       const id = card.dataset.lineId;
-      if (!id) return;
-      const text = (card.querySelector(".v2-dlg-text")?.value || "").trim();
-      const voice = card.querySelector(".v2-dlg-voice")?.value || "";
-      const emotion = card.querySelector(".v2-dlg-emotion")?.value || "natural";
-      const speed = parseFloat(card.querySelector(".v2-dlg-speed")?.value || "1.0") || 1.0;
-      const note = (card.querySelector(".v2-dlg-note")?.value || "").trim();
-      out.push({ id, text, voice, emotion, speed, note });
+      const line = v2DialogueState.lines.find(l => l.id === id);
+      if (!id || !line) return;
+      out.push(extractCardPayload(card, line));
     });
     return out;
   }
@@ -3217,15 +3296,11 @@
         }
         const edited = linesToRender.find(x => x.id === r.id);
         if (entry && edited) {
-          entry.text = edited.text;
-          entry.voice = edited.voice;
-          entry.emotion = edited.emotion;
-          entry.speed = edited.speed;
-          entry.note = edited.note;
+          Object.assign(entry, edited);
         }
       });
       renderV2DialogueList();
-      setV2DialogueStatus(`✓ Rendered ${rendered.length} line${rendered.length === 1 ? "" : "s"} (${res.engine || "audio"})`);
+      setV2DialogueStatus(`✓ Rendered ${rendered.length} line${rendered.length === 1 ? "" : "s"} (${res.engine || engine})`);
       if (autoPlayId) {
         const audioEl = document.querySelector(`#v2DialogueList .v2-dlg-card[data-line-id="${autoPlayId}"] audio`);
         if (audioEl) {
@@ -3278,6 +3353,7 @@
     if (!list) return;
     list.innerHTML = "";
 
+    const eng = v2DialogueState.engine || "gemini-tts";
     const filtered = v2DialogueState.activeScene === "ALL"
       ? v2DialogueState.lines
       : v2DialogueState.lines.filter(l => l.scene === v2DialogueState.activeScene);
@@ -3301,6 +3377,10 @@
       return;
     }
 
+    const macVoices = (v2DialogueState.macos_voices && v2DialogueState.macos_voices.length)
+      ? v2DialogueState.macos_voices.map(v => [v.id, v.label])
+      : [["Samantha", "Samantha (en_US)"], ["Alex", "Alex (en_US)"], ["Daniel", "Daniel (en_GB)"], ["Serena", "Serena (en_GB)"], ["Fred", "Fred (en_US)"]];
+
     filtered.forEach(line => {
       const card = document.createElement("div");
       card.className = "direct-story-card v2-dlg-card";
@@ -3323,7 +3403,8 @@
       hdr.appendChild(left);
 
       const actions = document.createElement("div");
-      actions.style.cssText = "display:flex;gap:6px;flex-wrap:wrap";
+      actions.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center";
+
       const btnPlay = document.createElement("button");
       btnPlay.type = "button";
       btnPlay.className = "btn btn--primary";
@@ -3331,36 +3412,106 @@
       btnPlay.textContent = line.has_audio ? "▶ Play Line" : "▶ Render & Play";
       btnPlay.addEventListener("click", async () => {
         const existingAudio = card.querySelector("audio");
-        const curText = (card.querySelector(".v2-dlg-text")?.value || "").trim();
-        const curVoice = card.querySelector(".v2-dlg-voice")?.value || line.voice;
-        const curSpeed = parseFloat(card.querySelector(".v2-dlg-speed")?.value || "1.0") || 1.0;
-        const changed = curText !== line.text || curVoice !== line.voice || Math.abs(curSpeed - (line.speed || 1.0)) > 0.01;
+        const p = extractCardPayload(card, line);
+        const curVoiceForEng = eng === "gemini-tts" ? (line.gemini_voice || defaultGeminiForKokoro(line.voice))
+          : eng === "kokoro" ? (line.kokoro_voice || line.voice) : (line.macos_voice || "");
+        const picked = card.querySelector(".v2-dlg-voice")?.value || "";
+        const changed = p.text !== line.text || picked !== curVoiceForEng || p.persona !== (line.persona || "") || p.kokoro_blend !== (line.kokoro_blend || "") || Math.abs(p.speed - (line.speed || 1.0)) > 0.01;
         if (existingAudio && line.has_audio && !changed) {
           existingAudio.currentTime = 0;
           existingAudio.play().catch(() => {});
           return;
         }
-        const curEmotion = card.querySelector(".v2-dlg-emotion")?.value || "natural";
-        const curNote = (card.querySelector(".v2-dlg-note")?.value || "").trim();
-        await renderV2DialogueLines([{ id: line.id, text: curText, voice: curVoice, emotion: curEmotion, speed: curSpeed, note: curNote }], line.id);
+        await renderV2DialogueLines([p], line.id);
       });
 
       const btnRedo = document.createElement("button");
       btnRedo.type = "button";
       btnRedo.className = "btn btn--ghost";
       btnRedo.style.cssText = "padding:4px 10px;font-size:var(--text-xs)";
-      btnRedo.textContent = "↺ Redo This Line Only";
+      btnRedo.textContent = "↺ Redo Line";
       btnRedo.addEventListener("click", async () => {
-        const curText = (card.querySelector(".v2-dlg-text")?.value || "").trim();
-        const curVoice = card.querySelector(".v2-dlg-voice")?.value || line.voice;
-        const curEmotion = card.querySelector(".v2-dlg-emotion")?.value || "natural";
-        const curSpeed = parseFloat(card.querySelector(".v2-dlg-speed")?.value || "1.0") || 1.0;
-        const curNote = (card.querySelector(".v2-dlg-note")?.value || "").trim();
-        await renderV2DialogueLines([{ id: line.id, text: curText, voice: curVoice, emotion: curEmotion, speed: curSpeed, note: curNote }], line.id);
+        await renderV2DialogueLines([extractCardPayload(card, line)], line.id);
       });
+
+      // Save voice profile for this character across ALL scenes (leaving per-scene tone alone!)
+      const btnApplyAll = document.createElement("button");
+      btnApplyAll.type = "button";
+      btnApplyAll.className = "btn btn--secondary";
+      btnApplyAll.style.cssText = "padding:4px 10px;font-size:var(--text-xs)";
+      btnApplyAll.title = "Save this voice & persona for every scene spoken by " + line.character + " (leaves each scene's Tone untouched)";
+      btnApplyAll.textContent = `📌 Save Voice for All ${line.character.toUpperCase()} Scenes`;
+      btnApplyAll.addEventListener("click", async () => {
+        const p = extractCardPayload(card, line);
+        setV2DialogueStatus(`Applying ${line.character}'s voice profile across all scenes (preserving per-scene tones)…`);
+        try {
+          const res = await callApi("/api/v2_voice_profile_apply", {
+            project: v2DialogueState.project,
+            character: line.character,
+            gemini_voice: p.gemini_voice,
+            kokoro_voice: p.kokoro_voice,
+            kokoro_blend: p.kokoro_blend,
+            macos_voice: p.macos_voice,
+            persona: p.persona,
+          });
+          // Update in-memory state for all lines of this character WITHOUT touching emotion/tone or note
+          v2DialogueState.lines.forEach(l => {
+            if (l.character.toLowerCase() === line.character.toLowerCase()) {
+              l.gemini_voice = p.gemini_voice;
+              l.kokoro_voice = p.kokoro_voice;
+              l.kokoro_blend = p.kokoro_blend;
+              l.macos_voice = p.macos_voice;
+              l.voice = p.kokoro_voice;
+              l.persona = p.persona;
+            }
+          });
+          renderV2DialogueList();
+          setV2DialogueStatus(`✓ Saved ${line.character}'s voice profile across ${res.updated_lines || 0} lines in all scenes (scene tones untouched).`);
+        } catch (err) {
+          setV2DialogueStatus("Could not apply voice profile: " + (err.message || err), true);
+        }
+      });
+
+      // Upload Custom Take (.wav / .mp3 / .m4a)
+      const fileIn = document.createElement("input");
+      fileIn.type = "file";
+      fileIn.accept = "audio/*";
+      fileIn.style.display = "none";
+      fileIn.addEventListener("change", () => {
+        const f = fileIn.files && fileIn.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          setV2DialogueStatus(`Uploading custom take for ${line.id}…`);
+          try {
+            const res = await callApi("/api/v2_dialogue_upload", {
+              project: v2DialogueState.project,
+              id: line.id,
+              filename: f.name,
+              audio_base64: reader.result,
+            });
+            line.has_audio = true;
+            line.audio_url = res.audio_url + "?t=" + Date.now();
+            renderV2DialogueList();
+            setV2DialogueStatus(`✓ Uploaded custom take "${f.name}" for ${line.id}.`);
+          } catch (err) {
+            setV2DialogueStatus("Upload failed: " + (err.message || err), true);
+          }
+        };
+        reader.readAsDataURL(f);
+      });
+      const btnUpload = document.createElement("button");
+      btnUpload.type = "button";
+      btnUpload.className = "btn btn--ghost";
+      btnUpload.style.cssText = "padding:4px 8px;font-size:var(--text-xs)";
+      btnUpload.textContent = "⬆ Upload Take";
+      btnUpload.addEventListener("click", () => fileIn.click());
 
       actions.appendChild(btnPlay);
       actions.appendChild(btnRedo);
+      actions.appendChild(btnApplyAll);
+      actions.appendChild(btnUpload);
+      actions.appendChild(fileIn);
       hdr.appendChild(actions);
       card.appendChild(hdr);
 
@@ -3372,29 +3523,69 @@
       ta.style.cssText = "width:100%;padding:8px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-sm);margin-bottom:8px;resize:vertical;";
       card.appendChild(ta);
 
-      // Voice, Emotion, Speed, Direction note row
-      const ctrl = document.createElement("div");
-      ctrl.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px";
+      // Row 1: Engine-specific Voice selector (+ Kokoro Blend selector) + Character Voice Persona
+      const voiceRow = document.createElement("div");
+      voiceRow.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px";
 
       const selVoice = document.createElement("select");
       selVoice.className = "v2-dlg-voice";
-      selVoice.style.cssText = "padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
-      KOKORO_VOICES.forEach(([vid, vlabel]) => {
+      selVoice.style.cssText = "padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);min-width:210px";
+      let voiceOpts = GEMINI_VOICES;
+      let activeVal = line.gemini_voice || defaultGeminiForKokoro(line.voice);
+      if (eng === "kokoro") {
+        voiceOpts = KOKORO_VOICES;
+        activeVal = line.kokoro_voice || line.voice || "am_puck";
+      } else if (eng === "macos-say") {
+        voiceOpts = macVoices;
+        activeVal = line.macos_voice || (macVoices[0] && macVoices[0][0]) || "Samantha";
+      }
+      voiceOpts.forEach(([vid, vlabel]) => {
         const opt = document.createElement("option");
         opt.value = vid;
         opt.textContent = vlabel;
-        if (vid === line.voice) opt.selected = true;
+        if (vid === activeVal) opt.selected = true;
         selVoice.appendChild(opt);
       });
-      ctrl.appendChild(selVoice);
+      voiceRow.appendChild(selVoice);
+
+      if (eng === "kokoro") {
+        const selBlend = document.createElement("select");
+        selBlend.className = "v2-dlg-blend";
+        selBlend.style.cssText = "padding:5px 8px;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+        const noneOpt = document.createElement("option");
+        noneOpt.value = "";
+        noneOpt.textContent = "Blend: None (single voice)";
+        selBlend.appendChild(noneOpt);
+        KOKORO_VOICES.forEach(([vid, vlabel]) => {
+          const opt = document.createElement("option");
+          opt.value = vid;
+          opt.textContent = "Blend + " + vlabel;
+          if (vid === (line.kokoro_blend || "")) opt.selected = true;
+          selBlend.appendChild(opt);
+        });
+        voiceRow.appendChild(selBlend);
+      }
+
+      const personaIn = document.createElement("input");
+      personaIn.type = "text";
+      personaIn.className = "v2-dlg-persona";
+      personaIn.placeholder = "Voice Persona (e.g. energetic 5-year-old boy, warm gentle mother, gravelly space captain)…";
+      personaIn.value = line.persona || "";
+      personaIn.style.cssText = "flex:1;min-width:220px;padding:5px 8px;background:#0f172a;color:#fde68a;border:1px solid #475569;border-radius:4px;font-size:var(--text-xs)";
+      voiceRow.appendChild(personaIn);
+      card.appendChild(voiceRow);
+
+      // Row 2: Per-scene Tone, Speed, and Delivery Direction Note
+      const ctrl = document.createElement("div");
+      ctrl.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px";
 
       const selEmo = document.createElement("select");
       selEmo.className = "v2-dlg-emotion";
       selEmo.style.cssText = "padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
-      ["natural", "excited", "warm", "whisper", "dramatic", "sad", "curious"].forEach(em => {
+      ["natural", "excited", "warm", "whisper", "dramatic", "sad", "curious", "playful", "urgent", "sleepy", "amazed"].forEach(em => {
         const opt = document.createElement("option");
         opt.value = em;
-        opt.textContent = "Tone: " + em;
+        opt.textContent = "Scene Tone: " + em;
         if (em === (line.emotion || "natural")) opt.selected = true;
         selEmo.appendChild(opt);
       });
@@ -3415,7 +3606,7 @@
       const noteIn = document.createElement("input");
       noteIn.type = "text";
       noteIn.className = "v2-dlg-note";
-      noteIn.placeholder = "Delivery direction (e.g. excited, soft whisper)…";
+      noteIn.placeholder = "Scene delivery direction (e.g. waving to camera, soft whisper)…";
       noteIn.value = line.note || "";
       noteIn.style.cssText = "flex:1;min-width:160px;padding:5px 8px;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
       ctrl.appendChild(noteIn);
@@ -3434,7 +3625,7 @@
       } else {
         const ph = document.createElement("span");
         ph.style.cssText = "flex:1;color:#64748b;font-size:var(--text-xs)";
-        ph.textContent = "Not rendered yet — click ▶ Render & Play or 🎙️ Render Scene Audio";
+        ph.textContent = "Not rendered yet — click ▶ Render & Play, 🎙️ Render Scene Audio, or ⬆ Upload Take";
         playerWrap.appendChild(ph);
       }
       card.appendChild(playerWrap);
@@ -3462,6 +3653,7 @@
       v2DialogueState.dialect = data.dialect || "american";
       v2DialogueState.engine = data.engine || "gemini-tts";
       v2DialogueState.engines = data.engines || {};
+      v2DialogueState.macos_voices = data.macos_voices || [];
       if (v2DialogueState.activeScene !== "ALL" && !v2DialogueState.scenes.includes(v2DialogueState.activeScene)) {
         v2DialogueState.activeScene = v2DialogueState.scenes[0] || "ALL";
       }

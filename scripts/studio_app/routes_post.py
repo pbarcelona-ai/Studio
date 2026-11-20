@@ -758,24 +758,161 @@ def _v2_dialogue_save(r: Request):
             if not isinstance(item, dict) or not item.get("id"):
                 continue
             lid = str(item["id"]).strip()
+            prev = existing.get(lid) if isinstance(existing.get(lid), dict) else {}
             existing[lid] = {
-                "text": str(item.get("text") or "").strip(),
-                "note": str(item.get("note") or "").strip(),
-                "voice": str(item.get("voice") or "").strip(),
-                "emotion": str(item.get("emotion") or "natural").strip(),
-                "speed": max(0.5, min(1.8, float(item.get("speed") or 1.0))),
+                **prev,
+                "text": str(item.get("text") if "text" in item else prev.get("text", "")).strip(),
+                "note": str(item.get("note") if "note" in item else prev.get("note", "")).strip(),
+                "voice": str(item.get("voice") if "voice" in item else prev.get("voice", "")).strip(),
+                "gemini_voice": str(item.get("gemini_voice") if "gemini_voice" in item else prev.get("gemini_voice", "")).strip(),
+                "kokoro_voice": str(item.get("kokoro_voice") if "kokoro_voice" in item else prev.get("kokoro_voice", "")).strip(),
+                "kokoro_blend": str(item.get("kokoro_blend") if "kokoro_blend" in item else prev.get("kokoro_blend", "")).strip(),
+                "macos_voice": str(item.get("macos_voice") if "macos_voice" in item else prev.get("macos_voice", "")).strip(),
+                "persona": str(item.get("persona") if "persona" in item else prev.get("persona", "")).strip(),
+                "emotion": str(item.get("emotion") if "emotion" in item else prev.get("emotion", "natural")).strip(),
+                "speed": max(0.5, min(1.8, float(item.get("speed") if "speed" in item else prev.get("speed", 1.0)))),
             }
     elif isinstance(r.body.get("id"), str) and r.body["id"].strip():
         lid = r.body["id"].strip()
+        prev = existing.get(lid) if isinstance(existing.get(lid), dict) else {}
         existing[lid] = {
-            "text": str(r.body.get("text") or "").strip(),
-            "note": str(r.body.get("note") or "").strip(),
-            "voice": str(r.body.get("voice") or "").strip(),
-            "emotion": str(r.body.get("emotion") or "natural").strip(),
-            "speed": max(0.5, min(1.8, float(r.body.get("speed") or 1.0))),
+            **prev,
+            "text": str(r.body.get("text") if "text" in r.body else prev.get("text", "")).strip(),
+            "note": str(r.body.get("note") if "note" in r.body else prev.get("note", "")).strip(),
+            "voice": str(r.body.get("voice") if "voice" in r.body else prev.get("voice", "")).strip(),
+            "gemini_voice": str(r.body.get("gemini_voice") if "gemini_voice" in r.body else prev.get("gemini_voice", "")).strip(),
+            "kokoro_voice": str(r.body.get("kokoro_voice") if "kokoro_voice" in r.body else prev.get("kokoro_voice", "")).strip(),
+            "kokoro_blend": str(r.body.get("kokoro_blend") if "kokoro_blend" in r.body else prev.get("kokoro_blend", "")).strip(),
+            "macos_voice": str(r.body.get("macos_voice") if "macos_voice" in r.body else prev.get("macos_voice", "")).strip(),
+            "persona": str(r.body.get("persona") if "persona" in r.body else prev.get("persona", "")).strip(),
+            "emotion": str(r.body.get("emotion") if "emotion" in r.body else prev.get("emotion", "natural")).strip(),
+            "speed": max(0.5, min(1.8, float(r.body.get("speed") if "speed" in r.body else prev.get("speed", 1.0)))),
         }
     dl_path.write_text(json.dumps({"engine": engine, "lines": existing}, indent=2), encoding="utf-8")
     return {"status": "ok", "saved": len(existing), "engine": engine}
+
+
+@route("POST", "/api/v2_voice_profile_apply")
+def _v2_voice_profile_apply(r: Request):
+    """Save a character's voice profile (voice, blend, persona, speed) for ALL scenes while leaving per-line emotion/tone untouched."""
+    slug = str(r.body.get("project") or "").strip()
+    character = str(r.body.get("character") or "").strip()
+    if not slug or not character:
+        raise PlanError("project and character are required")
+
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    vc_path = pd / "voice_cast.json"
+    vdata = {}
+    if vc_path.is_file():
+        try:
+            vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            vdata = {}
+    cast = vdata.get("cast") if isinstance(vdata.get("cast"), dict) else {}
+    profiles = vdata.get("profiles") if isinstance(vdata.get("profiles"), dict) else {}
+
+    existing_key = next((k for k in profiles if k.lower() == character.lower()), character)
+    prof = dict(profiles.get(existing_key) or {})
+    for field in ("gemini_voice", "kokoro_voice", "kokoro_blend", "macos_voice", "persona"):
+        if field in r.body and r.body[field] is not None:
+            prof[field] = str(r.body[field]).strip()
+    if r.body.get("kokoro_voice"):
+        cast_key = next((k for k in cast if k.lower() == character.lower()), character)
+        cast[cast_key] = str(r.body["kokoro_voice"]).strip()
+    profiles[existing_key] = prof
+    vdata["cast"] = cast
+    vdata["profiles"] = profiles
+    vc_path.write_text(json.dumps(vdata, indent=2), encoding="utf-8")
+
+    # Propagate profile to every dialogue line spoken by this character, WITHOUT touching each line's emotion/tone or note
+    dl_path = pd / "dialogue_lines.json"
+    ddata = {}
+    if dl_path.is_file():
+        try:
+            ddata = json.loads(dl_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            ddata = {}
+    saved_lines = ddata.get("lines") if isinstance(ddata.get("lines"), dict) else {}
+
+    updated_count = 0
+    sp_dir = pd / "screenplay"
+    if sp_dir.is_dir():
+        for sp_file in sorted(sp_dir.glob("scene-*.json")):
+            try:
+                sc = json.loads(sp_file.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            sc_id = str(sc.get("scene") or sp_file.stem.replace("scene-", ""))
+            idx = 0
+            for el in sc.get("elements") or []:
+                if not isinstance(el, dict) or el.get("type") != "dialogue":
+                    continue
+                idx += 1
+                if str(el.get("character") or "").strip().lower() != character.lower():
+                    continue
+                lid = f"{sc_id}-{idx:02d}"
+                cur = dict(saved_lines.get(lid) or {})
+                for field in ("gemini_voice", "kokoro_voice", "kokoro_blend", "macos_voice", "persona"):
+                    if field in prof:
+                        cur[field] = prof[field]
+                if prof.get("kokoro_voice"):
+                    cur["voice"] = prof["kokoro_voice"]
+                # Preserve per-line emotion/tone and delivery note untouched!
+                saved_lines[lid] = cur
+                updated_count += 1
+
+    ddata["lines"] = saved_lines
+    dl_path.write_text(json.dumps(ddata, indent=2), encoding="utf-8")
+    return {"status": "ok", "character": character, "profile": prof, "updated_lines": updated_count}
+
+
+@route("POST", "/api/v2_dialogue_upload")
+def _v2_dialogue_upload(r: Request):
+    """Save a user-uploaded custom audio take (base64 WAV/MP3/M4A/AIFF) for a single dialogue line."""
+    import base64
+    import tempfile
+
+    slug = str(r.body.get("project") or "").strip()
+    lid = str(r.body.get("id") or "").strip()
+    b64 = str(r.body.get("audio_base64") or "").strip()
+    filename = str(r.body.get("filename") or "take.wav").strip()
+    if not slug or not lid or not b64:
+        raise PlanError("project, id, and audio_base64 are required")
+    safe_id = "".join(c for c in lid if c.isalnum() or c in "-_")
+    if not safe_id:
+        raise PlanError("invalid line id")
+    if "," in b64 and b64.startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    raw = base64.b64decode(b64)
+    if len(raw) < 64:
+        raise PlanError("uploaded audio file is empty")
+
+    pd = pdir(slug, "book")
+    out_dir = pd / "audio" / "dialogue"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    wav_path = out_dir / f"{safe_id}.wav"
+
+    if raw[:4] == b"RIFF":
+        wav_path.write_bytes(raw)
+    else:
+        suffix = Path(filename).suffix or ".mp3"
+        afconvert_bin = shutil.which("afconvert")
+        ffmpeg_bin = shutil.which("ffmpeg")
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
+            tf.write(raw)
+            tmp_in = Path(tf.name)
+        try:
+            if afconvert_bin:
+                subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@24000", str(tmp_in), str(wav_path)], check=True, timeout=30)
+            elif ffmpeg_bin:
+                subprocess.run([ffmpeg_bin, "-y", "-i", str(tmp_in), str(wav_path)], check=True, timeout=30)
+            else:
+                wav_path.write_bytes(raw)
+        finally:
+            tmp_in.unlink(missing_ok=True)
+
+    return {"status": "ok", "id": safe_id, "audio_url": f"/file/{slug}/audio/dialogue/{safe_id}.wav"}
 
 
 def _macos_voice_for_kokoro(voice_id: str, dialect: str = "american") -> str:
@@ -833,7 +970,7 @@ def _write_wav_bytes(wav_path: Path, raw: bytes, sample_rate: int = 24000):
         wf.writeframes(raw)
 
 
-def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str, note: str, wav_path: Path) -> str:
+def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str, note: str, wav_path: Path, persona: str = "", gemini_voice: str = "") -> str:
     """Render one spoken line with Gemini Neural TTS (uses google-genai SDK if installed, else HTTPS REST fallback)."""
     import base64
     import urllib.error
@@ -844,9 +981,11 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
     if not api_key:
         raise PlanError("Gemini API key is not configured. Save your key in Step 13 (or ~/.zshrc) first.")
 
-    g_voice = _gemini_voice_for_kokoro(voice_id)
+    g_voice = (gemini_voice or "").strip() or _gemini_voice_for_kokoro(voice_id)
     accent = "British English (RP)" if (voice_id.lower().startswith("b") or dialect == "british") else "American English"
     style_bits = [accent]
+    if persona:
+        style_bits.append(f"character voice: {persona}")
     if emotion and emotion != "natural":
         style_bits.append(f"{emotion} tone")
     if note:
@@ -1002,7 +1141,7 @@ def find_kokoro_python() -> str:
     return ""
 
 
-def _render_line_kokoro(text: str, voice_id: str, dialect: str, speed: float, wav_path: Path) -> str:
+def _render_line_kokoro(text: str, voice_id: str, dialect: str, speed: float, wav_path: Path, blend_voice: str = "") -> str:
     """Render one spoken line locally using Kokoro-82M (in-process if in .venv, else via detected Kokoro Python)."""
     import sys
 
@@ -1010,8 +1149,10 @@ def _render_line_kokoro(text: str, voice_id: str, dialect: str, speed: float, wa
     if not py:
         raise PlanError("Kokoro-82M is not installed yet. Click '⬇ Install Kokoro-82M' on the Kokoro card above to install it.")
 
-    vid = voice_id or ("bm_fable" if dialect == "british" else "am_puck")
-    lang = "b" if vid.lower().startswith("b") else "a"
+    base_vid = (voice_id or "").strip() or ("bm_fable" if dialect == "british" else "am_puck")
+    blend = (blend_voice or "").strip()
+    vid = f"{base_vid},{blend}" if (blend and blend != base_vid) else base_vid
+    lang = "b" if base_vid.lower().startswith("b") else "a"
 
     if py == sys.executable:
         import numpy as np
@@ -1133,19 +1274,23 @@ def _v2_dialogue_render(r: Request):
         safe_id = "".join(c for c in lid if c.isalnum() or c in "-_")
         if not safe_id:
             continue
-        voice_id = str(item.get("voice") or "").strip()
+        voice_id = str(item.get("kokoro_voice") or item.get("voice") or "").strip()
+        gemini_voice = str(item.get("gemini_voice") or "").strip()
+        kokoro_blend = str(item.get("kokoro_blend") or "").strip()
+        explicit_macos = str(item.get("macos_voice") or "").strip()
+        persona = str(item.get("persona") or "").strip()
         emotion = str(item.get("emotion") or "natural").strip()
         note = str(item.get("note") or "").strip()
         speed = max(0.5, min(1.8, float(item.get("speed") or 1.0)))
         wav_path = out_dir / f"{safe_id}.wav"
 
         if engine == "gemini-tts":
-            voice_used = _render_line_gemini_tts(text, voice_id, dialect, emotion, note, wav_path)
+            voice_used = _render_line_gemini_tts(text, voice_id, dialect, emotion, note, wav_path, persona=persona, gemini_voice=gemini_voice)
         elif engine == "kokoro":
-            voice_used = _render_line_kokoro(text, voice_id, dialect, speed, wav_path)
+            voice_used = _render_line_kokoro(text, voice_id, dialect, speed, wav_path, blend_voice=kokoro_blend)
         else:
             rate = int(round(185 * speed))
-            mac_voice = _macos_voice_for_kokoro(voice_id, dialect)
+            mac_voice = explicit_macos or _macos_voice_for_kokoro(voice_id, dialect)
             if avail and mac_voice not in avail:
                 if (voice_id.lower().startswith("b") or dialect == "british") and "Daniel" in avail:
                     mac_voice = "Daniel"
