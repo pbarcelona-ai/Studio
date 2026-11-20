@@ -1372,6 +1372,77 @@
       badgeEl.className = "status-badge status-badge--working";
     }
 
+    // 0. Load continuity book & approval gate
+    const cbStatusEl = $("v2ContBookStatus");
+    const cbViewEl = $("v2ContBookView");
+    const btnApproveCb = $("bV2ContApprove");
+    try {
+      const cb = await callApi(`/api/continuity_book?project=${encodeURIComponent(slug)}`);
+      const book = cb && cb.book ? cb.book : null;
+      const gate = (cb && cb.gate) || {};
+      if (btnApproveCb) btnApproveCb.disabled = !book || Boolean(gate.approved);
+      if (cbStatusEl) {
+        if (!book) {
+          cbStatusEl.textContent = `No continuity book written yet for "${slug}". Click ✨ Write Continuity Book to extract characters, locations, and props.`;
+        } else {
+          const nc = (book.characters || []).length, nl = (book.locations || []).length, np = (book.props || []).length;
+          cbStatusEl.innerHTML = `<strong style="color:#f8fafc">${nc} characters, ${nl} locations, ${np} props</strong> · ` +
+            (gate.approved ? `<span style="color:#34d399">✓ Approved ${gate.approved_at ? gate.approved_at.slice(0, 16).replace("T", " ") : ""}</span>` : `<span style="color:#fbbf24">Not approved yet — click ✓ Approve Continuity Book to unlock Shot List.</span>`);
+        }
+      }
+      if (cbViewEl) {
+        cbViewEl.textContent = "";
+        if (book) {
+          [["characters", "Characters"], ["locations", "Locations"], ["props", "Props"]].forEach(([kind, label]) => {
+            const items = book[kind] || [];
+            if (!items.length) return;
+            const det = document.createElement("details");
+            det.open = kind === "characters";
+            det.style.cssText = "background:#0a0d14;border:1px solid #1e293b;border-radius:6px;padding:8px 10px;";
+            const sum = document.createElement("summary");
+            sum.style.cssText = "cursor:pointer;font-weight:700;color:#f59e0b;font-size:var(--text-xs);";
+            sum.textContent = `${label} (${items.length})`;
+            det.appendChild(sum);
+            items.forEach(item => {
+              const row = document.createElement("div");
+              row.style.cssText = "display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;";
+              const nm = document.createElement("strong");
+              nm.style.cssText = "min-width:110px;font-size:var(--text-xs);color:#f8fafc;";
+              nm.textContent = item.name || "";
+              const inp = document.createElement("input");
+              inp.type = "text";
+              inp.value = item.token || item.description || "";
+              inp.style.cssText = "flex:1;min-width:180px;padding:4px 8px;background:#141b27;color:#e2e8f0;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);";
+              const sv = document.createElement("button");
+              sv.type = "button";
+              sv.className = "btn btn--ghost";
+              sv.style.cssText = "padding:3px 8px;font-size:var(--text-xs);";
+              sv.textContent = "Save";
+              sv.addEventListener("click", async () => {
+                sv.disabled = true;
+                try {
+                  await callApi("/api/continuity_edit", { project: slug, kind, name: item.name, fields: { token: inp.value } });
+                  sv.textContent = "✓";
+                  setTimeout(() => { sv.textContent = "Save"; sv.disabled = false; }, 1000);
+                  await loadV2Continuity();
+                } catch (err) {
+                  alert(err.message);
+                  sv.disabled = false;
+                }
+              });
+              row.appendChild(nm);
+              row.appendChild(inp);
+              row.appendChild(sv);
+              det.appendChild(row);
+            });
+            cbViewEl.appendChild(det);
+          });
+        }
+      }
+    } catch (e) {
+      if (cbStatusEl) cbStatusEl.textContent = "Could not load continuity book: " + e.message;
+    }
+
     // 1. Load project rules
     try {
       const r = await callApi(`/api/project_rules?project=${encodeURIComponent(slug)}`);
@@ -1421,8 +1492,35 @@
     }
   }
 
+  let v2ContLogTimer = null;
+
+  async function pollV2ContLog(sinceIdx) {
+    const logEl = $("v2ContLog");
+    const statusEl = $("v2ContBookStatus");
+    clearTimeout(v2ContLogTimer);
+    try {
+      const r = await callApi(`/api/log?since=${sinceIdx || 0}`);
+      if (logEl) {
+        logEl.classList.remove("hidden");
+        const lines = Array.isArray(r.lines) ? r.lines.join("\n") : (r.text || "");
+        if (lines) {
+          logEl.textContent = (sinceIdx ? logEl.textContent + "\n" : "") + lines;
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+      }
+      if (r && r.running) {
+        if (statusEl) statusEl.textContent = "⏳ Writing continuity book… (live log below)";
+        v2ContLogTimer = setTimeout(() => pollV2ContLog(r.next || sinceIdx), 2000);
+      } else {
+        await loadV2Continuity();
+      }
+    } catch (e) {}
+  }
+
   function initV2Continuity() {
     const btnReload = $("v2ContReload");
+    const btnGenCb = $("bV2ContGenerate");
+    const btnApproveCb = $("bV2ContApprove");
     const btnSaveRules = $("v2ContRulesSave");
     const btnSaveParams = $("v2ContParamsSave");
     const rulesEl = $("v2ContRules");
@@ -1432,6 +1530,48 @@
     const paramsMsg = $("v2ContParamsMsg");
 
     if (btnReload) btnReload.addEventListener("click", () => loadV2Continuity());
+
+    if (btnGenCb) {
+      btnGenCb.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnGenCb.disabled = true;
+        const statusEl = $("v2ContBookStatus");
+        const logEl = $("v2ContLog");
+        if (statusEl) statusEl.textContent = `Starting continuity book generation for "${slug}"…`;
+        if (logEl) { logEl.textContent = ""; logEl.classList.remove("hidden"); }
+        try {
+          const o = typeof window.options === "function" ? window.options() : {};
+          await callApi("/api/continuity_book", {
+            project: slug,
+            engine: o.engine || "claude",
+            claude_model: o.claude_model,
+          });
+          pollV2ContLog(0);
+        } catch (err) {
+          if (statusEl) statusEl.textContent = "Error: " + err.message;
+        } finally {
+          btnGenCb.disabled = false;
+        }
+      });
+    }
+
+    if (btnApproveCb) {
+      btnApproveCb.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) return;
+        btnApproveCb.disabled = true;
+        try {
+          await callApi("/api/continuity_approve", { project: slug });
+          await loadV2Continuity();
+        } catch (err) {
+          alert("Could not approve continuity book: " + err.message);
+          btnApproveCb.disabled = false;
+        }
+      });
+    }
 
     // Quick-insert world rule chips
     document.querySelectorAll(".v2-cont-chip").forEach(chip => {

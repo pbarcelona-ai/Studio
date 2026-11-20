@@ -549,12 +549,28 @@
           ✨ <strong>Autopilot Pick:</strong> Persistent Character Tokens &amp; Global Visual Continuity Engine
         </div>
         <div class="step-zone-workspace">
+          <!-- 0. Continuity Book Generator, Live Job Log & Approval Gate -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3);border-color:rgba(245,158,11,0.35)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div>
+                <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">0. Continuity Book (Characters, Locations &amp; Props)</h3>
+                <div id="v2ContBookStatus" style="font-size:var(--text-xs);color:#94a3b8;margin-top:2px">Checking continuity book status…</div>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn--primary" id="bV2ContGenerate" style="padding:6px 14px;font-size:var(--text-xs)">✨ Write Continuity Book</button>
+                <button type="button" class="btn btn--secondary" id="bV2ContApprove" style="padding:6px 14px;font-size:var(--text-xs)" disabled>✓ Approve Continuity Book</button>
+                <button type="button" class="btn btn--ghost" id="v2ContReload" style="padding:6px 10px;font-size:var(--text-xs)">↻ Reload</button>
+              </div>
+            </div>
+            <pre id="v2ContLog" class="hidden" style="margin:8px 0 0;padding:10px;background:#0a0d14;color:#94a3b8;border:1px solid #1e293b;border-radius:6px;font-family:var(--font-mono);font-size:var(--text-xs);max-height:180px;overflow:auto;white-space:pre-wrap"></pre>
+            <div id="v2ContBookView" style="margin-top:8px;display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto"></div>
+          </div>
+
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:var(--space-3)">
             <!-- 1. Editable World, Wardrobe & Prop Continuity Rules -->
             <div class="direct-story-card">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
                 <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">1. Wardrobe, Props &amp; World Rules</h3>
-                <button type="button" class="btn btn--ghost" id="v2ContReload" style="padding:4px 10px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
               <p style="margin:0;font-size:var(--text-xs);color:#94a3b8">Rules saved here are enforced by the crew across every scene (costumes, key props, historical era, physics, tone).</p>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
