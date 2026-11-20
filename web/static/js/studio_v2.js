@@ -1257,7 +1257,7 @@
     if (!stepMeta) return;
 
     const lookOpts = document.querySelector('input[name="look"]:checked');
-    const look = lookOpts ? lookOpts.value : "live_action";
+    const look = (typeof v2SelectedLook === "string" && v2SelectedLook) || (lookOpts ? lookOpts.value : "live_action");
 
     try {
       const rec = await callApi(`/api/autopilot_recommend?look=${encodeURIComponent(look)}&step=${encodeURIComponent(stepMeta.id)}`);
@@ -1953,6 +1953,108 @@
     }
   }
 
+  // ===== STEP 09: ART DIRECTION & STYLE RECIPE =====
+  const V2_STYLE_RECIPES = {
+    live_action: {
+      label: "Realistic Live Action",
+      positives: "cinematic live-action film still, shot on a cinema camera, 35mm anamorphic lens, natural film grain, realistic skin texture, practical lighting, shallow depth of field",
+      negatives: "cartoon, animated, 3d render, cgi, claymation, plasticine, illustration, anime, painting, drawing, doll-like, plastic skin",
+    },
+    claymation: {
+      label: "Claymation",
+      positives: "claymation stop-motion film, handcrafted plasticine figures, visible fingerprints and tool marks in the clay, miniature handmade sets, soft studio lighting, tactile textures",
+      negatives: "photorealistic, live action, photograph, real people, smooth cgi, anime, 2d drawing, glossy plastic",
+    },
+    pixar_3d: {
+      label: "3D Pixar",
+      positives: "3d animated feature film style, stylised characters with large expressive eyes, soft rounded shapes, subsurface scattering, warm global illumination, rich saturated colour",
+      negatives: "photorealistic, live action, photograph, real people, claymation, anime, flat 2d drawing, uncanny realistic skin",
+    },
+    pixar_disney: {
+      label: "Pixar-Disney Hybrid",
+      positives: "3d animated feature with a classic hand-drawn fairy-tale feel, painterly textures, storybook lighting, expressive faces, graceful character animation, lush colour",
+      negatives: "photorealistic, live action, photograph, real people, claymation, anime, gritty, uncanny realistic skin",
+    },
+    travel_poster: {
+      label: "Vintage Travel Poster",
+      positives: "vintage travel poster style, 1930s art deco lithograph, flat bold shapes, limited colour palette, screen-print grain, strong silhouettes, sweeping perspective, sunlit sky gradients",
+      negatives: "photorealistic, photograph, live action, 3d render, cgi, glossy, anime, cluttered detail, garbled lettering, watermark",
+    },
+    cyberpunk_3d: {
+      label: "Cyberpunk Neon 3D",
+      positives: "cyberpunk neon 3d render, night city, glowing magenta and cyan neon signs, rain-slick reflective streets, volumetric fog, holographic displays, rim lighting, high contrast",
+      negatives: "daylight, pastoral, vintage, flat 2d drawing, watercolor, claymation, washed-out colours, low contrast",
+    },
+  };
+
+  let v2SelectedLook = "live_action";
+
+  function selectV2Style(lookKey) {
+    const key = V2_STYLE_RECIPES[lookKey] ? lookKey : "live_action";
+    v2SelectedLook = key;
+    const recipe = V2_STYLE_RECIPES[key];
+
+    document.querySelectorAll(".v2-style-card").forEach(card => {
+      const isSelected = card.dataset.look === key;
+      card.setAttribute("aria-checked", String(isSelected));
+      card.style.borderColor = isSelected ? "#f59e0b" : "#232d3f";
+      card.style.background = isSelected ? "rgba(245, 158, 11, 0.12)" : "#141b27";
+      card.style.boxShadow = isSelected ? "0 0 14px rgba(245, 158, 11, 0.25)" : "none";
+    });
+
+    const badge = $("v2StyleBadge");
+    if (badge) badge.textContent = `✓ ${recipe.label}`;
+    const pos = $("v2StylePos");
+    const neg = $("v2StyleNeg");
+    if (pos) pos.value = recipe.positives;
+    if (neg) neg.value = recipe.negatives;
+    const msg = $("v2StyleMsg");
+    if (msg) msg.textContent = `Selected "${recipe.label}" — click 💾 Apply Style to Book to save to your project.`;
+
+    // Sync with hidden legacy look radio if present and persist in localStorage
+    const legacyRadio = document.querySelector(`input[name="look"][value="${key}"]`);
+    if (legacyRadio) {
+      legacyRadio.checked = true;
+      legacyRadio.dispatchEvent(new Event("change"));
+    }
+    try { localStorage.setItem("studio_v2_look", key); } catch (e) {}
+    loadStepAutopilot();
+  }
+
+  function initV2Styles() {
+    document.querySelectorAll(".v2-style-card").forEach(card => {
+      card.addEventListener("click", () => selectV2Style(card.dataset.look));
+    });
+
+    const btnApply = $("bV2StyleApply");
+    if (btnApply) {
+      btnApply.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        const msg = $("v2StyleMsg");
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnApply.disabled = true;
+        if (msg) msg.textContent = "Applying style to project…";
+        try {
+          await callApi("/api/global_params", {
+            project: slug,
+            positives: ($("v2StylePos") || {}).value || "",
+            negatives: ($("v2StyleNeg") || {}).value || "",
+          });
+          if (msg) msg.textContent = `✓ Applied "${V2_STYLE_RECIPES[v2SelectedLook].label}" to "${slug}".`;
+        } catch (err) {
+          if (msg) msg.textContent = "Error: " + err.message;
+        } finally {
+          btnApply.disabled = false;
+        }
+      });
+    }
+
+    let savedLook = "live_action";
+    try { savedLook = localStorage.getItem("studio_v2_look") || "live_action"; } catch (e) {}
+    selectV2Style(savedLook);
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
@@ -1966,6 +2068,7 @@
     initV2Screenplay();
     initV2Continuity();
     initV2Cast();
+    initV2Styles();
     initV2GeminiOmni();
 
     // Bind step pills in 6-phase bar

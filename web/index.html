@@ -666,31 +666,51 @@
       <section class="step-panel" id="panel-step-9" data-step="9" aria-labelledby="step9Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step9Title">Step 09: Art Direction & Style Recipe</h2>
-            <p class="step-goal">Select your aesthetic style recipe: Live Action, Pixar 3D, Claymation, Cyberpunk, or Travel Poster.</p>
+            <h2 id="step9Title">Step 09: Art Direction &amp; Style Recipe</h2>
+            <p class="step-goal">Click any visual style below to select it for your film, customize its prompt keywords, and apply it to your project.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Style Locked</span>
+          <span class="status-badge status-badge--synced" id="v2StyleBadge">✓ Live Action</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
           ✨ <strong>Autopilot Pick:</strong> Realistic Live Action &mdash; <em>35mm cinema camera, natural film grain, realistic practical lighting.</em>
         </div>
         <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:var(--space-2)">
-            <div class="deliverable-card" style="border-color:#f59e0b">
-              <span class="deliverable-title">🎬 Live Action</span>
-              <p class="deliverable-desc">Cinematic, natural light, real actors and places.</p>
-            </div>
-            <div class="deliverable-card">
+          <div id="v2StyleGrid" role="radiogroup" aria-label="Film visual style" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(195px, 1fr));gap:var(--space-2)">
+            <button type="button" class="deliverable-card v2-style-card" data-look="live_action" role="radio" aria-checked="true" style="text-align:left;cursor:pointer">
+              <span class="deliverable-title">🎬 Realistic Live Action</span>
+              <p class="deliverable-desc">Cinematic, as if filmed with a camera: real people, real places, natural light.</p>
+            </button>
+            <button type="button" class="deliverable-card v2-style-card" data-look="claymation" role="radio" aria-checked="false" style="text-align:left;cursor:pointer">
               <span class="deliverable-title">🧸 Claymation</span>
-              <p class="deliverable-desc">Handmade plasticine stop-motion aesthetic.</p>
-            </div>
-            <div class="deliverable-card">
+              <p class="deliverable-desc">Stop-motion with handmade plasticine clay figures and miniature sets.</p>
+            </button>
+            <button type="button" class="deliverable-card v2-style-card" data-look="pixar_3d" role="radio" aria-checked="false" style="text-align:left;cursor:pointer">
               <span class="deliverable-title">✨ 3D Pixar</span>
-              <p class="deliverable-desc">Expressive animated characters and soft global light.</p>
-            </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">🌆 Cyberpunk 3D</span>
-              <p class="deliverable-desc">Neon reflections, rain, fog, and volumetric lighting.</p>
+              <p class="deliverable-desc">3D animated feature: stylized expressive characters, soft global light, rich color.</p>
+            </button>
+            <button type="button" class="deliverable-card v2-style-card" data-look="pixar_disney" role="radio" aria-checked="false" style="text-align:left;cursor:pointer">
+              <span class="deliverable-title">🏰 Pixar-Disney Hybrid</span>
+              <p class="deliverable-desc">3D animation with a classic hand-drawn storybook fairy-tale feel.</p>
+            </button>
+            <button type="button" class="deliverable-card v2-style-card" data-look="travel_poster" role="radio" aria-checked="false" style="text-align:left;cursor:pointer">
+              <span class="deliverable-title">🚂 Vintage Travel Poster</span>
+              <p class="deliverable-desc">1930s Art Deco lithograph: flat bold shapes, limited printed palette, screen grain.</p>
+            </button>
+            <button type="button" class="deliverable-card v2-style-card" data-look="cyberpunk_3d" role="radio" aria-checked="false" style="text-align:left;cursor:pointer">
+              <span class="deliverable-title">🌆 Cyberpunk Neon 3D</span>
+              <p class="deliverable-desc">3D neon city at night: glowing magenta/cyan signs, rain reflections, volumetric fog.</p>
+            </button>
+          </div>
+
+          <!-- Selected Style Prompt Preview & Apply to Book -->
+          <div class="direct-story-card" style="margin-top:var(--space-3)">
+            <label class="f" for="v2StylePos">Active Style Keywords (applied to every keyframe &amp; character prompt)</label>
+            <textarea id="v2StylePos" rows="2" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px;font:inherit;font-size:var(--text-xs)"></textarea>
+            <label class="f" for="v2StyleNeg" style="margin-top:6px">Style Negative Keywords (things to avoid)</label>
+            <textarea id="v2StyleNeg" rows="2" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px;font:inherit;font-size:var(--text-xs)"></textarea>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px">
+              <button type="button" class="btn btn--primary" id="bV2StyleApply" style="padding:6px 14px">💾 Apply Style to Book</button>
+              <span id="v2StyleMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
             </div>
           </div>
         </div>
