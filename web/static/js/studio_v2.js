@@ -210,6 +210,11 @@
       loadV2Continuity();
     }
 
+    // If entering Step 8 (Cast & Characters), load all story characters
+    if (currentStep === 8) {
+      loadV2Cast();
+    }
+
     // Check for storyline drift and load step autopilot
     checkStepStorylineDrift();
     loadStepAutopilot();
@@ -1612,6 +1617,342 @@
     }
   }
 
+  // ===== STEP 08: CAST & CHARACTERS =====
+  async function loadV2Cast() {
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    const grid = $("v2CastGrid");
+    const summaryEl = $("v2CastSummary");
+    const badgeEl = $("v2CastBadge");
+
+    if (!grid) return;
+    grid.textContent = "";
+
+    if (!slug) {
+      if (summaryEl) summaryEl.textContent = "Pick or save a book in Step 01 first.";
+      if (badgeEl) {
+        badgeEl.textContent = "No Book Selected";
+        badgeEl.className = "status-badge status-badge--drift";
+      }
+      return;
+    }
+
+    if (summaryEl) summaryEl.textContent = `Loading all characters for "${slug}"…`;
+    if (badgeEl) {
+      badgeEl.textContent = "Loading…";
+      badgeEl.className = "status-badge status-badge--working";
+    }
+
+    // Gather characters from ALL sources for this book so none are ever missed:
+    // 1. Saved character dossiers (/api/characters?action=list&series=<slug>)
+    // 2. Story analyst coverage (/api/readin -> coverage.characters)
+    // 3. Per-scene cast lock (/api/cast_lock -> scenes[].characters)
+    // 4. Screenplay speaking characters (/api/screenplay -> scenes[].screenplay.elements)
+    const merged = new Map(); // lowerName -> { name, role, description, visual_token, saved, rawChar, sources: Set }
+
+    const upsert = (name, info, sourceLabel) => {
+      const clean = String(name || "").trim();
+      if (!clean) return;
+      const key = clean.toLowerCase();
+      const existing = merged.get(key) || {
+        name: clean,
+        role: "",
+        description: "",
+        visual_token: "",
+        saved: false,
+        rawChar: null,
+        sources: new Set(),
+      };
+      existing.sources.add(sourceLabel);
+      if (info.saved) {
+        existing.saved = true;
+        existing.name = clean;
+      }
+      if (info.role && !existing.role) existing.role = info.role;
+      if (info.description && (!existing.description || info.saved)) existing.description = info.description;
+      if (info.visual_token && (!existing.visual_token || info.saved)) existing.visual_token = info.visual_token;
+      if (info.rawChar) existing.rawChar = info.rawChar;
+      merged.set(key, existing);
+    };
+
+    // 1. Saved character dossiers
+    try {
+      const chList = await callApi(`/api/characters?action=list&series=${encodeURIComponent(slug)}`);
+      const names = (chList && Array.isArray(chList.characters)) ? chList.characters : [];
+      await Promise.all(names.map(async entry => {
+        const name = typeof entry === "string" ? entry : (entry && entry.name);
+        if (!name) return;
+        let full = null;
+        try {
+          const got = await callApi(`/api/characters?action=get&series=${encodeURIComponent(slug)}&name=${encodeURIComponent(name)}`);
+          full = got && got.character ? got.character : null;
+        } catch (e) {}
+        upsert(name, {
+          saved: true,
+          role: (full && (full.role || full.archetype)) || "",
+          description: (full && (full.description || full.appearance || full.notes)) || "",
+          visual_token: (full && (full.visual_token || full.token)) || "",
+          rawChar: full,
+        }, "Dossier");
+      }));
+    } catch (e) {}
+
+    // 2. Coverage characters (from Read It In)
+    try {
+      const rd = await callApi(`/api/readin?project=${encodeURIComponent(slug)}`);
+      const covChars = (rd && rd.coverage && Array.isArray(rd.coverage.characters)) ? rd.coverage.characters : [];
+      covChars.forEach(c => {
+        if (!c) return;
+        upsert(c.name || c, {
+          role: c.role || "",
+          description: c.description || "",
+        }, "Coverage");
+      });
+    } catch (e) {}
+
+    // 3. Per-scene cast lock characters
+    try {
+      const lk = await callApi(`/api/cast_lock?project=${encodeURIComponent(slug)}`);
+      const scenes = (lk && Array.isArray(lk.scenes)) ? lk.scenes : [];
+      scenes.forEach(s => {
+        (s.characters || []).forEach(c => {
+          upsert(c.name, {
+            visual_token: (c.locked && c.locked.token) || "",
+          }, "Scenes");
+        });
+      });
+    } catch (e) {}
+
+    // 4. Screenplay speaking characters
+    try {
+      const sp = await callApi(`/api/screenplay?project=${encodeURIComponent(slug)}`);
+      const scenes = (sp && Array.isArray(sp.scenes)) ? sp.scenes : [];
+      scenes.forEach(s => {
+        const els = (s.screenplay && Array.isArray(s.screenplay.elements)) ? s.screenplay.elements : [];
+        els.forEach(el => {
+          if (el && el.type === "dialogue" && el.character) {
+            upsert(el.character, {}, "Screenplay");
+          }
+        });
+      });
+    } catch (e) {}
+
+    const allChars = [...merged.values()];
+    if (summaryEl) {
+      summaryEl.innerHTML = `<strong style="color:#f59e0b">${allChars.length} character(s)</strong> found for <strong>${slug}</strong>` +
+        (allChars.length ? " — edit any dossier inline, save, delete, or add missing characters." : " — click <strong>➕ Add Character</strong> or <strong>🔄 Sync from Book</strong> to populate your cast.");
+    }
+    if (badgeEl) {
+      badgeEl.textContent = allChars.length ? `✓ ${allChars.length} Characters` : "No Characters Yet";
+      badgeEl.className = "status-badge " + (allChars.length ? "status-badge--synced" : "status-badge--drift");
+    }
+
+    if (!allChars.length) {
+      const empty = document.createElement("div");
+      empty.className = "direct-story-card";
+      empty.style.cssText = "grid-column:1/-1;color:#94a3b8;font-size:var(--text-sm);";
+      empty.textContent = "No characters extracted yet for this book. Click '🔄 Sync from Book' if you have a continuity book, or click '➕ Add Character' to add your cast manually.";
+      grid.appendChild(empty);
+      return;
+    }
+
+    allChars.forEach(c => {
+      const card = document.createElement("div");
+      card.className = "direct-story-card";
+
+      const head = document.createElement("div");
+      head.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;";
+      const title = document.createElement("strong");
+      title.style.cssText = "font-size:var(--text-base);color:#f8fafc;";
+      title.textContent = c.name + (c.role ? ` (${c.role})` : "");
+      const srcBadge = document.createElement("span");
+      srcBadge.className = "status-badge " + (c.saved ? "status-badge--synced" : "status-badge--working");
+      srcBadge.style.fontSize = "0.7rem";
+      srcBadge.textContent = c.saved ? "✓ Saved Dossier" : `From ${[...c.sources].join(" / ")}`;
+      head.appendChild(title);
+      head.appendChild(srcBadge);
+      card.appendChild(head);
+
+      const tokLabel = document.createElement("label");
+      tokLabel.className = "f";
+      tokLabel.textContent = "Visual Consistency Token";
+      const tokInput = document.createElement("input");
+      tokInput.type = "text";
+      tokInput.value = c.visual_token || c.name.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      tokInput.style.cssText = "width:100%;padding:6px 8px;background:#0a0d14;color:#f59e0b;border:1px solid #334155;border-radius:6px;font-family:var(--font-mono);font-size:var(--text-xs);";
+      card.appendChild(tokLabel);
+      card.appendChild(tokInput);
+
+      const descLabel = document.createElement("label");
+      descLabel.className = "f";
+      descLabel.textContent = "Appearance, Wardrobe & Role";
+      const descTa = document.createElement("textarea");
+      descTa.rows = 3;
+      descTa.value = c.description || "";
+      descTa.placeholder = "Describe age, face, hair, clothing, and key visual traits…";
+      descTa.style.cssText = "width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit;font-size:var(--text-xs);";
+      card.appendChild(descLabel);
+      card.appendChild(descTa);
+
+      const actions = document.createElement("div");
+      actions.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;";
+      const leftBtns = document.createElement("div");
+      leftBtns.style.cssText = "display:flex;gap:6px;align-items:center;";
+      const msg = document.createElement("span");
+      msg.style.cssText = "font-size:var(--text-xs);color:#94a3b8;";
+
+      const btnSave = document.createElement("button");
+      btnSave.type = "button";
+      btnSave.className = "btn btn--primary";
+      btnSave.style.cssText = "padding:5px 12px;font-size:var(--text-xs);";
+      btnSave.textContent = c.saved ? "💾 Save Changes" : "💾 Save Dossier";
+      btnSave.addEventListener("click", async () => {
+        btnSave.disabled = true;
+        msg.textContent = "Saving…";
+        try {
+          if (c.saved && c.rawChar) {
+            const updated = {
+              ...c.rawChar,
+              series: c.rawChar.series || slug,
+              name: c.name,
+              description: descTa.value.trim(),
+              visual_token: tokInput.value.trim(),
+            };
+            await callApi("/api/characters", { action: "save", character: updated });
+          } else {
+            await callApi("/api/characters", {
+              action: "create",
+              series: slug,
+              name: c.name,
+              description: descTa.value.trim(),
+              visual_token: tokInput.value.trim(),
+            });
+          }
+          msg.textContent = "✓ Saved";
+          await loadV2Cast();
+        } catch (err) {
+          msg.textContent = "Error: " + err.message;
+        } finally {
+          btnSave.disabled = false;
+        }
+      });
+      leftBtns.appendChild(btnSave);
+
+      if (c.saved) {
+        const btnDel = document.createElement("button");
+        btnDel.type = "button";
+        btnDel.className = "btn btn--ghost";
+        btnDel.style.cssText = "padding:5px 10px;font-size:var(--text-xs);color:#f87171;";
+        btnDel.textContent = "🗑️ Delete";
+        btnDel.addEventListener("click", async () => {
+          if (!confirm(`Delete character dossier "${c.name}" from ${slug}?`)) return;
+          btnDel.disabled = true;
+          try {
+            await callApi("/api/characters", { action: "delete", series: slug, name: c.name });
+            await loadV2Cast();
+          } catch (err) {
+            msg.textContent = "Error: " + err.message;
+            btnDel.disabled = false;
+          }
+        });
+        leftBtns.appendChild(btnDel);
+      }
+
+      actions.appendChild(leftBtns);
+      actions.appendChild(msg);
+      card.appendChild(actions);
+      grid.appendChild(card);
+    });
+  }
+
+  function initV2Cast() {
+    const btnToggle = $("bV2CastAddToggle");
+    const btnCancel = $("bV2CastAddCancel");
+    const form = $("v2CastAddForm");
+    const btnCreate = $("bV2CastCreate");
+    const btnSync = $("bV2CastSync");
+    const btnReload = $("bV2CastReload");
+
+    if (btnToggle && form) {
+      btnToggle.addEventListener("click", () => {
+        const show = form.classList.contains("hidden");
+        form.classList.toggle("hidden", !show);
+        form.style.display = show ? "flex" : "none";
+        if (show && $("v2CastNewName")) $("v2CastNewName").focus();
+      });
+    }
+    if (btnCancel && form) {
+      btnCancel.addEventListener("click", () => {
+        form.classList.add("hidden");
+        form.style.display = "none";
+      });
+    }
+    if (btnReload) btnReload.addEventListener("click", () => loadV2Cast());
+
+    if (btnCreate) {
+      btnCreate.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        const name = ($("v2CastNewName") || {}).value ? $("v2CastNewName").value.trim() : "";
+        const token = ($("v2CastNewToken") || {}).value ? $("v2CastNewToken").value.trim() : "";
+        const desc = ($("v2CastNewDesc") || {}).value ? $("v2CastNewDesc").value.trim() : "";
+        const msg = $("v2CastAddMsg");
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        if (!name) { alert("Enter a character name first."); return; }
+
+        btnCreate.disabled = true;
+        if (msg) msg.textContent = "Creating character…";
+        try {
+          await callApi("/api/characters", {
+            action: "create",
+            series: slug,
+            name,
+            description: desc,
+            visual_token: token,
+          });
+          if ($("v2CastNewName")) $("v2CastNewName").value = "";
+          if ($("v2CastNewToken")) $("v2CastNewToken").value = "";
+          if ($("v2CastNewDesc")) $("v2CastNewDesc").value = "";
+          if (form) { form.classList.add("hidden"); form.style.display = "none"; }
+          if (msg) msg.textContent = "";
+          await loadV2Cast();
+        } catch (err) {
+          if (msg) msg.textContent = "Error: " + err.message;
+        } finally {
+          btnCreate.disabled = false;
+        }
+      });
+    }
+
+    if (btnSync) {
+      btnSync.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnSync.disabled = true;
+        const summaryEl = $("v2CastSummary");
+        if (summaryEl) summaryEl.textContent = `Syncing characters from "${slug}" continuity book…`;
+        try {
+          const res = await callApi("/api/characters", { action: "sync", project: slug, series: slug });
+          await loadV2Cast();
+          if (summaryEl) summaryEl.innerHTML += ` <span style="color:#34d399">(Synced ${res.count || 0} character(s))</span>`;
+        } catch (err) {
+          alert(err.message);
+          await loadV2Cast();
+        } finally {
+          btnSync.disabled = false;
+        }
+      });
+    }
+
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        if (currentStep === 8) loadV2Cast();
+      });
+    }
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
@@ -1624,6 +1965,7 @@
     initV2StoryBreakdown();
     initV2Screenplay();
     initV2Continuity();
+    initV2Cast();
     initV2GeminiOmni();
 
     // Bind step pills in 6-phase bar
@@ -1677,6 +2019,7 @@
       if (currentStep === 5) loadV2StoryBreakdown();
       if (currentStep === 6) loadV2Screenplay();
       if (currentStep === 7) loadV2Continuity();
+      if (currentStep === 8) loadV2Cast();
     }, 1200);
   });
 
@@ -1688,6 +2031,7 @@
     loadV2StoryBreakdown,
     loadV2Screenplay,
     loadV2Continuity,
+    loadV2Cast,
     loadV2GeminiStatus,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,

@@ -609,27 +609,52 @@
       <section class="step-panel" id="panel-step-8" data-step="8" aria-labelledby="step8Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step8Title">Step 08: Cast & Characters</h2>
-            <p class="step-goal">Character dossiers and archetypes extracted directly from your screenplay.</p>
+            <h2 id="step8Title">Step 08: Cast &amp; Characters</h2>
+            <p class="step-goal">Review, edit, add, or sync every character in your story. All characters extracted from your book, coverage, and scenes appear here.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Cast Extracted</span>
+          <span class="status-badge status-badge--synced" id="v2CastBadge">Loading Cast…</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Automatic Character Token Extraction & Identity Dossiers
+          ✨ <strong>Autopilot Pick:</strong> Automatic Character Token Extraction &amp; Identity Dossiers
         </div>
         <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">Tommy (Lead Explorer)</span>
-              <p class="deliverable-desc">Curious, adventurous young explorer with keen observation skills and passion for astronomy.</p>
-              <small style="color:#f59e0b">Token: <code>tommy_lead_explorer</code></small>
+          <!-- Cast Action Bar -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div id="v2CastSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading characters for this book…</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn--primary" id="bV2CastAddToggle" style="padding:5px 12px;font-size:var(--text-xs)">➕ Add Character</button>
+                <button type="button" class="btn btn--secondary" id="bV2CastSync" style="padding:5px 12px;font-size:var(--text-xs)">🔄 Sync from Book</button>
+                <button type="button" class="btn btn--ghost" id="bV2CastReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
+              </div>
             </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">Judah (Navigator / Co-Pilot)</span>
-              <p class="deliverable-desc">Calm, analytical companion and skilled spacecraft pilot who keeps the mission on course.</p>
-              <small style="color:#f59e0b">Token: <code>judah_pilot_navigator</code></small>
+
+            <!-- Inline Add Character Form -->
+            <div id="v2CastAddForm" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid #232d3f;display:flex;flex-direction:column;gap:8px">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:8px">
+                <div>
+                  <label class="f" for="v2CastNewName">Character Name</label>
+                  <input type="text" id="v2CastNewName" placeholder="e.g. Captain Vega" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                </div>
+                <div>
+                  <label class="f" for="v2CastNewToken">Visual Consistency Token (optional)</label>
+                  <input type="text" id="v2CastNewToken" placeholder="e.g. captain_vega_explorer" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f59e0b;border:1px solid #334155;border-radius:6px;font-family:var(--font-mono);font-size:var(--text-xs)">
+                </div>
+              </div>
+              <div>
+                <label class="f" for="v2CastNewDesc">Appearance, Wardrobe &amp; Role Description</label>
+                <textarea id="v2CastNewDesc" rows="2" placeholder="Age, face, hair, outfit, and personality traits to keep consistent across every shot…" style="width:100%;padding:8px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit;font-size:var(--text-sm)"></textarea>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button type="button" class="btn btn--primary" id="bV2CastCreate" style="padding:6px 14px">💾 Create Character</button>
+                <button type="button" class="btn btn--ghost" id="bV2CastAddCancel" style="padding:6px 12px">Cancel</button>
+                <span id="v2CastAddMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
+              </div>
             </div>
           </div>
+
+          <!-- Dynamic Editable Character Cards Grid -->
+          <div id="v2CastGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(290px, 1fr));gap:var(--space-3)"></div>
         </div>
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Continuity</button>
