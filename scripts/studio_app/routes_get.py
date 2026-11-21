@@ -530,5 +530,63 @@ def _v2_dialogue(r: Request):
     }
 
 
+@route("GET", "/api/v2_sound_design")
+def _v2_sound_design(r: Request):
+    """Return Step 16 Foley & Score design state, scene cues from screenplay, and rendered track URLs."""
+    import json
+
+    slug = r.q("project")
+    if not slug:
+        return {"foley": {}, "score": {}, "scenes": []}
+    pd = pdir(slug, "book")
+    sd_path = pd / "sound_design_v2.json"
+    saved = {}
+    if sd_path.is_file():
+        try:
+            saved = json.loads(sd_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            saved = {}
+
+    scenes = []
+    sp_dir = pd / "screenplay"
+    if sp_dir.is_dir():
+        for sp_file in sorted(sp_dir.glob("scene-*.json")):
+            try:
+                sc = json.loads(sp_file.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            sc_id = str(sc.get("scene") or sp_file.stem.replace("scene-", ""))
+            heading = str(sc.get("heading") or "")
+            actions = [str(el.get("text") or "").strip() for el in (sc.get("elements") or []) if isinstance(el, dict) and el.get("type") == "action"]
+            scenes.append({
+                "scene": sc_id,
+                "heading": heading,
+                "hint": (" ".join(actions))[:160],
+            })
+
+    foley_wav = pd / "audio" / "foley" / "foley_master.wav"
+    score_wav = pd / "audio" / "score" / "score_master.wav"
+    foley_cfg = dict(saved.get("foley") or {})
+    score_cfg = dict(saved.get("score") or {})
+
+    return {
+        "foley": {
+            "prompt": foley_cfg.get("prompt") or "Soft rain on living room window, warm room ambiance, gentle rocket thruster hum, cockpit console chimes, cosmic shimmer.",
+            "preset": foley_cfg.get("preset") or "space_adventure",
+            "duration": int(foley_cfg.get("duration") or 10),
+            "has_audio": foley_wav.is_file() and foley_wav.stat().st_size > 100,
+            "audio_url": f"/file/{slug}/audio/foley/foley_master.wav" if (foley_wav.is_file() and foley_wav.stat().st_size > 100) else "",
+        },
+        "score": {
+            "prompt": score_cfg.get("prompt") or "Sweeping cinematic orchestral wonder with warm strings, French horns, celesta sparkles, and cosmic synthesizer pads.",
+            "mood": score_cfg.get("mood") or "wonder",
+            "duration": int(score_cfg.get("duration") or 12),
+            "has_audio": score_wav.is_file() and score_wav.stat().st_size > 100,
+            "audio_url": f"/file/{slug}/audio/score/score_master.wav" if (score_wav.is_file() and score_wav.stat().st_size > 100) else "",
+        },
+        "scenes": scenes,
+    }
+
+
 
 

@@ -138,7 +138,105 @@
     return j;
   }
 
+  // ===== ACTIVE GENERATION VISUAL FEEDBACK (BUTTON + CARD + FLOATING LIVE PILL) =====
+  let _v2LastClickedBtn = null;
+  let _v2ActivityTimer = null;
+  let _v2ActiveTasks = 0;
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest("button") : null;
+    if (btn) _v2LastClickedBtn = btn;
+  }, true);
+
+  function _ensureActivityPill() {
+    let pill = $("v2GlobalActivityPill");
+    if (!pill) {
+      pill = document.createElement("div");
+      pill.id = "v2GlobalActivityPill";
+      pill.setAttribute("role", "status");
+      pill.setAttribute("aria-live", "polite");
+      const sp = document.createElement("span");
+      sp.className = "v2-pill-spinner";
+      const txt = document.createElement("span");
+      txt.id = "v2GlobalActivityText";
+      pill.appendChild(sp);
+      pill.appendChild(txt);
+      document.body.appendChild(pill);
+    }
+    return pill;
+  }
+
+  function startBusyFeedback(btn, cards, label) {
+    const targetBtn = btn || _v2LastClickedBtn;
+    const cardList = Array.isArray(cards)
+      ? cards.filter(Boolean)
+      : cards
+        ? [cards]
+        : (targetBtn && targetBtn.closest ? [targetBtn.closest(".v2-dlg-card, .deliverable-card, .direct-story-card")].filter(Boolean) : []);
+
+    let origText = null;
+    let origDisabled = false;
+    if (targetBtn && !targetBtn.classList.contains("v2-busy-btn")) {
+      origText = targetBtn.textContent;
+      origDisabled = targetBtn.disabled;
+      targetBtn.classList.add("v2-busy-btn");
+      targetBtn.disabled = true;
+    }
+    cardList.forEach(c => c.classList.add("v2-busy-card"));
+
+    _v2ActiveTasks++;
+    const pill = _ensureActivityPill();
+    const txtEl = $("v2GlobalActivityText");
+    const startedAt = Date.now();
+    const baseLabel = label || "Working…";
+    const updatePill = () => {
+      const secs = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      if (txtEl) txtEl.textContent = secs > 0 ? `${baseLabel} (${secs}s)` : baseLabel;
+    };
+    updatePill();
+    pill.classList.add("visible");
+    if (_v2ActivityTimer) clearInterval(_v2ActivityTimer);
+    _v2ActivityTimer = setInterval(updatePill, 1000);
+
+    return function stopBusyFeedback() {
+      if (targetBtn && origText !== null) {
+        targetBtn.classList.remove("v2-busy-btn");
+        targetBtn.disabled = origDisabled;
+        targetBtn.textContent = origText;
+      }
+      cardList.forEach(c => c.classList.remove("v2-busy-card"));
+      _v2ActiveTasks = Math.max(0, _v2ActiveTasks - 1);
+      if (_v2ActiveTasks === 0) {
+        if (_v2ActivityTimer) { clearInterval(_v2ActivityTimer); _v2ActivityTimer = null; }
+        pill.classList.remove("visible");
+      }
+    };
+  }
+
+  const BUSY_API_LABELS = [
+    [/\/api\/v2_dialogue_render/, "Generating dialogue audio…"],
+    [/\/api\/v2_sound_design_render/, "Generating Score / Foley audio…"],
+    [/\/api\/gemini_omni_generate/, "Generating video via Gemini Omni 1.2 Flash…"],
+    [/\/api\/v2_install_engine/, "Installing package into Studio…"],
+    [/\/api\/v2_voice_baseline_set/, "Saving character voice baseline…"],
+    [/\/api\/v2_voice_profile_apply/, "Applying voice profile across all scenes…"],
+    [/\/api\/v2_dialogue_upload/, "Uploading custom audio take…"],
+    [/\/api\/redo_audio/, "Updating voice cast & dialect…"],
+    [/\/api\/shot_list/, "Generating shot list…"],
+    [/\/api\/continuity_bootstrap/, "Building continuity book…"],
+    [/\/api\/continuity/, "Generating continuity book…"],
+    [/\/api\/readin/, "Analyzing story & beats…"],
+    [/\/api\/run/, "Running studio pipeline step…"],
+  ];
+
   async function callApi(url, body) {
+    let stopBusy = null;
+    if (body !== undefined) {
+      const hit = BUSY_API_LABELS.find(([re]) => re.test(url));
+      if (hit) {
+        stopBusy = startBusyFeedback(null, null, hit[1]);
+      }
+    }
     try {
       return await rawCallApi(url, body);
     } catch (err) {
@@ -146,6 +244,7 @@
       if (url !== "/api/v2_install_engine") {
         const hit = INSTALLABLE_ENGINES.find(e => e.match.test(msg));
         if (hit) {
+          if (stopBusy) { stopBusy(); stopBusy = null; }
           const installed = await requestInstallWithApproval(hit.key, hit.label, hit.pkgs);
           if (installed) {
             return await rawCallApi(url, body);
@@ -153,6 +252,8 @@
         }
       }
       throw err;
+    } finally {
+      if (stopBusy) stopBusy();
     }
   }
 
@@ -353,6 +454,11 @@
     // If entering Step 15 (Spoken Dialogue Delivery), load all spoken lines from screenplay
     if (currentStep === 15) {
       loadV2Dialogue();
+    }
+
+    // If entering Step 16 (Score & Foley Sound Design), load saved prompts & rendered tracks
+    if (currentStep === 16) {
+      loadV2SoundDesign();
     }
 
     // Check for storyline drift and load step autopilot
@@ -3435,11 +3541,18 @@
     return out;
   }
 
-  async function renderV2DialogueLines(linesToRender, autoPlayId) {
+  async function renderV2DialogueLines(linesToRender, autoPlayId, triggerBtn) {
     const proj = v2DialogueState.project;
     if (!proj || !linesToRender.length) return;
     const engine = v2DialogueState.engine || "gemini-tts";
-    setV2DialogueStatus(`Rendering ${linesToRender.length} dialogue line${linesToRender.length === 1 ? "" : "s"} via ${engine}…`);
+    const activeCards = linesToRender
+      .map(l => document.querySelector(`#v2DialogueList .v2-dlg-card[data-line-id="${l.id}"]`))
+      .filter(Boolean);
+    const label = linesToRender.length === 1
+      ? `Rendering ${linesToRender[0].id} via ${engine}…`
+      : `Rendering ${linesToRender.length} dialogue lines via ${engine}…`;
+    const stopBusy = startBusyFeedback(triggerBtn || null, activeCards, label);
+    setV2DialogueStatus(label);
     try {
       await callApi("/api/v2_dialogue_save", { project: proj, engine, lines: linesToRender });
       const res = await callApi("/api/v2_dialogue_render", {
@@ -3472,6 +3585,8 @@
       }
     } catch (e) {
       setV2DialogueStatus("Render failed: " + (e.message || e), true);
+    } finally {
+      stopBusy();
     }
   }
 
@@ -3954,8 +4069,195 @@
     if (selProj) {
       selProj.addEventListener("change", () => {
         if (currentStep === 15) loadV2Dialogue();
+        if (currentStep === 16) loadV2SoundDesign();
       });
     }
+  }
+
+  // ===== STEP 16: SCORE & FOLEY SOUND DESIGN =====
+  function _renderV2SoundPlayer(containerId, audioUrl, emptyText) {
+    const wrap = $(containerId);
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    if (audioUrl) {
+      const aud = document.createElement("audio");
+      aud.controls = true;
+      aud.preload = "none";
+      aud.src = audioUrl + (audioUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+      aud.style.cssText = "width:100%;height:32px";
+      wrap.appendChild(aud);
+      return aud;
+    }
+    wrap.textContent = emptyText;
+    return null;
+  }
+
+  function setV2SoundStatus(msg, isErr) {
+    const el = $("v2SoundStatus");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.style.color = isErr ? "#f87171" : "#34d399";
+  }
+
+  async function loadV2SoundDesign() {
+    const selProj = $("proj");
+    const slug = selProj ? (selProj.value || "").trim() : "";
+    if (!slug) return;
+    try {
+      const data = await callApi(`/api/v2_sound_design?project=${encodeURIComponent(slug)}`);
+      const f = data.foley || {};
+      const s = data.score || {};
+      if ($("v2FoleyPrompt")) $("v2FoleyPrompt").value = f.prompt || "";
+      if ($("v2FoleyPreset") && f.preset) $("v2FoleyPreset").value = f.preset;
+      if ($("v2FoleyDuration") && f.duration) $("v2FoleyDuration").value = String(f.duration);
+      if ($("v2ScorePrompt")) $("v2ScorePrompt").value = s.prompt || "";
+      if ($("v2ScoreMood") && s.mood) $("v2ScoreMood").value = s.mood;
+      if ($("v2ScoreDuration") && s.duration) $("v2ScoreDuration").value = String(s.duration);
+
+      const bF = $("v2FoleyStatusBadge");
+      if (bF) {
+        bF.textContent = f.has_audio ? "✓ Rendered" : "Ready";
+        bF.className = "status-badge " + (f.has_audio ? "status-badge--synced" : "");
+      }
+      const bS = $("v2ScoreStatusBadge");
+      if (bS) {
+        bS.textContent = s.has_audio ? "✓ Rendered" : "Ready";
+        bS.className = "status-badge " + (s.has_audio ? "status-badge--synced" : "");
+      }
+      _renderV2SoundPlayer("v2FoleyPlayerWrap", f.has_audio ? f.audio_url : "", "Not rendered yet — click ✨ Generate & Preview Foley");
+      _renderV2SoundPlayer("v2ScorePlayerWrap", s.has_audio ? s.audio_url : "", "Not rendered yet — click ✨ Generate & Preview Score");
+    } catch (e) {
+      setV2SoundStatus("Could not load sound plan: " + (e.message || e), true);
+    }
+  }
+
+  function initV2SoundDesign() {
+    const btnFoley = $("bV2RenderFoley");
+    const btnScore = $("bV2RenderScore");
+    const btnSave = $("bV2SaveSoundPlan");
+    const btnReload = $("bV2ReloadSoundPlan");
+    const btnUpFoley = $("bV2UploadFoley");
+    const inUpFoley = $("v2UploadFoleyInput");
+    const btnUpScore = $("bV2UploadScore");
+    const inUpScore = $("v2UploadScoreInput");
+
+    const getSlug = () => ($("proj")?.value || "").trim();
+
+    if (btnFoley) {
+      btnFoley.addEventListener("click", async () => {
+        const slug = getSlug();
+        if (!slug) { setV2SoundStatus("Select a book in Step 01 first.", true); return; }
+        const stopBusy = startBusyFeedback(btnFoley, $("v2FoleyCard"), "Generating Foley (SFX) track…");
+        setV2SoundStatus("Generating Foley (SFX) track…");
+        try {
+          const res = await callApi("/api/v2_sound_design_render", {
+            project: slug,
+            kind: "foley",
+            prompt: ($("v2FoleyPrompt")?.value || "").trim(),
+            preset: $("v2FoleyPreset")?.value || "space_adventure",
+            duration: parseInt($("v2FoleyDuration")?.value || "12", 10) || 12,
+          });
+          const aud = _renderV2SoundPlayer("v2FoleyPlayerWrap", res.audio_url, "");
+          const bF = $("v2FoleyStatusBadge");
+          if (bF) { bF.textContent = "✓ Rendered"; bF.className = "status-badge status-badge--synced"; }
+          setV2SoundStatus(`✓ Generated ${res.duration || 12}s Foley track!`);
+          if (aud) aud.play().catch(() => {});
+        } catch (err) {
+          setV2SoundStatus("Foley render failed: " + (err.message || err), true);
+        } finally {
+          stopBusy();
+        }
+      });
+    }
+
+    if (btnScore) {
+      btnScore.addEventListener("click", async () => {
+        const slug = getSlug();
+        if (!slug) { setV2SoundStatus("Select a book in Step 01 first.", true); return; }
+        const stopBusy = startBusyFeedback(btnScore, $("v2ScoreCard"), "Generating Cinematic Score…");
+        setV2SoundStatus("Generating Cinematic Score track…");
+        try {
+          const res = await callApi("/api/v2_sound_design_render", {
+            project: slug,
+            kind: "score",
+            prompt: ($("v2ScorePrompt")?.value || "").trim(),
+            mood: $("v2ScoreMood")?.value || "wonder",
+            duration: parseInt($("v2ScoreDuration")?.value || "12", 10) || 12,
+          });
+          const aud = _renderV2SoundPlayer("v2ScorePlayerWrap", res.audio_url, "");
+          const bS = $("v2ScoreStatusBadge");
+          if (bS) { bS.textContent = "✓ Rendered"; bS.className = "status-badge status-badge--synced"; }
+          setV2SoundStatus(`✓ Generated ${res.duration || 12}s Cinematic Score!`);
+          if (aud) aud.play().catch(() => {});
+        } catch (err) {
+          setV2SoundStatus("Score render failed: " + (err.message || err), true);
+        } finally {
+          stopBusy();
+        }
+      });
+    }
+
+    const bindUpload = (btn, input, kind, cardId, wrapId, badgeId) => {
+      if (!btn || !input) return;
+      btn.addEventListener("click", () => input.click());
+      input.addEventListener("change", () => {
+        const f = input.files && input.files[0];
+        const slug = getSlug();
+        if (!f || !slug) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const stopBusy = startBusyFeedback(btn, $(cardId), `Uploading ${f.name}…`);
+          setV2SoundStatus(`Uploading custom ${kind} "${f.name}"…`);
+          try {
+            const res = await callApi("/api/v2_sound_design_render", {
+              project: slug,
+              kind,
+              filename: f.name,
+              audio_base64: reader.result,
+            });
+            const aud = _renderV2SoundPlayer(wrapId, res.audio_url, "");
+            const b = $(badgeId);
+            if (b) { b.textContent = "✓ Custom Track"; b.className = "status-badge status-badge--synced"; }
+            setV2SoundStatus(`✓ Uploaded "${f.name}" for ${kind}.`);
+            if (aud) aud.play().catch(() => {});
+          } catch (err) {
+            setV2SoundStatus("Upload failed: " + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        };
+        reader.readAsDataURL(f);
+      });
+    };
+    bindUpload(btnUpFoley, inUpFoley, "foley", "v2FoleyCard", "v2FoleyPlayerWrap", "v2FoleyStatusBadge");
+    bindUpload(btnUpScore, inUpScore, "score", "v2ScoreCard", "v2ScorePlayerWrap", "v2ScoreStatusBadge");
+
+    if (btnSave) {
+      btnSave.addEventListener("click", async () => {
+        const slug = getSlug();
+        if (!slug) return;
+        setV2SoundStatus("Saving sound plan…");
+        try {
+          await callApi("/api/v2_sound_design_save", {
+            project: slug,
+            foley: {
+              prompt: ($("v2FoleyPrompt")?.value || "").trim(),
+              preset: $("v2FoleyPreset")?.value || "space_adventure",
+              duration: parseInt($("v2FoleyDuration")?.value || "12", 10) || 12,
+            },
+            score: {
+              prompt: ($("v2ScorePrompt")?.value || "").trim(),
+              mood: $("v2ScoreMood")?.value || "wonder",
+              duration: parseInt($("v2ScoreDuration")?.value || "12", 10) || 12,
+            },
+          });
+          setV2SoundStatus("✓ Saved Step 16 Foley & Score sound plan.");
+        } catch (err) {
+          setV2SoundStatus("Save failed: " + (err.message || err), true);
+        }
+      });
+    }
+    if (btnReload) btnReload.addEventListener("click", () => loadV2SoundDesign());
   }
 
   // ===== INITIALIZATION & BINDING =====
@@ -3976,6 +4278,7 @@
     initV2ShotList();
     initV2VoiceCast();
     initV2Dialogue();
+    initV2SoundDesign();
     initV2GeminiOmni();
 
     // Bind step pills in 6-phase bar
@@ -4034,6 +4337,7 @@
       if (currentStep === 12) loadV2ShotList();
       if (currentStep === 14) loadV2VoiceCast();
       if (currentStep === 15) loadV2Dialogue();
+      if (currentStep === 16) loadV2SoundDesign();
     }, 1200);
   });
 
@@ -4050,6 +4354,7 @@
     loadV2ShotList,
     loadV2VoiceCast,
     loadV2Dialogue,
+    loadV2SoundDesign,
     loadV2GeminiStatus,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,

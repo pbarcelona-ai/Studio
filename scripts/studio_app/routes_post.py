@@ -1556,3 +1556,200 @@ def _v2_dialogue_render(r: Request):
     return {"status": "ok", "engine": engine, "rendered": rendered}
 
 
+def _synth_foley_wav(wav_path: Path, prompt: str, preset: str, duration: int = 10):
+    """Synthesize a clean multi-layered stereo ambient foley WAV tailored to the prompt/preset."""
+    import math
+    import random
+    import struct
+    import wave
+
+    sr = 22050
+    dur = max(4, min(30, int(duration or 10)))
+    n = sr * dur
+    low_p = (prompt + " " + preset).lower()
+    has_rain = any(w in low_p for w in ("rain", "storm", "water", "wind", "ocean"))
+    has_beeps = any(w in low_p for w in ("beep", "console", "cockpit", "ship", "space", "chime", "saturn"))
+    has_hum = any(w in low_p for w in ("thruster", "hum", "engine", "ship", "cabin", "space", "rocket")) or not has_rain
+
+    rng = random.Random(hash(low_p) & 0xFFFFFFFF)
+    lp_l, lp_r = 0.0, 0.0
+    frames = bytearray()
+    for i in range(n):
+        t = i / sr
+        env = min(1.0, t / 0.8) * min(1.0, (dur - t) / 0.8)
+        sig_l, sig_r = 0.0, 0.0
+        if has_hum:
+            lfo = 0.85 + 0.15 * math.sin(2 * math.pi * 0.25 * t)
+            hum = (0.18 * math.sin(2 * math.pi * 62.0 * t) + 0.10 * math.sin(2 * math.pi * 93.0 * t) + 0.05 * math.sin(2 * math.pi * 124.0 * t)) * lfo
+            sig_l += hum
+            sig_r += hum * 0.96
+        if has_rain:
+            nl = rng.uniform(-1.0, 1.0)
+            nr = rng.uniform(-1.0, 1.0)
+            lp_l = lp_l * 0.88 + nl * 0.12
+            lp_r = lp_r * 0.88 + nr * 0.12
+            sig_l += lp_l * 0.35
+            sig_r += lp_r * 0.35
+        if has_beeps:
+            cycle = t % 2.4
+            if 0.4 < cycle < 0.56:
+                be = math.sin(math.pi * (cycle - 0.4) / 0.16)
+                beep = 0.14 * be * math.sin(2 * math.pi * (880.0 if int(t / 2.4) % 2 == 0 else 1174.66) * t)
+                sig_l += beep * 0.8
+                sig_r += beep
+        sig_l = max(-0.95, min(0.95, sig_l * env))
+        sig_r = max(-0.95, min(0.95, sig_r * env))
+        frames.extend(struct.pack("<hh", int(sig_l * 32767), int(sig_r * 32767)))
+
+    with wave.open(str(wav_path), "wb") as wf:
+        wf.setnchannels(2)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(bytes(frames))
+
+
+def _synth_score_wav(wav_path: Path, mood: str, duration: int = 12):
+    """Synthesize a lush, warm stereo cinematic orchestral pad & celesta arpeggio preview WAV."""
+    import math
+    import struct
+    import wave
+
+    sr = 22050
+    dur = max(6, min(30, int(duration or 12)))
+    n = sr * dur
+    # Chord progressions in Hz by mood
+    progs = {
+        "wonder": [(130.81, 261.63, 329.63, 392.00, 493.88), (110.00, 220.00, 261.63, 329.63, 392.00), (87.31, 174.61, 220.00, 261.63, 329.63), (98.00, 196.00, 246.94, 293.66, 392.00)],
+        "epic": [(110.00, 220.00, 261.63, 329.63, 440.00), (87.31, 174.61, 220.00, 261.63, 349.23), (130.81, 261.63, 329.63, 392.00, 523.25), (98.00, 196.00, 246.94, 293.66, 392.00)],
+        "cozy": [(174.61, 261.63, 329.63, 392.00, 523.25), (146.83, 220.00, 293.66, 349.23, 440.00), (130.81, 196.00, 261.63, 329.63, 392.00), (116.54, 174.61, 233.08, 293.66, 349.23)],
+        "mysterious": [(110.00, 220.00, 261.63, 311.13, 392.00), (103.83, 207.65, 246.94, 311.13, 392.00), (98.00, 196.00, 233.08, 293.66, 369.99), (110.00, 220.00, 261.63, 329.63, 440.00)],
+        "playful": [(130.81, 261.63, 329.63, 392.00, 523.25), (146.83, 293.66, 349.23, 440.00, 587.33), (98.00, 196.00, 246.94, 293.66, 392.00), (130.81, 261.63, 329.63, 392.00, 523.25)],
+    }
+    chords = progs.get(mood, progs["wonder"])
+    chord_len = dur / len(chords)
+    frames = bytearray()
+    for i in range(n):
+        t = i / sr
+        env = min(1.0, t / 1.0) * min(1.0, (dur - t) / 1.2)
+        ci = min(len(chords) - 1, int(t / chord_len))
+        ct = t - ci * chord_len
+        c_env = min(1.0, ct / 0.35) * min(1.0, (chord_len - ct) / 0.35)
+        chord = chords[ci]
+        # Warm string pad
+        pad_l, pad_r = 0.0, 0.0
+        for idx, f in enumerate(chord):
+            w = 0.14 if idx == 0 else 0.09
+            pad_l += w * math.sin(2 * math.pi * f * t)
+            pad_r += w * math.sin(2 * math.pi * (f * 1.003) * t)
+        # Gentle celesta shimmer arpeggio
+        arp_step = int(t * 2.5)
+        arp_t = (t * 2.5) - arp_step
+        arp_f = chord[1 + (arp_step % (len(chord) - 1))] * 2.0
+        arp = 0.07 * math.exp(-arp_t * 5.0) * math.sin(2 * math.pi * arp_f * t)
+        sig_l = max(-0.95, min(0.95, (pad_l * c_env + arp * 0.9) * env))
+        sig_r = max(-0.95, min(0.95, (pad_r * c_env + arp * 1.1) * env))
+        frames.extend(struct.pack("<hh", int(sig_l * 32767), int(sig_r * 32767)))
+
+    with wave.open(str(wav_path), "wb") as wf:
+        wf.setnchannels(2)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(bytes(frames))
+
+
+@route("POST", "/api/v2_sound_design_save")
+def _v2_sound_design_save(r: Request):
+    """Save Step 16 Foley & Score prompts/settings to sound_design_v2.json."""
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    sd_path = pd / "sound_design_v2.json"
+    cur = {}
+    if sd_path.is_file():
+        try:
+            cur = json.loads(sd_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            cur = {}
+    if isinstance(r.body.get("foley"), dict):
+        cur["foley"] = {**(cur.get("foley") or {}), **r.body["foley"]}
+    if isinstance(r.body.get("score"), dict):
+        cur["score"] = {**(cur.get("score") or {}), **r.body["score"]}
+    sd_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
+    return {"status": "ok", "saved": cur}
+
+
+@route("POST", "/api/v2_sound_design_render")
+def _v2_sound_design_render(r: Request):
+    """Render or upload Step 16 Foley (SFX) or Cinematic Score track to WAV."""
+    import base64
+    import tempfile
+
+    slug = str(r.body.get("project") or "").strip()
+    kind = str(r.body.get("kind") or "foley").strip().lower()
+    if not slug:
+        raise PlanError("project is required")
+    if kind not in ("foley", "score"):
+        raise PlanError("kind must be 'foley' or 'score'")
+
+    pd = pdir(slug, "book")
+    sub = "foley" if kind == "foley" else "score"
+    out_dir = pd / "audio" / sub
+    out_dir.mkdir(parents=True, exist_ok=True)
+    wav_path = out_dir / f"{sub}_master.wav"
+    rel_url = f"/file/{slug}/audio/{sub}/{sub}_master.wav"
+
+    b64 = str(r.body.get("audio_base64") or "").strip()
+    if b64:
+        filename = str(r.body.get("filename") or f"{sub}.wav").strip()
+        if "," in b64 and b64.startswith("data:"):
+            b64 = b64.split(",", 1)[1]
+        raw = base64.b64decode(b64)
+        if raw[:4] == b"RIFF":
+            wav_path.write_bytes(raw)
+        else:
+            suffix = Path(filename).suffix or ".mp3"
+            afconvert_bin = shutil.which("afconvert")
+            ffmpeg_bin = shutil.which("ffmpeg")
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
+                tf.write(raw)
+                tmp_in = Path(tf.name)
+            try:
+                if afconvert_bin:
+                    subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@22050", str(tmp_in), str(wav_path)], check=True, timeout=30)
+                elif ffmpeg_bin:
+                    subprocess.run([ffmpeg_bin, "-y", "-i", str(tmp_in), str(wav_path)], check=True, timeout=30)
+                else:
+                    wav_path.write_bytes(raw)
+            finally:
+                tmp_in.unlink(missing_ok=True)
+        return {"status": "ok", "kind": kind, "audio_url": rel_url, "source": filename}
+
+    prompt = str(r.body.get("prompt") or "").strip()
+    duration = int(r.body.get("duration") or (10 if kind == "foley" else 12))
+    if kind == "foley":
+        preset = str(r.body.get("preset") or "space_adventure").strip()
+        _synth_foley_wav(wav_path, prompt, preset, duration)
+    else:
+        mood = str(r.body.get("mood") or "wonder").strip()
+        _synth_score_wav(wav_path, mood, duration)
+
+    # Save settings alongside render
+    sd_path = pd / "sound_design_v2.json"
+    cur = {}
+    if sd_path.is_file():
+        try:
+            cur = json.loads(sd_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            cur = {}
+    cur[kind] = {
+        **(cur.get(kind) or {}),
+        "prompt": prompt,
+        "duration": duration,
+        ("preset" if kind == "foley" else "mood"): str(r.body.get("preset") or r.body.get("mood") or ""),
+    }
+    sd_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
+    return {"status": "ok", "kind": kind, "audio_url": rel_url, "duration": duration}
+
+

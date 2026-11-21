@@ -1919,3 +1919,92 @@
     flex-grow: 1;
   }
 
+  /* ===== STUDIO V2: ACTIVE GENERATION VISUAL FEEDBACK (BUTTON + CARD + LIVE PILL) ===== */
+  @keyframes v2Spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes v2BusyGlow {
+    0%, 100% {
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.55), 0 0 18px rgba(245, 158, 11, 0.25);
+    }
+    50% {
+      border-color: #fbbf24;
+      box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.85), 0 0 28px rgba(245, 158, 11, 0.45);
+    }
+  }
+  @keyframes v2ProgressSweep {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  .v2-busy-btn {
+    position: relative;
+    pointer-events: none;
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.45), 0 0 14px rgba(245, 158, 11, 0.35) !important;
+    opacity: 0.96 !important;
+  }
+  .v2-busy-btn::before {
+    content: "";
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 6px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    vertical-align: -2px;
+    animation: v2Spin 0.75s linear infinite;
+  }
+
+  .v2-busy-card {
+    position: relative;
+    overflow: hidden;
+    animation: v2BusyGlow 1.4s ease-in-out infinite !important;
+  }
+  .v2-busy-card::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #f59e0b, #fde68a, #f59e0b, transparent);
+    background-size: 200% 100%;
+    animation: v2ProgressSweep 1.3s linear infinite;
+    pointer-events: none;
+  }
+
+  #v2GlobalActivityPill {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 9998;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.96);
+    border: 1px solid #f59e0b;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 18px rgba(245, 158, 11, 0.3);
+    color: #fef3c7;
+    font-size: 13px;
+    font-weight: 600;
+    backdrop-filter: blur(8px);
+  }
+  #v2GlobalActivityPill.visible {
+    display: inline-flex;
+  }
+  #v2GlobalActivityPill .v2-pill-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #f59e0b;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: v2Spin 0.75s linear infinite;
+    flex-shrink: 0;
+  }
+
+

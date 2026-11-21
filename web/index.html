@@ -1052,30 +1052,85 @@
       <section class="step-panel" id="panel-step-16" data-step="16" aria-labelledby="step16Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step16Title">Step 16: Score & Foley Sound Design</h2>
-            <p class="step-goal">Video-aligned sound effects (MMAudio) and cinematic orchestral score (MusicGen).</p>
+            <h2 id="step16Title">Step 16: Score &amp; Foley Sound Design</h2>
+            <p class="step-goal">Design, generate, preview, or upload your video-aligned Foley (SFX) and cinematic orchestral score.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Sound Plan Ready</span>
+          <span class="status-badge status-badge--synced" id="v2SoundBadge">✓ Sound Plan Ready</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
           ✨ <strong>Autopilot Pick:</strong> hkchengrex/MMAudio (Foley) + MusicGen Stereo Large (Cinematic Score)
         </div>
         <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <span class="deliverable-title">Video-Aligned Foley (SFX)</span>
-              <p class="deliverable-desc">Thruster hum, cabin ambient ventilation, cockpit console beeps, ice ring collisions.</p>
-              <button type="button" class="btn btn--secondary" style="margin-top:6px">▶ Preview Foley Track</button>
+          <div id="v2SoundStatus" style="font-size:var(--text-xs);color:#34d399;margin-bottom:8px" aria-live="polite"></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(310px, 1fr));gap:var(--space-3)">
+            <!-- Foley (SFX) Card -->
+            <div class="deliverable-card" id="v2FoleyCard">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                <span class="deliverable-title">🎧 Video-Aligned Foley (SFX)</span>
+                <span class="status-badge" id="v2FoleyStatusBadge">Ready</span>
+              </div>
+              <textarea id="v2FoleyPrompt" rows="3" placeholder="Describe ambient sound & SFX (e.g., rain on window, rocket thruster hum, cockpit console chimes)…" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);resize:vertical"></textarea>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <select id="v2FoleyPreset" style="flex:1;padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                  <option value="space_adventure">Preset: Space &amp; Cockpit Adventure</option>
+                  <option value="rainy_home">Preset: Rainy Living Room &amp; Cozy Home</option>
+                  <option value="cosmic_storm">Preset: Ice Rings &amp; Atmospheric Wind</option>
+                </select>
+                <select id="v2FoleyDuration" style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                  <option value="8">8 sec</option>
+                  <option value="12" selected>12 sec</option>
+                  <option value="20">20 sec</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+                <button type="button" class="btn btn--primary" id="bV2RenderFoley" style="flex:1">✨ Generate &amp; Preview Foley</button>
+                <button type="button" class="btn btn--ghost" id="bV2UploadFoley">⬆ Upload SFX</button>
+                <input type="file" id="v2UploadFoleyInput" accept="audio/*" style="display:none">
+              </div>
+              <div id="v2FoleyPlayerWrap" style="margin-top:6px;background:#0a0d14;padding:6px 10px;border-radius:6px;font-size:var(--text-xs);color:#64748b">
+                Not rendered yet — click ✨ Generate &amp; Preview Foley
+              </div>
             </div>
-            <div class="deliverable-card">
-              <span class="deliverable-title">Cinematic Soundtrack Score</span>
-              <p class="deliverable-desc">Dramatic orchestral cue with sweeping strings, French horns, and cosmic synthesizers.</p>
-              <button type="button" class="btn btn--secondary" style="margin-top:6px">▶ Preview Music Score</button>
+
+            <!-- Cinematic Soundtrack Score Card -->
+            <div class="deliverable-card" id="v2ScoreCard">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                <span class="deliverable-title">🎻 Cinematic Soundtrack Score</span>
+                <span class="status-badge" id="v2ScoreStatusBadge">Ready</span>
+              </div>
+              <textarea id="v2ScorePrompt" rows="3" placeholder="Describe the musical score (e.g., sweeping strings, French horns, warm celesta sparkles)…" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);resize:vertical"></textarea>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <select id="v2ScoreMood" style="flex:1;padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                  <option value="wonder">Mood: Wonder &amp; Discovery</option>
+                  <option value="epic">Mood: Epic Space Adventure</option>
+                  <option value="cozy">Mood: Warm &amp; Cozy Family</option>
+                  <option value="mysterious">Mood: Cosmic Mystery</option>
+                  <option value="playful">Mood: Playful &amp; Whimsical</option>
+                </select>
+                <select id="v2ScoreDuration" style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                  <option value="8">8 sec</option>
+                  <option value="12" selected>12 sec</option>
+                  <option value="20">20 sec</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+                <button type="button" class="btn btn--primary" id="bV2RenderScore" style="flex:1">✨ Generate &amp; Preview Score</button>
+                <button type="button" class="btn btn--ghost" id="bV2UploadScore">⬆ Upload Score</button>
+                <input type="file" id="v2UploadScoreInput" accept="audio/*" style="display:none">
+              </div>
+              <div id="v2ScorePlayerWrap" style="margin-top:6px;background:#0a0d14;padding:6px 10px;border-radius:6px;font-size:var(--text-xs);color:#64748b">
+                Not rendered yet — click ✨ Generate &amp; Preview Score
+              </div>
             </div>
+          </div>
+
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:var(--space-3)">
+            <button type="button" class="btn btn--secondary" id="bV2SaveSoundPlan">💾 Save Sound Plan</button>
+            <button type="button" class="btn btn--ghost" id="bV2ReloadSoundPlan">↻ Reload</button>
           </div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Dialogue</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Storyboard Keyframes ➔</button>
         </div>
       </section>
