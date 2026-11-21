@@ -3251,7 +3251,8 @@
 
       const nameEl = document.createElement("span");
       nameEl.style.color = base ? "#fde68a" : "#cbd5e1";
-      nameEl.textContent = base ? `${ch.toUpperCase()} (${base.source})` : `${ch.toUpperCase()}: none`;
+      const libTag = (base && base.saved_to_library) ? " · 📚 Saved for Future Films" : "";
+      nameEl.textContent = base ? `${ch.toUpperCase()} (${base.source}${libTag})` : `${ch.toUpperCase()}: none`;
       pill.appendChild(nameEl);
 
       if (base && base.audio_url) {
@@ -3571,7 +3572,7 @@
         const baseWrap = document.createElement("span");
         baseWrap.style.cssText = "display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.55);color:#fde68a;font-size:11px;font-weight:600";
         const baseTxt = document.createElement("span");
-        baseTxt.textContent = `🎯 Baseline: ${charBase.source}`;
+        baseTxt.textContent = `🎯 Baseline: ${charBase.source}${charBase.saved_to_library ? " · 📚 Library" : ""}`;
         baseWrap.appendChild(baseTxt);
 
         const btnPlayBase = document.createElement("button");

@@ -792,6 +792,45 @@ def _v2_dialogue_save(r: Request):
     return {"status": "ok", "saved": len(existing), "engine": engine}
 
 
+VOICE_LIBRARY_DIR = PROJECTS / "characters" / "_voice_library"
+
+
+def _voice_library_load() -> dict:
+    """Load the global cross-film character voice library from projects/characters/_voice_library/library.json."""
+    lib_file = VOICE_LIBRARY_DIR / "library.json"
+    if lib_file.is_file():
+        try:
+            data = json.loads(lib_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+
+def _voice_library_save_entry(character: str, entry: dict, src_wav: Path | None = None) -> dict:
+    """Persist a character's voice profile and/or baseline WAV to the global cross-film voice library."""
+    from datetime import datetime, timezone
+
+    VOICE_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+    lib = _voice_library_load()
+    key = next((k for k in lib if k.lower() == character.lower()), character)
+    cur = dict(lib.get(key) or {})
+    cur.update({k: v for k, v in entry.items() if v is not None})
+    cur["character"] = key
+    cur["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    safe_char = "".join(c if c.isalnum() else "_" for c in key.lower()).strip("_") or "speaker"
+    if src_wav and src_wav.is_file() and src_wav.stat().st_size > 100:
+        lib_wav = VOICE_LIBRARY_DIR / f"{safe_char}.wav"
+        shutil.copyfile(src_wav, lib_wav)
+        cur["wav_file"] = f"{safe_char}.wav"
+
+    lib[key] = cur
+    (VOICE_LIBRARY_DIR / "library.json").write_text(json.dumps(lib, indent=2), encoding="utf-8")
+    return cur
+
+
 @route("POST", "/api/v2_voice_profile_apply")
 def _v2_voice_profile_apply(r: Request):
     """Save a character's voice profile (voice, blend, persona, speed) for ALL scenes while leaving per-line emotion/tone untouched."""
@@ -824,6 +863,9 @@ def _v2_voice_profile_apply(r: Request):
     vdata["cast"] = cast
     vdata["profiles"] = profiles
     vc_path.write_text(json.dumps(vdata, indent=2), encoding="utf-8")
+
+    # Also save character voice profile to global cross-film library for future films
+    _voice_library_save_entry(existing_key, {**prof, "source_project": slug})
 
     # Propagate profile to every dialogue line spoken by this character, WITHOUT touching each line's emotion/tone or note
     dl_path = pd / "dialogue_lines.json"
@@ -945,6 +987,10 @@ def _v2_voice_baseline_set(r: Request):
                 (pd / str(old["file"])).unlink(missing_ok=True)
             except OSError:
                 pass
+        cleared_list = list(vdata.get("cleared_baselines") or [])
+        if existing_key.lower() not in [c.lower() for c in cleared_list]:
+            cleared_list.append(existing_key)
+        vdata["cleared_baselines"] = cleared_list
         vdata["baselines"] = baselines
         vc_path.write_text(json.dumps(vdata, indent=2), encoding="utf-8")
         return {"status": "ok", "character": existing_key, "cleared": True}
@@ -996,11 +1042,28 @@ def _v2_voice_baseline_set(r: Request):
     else:
         raise PlanError("Provide either from_line_id or audio_base64 to set a character voice baseline.")
 
+    # Also persist this baseline WAV & metadata into the global cross-film voice library
+    prof = (vdata.get("profiles") or {}).get(existing_key) or {}
+    _voice_library_save_entry(
+        existing_key,
+        {
+            **prof,
+            "source": source_label,
+            "source_project": slug,
+            "text": sample_text,
+        },
+        src_wav=dest_wav,
+    )
+
     baselines[existing_key] = {
         "file": rel_file,
         "source": source_label,
         "text": sample_text,
+        "saved_to_library": True,
+        "source_project": slug,
     }
+    cleared_list = [c for c in (vdata.get("cleared_baselines") or []) if c.lower() != existing_key.lower()]
+    vdata["cleared_baselines"] = cleared_list
     vdata["baselines"] = baselines
     vc_path.write_text(json.dumps(vdata, indent=2), encoding="utf-8")
     return {
@@ -1010,6 +1073,8 @@ def _v2_voice_baseline_set(r: Request):
             "file": rel_file,
             "source": source_label,
             "text": sample_text,
+            "saved_to_library": True,
+            "source_project": slug,
             "audio_url": f"/file/{slug}/{rel_file}",
         },
     }
@@ -1428,13 +1493,16 @@ def _v2_dialogue_render(r: Request):
         wav_path = out_dir / f"{safe_id}.wav"
 
         character = str(item.get("character") or "").strip()
-        # Check if this character has a locked voice baseline WAV in voice_cast.json
+        # Check if this character has a locked voice baseline WAV in voice_cast.json or the global cross-film library
         ref_wav = None
         if character:
+            cleared_set = set()
             vc_file = pd / "voice_cast.json"
             if vc_file.is_file():
                 try:
-                    bmap = (json.loads(vc_file.read_text(encoding="utf-8")) or {}).get("baselines") or {}
+                    vdoc = json.loads(vc_file.read_text(encoding="utf-8")) or {}
+                    bmap = vdoc.get("baselines") or {}
+                    cleared_set = {str(c).lower() for c in (vdoc.get("cleared_baselines") or [])}
                     bkey = next((k for k in bmap if k.lower() == character.lower()), "")
                     if bkey and isinstance(bmap[bkey], dict) and bmap[bkey].get("file"):
                         cand_ref = pd / str(bmap[bkey]["file"])
@@ -1442,6 +1510,13 @@ def _v2_dialogue_render(r: Request):
                             ref_wav = cand_ref
                 except Exception:
                     pass
+            if ref_wav is None and character.lower() not in cleared_set:
+                glib = _voice_library_load()
+                gkey = next((k for k in glib if k.lower() == character.lower()), "")
+                if gkey and isinstance(glib[gkey], dict) and glib[gkey].get("wav_file"):
+                    cand_lib = VOICE_LIBRARY_DIR / str(glib[gkey]["wav_file"])
+                    if cand_lib.is_file() and cand_lib.stat().st_size > 100:
+                        ref_wav = cand_lib
         if engine == "gemini-tts":
             voice_used = _render_line_gemini_tts(text, voice_id, dialect, emotion, note, wav_path, persona=persona, gemini_voice=gemini_voice, character=character, ref_wav_path=ref_wav)
         elif engine == "kokoro":

@@ -366,17 +366,25 @@ def _v2_dialogue(r: Request):
     vc = {}
     profiles = {}
     baselines_raw = {}
+    cleared_baselines = set()
     dialect = "american"
     vc_path = pd / "voice_cast.json"
+    vdata = {}
     if vc_path.is_file():
         try:
             vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
             vc = vdata.get("cast") or {}
             profiles = vdata.get("profiles") or {}
             baselines_raw = vdata.get("baselines") or {}
+            cleared_baselines = {str(c).lower() for c in (vdata.get("cleared_baselines") or [])}
             dialect = vdata.get("dialect") or "american"
         except Exception:
             pass
+
+    from .routes_post import VOICE_LIBRARY_DIR, _voice_library_load, find_kokoro_python
+    global_lib = _voice_library_load()
+    global_lib_lc = {str(k).lower(): v for k, v in global_lib.items() if isinstance(v, dict)}
+
     vc_lc = {str(k).lower(): v for k, v in vc.items()}
     prof_lc = {str(k).lower(): v for k, v in profiles.items() if isinstance(v, dict)}
     baselines = {}
@@ -389,6 +397,8 @@ def _v2_dialogue(r: Request):
                 "file": str(binfo["file"]),
                 "source": str(binfo.get("source") or "custom"),
                 "text": str(binfo.get("text") or ""),
+                "saved_to_library": bool(binfo.get("saved_to_library", ch_name.lower() in global_lib_lc)),
+                "source_project": str(binfo.get("source_project") or slug),
                 "audio_url": f"/file/{slug}/{binfo['file']}",
             }
 
@@ -405,7 +415,6 @@ def _v2_dialogue(r: Request):
 
     import shutil
     import subprocess
-    from .routes_post import find_kokoro_python
 
     gemini_ready = False
     try:
@@ -454,8 +463,33 @@ def _v2_dialogue(r: Request):
                 text = str(el.get("text") or "").strip()
                 note = str(el.get("note") or "").strip()
                 ov = saved.get(lid) if isinstance(saved.get(lid), dict) else {}
-                cp = prof_lc.get(char.lower()) or {}
-                voice = ov.get("voice") or vc_lc.get(char.lower()) or ("bm_fable" if dialect == "british" else "am_puck")
+                g_entry = global_lib_lc.get(char.lower()) or {}
+                cp = prof_lc.get(char.lower()) or g_entry or {}
+                # Auto-inherit baseline WAV from global cross-film library for new films if not cleared/set yet
+                if (
+                    char.lower() not in {k.lower() for k in baselines}
+                    and char.lower() not in cleared_baselines
+                    and g_entry.get("wav_file")
+                ):
+                    lib_wav = VOICE_LIBRARY_DIR / str(g_entry["wav_file"])
+                    if lib_wav.is_file() and lib_wav.stat().st_size > 100:
+                        safe_ch = "".join(c if c.isalnum() else "_" for c in char.lower()).strip("_") or "speaker"
+                        ref_dir = pd / "audio" / "voice_refs"
+                        ref_dir.mkdir(parents=True, exist_ok=True)
+                        rel_f = f"audio/voice_refs/{safe_ch}.wav"
+                        dest_f = pd / rel_f
+                        if not dest_f.is_file():
+                            shutil.copyfile(lib_wav, dest_f)
+                        baselines[char] = {
+                            "file": rel_f,
+                            "source": str(g_entry.get("source") or "library"),
+                            "text": str(g_entry.get("text") or ""),
+                            "saved_to_library": True,
+                            "source_project": str(g_entry.get("source_project") or "library"),
+                            "inherited_from_library": True,
+                            "audio_url": f"/file/{slug}/{rel_f}",
+                        }
+                voice = ov.get("voice") or vc_lc.get(char.lower()) or cp.get("kokoro_voice") or ("bm_fable" if dialect == "british" else "am_puck")
                 wav_rel = f"audio/dialogue/{lid}.wav"
                 wav_path = pd / wav_rel
                 has_audio = wav_path.is_file() and wav_path.stat().st_size > 100
