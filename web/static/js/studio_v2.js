@@ -4790,9 +4790,19 @@
       if (!shot.has_image) v2KfState.rendered_shots++;
       shot.has_image = true;
       shot.image_url = res.image_url + "?t=" + Date.now();
+      if (res.physics_passed === false && res.physics_issues && res.physics_issues.length) {
+        shot.needs_attention = true;
+        shot.attention_reason = "Physics QA flagged: " + res.physics_issues.join("; ");
+      } else {
+        shot.needs_attention = false;
+        shot.attention_reason = "";
+      }
       renderV2KfScenesBar();
       renderV2KfGrid();
-      setV2KfStatus(`✓ Rendered keyframe ${shot.id} (${res.model || "image"})`);
+      const physTag = res.physics_repaired
+        ? (res.physics_passed ? " · ✓ Physics auto-repaired" : " · ⚠️ Physics flagged (see card)")
+        : (res.physics_passed === false ? " · ⚠️ Physics flagged (see card)" : " · ✓ Physics verified");
+      setV2KfStatus(`✓ Rendered keyframe ${shot.id} (${res.model || "image"})${physTag}`, res.physics_passed === false);
     } catch (err) {
       setV2KfStatus(`Keyframe ${shot.id} failed: ` + (err.message || err), true);
     } finally {

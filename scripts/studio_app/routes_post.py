@@ -1915,6 +1915,58 @@ def _v2_sound_design_render(r: Request):
     return {"status": "ok", "kind": kind, "scene": scene_id, "audio_url": rel_url, "duration": duration}
 
 
+def _inspect_keyframe_physics(png_path: Path, shot_prompt: str, api_key: str) -> dict:
+    """Use Gemini Vision to inspect a generated keyframe for solid-object clipping, interpenetration, floating/gravity errors, or fused anatomy."""
+    import base64
+    import urllib.request
+
+    if not api_key or not png_path.is_file() or png_path.stat().st_size < 200:
+        return {"passed": True, "issues": []}
+
+    qa_prompt = (
+        "You are a strict VFX & Animation Physics Supervisor inspecting a film storyboard keyframe.\n"
+        "Inspect the image carefully for ANY violation of solid-object physics:\n"
+        "1. Solid objects passing through, clipping into, or intersecting other solid objects (arms, hands, legs, heads, dog tails, toys, furniture, chairs, walls, rugs, doors).\n"
+        "2. Fused or merged anatomy/objects (toys merged into arms/hands, extra limbs, duplicate tails, deformed fingers/paws).\n"
+        "3. Gravity / contact violations (people, dogs, furniture, or props floating above the floor/rug without support, unless explicitly in zero-gravity space).\n"
+        "Ignore intentional ghosts/holograms if mentioned in the prompt.\n"
+        f"Shot context: {shot_prompt[:300]}\n\n"
+        'Reply ONLY with strict JSON: {"passed": true, "issues": []} or {"passed": false, "issues": ["short specific description of each physics/clipping error"]}.'
+    )
+    b64 = base64.b64encode(png_path.read_bytes()).decode("ascii")
+    payload = json.dumps({
+        "contents": [{
+            "parts": [
+                {"inlineData": {"mimeType": "image/png", "data": b64}},
+                {"text": qa_prompt},
+            ]
+        }],
+        "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
+    }).encode("utf-8")
+
+    for model_name in ("gemini-2.5-flash", "gemini-2.0-flash"):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            for cand in data.get("candidates") or []:
+                for part in (cand.get("content") or {}).get("parts") or []:
+                    txt = (part.get("text") or "").strip()
+                    if txt:
+                        parsed = json.loads(txt)
+                        issues = [str(x).strip() for x in (parsed.get("issues") or []) if str(x).strip()]
+                        return {"passed": bool(parsed.get("passed", not issues)), "issues": issues}
+        except Exception:
+            continue
+    return {"passed": True, "issues": []}
+
+
 def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:9", ref_images: list[Path] | None = None) -> str:
     """Generate a storyboard keyframe or turnaround PNG using Gemini Image Generation, attaching existing character reference images for visual consistency."""
     import base64
@@ -1941,9 +1993,11 @@ def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:
     frame_hint = "square 1:1 SINGLE standalone character portrait (ONLY ONE figure in frame, NO multi-view sheet, NO collage, NO split panels, NO duplicate figures)" if aspect_ratio == "1:1" else "widescreen 16:9 film storyboard keyframe"
     full_prompt = (
         f"Generate a single clean cinematic {frame_hint} with NO text, NO captions, NO watermarks.\n"
-        "STRICT CONTINUITY & PHYSICS RULES:\n"
+        "STRICT CONTINUITY & SOLID-OBJECT PHYSICS RULES:\n"
         f"{ref_clause}"
-        "- SOLID-OBJECT PHYSICS LOCK: Strictly obey real-world solid-object physics and anatomical integrity. Nothing solid may ever pass through, clip into, or merge with another solid object — arms, hands, heads, legs, dog tails, toys, furniture, walls, rugs, and props must have clean physical contact and proper occlusion (never intersecting or passing through one another, unless a character/object is explicitly described as a ghost or hologram).\n"
+        "- SOLID-OBJECT PHYSICS & ANATOMICAL INTEGRITY (CRITICAL): Strictly obey real-world solid-object physics, gravity, and depth occlusion. "
+        "NO solid object may ever pass through, clip into, intersect, or fuse with another solid object. "
+        "Arms, hands, fingers, heads, legs, feet, dog paws, dog tails, stuffed toys, chairs, tables, rugs, walls, and doors must be cleanly separated with realistic physical contact shadows resting ON surfaces (never floating, never merging, never clipping through limbs or furniture — unless explicitly described as a ghost/hologram).\n"
         "- WARDROBE LOCK: Keep every character's exact specified singular clothing (exact solid colors, exact top, bottoms, and footwear). Do NOT add stripes, patterns, or color changes that were not specified.\n"
         "- LOCATION LOCK: Keep the exact specified room/location, background props, and lighting consistent across every shot of this scene.\n\n"
         f"{prompt}"
@@ -2202,6 +2256,29 @@ def _v2_keyframe_render(r: Request):
 
     final_prompt = continuity_prefix + prompt if continuity_prefix else prompt
     model_used = _render_keyframe_gemini(final_prompt, out_png, aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"), ref_images=ref_imgs)
+
+    # Active Physics & Solid-Object Clipping QA + automatic 1-pass repair if any violation is detected
+    import run_gemini_omni
+    api_key = run_gemini_omni.get_gemini_api_key()
+    qa = _inspect_keyframe_physics(out_png, prompt, api_key)
+    physics_repaired = False
+    if not qa.get("passed") and qa.get("issues"):
+        issues_str = "; ".join(qa["issues"][:4])
+        repair_prompt = (
+            f"PHYSICS REPAIR PASS: The first attached image has solid-object physics / clipping error(s): {issues_str}.\n"
+            "Redraw this EXACT same shot with the exact same camera angle, room layout, lighting, character faces, and clothing, "
+            "but COMPLETELY FIX every clipping, floating, or merged-object error listed above so all solid objects (arms, hands, heads, tails, toys, furniture, floor) "
+            "rest naturally with proper physical contact and occlusion.\n\n"
+            f"Original shot description: {prompt}"
+        )
+        try:
+            repair_refs = [out_png] + [p for p in ref_imgs if p != out_png][:3]
+            model_used = _render_keyframe_gemini(repair_prompt, out_png, aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"), ref_images=repair_refs)
+            physics_repaired = True
+            qa = _inspect_keyframe_physics(out_png, prompt, api_key)
+        except Exception:
+            pass
+
     return {
         "status": "ok",
         "id": shot_id,
@@ -2210,6 +2287,9 @@ def _v2_keyframe_render(r: Request):
         "refs_used": len(ref_imgs),
         "prev_shot_ref": prev_shot_ref,
         "continuity_mode": continuity_mode,
+        "physics_passed": bool(qa.get("passed", True)),
+        "physics_repaired": physics_repaired,
+        "physics_issues": qa.get("issues") or [],
     }
 
 
