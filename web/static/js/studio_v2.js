@@ -482,16 +482,31 @@
           Automatically runs <strong>${bookSlug}</strong> from book ingest through chapters, screenplay, continuity, shot list, spoken dialogue, score &amp; foley, keyframes, audio mix, and final MP4 premiere.
         </p>
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px">
-          <div>
-            <label class="f" for="v2AutoLook">Film Visual Style / Type</label>
-            <select id="v2AutoLook" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
-              <option value="pixar_3d" selected>Pixar 3D Animated Feature</option>
-              <option value="pixar_disney">Classic 3D Storybook Feature</option>
-              <option value="live_action">Cinematic Live Action (35mm)</option>
-              <option value="claymation">Stop-Motion Claymation</option>
-              <option value="travel_poster">Vintage Illustrated Travel Poster</option>
-              <option value="cyberpunk_3d">Stylized 3D Sci-Fi / Cyberpunk</option>
-            </select>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label class="f" for="v2AutoLook">Film Visual Style / Type</label>
+              <select id="v2AutoLook" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
+                <option value="pixar_3d" selected>Pixar 3D Animated Feature</option>
+                <option value="pixar_disney">Classic 3D Storybook Feature</option>
+                <option value="live_action">Cinematic Live Action (35mm)</option>
+                <option value="claymation">Stop-Motion Claymation</option>
+                <option value="travel_poster">Vintage Illustrated Travel Poster</option>
+                <option value="cyberpunk_3d">Stylized 3D Sci-Fi / Cyberpunk</option>
+              </select>
+            </div>
+            <div>
+              <label class="f" for="v2AutoLength">Target Film Length</label>
+              <select id="v2AutoLength" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
+                <option value="0" selected>Auto (Match Book Length)</option>
+                <option value="2">2 min — Micro Short / Teaser</option>
+                <option value="5">5 min — Short Film</option>
+                <option value="10">10 min — Extended Short</option>
+                <option value="15">15 min — Featurette</option>
+                <option value="30">30 min — TV Episode</option>
+                <option value="60">60 min — Feature Film</option>
+                <option value="90">90 min — Full Cinema Feature</option>
+              </select>
+            </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
@@ -545,6 +560,7 @@
       box.querySelector("#bV2AutoStart").addEventListener("click", () => {
         finish({
           look: box.querySelector("#v2AutoLook").value,
+          lengthMin: parseInt(box.querySelector("#v2AutoLength").value, 10) || 0,
           voiceEngine: box.querySelector("#v2AutoVoiceEng").value,
           dialect: box.querySelector("#v2AutoDialect").value,
           scoreMood: box.querySelector("#v2AutoScoreMood").value,
@@ -645,9 +661,14 @@
       }
       if (cancelled) return;
 
-      // 2. Save chosen film style
-      setStage(16, `Step 09: Locking visual style (${cfg.look})…`);
-      await rawCallApi("/api/global_params", { project: slug, look: cfg.look });
+      // 2. Save chosen film style & target runtime
+      const lenLbl = cfg.lengthMin > 0 ? `${cfg.lengthMin} min` : "auto";
+      setStage(16, `Step 09: Locking visual style (${cfg.look}) & target length (${lenLbl})…`);
+      await rawCallApi("/api/global_params", {
+        project: slug,
+        look: cfg.look,
+        ...(cfg.lengthMin > 0 ? { target_minutes: cfg.lengthMin } : {}),
+      });
       if (cancelled) return;
 
       // 3. Ensure Coverage & Screenplay exist
@@ -655,8 +676,11 @@
       let sp = null;
       try { sp = await rawCallApi(`/api/screenplay?project=${encodeURIComponent(slug)}`); } catch (e) {}
       if (!sp || !(sp.scenes || []).length) {
-        log("  Writing coverage, beats & screenplay (this may take a minute)…");
-        await rawCallApi("/api/read_it_in", { project: slug });
+        log(`  Writing coverage, beats & screenplay (target: ${lenLbl})…`);
+        await rawCallApi("/api/read_it_in", {
+          project: slug,
+          ...(cfg.lengthMin > 0 ? { minutes: cfg.lengthMin } : {}),
+        });
         await waitForStudioJob(() => cancelled, (ln) => log("  " + ln));
       } else {
         log(`  ✓ Screenplay ready (${sp.scenes.length} scenes).`);

@@ -311,7 +311,13 @@ class ReadItIn:
     SCREEN_RULES = ("Standard screenplay format: scene headings INT./EXT. LOCATION - TIME; present-tense action lines that describe only what can be "
                     "SEEN or HEARD (turn thoughts into things the camera can see and hear); a character's name in CAPS on first appearance in "
                     "the action; dialogue with the speaker; a short parenthetical as 'note' only when needed; (V.O.) in the character name for the "
-                    "inner voice the source needs; transitions only where they matter. Each scene also gets the hidden 'block'.")
+                    "inner voice the source needs; transitions only where they matter. Each scene also gets the hidden 'block'. "
+                    "EXACT COSTUME CONTINUITY: In every scene's block.wardrobe and action lines, specify each character's exact, singular full costume "
+                    "with exact solid colours for top, bottoms, footwear, and accessories (e.g. 'solid brown t-shirt, blue jeans, white socks' — NEVER vague "
+                    "patterns like 'striped shirt'). Carry that EXACT costume verbatim into every subsequent scene unless the story explicitly changes the "
+                    "character's clothes in a new scene. "
+                    "EXACT SCENE & LOCATION CONTINUITY: Keep the exact same location heading, spatial layout, key furniture, props, and lighting across "
+                    "consecutive scenes in the same place unless the story explicitly transitions characters to a new location.")
 
     def act_scenes(self, act: dict, n: int, of: int, treatment: str, plan: dict, cov: dict, prev: dict | None, seconds: float) -> list[dict]:
         self.say("screenplay", f"Your screenwriter is writing act {n} of {of}" + (" (episode)" if self.series else ""))
