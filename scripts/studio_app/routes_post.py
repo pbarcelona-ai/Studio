@@ -2321,12 +2321,115 @@ def _v2_keyframe_prompts_save(r: Request):
     return {"status": "ok", "saved": count}
 
 
+@route("POST", "/api/v2_keyframe_edit")
+def _v2_keyframe_edit(r: Request):
+    """Modify a specific aspect of an existing unlocked Step 17 keyframe image without regenerating from scratch."""
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = "".join(c for c in str(r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
+    edit_inst = str(r.body.get("edit_instruction") or "").strip()
+    base_prompt = str(r.body.get("prompt") or "").strip()
+    if not slug or not shot_id or not edit_inst:
+        raise PlanError("project, id, and edit_instruction are required")
+
+    pd = pdir(slug, "book")
+    out_png = pd / "keyframes" / f"{shot_id}.png"
+    if not out_png.is_file():
+        raise PlanError(f"Keyframe {shot_id} has not been generated yet. Generate it first before modifying.")
+
+    meta_path = pd / "keyframes_v2.json"
+    meta = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            meta = {}
+    if shot_id in (meta.get("locked") or []):
+        raise PlanError(f"Keyframe {shot_id} is locked. Unlock it first before modifying.")
+
+    edit_prompt = (
+        f"TARGETED IMAGE EDIT ON EXISTING KEYFRAME ({shot_id}):\n"
+        "The attached image is the current keyframe. Keep EVERYTHING in the attached image identical — "
+        "exact same camera angle, composition, room layout, lighting, character faces, proportions, and clothing — "
+        f"and apply ONLY this specific modification:\n{edit_inst}\n\n"
+        f"Original shot context: {base_prompt}"
+    )
+    model_used = _render_keyframe_gemini(edit_prompt, out_png, aspect_ratio="16:9", ref_images=[out_png])
+
+    # Run Physics QA on the edited image
+    import run_gemini_omni
+    api_key = run_gemini_omni.get_gemini_api_key()
+    qa = _inspect_keyframe_physics(out_png, f"{base_prompt}. {edit_inst}", api_key)
+
+    # Record pending edit(s) so when the user locks this keyframe, the canonical prompt updates automatically
+    pending = dict(meta.get("pending_edits") or {})
+    cur_list = list(pending.get(shot_id) or [])
+    cur_list.append(edit_inst)
+    pending[shot_id] = cur_list
+    if base_prompt:
+        prompts = dict(meta.get("prompts") or {})
+        prompts.setdefault(shot_id, base_prompt)
+        meta["prompts"] = prompts
+    meta["pending_edits"] = pending
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    return {
+        "status": "ok",
+        "id": shot_id,
+        "image_url": f"/file/{slug}/keyframes/{shot_id}.png",
+        "model": model_used,
+        "pending_edits": cur_list,
+        "physics_passed": bool(qa.get("passed", True)),
+        "physics_issues": qa.get("issues") or [],
+    }
+
+
+def _merge_edits_into_prompt(base_prompt: str, edits: list[str]) -> str:
+    """Cleanly incorporate applied visual edits into the shot's canonical prompt when the keyframe is locked."""
+    import urllib.request
+    import run_gemini_omni
+
+    if not edits:
+        return base_prompt
+    api_key = run_gemini_omni.get_gemini_api_key()
+    if api_key:
+        merge_inst = (
+            "Rewrite the following film storyboard shot prompt so it seamlessly incorporates all of the approved visual modifications below. "
+            "Keep all locked wardrobe colors, character details, and location locks intact. Return ONLY the single updated prompt paragraph, no quotes or commentary.\n\n"
+            f"ORIGINAL PROMPT:\n{base_prompt}\n\n"
+            "APPROVED MODIFICATIONS TO INCORPORATE:\n- " + "\n- ".join(edits)
+        )
+        payload = json.dumps({
+            "contents": [{"parts": [{"text": merge_inst}]}],
+            "generationConfig": {"temperature": 0.2},
+        }).encode("utf-8")
+        for m in ("gemini-2.5-flash", "gemini-2.0-flash"):
+            try:
+                req = urllib.request.Request(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
+                    data=payload,
+                    headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                for cand in data.get("candidates") or []:
+                    for part in (cand.get("content") or {}).get("parts") or []:
+                        txt = (part.get("text") or "").strip()
+                        if txt and len(txt) > 20:
+                            return txt
+            except Exception:
+                continue
+    # Clean deterministic fallback if API call unavailable
+    return (base_prompt.rstrip(". ") + ". Refinements: " + "; ".join(edits) + ".").strip()
+
+
 @route("POST", "/api/v2_keyframe_lock")
 def _v2_keyframe_lock(r: Request):
-    """Lock or unlock an individual Step 17 keyframe in keyframes_v2.json."""
+    """Lock or unlock an individual Step 17 keyframe in keyframes_v2.json; when locking, merges any pending visual edits into the shot prompt."""
     slug = str(r.body.get("project") or "").strip()
     shot_id = "".join(c for c in str(r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
     locked = bool(r.body.get("locked", True))
+    current_prompt = str(r.body.get("prompt") or "").strip()
     if not slug or not shot_id:
         raise PlanError("project and id are required")
     pd = pdir(slug, "book")
@@ -2339,11 +2442,21 @@ def _v2_keyframe_lock(r: Request):
         except Exception:
             meta = {}
     cur = [str(x) for x in (meta.get("locked") or []) if str(x) != shot_id]
+    updated_prompt = ""
     if locked:
         cur.append(shot_id)
+        pending = dict(meta.get("pending_edits") or {})
+        edits = pending.pop(shot_id, None) or []
+        if edits:
+            prompts = dict(meta.get("prompts") or {})
+            base = current_prompt or str(prompts.get(shot_id) or "")
+            updated_prompt = _merge_edits_into_prompt(base, edits)
+            prompts[shot_id] = updated_prompt
+            meta["prompts"] = prompts
+            meta["pending_edits"] = pending
     meta["locked"] = sorted(cur)
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    return {"status": "ok", "id": shot_id, "locked": locked}
+    return {"status": "ok", "id": shot_id, "locked": locked, "updated_prompt": updated_prompt}
 
 
 @route("POST", "/api/v2_keyframe_delete")

@@ -261,6 +261,7 @@
     [/\/api\/v2_dialogue_render/, "Generating dialogue audio…"],
     [/\/api\/v2_sound_design_render/, "Generating Score / Foley audio…"],
     [/\/api\/v2_keyframe_render/, "Generating storyboard keyframe…"],
+    [/\/api\/v2_keyframe_edit/, "Modifying keyframe aspect…"],
     [/\/api\/v2_turnaround_render/, "Generating character turnaround…"],
     [/\/api\/v2_audio_mix_render/, "Mixing master audio stems…"],
     [/\/api\/v2_export_make/, "Building export deliverable…"],
@@ -4955,13 +4956,38 @@
         btnLock.title = shot.locked ? `Unlock ${shot.id} so it can be re-rolled or deleted` : `Lock ${shot.id} to prevent accidental overwrite or deletion`;
         btnLock.addEventListener("click", async () => {
           const nextLock = !shot.locked;
+          const stopBusy = nextLock ? startBusyFeedback(btnLock, card, `Locking ${shot.id} & syncing prompt…`) : () => {};
           try {
-            await callApi("/api/v2_keyframe_lock", { project: v2KfState.project, id: shot.id, locked: nextLock });
+            const res = await callApi("/api/v2_keyframe_lock", {
+              project: v2KfState.project,
+              id: shot.id,
+              locked: nextLock,
+              prompt: ta.value.trim(),
+            });
             shot.locked = nextLock;
+            if (res.updated_prompt) {
+              shot.prompt = res.updated_prompt;
+            }
             renderV2KfGrid();
-            setV2KfStatus(nextLock ? `🔒 Locked keyframe ${shot.id}.` : `🔓 Unlocked keyframe ${shot.id}.`);
+            setV2KfStatus(
+              nextLock
+                ? (res.updated_prompt ? `🔒 Locked ${shot.id} & updated prompt to match your edits!` : `🔒 Locked keyframe ${shot.id}.`)
+                : `🔓 Unlocked keyframe ${shot.id}.`
+            );
+            if (nextLock && res.updated_prompt) {
+              proposeUpstreamSync({
+                project: v2KfState.project,
+                kind: "keyframe_to_shotlist",
+                affectedStepNums: [12],
+                title: `🔄 Sync Locked ${shot.id} Prompt Back to Step 12?`,
+                message: `Your edits to ${shot.id} were merged into its prompt when locked.\n\nUpdate Step 12 (Shot List) to match?`,
+                payload: { prompts: { [shot.id]: res.updated_prompt } },
+              });
+            }
           } catch (err) {
             setV2KfStatus("Lock toggle failed: " + (err.message || err), true);
+          } finally {
+            stopBusy();
           }
         });
         row.appendChild(btnLock);
@@ -4997,6 +5023,54 @@
 
       row.appendChild(upIn);
       card.appendChild(row);
+
+      // Targeted In-Place Keyframe Modification (only when image exists and is unlocked)
+      if (shot.has_image && !shot.locked) {
+        const editRow = document.createElement("div");
+        editRow.style.cssText = "display:flex;gap:5px;margin-top:6px;align-items:center";
+        const editIn = document.createElement("input");
+        editIn.type = "text";
+        editIn.placeholder = "Modify aspect (e.g. move tail onto rug, warm window light)…";
+        editIn.style.cssText = "flex:1;min-width:0;padding:5px 7px;background:#0a0d14;color:#fde68a;border:1px solid #475569;border-radius:4px;font-size:11px";
+        const btnEdit = document.createElement("button");
+        btnEdit.type = "button";
+        btnEdit.className = "btn btn--secondary";
+        btnEdit.style.cssText = "padding:4px 8px;font-size:11px;white-space:nowrap";
+        btnEdit.textContent = "✏️ Modify";
+        btnEdit.title = "Modify only this aspect of the existing keyframe (prompt updates automatically when you click 🔒 Lock)";
+        btnEdit.addEventListener("click", async () => {
+          const inst = editIn.value.trim();
+          if (!inst) { editIn.focus(); return; }
+          const stopBusy = startBusyFeedback(btnEdit, card, `Modifying ${shot.id}…`);
+          setV2KfStatus(`Applying targeted edit to ${shot.id}: "${inst}"…`);
+          try {
+            const res = await callApi("/api/v2_keyframe_edit", {
+              project: v2KfState.project,
+              id: shot.id,
+              edit_instruction: inst,
+              prompt: ta.value.trim(),
+            });
+            shot.image_url = res.image_url + "?t=" + Date.now();
+            if (res.physics_passed === false && res.physics_issues && res.physics_issues.length) {
+              shot.needs_attention = true;
+              shot.attention_reason = "Physics QA flagged: " + res.physics_issues.join("; ");
+            } else {
+              shot.needs_attention = false;
+              shot.attention_reason = "";
+            }
+            renderV2KfGrid();
+            setV2KfStatus(`✓ Modified ${shot.id}. Click 🔒 Lock when happy to update the prompt automatically.`);
+          } catch (err) {
+            setV2KfStatus(`Modify ${shot.id} failed: ` + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        });
+        editRow.appendChild(editIn);
+        editRow.appendChild(btnEdit);
+        card.appendChild(editRow);
+      }
+
       grid.appendChild(card);
     });
 
