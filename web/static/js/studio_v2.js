@@ -556,19 +556,25 @@
 
   async function waitForStudioJob(isCancelled, onLine) {
     let since = 0;
-    for (let i = 0; i < 600; i++) {
-      if (isCancelled()) return false;
+    let idleStreak = 0;
+    while (!isCancelled()) {
       await new Promise(r => setTimeout(r, 1500));
+      if (isCancelled()) return false;
       try {
         const lg = await rawCallApi(`/api/log?since=${since}`);
         since = lg.next || since;
         if (lg.lines && lg.lines.length && onLine) {
-          onLine(String(lg.lines[lg.lines.length - 1] || "").slice(0, 110));
+          onLine(String(lg.lines[lg.lines.length - 1] || "").slice(0, 120));
         }
-        if (!lg.running) return true;
+        if (!lg.running && !(lg.queued > 0)) {
+          idleStreak++;
+          if (idleStreak >= 2) return true; // confirm job is truly idle before starting next stage
+        } else {
+          idleStreak = 0;
+        }
       } catch (e) {}
     }
-    return true;
+    return false;
   }
 
   async function launchV2AutopilotFilm() {
@@ -673,8 +679,15 @@
       let sl = null;
       try { sl = await rawCallApi(`/api/shot_list?project=${encodeURIComponent(slug)}`); } catch (e) {}
       if (!sl || !sl.list || !(sl.list.scenes || []).length) {
+        // Ensure any earlier background job has completely finished before starting shot_list
+        const curJob = await rawCallApi("/api/log?since=0").catch(() => ({}));
+        if (curJob && (curJob.running || curJob.queued > 0)) {
+          log("  Waiting for active background job to finish before starting shot list…");
+          await waitForStudioJob(() => cancelled, (ln) => log("  " + ln));
+        }
+        if (cancelled) return;
         log("  Generating shot list…");
-        await rawCallApi("/api/shot_list", { project: slug });
+        await rawCallApi("/api/shot_list", { project: slug, queue: true });
         await waitForStudioJob(() => cancelled, (ln) => log("  " + ln));
       }
       try { await rawCallApi("/api/shot_list_approve", { project: slug }); } catch (e) {}
