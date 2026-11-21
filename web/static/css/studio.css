@@ -2007,4 +2007,32 @@
     flex-shrink: 0;
   }
 
+  /* ===== STUDIO V2: APP-WIDE "NEEDS ATTENTION" FLASHING ALERT ===== */
+  @keyframes v2AttentionFlash {
+    0%, 100% {
+      border-color: #f97316;
+      box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.55), 0 0 14px rgba(239, 68, 68, 0.22);
+    }
+    50% {
+      border-color: #ef4444;
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.85), 0 0 26px rgba(239, 68, 68, 0.48);
+    }
+  }
+  .v2-needs-attention {
+    animation: v2AttentionFlash 1.25s ease-in-out infinite !important;
+    border-color: #ef4444 !important;
+  }
+  .v2-attention-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(239, 68, 68, 0.16);
+    border: 1px solid rgba(239, 68, 68, 0.65);
+    color: #fca5a5;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
 

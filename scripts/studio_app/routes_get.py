@@ -668,6 +668,52 @@ def _v2_keyframes(r: Request):
                 return ltok
         return ""
 
+    # Load per-character scene/location wardrobe states (e.g. S001-S003 Living Room vs S004-S015 Spaceship)
+    wardrobe_states = {}
+    ws_path = pd / "wardrobe_states.json"
+    if ws_path.is_file():
+        try:
+            raw_ws = json.loads(ws_path.read_text(encoding="utf-8")) or {}
+            wardrobe_states = {str(k).lower(): v for k, v in raw_ws.items() if isinstance(v, list)}
+        except Exception:
+            pass
+
+    def _scene_num(sid: str) -> int:
+        digits = "".join(c for c in str(sid or "") if c.isdigit())
+        return int(digits) if digits else 0
+
+    def _match_wardrobe_state(char_name: str, sc_id: str, heading_text: str) -> str:
+        states = wardrobe_states.get(char_name.lower()) or []
+        if not states:
+            return ""
+        sn = _scene_num(sc_id)
+        low_h = heading_text.lower()
+        for st in states:
+            if not isinstance(st, dict) or not str(st.get("wardrobe") or "").strip():
+                continue
+            sc_spec = str(st.get("scenes") or "").strip()
+            loc_spec = str(st.get("location") or "").strip().lower()
+            # Match scene range like "S001-S003" or comma list "S001, S002"
+            if sc_spec and sn > 0:
+                matched = False
+                for part in sc_spec.replace(" ", "").split(","):
+                    if "-" in part:
+                        a, b = part.split("-", 1)
+                        na, nb = _scene_num(a), _scene_num(b)
+                        if na and nb and na <= sn <= nb:
+                            matched = True
+                            break
+                    elif _scene_num(part) == sn:
+                        matched = True
+                        break
+                if matched:
+                    w = str(st["wardrobe"]).strip()
+                    loc_lbl = str(st.get("location") or "").strip()
+                    return f"{w} (in {loc_lbl})" if loc_lbl else w
+            if loc_spec and loc_spec in low_h:
+                return str(st["wardrobe"]).strip()
+        return ""
+
     saved_prompts = {}
     kf_meta = pd / "keyframes_v2.json"
     if kf_meta.is_file():
@@ -715,7 +761,21 @@ def _v2_keyframes(r: Request):
             act = str(sh.get("action") or "").strip()
             light = str(sh.get("lighting") or "").strip()
             chars = [str(c) for c in (sh.get("characters") or []) if c]
-            toks = [f"{c}: {char_tokens[c.lower()]}" for c in chars if c.lower() in char_tokens]
+            toks = []
+            attention_notes = []
+            for c in chars:
+                base_tok = char_tokens.get(c.lower(), "")
+                sc_wardrobe = _match_wardrobe_state(c, sc_id, heading)
+                if sc_wardrobe and base_tok:
+                    toks.append(f"{c}: {base_tok} | SCENE WARDROBE: {sc_wardrobe}")
+                elif sc_wardrobe:
+                    toks.append(f"{c}: {sc_wardrobe}")
+                elif base_tok:
+                    toks.append(f"{c}: {base_tok}")
+                    if "striped" in base_tok.lower() or len(base_tok) < 25:
+                        attention_notes.append(f"{c}'s wardrobe needs specific solid colors/outfit in Step 08")
+                else:
+                    attention_notes.append(f"{c} has no visual/wardrobe description in Step 08")
             loc_tok = _match_location_token(heading)
 
             bits = [f"{style_prefix}, {stype} shot ({lens}mm lens)"]
@@ -754,6 +814,8 @@ def _v2_keyframes(r: Request):
                 "prompt": saved_prompts.get(sid) or default_prompt,
                 "has_image": has_img,
                 "image_url": f"/file/{slug}/{png_rel}" if has_img else "",
+                "needs_attention": bool(attention_notes) and not has_img,
+                "attention_reason": "; ".join(attention_notes),
             })
         scenes.append({"id": sc_id, "heading": heading, "shots": shots_out})
 
@@ -960,6 +1022,26 @@ def _v2_postprod(r: Request):
             "stems_zip_url": _furl(stems_zip, "download"),
         },
     }
+
+
+@route("GET", "/api/v2_wardrobe_states")
+def _v2_wardrobe_states(r: Request):
+    """Return per-character scene/location wardrobe states from wardrobe_states.json."""
+    import json
+
+    slug = r.q("project")
+    if not slug:
+        return {"states": {}}
+    pd = pdir(slug, "book")
+    ws_path = pd / "wardrobe_states.json"
+    if ws_path.is_file():
+        try:
+            data = json.loads(ws_path.read_text(encoding="utf-8")) or {}
+            if isinstance(data, dict):
+                return {"states": data}
+        except Exception:
+            pass
+    return {"states": {}}
 
 
 

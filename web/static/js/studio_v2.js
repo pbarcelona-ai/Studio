@@ -213,6 +213,27 @@
     };
   }
 
+  // ===== APP-WIDE "NEEDS ATTENTION" FLASHING ALERT HELPER (ANY STEP) =====
+  function flagNeedsAttention(cardEl, reason) {
+    if (!cardEl) return;
+    cardEl.classList.add("v2-needs-attention");
+    let banner = cardEl.querySelector(".v2-attention-banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.className = "v2-attention-banner";
+      banner.style.marginBottom = "6px";
+      cardEl.insertBefore(banner, cardEl.firstChild);
+    }
+    banner.textContent = "⚠️ Needs Attention: " + (reason || "Please add a specific description");
+  }
+
+  function clearNeedsAttention(cardEl) {
+    if (!cardEl) return;
+    cardEl.classList.remove("v2-needs-attention");
+    const banner = cardEl.querySelector(".v2-attention-banner");
+    if (banner) banner.remove();
+  }
+
   const BUSY_API_LABELS = [
     [/\/api\/v2_dialogue_render/, "Generating dialogue audio…"],
     [/\/api\/v2_sound_design_render/, "Generating Score / Foley audio…"],
@@ -2261,6 +2282,13 @@
       });
     } catch (e) {}
 
+    // 5. Load per-character scene/location wardrobe states
+    let wardrobeStatesMap = {};
+    try {
+      const ws = await callApi(`/api/v2_wardrobe_states?project=${encodeURIComponent(slug)}`);
+      wardrobeStatesMap = (ws && ws.states) || {};
+    } catch (e) {}
+
     const allChars = [...merged.values()];
     if (summaryEl) {
       summaryEl.innerHTML = `<strong style="color:#f59e0b">${allChars.length} character(s)</strong> found for <strong>${slug}</strong>` +
@@ -2326,6 +2354,88 @@
       descTa.style.cssText = "width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit;font-size:var(--text-xs);";
       card.appendChild(descLabel);
       card.appendChild(descTa);
+
+      // Scene / Location Wardrobe States (separate descriptions when character changes clothes or location)
+      const wsKey = Object.keys(wardrobeStatesMap).find(k => k.toLowerCase() === c.name.toLowerCase());
+      const charStates = Array.isArray(wsKey ? wardrobeStatesMap[wsKey] : null) ? wardrobeStatesMap[wsKey] : [];
+
+      const combinedDesc = ((c.visual_token || "") + " " + (c.description || "")).trim();
+      const hasSpecificState = charStates.some(st => st && String(st.wardrobe || "").trim().length >= 12);
+      if (!hasSpecificState && (!combinedDesc || combinedDesc.length < 25 || /\bstriped\b/i.test(combinedDesc))) {
+        const why = !combinedDesc || combinedDesc.length < 25
+          ? "Add a specific visual & singular wardrobe description (exact solid colors for top, bottoms, shoes)"
+          : "Vague pattern ('striped') may drift between shots — specify exact solid wardrobe colors or add a Scene Wardrobe State below";
+        flagNeedsAttention(card, why);
+      }
+
+      const wsBox = document.createElement("div");
+      wsBox.style.cssText = "margin-top:8px;padding:8px;background:#0a0d14;border:1px solid #232d3f;border-radius:6px;";
+      const wsHdr = document.createElement("div");
+      wsHdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;";
+      const wsLbl = document.createElement("span");
+      wsLbl.style.cssText = "font-size:11px;font-weight:700;color:#fde68a;";
+      wsLbl.textContent = "👗 Wardrobe & Location Changes (by Scene)";
+      const btnAddState = document.createElement("button");
+      btnAddState.type = "button";
+      btnAddState.className = "btn btn--ghost";
+      btnAddState.style.cssText = "padding:2px 8px;font-size:11px;";
+      btnAddState.textContent = "+ Add Outfit / Location";
+      wsHdr.appendChild(wsLbl);
+      wsHdr.appendChild(btnAddState);
+      wsBox.appendChild(wsHdr);
+
+      const wsRows = document.createElement("div");
+      wsRows.style.cssText = "display:flex;flex-direction:column;gap:6px;";
+      const appendStateRow = (st = { scenes: "", location: "", wardrobe: "" }) => {
+        const r = document.createElement("div");
+        r.className = "v2-ws-row";
+        r.style.cssText = "display:grid;grid-template-columns:92px 130px 1fr auto;gap:5px;align-items:center;";
+        const inSc = document.createElement("input");
+        inSc.type = "text"; inSc.className = "v2-ws-scenes"; inSc.placeholder = "S001-S003"; inSc.value = st.scenes || "";
+        inSc.style.cssText = "padding:4px 6px;background:#0f172a;color:#f59e0b;border:1px solid #334155;border-radius:4px;font-size:11px;";
+        const inLoc = document.createElement("input");
+        inLoc.type = "text"; inLoc.className = "v2-ws-loc"; inLoc.placeholder = "Location"; inLoc.value = st.location || "";
+        inLoc.style.cssText = "padding:4px 6px;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:11px;";
+        const inW = document.createElement("input");
+        inW.type = "text"; inW.className = "v2-ws-wardrobe"; inW.placeholder = "Exact outfit (e.g. solid brown t-shirt, blue jeans, white socks)"; inW.value = st.wardrobe || "";
+        inW.style.cssText = "padding:4px 6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:11px;";
+        const bRm = document.createElement("button");
+        bRm.type = "button"; bRm.className = "btn btn--ghost"; bRm.style.cssText = "padding:2px 6px;font-size:11px;color:#f87171;"; bRm.textContent = "✕";
+        bRm.addEventListener("click", () => r.remove());
+        r.appendChild(inSc); r.appendChild(inLoc); r.appendChild(inW); r.appendChild(bRm);
+        wsRows.appendChild(r);
+      };
+      charStates.forEach(st => appendStateRow(st));
+      btnAddState.addEventListener("click", () => appendStateRow({ scenes: "S001-S003", location: "", wardrobe: "" }));
+      wsBox.appendChild(wsRows);
+
+      const wsFoot = document.createElement("div");
+      wsFoot.style.cssText = "display:flex;justify-content:flex-end;margin-top:6px;";
+      const btnSaveWs = document.createElement("button");
+      btnSaveWs.type = "button";
+      btnSaveWs.className = "btn btn--secondary";
+      btnSaveWs.style.cssText = "padding:3px 10px;font-size:11px;";
+      btnSaveWs.textContent = "💾 Save Wardrobe States";
+      btnSaveWs.addEventListener("click", async () => {
+        const states = [];
+        wsRows.querySelectorAll(".v2-ws-row").forEach(r => {
+          const scenes = (r.querySelector(".v2-ws-scenes")?.value || "").trim();
+          const location = (r.querySelector(".v2-ws-loc")?.value || "").trim();
+          const wardrobe = (r.querySelector(".v2-ws-wardrobe")?.value || "").trim();
+          if (scenes || location || wardrobe) states.push({ scenes, location, wardrobe });
+        });
+        msg.textContent = "Saving wardrobe states…";
+        try {
+          await callApi("/api/v2_wardrobe_states_save", { project: slug, character: c.name, states });
+          if (states.some(s => s.wardrobe.length >= 12)) clearNeedsAttention(card);
+          msg.textContent = `✓ Saved ${states.length} wardrobe state(s)`;
+        } catch (err) {
+          msg.textContent = "Error: " + (err.message || err);
+        }
+      });
+      wsFoot.appendChild(btnSaveWs);
+      wsBox.appendChild(wsFoot);
+      card.appendChild(wsBox);
 
       const actions = document.createElement("div");
       actions.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;";
@@ -2733,6 +2843,9 @@
     allLocs.forEach((loc, idx) => {
       const card = document.createElement("div");
       card.className = "direct-story-card";
+      if (!loc.description || loc.description.trim().length < 15) {
+        flagNeedsAttention(card, "Add specific set details, colors & layout so shots stay consistent in this location");
+      }
 
       const head = document.createElement("div");
       head.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;";
@@ -4646,6 +4759,9 @@
       const card = document.createElement("div");
       card.className = "deliverable-card v2-kf-card";
       card.dataset.shotId = shot.id;
+      if (shot.needs_attention) {
+        flagNeedsAttention(card, shot.attention_reason || "Specify exact character wardrobe/colors in Step 08");
+      }
 
       // 16:9 Preview Box
       const preview = document.createElement("div");

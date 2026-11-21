@@ -2077,6 +2077,38 @@ def _v2_keyframe_prompts_save(r: Request):
     return {"status": "ok", "saved": count}
 
 
+@route("POST", "/api/v2_wardrobe_states_save")
+def _v2_wardrobe_states_save(r: Request):
+    """Save scene/location-specific wardrobe states for a character into wardrobe_states.json."""
+    slug = str(r.body.get("project") or "").strip()
+    character = str(r.body.get("character") or "").strip()
+    states = r.body.get("states")
+    if not slug or not character or not isinstance(states, list):
+        raise PlanError("project, character, and states list are required")
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    ws_path = pd / "wardrobe_states.json"
+    cur = {}
+    if ws_path.is_file():
+        try:
+            cur = json.loads(ws_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            cur = {}
+    key = next((k for k in cur if k.lower() == character.lower()), character)
+    clean_states = []
+    for st in states:
+        if not isinstance(st, dict):
+            continue
+        w = str(st.get("wardrobe") or "").strip()
+        sc = str(st.get("scenes") or "").strip()
+        loc = str(st.get("location") or "").strip()
+        if w or sc or loc:
+            clean_states.append({"scenes": sc, "location": loc, "wardrobe": w})
+    cur[key] = clean_states
+    ws_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
+    return {"status": "ok", "character": key, "states": clean_states}
+
+
 @route("POST", "/api/v2_turnaround_render")
 def _v2_turnaround_render(r: Request):
     """Generate or upload a character turnaround view (front, three_quarter, profile) in assets/turnarounds/."""
