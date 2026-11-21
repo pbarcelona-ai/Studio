@@ -1802,7 +1802,7 @@ def _synth_score_wav(wav_path: Path, mood: str, duration: int = 12):
 
 @route("POST", "/api/v2_sound_design_save")
 def _v2_sound_design_save(r: Request):
-    """Save Step 16 Foley & Score prompts/settings to sound_design_v2.json."""
+    """Save Step 16 SFX mode, master Foley/Score settings, and per-scene SFX/Score cues to sound_design_v2.json."""
     slug = str(r.body.get("project") or "").strip()
     if not slug:
         raise PlanError("project is required")
@@ -1815,22 +1815,31 @@ def _v2_sound_design_save(r: Request):
             cur = json.loads(sd_path.read_text(encoding="utf-8")) or {}
         except Exception:
             cur = {}
+    if r.body.get("sfx_mode"):
+        cur["sfx_mode"] = str(r.body["sfx_mode"]).strip()
     if isinstance(r.body.get("foley"), dict):
         cur["foley"] = {**(cur.get("foley") or {}), **r.body["foley"]}
     if isinstance(r.body.get("score"), dict):
         cur["score"] = {**(cur.get("score") or {}), **r.body["score"]}
+    if isinstance(r.body.get("scenes"), dict):
+        sc_map = dict(cur.get("scenes") or {})
+        for sid, sinfo in r.body["scenes"].items():
+            if isinstance(sinfo, dict):
+                sc_map[str(sid)] = {**(sc_map.get(str(sid)) or {}), **sinfo}
+        cur["scenes"] = sc_map
     sd_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
     return {"status": "ok", "saved": cur}
 
 
 @route("POST", "/api/v2_sound_design_render")
 def _v2_sound_design_render(r: Request):
-    """Render or upload Step 16 Foley (SFX) or Cinematic Score track to WAV."""
+    """Render or upload Step 16 master Foley/Score OR a specific scene's Foley WAV."""
     import base64
     import tempfile
 
     slug = str(r.body.get("project") or "").strip()
     kind = str(r.body.get("kind") or "foley").strip().lower()
+    scene_id = "".join(c for c in str(r.body.get("scene") or "").strip() if c.isalnum() or c in "-_")
     if not slug:
         raise PlanError("project is required")
     if kind not in ("foley", "score"):
@@ -1840,8 +1849,9 @@ def _v2_sound_design_render(r: Request):
     sub = "foley" if kind == "foley" else "score"
     out_dir = pd / "audio" / sub
     out_dir.mkdir(parents=True, exist_ok=True)
-    wav_path = out_dir / f"{sub}_master.wav"
-    rel_url = f"/file/{slug}/audio/{sub}/{sub}_master.wav"
+    fname = f"scene_{scene_id}.wav" if scene_id else f"{sub}_master.wav"
+    wav_path = out_dir / fname
+    rel_url = f"/file/{slug}/audio/{sub}/{fname}"
 
     b64 = str(r.body.get("audio_base64") or "").strip()
     if b64:
@@ -1886,13 +1896,22 @@ def _v2_sound_design_render(r: Request):
             cur = json.loads(sd_path.read_text(encoding="utf-8")) or {}
         except Exception:
             cur = {}
-    cur[kind] = {
-        **(cur.get(kind) or {}),
-        "prompt": prompt,
-        "duration": duration,
-        ("preset" if kind == "foley" else "mood"): str(r.body.get("preset") or r.body.get("mood") or ""),
-    }
+    if scene_id:
+        sc_map = dict(cur.get("scenes") or {})
+        sc_map[scene_id] = {
+            **(sc_map.get(scene_id) or {}),
+            "sfx_cue": prompt,
+            "sfx_preset": str(r.body.get("preset") or ""),
+        }
+        cur["scenes"] = sc_map
+    else:
+        cur[kind] = {
+            **(cur.get(kind) or {}),
+            "prompt": prompt,
+            "duration": duration,
+            ("preset" if kind == "foley" else "mood"): str(r.body.get("preset") or r.body.get("mood") or ""),
+        }
     sd_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
-    return {"status": "ok", "kind": kind, "audio_url": rel_url, "duration": duration}
+    return {"status": "ok", "kind": kind, "scene": scene_id, "audio_url": rel_url, "duration": duration}
 
 

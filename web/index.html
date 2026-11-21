@@ -1061,6 +1061,31 @@
           ✨ <strong>Autopilot Pick:</strong> hkchengrex/MMAudio (Foley) + MusicGen Stereo Large (Cinematic Score)
         </div>
         <div class="step-zone-workspace">
+          <!-- Selectable SFX / Sound Strategy Bar (Both Options + Hybrid) -->
+          <div id="v2SoundModeBar" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:10px;margin-bottom:var(--space-3)">
+            <div class="deliverable-card v2-sound-mode-card" data-mode="hybrid" style="cursor:pointer;padding:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                <span class="deliverable-title" style="font-size:var(--text-sm)">✨ Hybrid (Both — Recommended)</span>
+                <span class="status-badge status-badge--synced" style="font-size:10px">Best Mix</span>
+              </div>
+              <p class="deliverable-desc" style="margin:4px 0 0;font-size:var(--text-xs)">Shot-aligned native video SFX in Step 18 PLUS your custom per-scene SFX &amp; Score cues below.</p>
+            </div>
+            <div class="deliverable-card v2-sound-mode-card" data-mode="video_aligned" style="cursor:pointer;padding:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                <span class="deliverable-title" style="font-size:var(--text-sm)">🎬 Video-Aligned Native SFX</span>
+                <span class="status-badge" style="font-size:10px">Step 18 Auto</span>
+              </div>
+              <p class="deliverable-desc" style="margin:4px 0 0;font-size:var(--text-xs)">Gemini Omni 1.2 Flash / MMAudio generates frame-synced SFX per shot (rockets burning, hull shaking, footsteps).</p>
+            </div>
+            <div class="deliverable-card v2-sound-mode-card" data-mode="scene_cues" style="cursor:pointer;padding:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                <span class="deliverable-title" style="font-size:var(--text-sm)">🎚️ Scene-by-Scene Custom SFX</span>
+                <span class="status-badge" style="font-size:10px">Manual Control</span>
+              </div>
+              <p class="deliverable-desc" style="margin:4px 0 0;font-size:var(--text-xs)">Use your dedicated per-scene SFX &amp; Score tracks designed or uploaded in the cue sheet below.</p>
+            </div>
+          </div>
+
           <div id="v2SoundStatus" style="font-size:var(--text-xs);color:#34d399;margin-bottom:8px" aria-live="polite"></div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(310px, 1fr));gap:var(--space-3)">
             <!-- Foley (SFX) Card -->
@@ -1129,6 +1154,17 @@
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:var(--space-3)">
             <button type="button" class="btn btn--secondary" id="bV2SaveSoundPlan">💾 Save Sound Plan</button>
             <button type="button" class="btn btn--ghost" id="bV2ReloadSoundPlan">↻ Reload</button>
+          </div>
+
+          <!-- Scene-by-Scene SFX & Score Cue Sheet -->
+          <div class="direct-story-card" style="margin-top:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+              <div>
+                <strong style="color:#f59e0b">🎬 Scene-by-Scene SFX &amp; Score Cue Sheet</strong>
+                <span id="v2SoundScenesSummary" style="color:#94a3b8;font-size:var(--text-xs);margin-left:8px">Loading scenes from screenplay…</span>
+              </div>
+            </div>
+            <div id="v2SoundScenesList" style="display:flex;flex-direction:column;gap:10px"></div>
           </div>
         </div>
         <div class="step-zone-dock">

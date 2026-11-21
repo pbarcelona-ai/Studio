@@ -548,6 +548,7 @@ def _v2_sound_design(r: Request):
             saved = {}
 
     scenes = []
+    saved_scenes = saved.get("scenes") if isinstance(saved.get("scenes"), dict) else {}
     sp_dir = pd / "screenplay"
     if sp_dir.is_dir():
         for sp_file in sorted(sp_dir.glob("scene-*.json")):
@@ -558,10 +559,36 @@ def _v2_sound_design(r: Request):
             sc_id = str(sc.get("scene") or sp_file.stem.replace("scene-", ""))
             heading = str(sc.get("heading") or "")
             actions = [str(el.get("text") or "").strip() for el in (sc.get("elements") or []) if isinstance(el, dict) and el.get("type") == "action"]
+            hint = (" ".join(actions))[:180]
+            low = (heading + " " + hint).lower()
+            if any(w in low for w in ("launch", "blast", "liftoff", "ignition", "roar", "shake", "shaking", "rocket", "thruster")):
+                auto_preset, auto_cue = "action_launch", "Rockets burning, spaceship hull shaking, heavy ignition rumble"
+                auto_mood = "epic"
+            elif any(w in low for w in ("rain", "window", "living room", "kitchen", "bedroom", "home", "house")):
+                auto_preset, auto_cue = "rainy_home", "Rain pattering on window, warm indoor room ambiance"
+                auto_mood = "cozy"
+            elif any(w in low for w in ("ring", "ice", "storm", "wind", "geyser", "crater", "titan", "enceladus")):
+                auto_preset, auto_cue = "cosmic_storm", "Atmospheric wind gusts, shimmering ice particles, planetary rumble"
+                auto_mood = "mysterious"
+            elif any(w in low for w in ("night", "backyard", "park", "garden", "grass", "tree")):
+                auto_preset, auto_cue = "forest_nature", "Evening breeze and gentle outdoor ambient air"
+                auto_mood = "playful"
+            else:
+                auto_preset, auto_cue = "space_adventure", "Starship bridge hum, cockpit console chimes, space ambiance"
+                auto_mood = "wonder"
+
+            ov = saved_scenes.get(sc_id) if isinstance(saved_scenes.get(sc_id), dict) else {}
+            sc_wav = pd / "audio" / "foley" / f"scene_{sc_id}.wav"
+            has_sc_wav = sc_wav.is_file() and sc_wav.stat().st_size > 100
             scenes.append({
                 "scene": sc_id,
                 "heading": heading,
-                "hint": (" ".join(actions))[:160],
+                "hint": hint,
+                "sfx_cue": ov.get("sfx_cue") or auto_cue,
+                "sfx_preset": ov.get("sfx_preset") or auto_preset,
+                "score_mood": ov.get("score_mood") or auto_mood,
+                "has_sfx": has_sc_wav,
+                "sfx_url": f"/file/{slug}/audio/foley/scene_{sc_id}.wav" if has_sc_wav else "",
             })
 
     foley_wav = pd / "audio" / "foley" / "foley_master.wav"
@@ -570,15 +597,16 @@ def _v2_sound_design(r: Request):
     score_cfg = dict(saved.get("score") or {})
 
     return {
+        "sfx_mode": str(saved.get("sfx_mode") or "hybrid"),
         "foley": {
-            "prompt": foley_cfg.get("prompt") or "Soft rain on living room window, warm room ambiance, gentle rocket thruster hum, cockpit console chimes, cosmic shimmer.",
+            "prompt": foley_cfg.get("prompt") or "Starship bridge hum, cockpit console telemetry chimes, and clean sci-fi instrumentation.",
             "preset": foley_cfg.get("preset") or "space_adventure",
-            "duration": int(foley_cfg.get("duration") or 10),
+            "duration": int(foley_cfg.get("duration") or 12),
             "has_audio": foley_wav.is_file() and foley_wav.stat().st_size > 100,
             "audio_url": f"/file/{slug}/audio/foley/foley_master.wav" if (foley_wav.is_file() and foley_wav.stat().st_size > 100) else "",
         },
         "score": {
-            "prompt": score_cfg.get("prompt") or "Sweeping cinematic orchestral wonder with warm strings, French horns, celesta sparkles, and cosmic synthesizer pads.",
+            "prompt": score_cfg.get("prompt") or "Sweeping cinematic orchestral strings, warm French horns, and sparkling celesta arpeggios in major key.",
             "mood": score_cfg.get("mood") or "wonder",
             "duration": int(score_cfg.get("duration") or 12),
             "has_audio": score_wav.is_file() and score_wav.stat().st_size > 100,

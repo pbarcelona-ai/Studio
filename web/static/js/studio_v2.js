@@ -4075,6 +4075,214 @@
   }
 
   // ===== STEP 16: SCORE & FOLEY SOUND DESIGN =====
+  let v2SoundState = { project: "", sfx_mode: "hybrid", scenes: [] };
+
+  function renderV2SoundModeUI() {
+    const active = v2SoundState.sfx_mode || "hybrid";
+    document.querySelectorAll("#v2SoundModeBar .v2-sound-mode-card").forEach(card => {
+      const isSel = card.dataset.mode === active;
+      card.style.borderColor = isSel ? "#f59e0b" : "";
+      card.style.boxShadow = isSel ? "0 0 0 1px rgba(245,158,11,0.55)" : "";
+      card.style.background = isSel ? "rgba(245,158,11,0.08)" : "";
+    });
+  }
+
+  function renderV2SoundScenesList() {
+    const list = $("v2SoundScenesList");
+    const summary = $("v2SoundScenesSummary");
+    if (!list) return;
+    const savedY = window.scrollY || 0;
+    const prevH = list.offsetHeight;
+    if (prevH > 0) list.style.minHeight = prevH + "px";
+    list.innerHTML = "";
+
+    const scenes = v2SoundState.scenes || [];
+    if (summary) {
+      const done = scenes.filter(s => s.has_sfx).length;
+      summary.textContent = scenes.length
+        ? `${scenes.length} scenes auto-cued from screenplay · ${done} custom SFX rendered`
+        : "No screenplay scenes found yet.";
+    }
+    if (!scenes.length) {
+      list.style.minHeight = "";
+      return;
+    }
+
+    const PRESETS = [
+      ["space_adventure", "Space & Cockpit"],
+      ["action_launch", "Rocket Launch & Shake"],
+      ["rainy_home", "Rainy Home & Room"],
+      ["cosmic_storm", "Ice Rings & Wind"],
+      ["forest_nature", "Quiet Night & Nature"],
+    ];
+    const MOODS = [
+      ["wonder", "Score: Wonder"],
+      ["epic", "Score: Epic"],
+      ["cozy", "Score: Cozy"],
+      ["mysterious", "Score: Mysterious"],
+      ["playful", "Score: Playful"],
+      ["none", "Score: Silent"],
+    ];
+
+    scenes.forEach(sc => {
+      const row = document.createElement("div");
+      row.className = "direct-story-card v2-sound-scene-row";
+      row.dataset.sceneId = sc.scene;
+      row.style.cssText = "padding:10px 12px;background:#0f172a;border:1px solid #232d3f;";
+
+      const top = document.createElement("div");
+      top.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px";
+      const titleWrap = document.createElement("div");
+      const st = document.createElement("strong");
+      st.style.color = "#f59e0b";
+      st.textContent = `${sc.scene} · ${sc.heading || "Scene"}`;
+      titleWrap.appendChild(st);
+      if (sc.hint) {
+        const hint = document.createElement("div");
+        hint.style.cssText = "font-size:11px;color:#94a3b8;margin-top:2px";
+        hint.textContent = sc.hint.slice(0, 120) + (sc.hint.length > 120 ? "…" : "");
+        titleWrap.appendChild(hint);
+      }
+      top.appendChild(titleWrap);
+
+      const btns = document.createElement("div");
+      btns.style.cssText = "display:flex;gap:6px;flex-wrap:wrap";
+      const btnRen = document.createElement("button");
+      btnRen.type = "button";
+      btnRen.className = "btn btn--primary";
+      btnRen.style.cssText = "padding:4px 10px;font-size:var(--text-xs)";
+      btnRen.textContent = sc.has_sfx ? "↺ Redo Scene SFX" : "✨ Render Scene SFX";
+
+      const upIn = document.createElement("input");
+      upIn.type = "file";
+      upIn.accept = "audio/*";
+      upIn.style.display = "none";
+      const btnUp = document.createElement("button");
+      btnUp.type = "button";
+      btnUp.className = "btn btn--ghost";
+      btnUp.style.cssText = "padding:4px 8px;font-size:var(--text-xs)";
+      btnUp.textContent = "⬆ Upload";
+      btnUp.addEventListener("click", () => upIn.click());
+
+      btns.appendChild(btnRen);
+      btns.appendChild(btnUp);
+      btns.appendChild(upIn);
+      top.appendChild(btns);
+      row.appendChild(top);
+
+      const ctrls = document.createElement("div");
+      ctrls.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px";
+      const cueIn = document.createElement("input");
+      cueIn.type = "text";
+      cueIn.className = "v2-sc-sfx-cue";
+      cueIn.value = sc.sfx_cue || "";
+      cueIn.placeholder = "Describe SFX needed for this scene (e.g. rockets burning, hull shaking)…";
+      cueIn.style.cssText = "flex:1;min-width:200px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+
+      const selPre = document.createElement("select");
+      selPre.className = "v2-sc-sfx-preset";
+      selPre.style.cssText = "padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+      PRESETS.forEach(([k, l]) => {
+        const o = document.createElement("option");
+        o.value = k; o.textContent = l;
+        if (k === sc.sfx_preset) o.selected = true;
+        selPre.appendChild(o);
+      });
+
+      const selMood = document.createElement("select");
+      selMood.className = "v2-sc-score-mood";
+      selMood.style.cssText = "padding:5px 8px;background:#0a0d14;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+      MOODS.forEach(([k, l]) => {
+        const o = document.createElement("option");
+        o.value = k; o.textContent = l;
+        if (k === sc.score_mood) o.selected = true;
+        selMood.appendChild(o);
+      });
+
+      ctrls.appendChild(cueIn);
+      ctrls.appendChild(selPre);
+      ctrls.appendChild(selMood);
+      row.appendChild(ctrls);
+
+      const player = document.createElement("div");
+      player.style.cssText = "background:#0a0d14;padding:4px 8px;border-radius:4px;font-size:11px;color:#64748b";
+      if (sc.has_sfx && sc.sfx_url) {
+        const aud = document.createElement("audio");
+        aud.controls = true;
+        aud.preload = "none";
+        aud.src = sc.sfx_url + (sc.sfx_url.includes("?") ? "&" : "?") + "t=" + Date.now();
+        aud.style.cssText = "width:100%;height:28px";
+        player.appendChild(aud);
+      } else {
+        player.textContent = "Using video-aligned / master SFX — click ✨ Render Scene SFX or ⬆ Upload to customize this scene";
+      }
+      row.appendChild(player);
+
+      btnRen.addEventListener("click", async () => {
+        const stopBusy = startBusyFeedback(btnRen, row, `Rendering ${sc.scene} SFX…`);
+        setV2SoundStatus(`Rendering custom SFX for ${sc.scene}…`);
+        try {
+          const res = await callApi("/api/v2_sound_design_render", {
+            project: v2SoundState.project,
+            kind: "foley",
+            scene: sc.scene,
+            prompt: cueIn.value.trim(),
+            preset: selPre.value,
+            duration: 8,
+          });
+          sc.sfx_cue = cueIn.value.trim();
+          sc.sfx_preset = selPre.value;
+          sc.score_mood = selMood.value;
+          sc.has_sfx = true;
+          sc.sfx_url = res.audio_url;
+          renderV2SoundScenesList();
+          setV2SoundStatus(`✓ Rendered custom SFX for ${sc.scene}!`);
+          const newAud = document.querySelector(`#v2SoundScenesList .v2-sound-scene-row[data-scene-id="${sc.scene}"] audio`);
+          if (newAud) newAud.play().catch(() => {});
+        } catch (err) {
+          setV2SoundStatus(`Scene ${sc.scene} SFX failed: ` + (err.message || err), true);
+        } finally {
+          stopBusy();
+        }
+      });
+
+      upIn.addEventListener("change", () => {
+        const f = upIn.files && upIn.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const stopBusy = startBusyFeedback(btnUp, row, `Uploading ${f.name} for ${sc.scene}…`);
+          try {
+            const res = await callApi("/api/v2_sound_design_render", {
+              project: v2SoundState.project,
+              kind: "foley",
+              scene: sc.scene,
+              filename: f.name,
+              audio_base64: reader.result,
+            });
+            sc.has_sfx = true;
+            sc.sfx_url = res.audio_url;
+            renderV2SoundScenesList();
+            setV2SoundStatus(`✓ Uploaded "${f.name}" for ${sc.scene}.`);
+          } catch (err) {
+            setV2SoundStatus("Upload failed: " + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        };
+        reader.readAsDataURL(f);
+      });
+
+      list.appendChild(row);
+    });
+
+    window.scrollTo({ top: savedY, behavior: "instant" });
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: savedY, behavior: "instant" });
+      list.style.minHeight = "";
+    });
+  }
+
   function _renderV2SoundPlayer(containerId, audioUrl, emptyText) {
     const wrap = $(containerId);
     if (!wrap) return;
@@ -4105,6 +4313,11 @@
     if (!slug) return;
     try {
       const data = await callApi(`/api/v2_sound_design?project=${encodeURIComponent(slug)}`);
+      v2SoundState.project = slug;
+      v2SoundState.sfx_mode = data.sfx_mode || "hybrid";
+      v2SoundState.scenes = data.scenes || [];
+      renderV2SoundModeUI();
+      renderV2SoundScenesList();
       const f = data.foley || {};
       const s = data.score || {};
       if ($("v2FoleyPrompt")) $("v2FoleyPrompt").value = f.prompt || "";
@@ -4142,6 +4355,25 @@
     const inUpScore = $("v2UploadScoreInput");
 
     const getSlug = () => ($("proj")?.value || "").trim();
+
+    document.querySelectorAll("#v2SoundModeBar .v2-sound-mode-card").forEach(card => {
+      card.addEventListener("click", async () => {
+        const mode = card.dataset.mode;
+        if (!mode) return;
+        v2SoundState.sfx_mode = mode;
+        renderV2SoundModeUI();
+        const names = {
+          hybrid: "✨ Hybrid (Video-Aligned Shot SFX + Scene Cues)",
+          video_aligned: "🎬 Video-Aligned Native SFX (Step 18 Auto)",
+          scene_cues: "🎚️ Scene-by-Scene Custom SFX & Score Cues",
+        };
+        setV2SoundStatus(`Selected sound strategy: ${names[mode] || mode}`);
+        const slug = getSlug();
+        if (slug) {
+          try { await callApi("/api/v2_sound_design_save", { project: slug, sfx_mode: mode }); } catch (e) {}
+        }
+      });
+    });
 
     const FOLEY_PRESET_PROMPTS = {
       space_adventure: "Starship bridge hum, cockpit console telemetry chimes, and clean sci-fi instrumentation.",
@@ -4268,8 +4500,19 @@
         if (!slug) return;
         setV2SoundStatus("Saving sound plan…");
         try {
+          const scenesPayload = {};
+          document.querySelectorAll("#v2SoundScenesList .v2-sound-scene-row").forEach(row => {
+            const sid = row.dataset.sceneId;
+            if (!sid) return;
+            scenesPayload[sid] = {
+              sfx_cue: (row.querySelector(".v2-sc-sfx-cue")?.value || "").trim(),
+              sfx_preset: row.querySelector(".v2-sc-sfx-preset")?.value || "space_adventure",
+              score_mood: row.querySelector(".v2-sc-score-mood")?.value || "wonder",
+            };
+          });
           await callApi("/api/v2_sound_design_save", {
             project: slug,
+            sfx_mode: v2SoundState.sfx_mode || "hybrid",
             foley: {
               prompt: ($("v2FoleyPrompt")?.value || "").trim(),
               preset: $("v2FoleyPreset")?.value || "space_adventure",
@@ -4280,8 +4523,9 @@
               mood: $("v2ScoreMood")?.value || "wonder",
               duration: parseInt($("v2ScoreDuration")?.value || "12", 10) || 12,
             },
+            scenes: scenesPayload,
           });
-          setV2SoundStatus("✓ Saved Step 16 Foley & Score sound plan.");
+          setV2SoundStatus("✓ Saved Step 16 sound strategy, master tracks, and all scene cues.");
         } catch (err) {
           setV2SoundStatus("Save failed: " + (err.message || err), true);
         }
