@@ -2086,16 +2086,20 @@ def _v2_keyframe_render(r: Request):
     out_png = kf_dir / f"{shot_id}.png"
     rel_url = f"/file/{slug}/keyframes/{shot_id}.png"
 
+    # Refuse to overwrite a locked keyframe
+    meta_path = pd / "keyframes_v2.json"
+    meta = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            meta = {}
+    if shot_id in (meta.get("locked") or []):
+        raise PlanError(f"Keyframe {shot_id} is locked. Unlock it first before re-rolling or replacing it.")
+
     # Persist edited prompt if provided
     prompt = str(r.body.get("prompt") or "").strip()
     if prompt:
-        meta_path = pd / "keyframes_v2.json"
-        meta = {}
-        if meta_path.is_file():
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
-            except Exception:
-                meta = {}
         prompts = dict(meta.get("prompts") or {})
         prompts[shot_id] = prompt
         meta["prompts"] = prompts
@@ -2235,6 +2239,57 @@ def _v2_keyframe_prompts_save(r: Request):
     meta["prompts"] = prompts
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return {"status": "ok", "saved": count}
+
+
+@route("POST", "/api/v2_keyframe_lock")
+def _v2_keyframe_lock(r: Request):
+    """Lock or unlock an individual Step 17 keyframe in keyframes_v2.json."""
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = "".join(c for c in str(r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
+    locked = bool(r.body.get("locked", True))
+    if not slug or not shot_id:
+        raise PlanError("project and id are required")
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    meta_path = pd / "keyframes_v2.json"
+    meta = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            meta = {}
+    cur = [str(x) for x in (meta.get("locked") or []) if str(x) != shot_id]
+    if locked:
+        cur.append(shot_id)
+    meta["locked"] = sorted(cur)
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return {"status": "ok", "id": shot_id, "locked": locked}
+
+
+@route("POST", "/api/v2_keyframe_delete")
+def _v2_keyframe_delete(r: Request):
+    """Delete an individual unlocked Step 17 keyframe PNG so it is not used as a reference."""
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = "".join(c for c in str(r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
+    if not slug or not shot_id:
+        raise PlanError("project and id are required")
+    pd = pdir(slug, "book")
+    meta_path = pd / "keyframes_v2.json"
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+            if shot_id in (meta.get("locked") or []):
+                raise PlanError(f"Keyframe {shot_id} is locked. Unlock it first before deleting.")
+        except PlanError:
+            raise
+        except Exception:
+            pass
+    png = pd / "keyframes" / f"{shot_id}.png"
+    removed = False
+    if png.is_file():
+        png.unlink(missing_ok=True)
+        removed = True
+    return {"status": "ok", "id": shot_id, "removed": removed}
 
 
 @route("POST", "/api/v2_wardrobe_states_save")

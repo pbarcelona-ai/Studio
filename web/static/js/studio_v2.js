@@ -4852,6 +4852,13 @@
         img.title = "Click to view full-size keyframe";
         img.addEventListener("click", () => window.open(shot.image_url, "_blank"));
         preview.appendChild(img);
+        if (shot.locked) {
+          const lbadge = document.createElement("span");
+          lbadge.style.cssText = "position:absolute;top:6px;right:6px;padding:2px 8px;border-radius:999px;background:rgba(16,185,129,0.92);color:#022c22;font-size:11px;font-weight:700;";
+          lbadge.textContent = "🔒 Locked";
+          preview.appendChild(lbadge);
+          card.style.borderColor = "#10b981";
+        }
       } else {
         const ph = document.createElement("span");
         ph.style.cssText = "font-size:var(--text-xs);padding:12px;text-align:center";
@@ -4882,7 +4889,8 @@
       btnGen.type = "button";
       btnGen.className = "btn " + (shot.has_image ? "btn--secondary" : "btn--primary");
       btnGen.style.cssText = "padding:4px 10px;font-size:var(--text-xs);flex:1";
-      btnGen.textContent = shot.has_image ? "↺ Re-roll Keyframe" : "✨ Generate Keyframe";
+      btnGen.textContent = shot.locked ? "🔒 Locked" : (shot.has_image ? "↺ Re-roll" : "✨ Generate Keyframe");
+      btnGen.disabled = Boolean(shot.locked);
       btnGen.addEventListener("click", () => renderSingleKeyframe(shot, ta.value.trim(), btnGen, card));
 
       const upIn = document.createElement("input");
@@ -4922,10 +4930,61 @@
       btnUp.className = "btn btn--ghost";
       btnUp.style.cssText = "padding:4px 8px;font-size:var(--text-xs)";
       btnUp.textContent = "⬆ Upload";
+      btnUp.disabled = Boolean(shot.locked);
       btnUp.addEventListener("click", () => upIn.click());
 
       row.appendChild(btnGen);
       row.appendChild(btnUp);
+
+      if (shot.has_image) {
+        const btnLock = document.createElement("button");
+        btnLock.type = "button";
+        btnLock.className = "btn " + (shot.locked ? "btn--primary" : "btn--ghost");
+        btnLock.style.cssText = "padding:4px 8px;font-size:var(--text-xs)";
+        btnLock.textContent = shot.locked ? "🔓 Unlock" : "🔒 Lock";
+        btnLock.title = shot.locked ? `Unlock ${shot.id} so it can be re-rolled or deleted` : `Lock ${shot.id} to prevent accidental overwrite or deletion`;
+        btnLock.addEventListener("click", async () => {
+          const nextLock = !shot.locked;
+          try {
+            await callApi("/api/v2_keyframe_lock", { project: v2KfState.project, id: shot.id, locked: nextLock });
+            shot.locked = nextLock;
+            renderV2KfGrid();
+            setV2KfStatus(nextLock ? `🔒 Locked keyframe ${shot.id}.` : `🔓 Unlocked keyframe ${shot.id}.`);
+          } catch (err) {
+            setV2KfStatus("Lock toggle failed: " + (err.message || err), true);
+          }
+        });
+        row.appendChild(btnLock);
+
+        if (!shot.locked) {
+          const btnDel = document.createElement("button");
+          btnDel.type = "button";
+          btnDel.className = "btn btn--ghost";
+          btnDel.style.cssText = "padding:4px 8px;font-size:var(--text-xs);color:#f87171";
+          btnDel.textContent = "🗑️";
+          btnDel.title = `Delete keyframe ${shot.id} so it cannot be used as a reference`;
+          btnDel.addEventListener("click", async () => {
+            const ok = await showInstallApprovalModal(
+              `Delete keyframe ${shot.id}?`,
+              `This removes the generated image for ${shot.id} so it will NOT be used as a continuity reference for subsequent shots.\n\nClick OK to delete, or Cancel to keep it.`
+            );
+            if (!ok) return;
+            try {
+              await callApi("/api/v2_keyframe_delete", { project: v2KfState.project, id: shot.id });
+              if (shot.has_image) v2KfState.rendered_shots = Math.max(0, v2KfState.rendered_shots - 1);
+              shot.has_image = false;
+              shot.image_url = "";
+              renderV2KfScenesBar();
+              renderV2KfGrid();
+              setV2KfStatus(`✓ Deleted keyframe ${shot.id}.`);
+            } catch (err) {
+              setV2KfStatus("Delete failed: " + (err.message || err), true);
+            }
+          });
+          row.appendChild(btnDel);
+        }
+      }
+
       row.appendChild(upIn);
       card.appendChild(row);
       grid.appendChild(card);
@@ -5033,7 +5092,7 @@
         const sc = (v2KfState.scenes || []).find(s => s.id === v2KfState.activeSceneId);
         if (!sc || !(sc.shots || []).length) return;
         const skipDone = Boolean($("v2KfSkipRendered")?.checked);
-        const targets = skipDone ? sc.shots.filter(s => !s.has_image) : sc.shots;
+        const targets = sc.shots.filter(s => !s.locked && (!skipDone || !s.has_image));
         if (!targets.length) {
           setV2KfStatus(`All ${sc.shots.length} shots in ${sc.id} already have keyframes! Uncheck "Skip already rendered" or click ↺ Re-roll on a specific shot.`);
           return;
