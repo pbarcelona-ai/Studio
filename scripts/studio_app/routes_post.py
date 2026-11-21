@@ -2043,6 +2043,34 @@ def _v2_keyframe_render(r: Request):
     return {"status": "ok", "id": shot_id, "image_url": rel_url, "model": model_used}
 
 
+@route("POST", "/api/v2_keyframe_prompts_save")
+def _v2_keyframe_prompts_save(r: Request):
+    """Save edited Step 17 keyframe prompts to keyframes_v2.json without regenerating images."""
+    slug = str(r.body.get("project") or "").strip()
+    incoming = r.body.get("prompts")
+    if not slug or not isinstance(incoming, dict):
+        raise PlanError("project and prompts dict are required")
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    meta_path = pd / "keyframes_v2.json"
+    meta = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            meta = {}
+    prompts = dict(meta.get("prompts") or {})
+    count = 0
+    for sid, txt in incoming.items():
+        clean_id = "".join(c for c in str(sid).strip() if c.isalnum() or c in "-_")
+        if clean_id:
+            prompts[clean_id] = str(txt or "").strip()
+            count += 1
+    meta["prompts"] = prompts
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return {"status": "ok", "saved": count}
+
+
 @route("POST", "/api/v2_turnaround_render")
 def _v2_turnaround_render(r: Request):
     """Generate or upload a character turnaround view (front, three_quarter, profile) in assets/turnarounds/."""

@@ -1177,8 +1177,12 @@
           <div class="direct-story-card" style="margin-bottom:var(--space-3)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
               <div id="v2KfSummary" style="font-size:var(--text-sm);color:#cbd5e1">Loading scenes &amp; shots from your shot list…</div>
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <label style="display:inline-flex;align-items:center;gap:5px;font-size:var(--text-xs);color:#cbd5e1;cursor:pointer">
+                  <input type="checkbox" id="v2KfSkipRendered" checked> Skip already rendered
+                </label>
                 <button type="button" class="btn btn--primary" id="bV2KfRenderScene">🎨 Generate Scene Keyframes</button>
+                <button type="button" class="btn btn--secondary" id="bV2KfSavePrompts">💾 Save Prompts Only</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfReload">↻ Reload</button>
               </div>
             </div>

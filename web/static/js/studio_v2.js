@@ -4776,19 +4776,51 @@
   function initV2Keyframes() {
     const btnReload = $("bV2KfReload");
     const btnRenderScene = $("bV2KfRenderScene");
+    const btnSavePrompts = $("bV2KfSavePrompts");
     if (btnReload) btnReload.addEventListener("click", () => loadV2Keyframes());
+    if (btnSavePrompts) {
+      btnSavePrompts.addEventListener("click", async () => {
+        const sc = (v2KfState.scenes || []).find(s => s.id === v2KfState.activeSceneId);
+        if (!sc || !v2KfState.project) return;
+        const prompts = {};
+        document.querySelectorAll("#v2KfGrid .v2-kf-card").forEach(cardEl => {
+          const sid = cardEl.dataset.shotId;
+          const val = (cardEl.querySelector(".v2-kf-prompt")?.value || "").trim();
+          if (sid) {
+            prompts[sid] = val;
+            const sh = (sc.shots || []).find(x => x.id === sid);
+            if (sh) sh.prompt = val;
+          }
+        });
+        setV2KfStatus(`Saving prompts for ${sc.id}…`);
+        try {
+          const res = await callApi("/api/v2_keyframe_prompts_save", { project: v2KfState.project, prompts });
+          setV2KfStatus(`✓ Saved ${res.saved || Object.keys(prompts).length} prompt(s) for ${sc.id} (no images re-rendered).`);
+        } catch (err) {
+          setV2KfStatus("Could not save prompts: " + (err.message || err), true);
+        }
+      });
+    }
     if (btnRenderScene) {
       btnRenderScene.addEventListener("click", async () => {
         const sc = (v2KfState.scenes || []).find(s => s.id === v2KfState.activeSceneId);
         if (!sc || !(sc.shots || []).length) return;
-        const cards = [...document.querySelectorAll("#v2KfGrid .v2-kf-card")];
-        const stopBusy = startBusyFeedback(btnRenderScene, cards, `Generating ${sc.shots.length} keyframes for ${sc.id}…`);
+        const skipDone = Boolean($("v2KfSkipRendered")?.checked);
+        const targets = skipDone ? sc.shots.filter(s => !s.has_image) : sc.shots;
+        if (!targets.length) {
+          setV2KfStatus(`All ${sc.shots.length} shots in ${sc.id} already have keyframes! Uncheck "Skip already rendered" or click ↺ Re-roll on a specific shot.`);
+          return;
+        }
+        const cards = targets
+          .map(s => document.querySelector(`#v2KfGrid .v2-kf-card[data-shot-id="${s.id}"]`))
+          .filter(Boolean);
+        const stopBusy = startBusyFeedback(btnRenderScene, cards, `Generating ${targets.length} keyframe(s) for ${sc.id}…`);
         let okCount = 0;
         try {
-          for (const shot of sc.shots) {
+          for (const shot of targets) {
             const cardEl = document.querySelector(`#v2KfGrid .v2-kf-card[data-shot-id="${shot.id}"]`);
             const promptText = (cardEl?.querySelector(".v2-kf-prompt")?.value || shot.prompt || "").trim();
-            setV2KfStatus(`Generating ${shot.id} (${okCount + 1}/${sc.shots.length})…`);
+            setV2KfStatus(`Generating ${shot.id} (${okCount + 1}/${targets.length})…`);
             try {
               const res = await callApi("/api/v2_keyframe_render", {
                 project: v2KfState.project,
@@ -4808,7 +4840,7 @@
               break;
             }
           }
-          if (okCount > 0) setV2KfStatus(`✓ Rendered ${okCount}/${sc.shots.length} keyframes for ${sc.id}!`);
+          if (okCount > 0) setV2KfStatus(`✓ Rendered ${okCount}/${targets.length} keyframe(s) for ${sc.id}!`);
         } finally {
           stopBusy();
         }
