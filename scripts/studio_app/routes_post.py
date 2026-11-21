@@ -2323,13 +2323,18 @@ def _v2_keyframe_prompts_save(r: Request):
 
 @route("POST", "/api/v2_keyframe_edit")
 def _v2_keyframe_edit(r: Request):
-    """Modify a specific aspect of an existing unlocked Step 17 keyframe image without regenerating from scratch."""
+    """Apply an ordered cascade of modification boxes to an existing unlocked Step 17 keyframe image."""
     slug = str(r.body.get("project") or "").strip()
     shot_id = "".join(c for c in str(r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
-    edit_inst = str(r.body.get("edit_instruction") or "").strip()
+    raw_edits = r.body.get("edits")
+    if isinstance(raw_edits, list):
+        edits = [str(x).strip() for x in raw_edits if str(x or "").strip()]
+    else:
+        single = str(r.body.get("edit_instruction") or "").strip()
+        edits = [single] if single else []
     base_prompt = str(r.body.get("prompt") or "").strip()
-    if not slug or not shot_id or not edit_inst:
-        raise PlanError("project, id, and edit_instruction are required")
+    if not slug or not shot_id or not edits:
+        raise PlanError("project, id, and at least one modification box are required")
 
     pd = pdir(slug, "book")
     out_png = pd / "keyframes" / f"{shot_id}.png"
@@ -2346,11 +2351,12 @@ def _v2_keyframe_edit(r: Request):
     if shot_id in (meta.get("locked") or []):
         raise PlanError(f"Keyframe {shot_id} is locked. Unlock it first before modifying.")
 
+    cascade_lines = "\n".join(f"{i}. {txt}" for i, txt in enumerate(edits, start=1))
     edit_prompt = (
-        f"TARGETED IMAGE EDIT ON EXISTING KEYFRAME ({shot_id}):\n"
+        f"TARGETED CASCADED IMAGE EDIT ON EXISTING KEYFRAME ({shot_id}):\n"
         "The attached image is the current keyframe. Keep EVERYTHING in the attached image identical — "
         "exact same camera angle, composition, room layout, lighting, character faces, proportions, and clothing — "
-        f"and apply ONLY this specific modification:\n{edit_inst}\n\n"
+        f"and apply ONLY these ordered modifications:\n{cascade_lines}\n\n"
         f"Original shot context: {base_prompt}"
     )
     model_used = _render_keyframe_gemini(edit_prompt, out_png, aspect_ratio="16:9", ref_images=[out_png])
@@ -2358,13 +2364,11 @@ def _v2_keyframe_edit(r: Request):
     # Run Physics QA on the edited image
     import run_gemini_omni
     api_key = run_gemini_omni.get_gemini_api_key()
-    qa = _inspect_keyframe_physics(out_png, f"{base_prompt}. {edit_inst}", api_key)
+    qa = _inspect_keyframe_physics(out_png, f"{base_prompt}. {'; '.join(edits)}", api_key)
 
-    # Record pending edit(s) so when the user locks this keyframe, the canonical prompt updates automatically
+    # Persist the ordered cascade of modification boxes until the user clicks Lock
     pending = dict(meta.get("pending_edits") or {})
-    cur_list = list(pending.get(shot_id) or [])
-    cur_list.append(edit_inst)
-    pending[shot_id] = cur_list
+    pending[shot_id] = edits
     if base_prompt:
         prompts = dict(meta.get("prompts") or {})
         prompts.setdefault(shot_id, base_prompt)
@@ -2377,7 +2381,7 @@ def _v2_keyframe_edit(r: Request):
         "id": shot_id,
         "image_url": f"/file/{slug}/keyframes/{shot_id}.png",
         "model": model_used,
-        "pending_edits": cur_list,
+        "pending_edits": edits,
         "physics_passed": bool(qa.get("passed", True)),
         "physics_issues": qa.get("issues") or [],
     }
@@ -2446,17 +2450,19 @@ def _v2_keyframe_lock(r: Request):
     if locked:
         cur.append(shot_id)
         pending = dict(meta.get("pending_edits") or {})
-        edits = pending.pop(shot_id, None) or []
+        saved_edits = pending.pop(shot_id, None) or []
+        req_edits = [str(x).strip() for x in (r.body.get("edits") or []) if str(x or "").strip()] if isinstance(r.body.get("edits"), list) else []
+        edits = req_edits if req_edits else saved_edits
         if edits:
             prompts = dict(meta.get("prompts") or {})
             base = current_prompt or str(prompts.get(shot_id) or "")
             updated_prompt = _merge_edits_into_prompt(base, edits)
             prompts[shot_id] = updated_prompt
             meta["prompts"] = prompts
-            meta["pending_edits"] = pending
+        meta["pending_edits"] = pending
     meta["locked"] = sorted(cur)
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    return {"status": "ok", "id": shot_id, "locked": locked, "updated_prompt": updated_prompt}
+    return {"status": "ok", "id": shot_id, "locked": locked, "updated_prompt": updated_prompt, "pending_edits": []}
 
 
 @route("POST", "/api/v2_keyframe_delete")

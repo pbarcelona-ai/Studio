@@ -4956,22 +4956,29 @@
         btnLock.title = shot.locked ? `Unlock ${shot.id} so it can be re-rolled or deleted` : `Lock ${shot.id} to prevent accidental overwrite or deletion`;
         btnLock.addEventListener("click", async () => {
           const nextLock = !shot.locked;
-          const stopBusy = nextLock ? startBusyFeedback(btnLock, card, `Locking ${shot.id} & syncing prompt…`) : () => {};
+          const stopBusy = nextLock ? startBusyFeedback(btnLock, card, `Locking ${shot.id} & cascading modifications into prompt…`) : () => {};
           try {
+            const boxEdits = [...card.querySelectorAll(".v2-kf-mod-input")]
+              .map(inp => (inp.value || "").trim())
+              .filter(Boolean);
             const res = await callApi("/api/v2_keyframe_lock", {
               project: v2KfState.project,
               id: shot.id,
               locked: nextLock,
               prompt: ta.value.trim(),
+              edits: boxEdits,
             });
             shot.locked = nextLock;
             if (res.updated_prompt) {
               shot.prompt = res.updated_prompt;
             }
+            if (nextLock) {
+              shot.pending_edits = [];
+            }
             renderV2KfGrid();
             setV2KfStatus(
               nextLock
-                ? (res.updated_prompt ? `🔒 Locked ${shot.id} & updated prompt to match your edits!` : `🔒 Locked keyframe ${shot.id}.`)
+                ? (res.updated_prompt ? `🔒 Locked ${shot.id}, updated prompt from cascade, and cleared modification boxes!` : `🔒 Locked keyframe ${shot.id}.`)
                 : `🔓 Unlocked keyframe ${shot.id}.`
             );
             if (nextLock && res.updated_prompt) {
@@ -4980,7 +4987,7 @@
                 kind: "keyframe_to_shotlist",
                 affectedStepNums: [12],
                 title: `🔄 Sync Locked ${shot.id} Prompt Back to Step 12?`,
-                message: `Your edits to ${shot.id} were merged into its prompt when locked.\n\nUpdate Step 12 (Shot List) to match?`,
+                message: `Your cascaded modifications to ${shot.id} were merged into its prompt when locked.\n\nUpdate Step 12 (Shot List) to match?`,
                 payload: { prompts: { [shot.id]: res.updated_prompt } },
               });
             }
@@ -5024,33 +5031,96 @@
       row.appendChild(upIn);
       card.appendChild(row);
 
-      // Targeted In-Place Keyframe Modification (only when image exists and is unlocked)
+      // Separate Cascading Modification Boxes (clears automatically when 🔒 Lock is pushed)
       if (shot.has_image && !shot.locked) {
-        const editRow = document.createElement("div");
-        editRow.style.cssText = "display:flex;gap:5px;margin-top:6px;align-items:center";
-        const editIn = document.createElement("input");
-        editIn.type = "text";
-        editIn.placeholder = "Modify aspect (e.g. move tail onto rug, warm window light)…";
-        editIn.style.cssText = "flex:1;min-width:0;padding:5px 7px;background:#0a0d14;color:#fde68a;border:1px solid #475569;border-radius:4px;font-size:11px";
-        const btnEdit = document.createElement("button");
-        btnEdit.type = "button";
-        btnEdit.className = "btn btn--secondary";
-        btnEdit.style.cssText = "padding:4px 8px;font-size:11px;white-space:nowrap";
-        btnEdit.textContent = "✏️ Modify";
-        btnEdit.title = "Modify only this aspect of the existing keyframe (prompt updates automatically when you click 🔒 Lock)";
-        btnEdit.addEventListener("click", async () => {
-          const inst = editIn.value.trim();
-          if (!inst) { editIn.focus(); return; }
-          const stopBusy = startBusyFeedback(btnEdit, card, `Modifying ${shot.id}…`);
-          setV2KfStatus(`Applying targeted edit to ${shot.id}: "${inst}"…`);
+        const modBox = document.createElement("div");
+        modBox.style.cssText = "margin-top:8px;padding:8px;background:#0a0d14;border:1px solid #232d3f;border-radius:6px;display:flex;flex-direction:column;gap:6px;";
+
+        const modHdr = document.createElement("div");
+        modHdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:6px;";
+        const modTitle = document.createElement("span");
+        modTitle.style.cssText = "font-size:11px;font-weight:700;color:#fde68a;";
+        modTitle.textContent = "✏️ Modification Cascade (clears on Lock)";
+        const btnAddMod = document.createElement("button");
+        btnAddMod.type = "button";
+        btnAddMod.className = "btn btn--ghost";
+        btnAddMod.style.cssText = "padding:2px 7px;font-size:11px;";
+        btnAddMod.textContent = "+ Add Box";
+        modHdr.appendChild(modTitle);
+        modHdr.appendChild(btnAddMod);
+        modBox.appendChild(modHdr);
+
+        const modList = document.createElement("div");
+        modList.style.cssText = "display:flex;flex-direction:column;gap:5px;";
+
+        const syncLocalEdits = () => {
+          shot.pending_edits = [...modList.querySelectorAll(".v2-kf-mod-input")].map(i => i.value);
+        };
+
+        const addModRow = (val = "") => {
+          const r = document.createElement("div");
+          r.style.cssText = "display:flex;gap:5px;align-items:center;";
+          const idxTag = document.createElement("span");
+          idxTag.style.cssText = "font-size:10px;color:#94a3b8;min-width:16px;";
+          idxTag.textContent = `${modList.children.length + 1}.`;
+          const inp = document.createElement("input");
+          inp.type = "text";
+          inp.className = "v2-kf-mod-input";
+          inp.value = val;
+          inp.placeholder = "Describe one tweak (e.g. move tail onto rug, warm light)…";
+          inp.style.cssText = "flex:1;min-width:0;padding:5px 7px;background:#0f172a;color:#fde68a;border:1px solid #475569;border-radius:4px;font-size:11px;box-sizing:border-box;";
+          inp.addEventListener("input", syncLocalEdits);
+          const bRm = document.createElement("button");
+          bRm.type = "button";
+          bRm.className = "btn btn--ghost";
+          bRm.style.cssText = "padding:2px 6px;font-size:11px;color:#f87171;";
+          bRm.textContent = "✕";
+          bRm.addEventListener("click", () => {
+            r.remove();
+            [...modList.children].forEach((rowEl, i) => {
+              const tag = rowEl.querySelector("span");
+              if (tag) tag.textContent = `${i + 1}.`;
+            });
+            syncLocalEdits();
+          });
+          r.appendChild(idxTag);
+          r.appendChild(inp);
+          r.appendChild(bRm);
+          modList.appendChild(r);
+        };
+
+        const initEdits = (Array.isArray(shot.pending_edits) && shot.pending_edits.length) ? shot.pending_edits : [""];
+        initEdits.forEach(txt => addModRow(txt));
+        btnAddMod.addEventListener("click", () => addModRow(""));
+        modBox.appendChild(modList);
+
+        const modFoot = document.createElement("div");
+        modFoot.style.cssText = "display:flex;justify-content:flex-end;gap:6px;";
+        const btnApplyCascade = document.createElement("button");
+        btnApplyCascade.type = "button";
+        btnApplyCascade.className = "btn btn--secondary";
+        btnApplyCascade.style.cssText = "padding:4px 10px;font-size:11px;";
+        btnApplyCascade.textContent = "✨ Apply Modifications";
+        btnApplyCascade.addEventListener("click", async () => {
+          const edits = [...modList.querySelectorAll(".v2-kf-mod-input")]
+            .map(i => (i.value || "").trim())
+            .filter(Boolean);
+          if (!edits.length) {
+            const first = modList.querySelector(".v2-kf-mod-input");
+            if (first) first.focus();
+            return;
+          }
+          const stopBusy = startBusyFeedback(btnApplyCascade, card, `Applying ${edits.length} modification(s) to ${shot.id}…`);
+          setV2KfStatus(`Applying ${edits.length} cascaded modification(s) to ${shot.id}…`);
           try {
             const res = await callApi("/api/v2_keyframe_edit", {
               project: v2KfState.project,
               id: shot.id,
-              edit_instruction: inst,
+              edits,
               prompt: ta.value.trim(),
             });
             shot.image_url = res.image_url + "?t=" + Date.now();
+            shot.pending_edits = res.pending_edits || edits;
             if (res.physics_passed === false && res.physics_issues && res.physics_issues.length) {
               shot.needs_attention = true;
               shot.attention_reason = "Physics QA flagged: " + res.physics_issues.join("; ");
@@ -5059,16 +5129,16 @@
               shot.attention_reason = "";
             }
             renderV2KfGrid();
-            setV2KfStatus(`✓ Modified ${shot.id}. Click 🔒 Lock when happy to update the prompt automatically.`);
+            setV2KfStatus(`✓ Applied ${edits.length} modification(s) to ${shot.id}. Click 🔒 Lock when happy to update the prompt & clear boxes.`);
           } catch (err) {
             setV2KfStatus(`Modify ${shot.id} failed: ` + (err.message || err), true);
           } finally {
             stopBusy();
           }
         });
-        editRow.appendChild(editIn);
-        editRow.appendChild(btnEdit);
-        card.appendChild(editRow);
+        modFoot.appendChild(btnApplyCascade);
+        modBox.appendChild(modFoot);
+        card.appendChild(modBox);
       }
 
       grid.appendChild(card);

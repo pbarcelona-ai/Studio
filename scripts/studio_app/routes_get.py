@@ -716,12 +716,14 @@ def _v2_keyframes(r: Request):
 
     saved_prompts = {}
     locked_ids = set()
+    pending_edits_map = {}
     kf_meta = pd / "keyframes_v2.json"
     if kf_meta.is_file():
         try:
             kf_doc = json.loads(kf_meta.read_text(encoding="utf-8")) or {}
             saved_prompts = kf_doc.get("prompts") or {}
             locked_ids = {str(x) for x in (kf_doc.get("locked") or [])}
+            pending_edits_map = kf_doc.get("pending_edits") or {}
         except Exception:
             pass
 
@@ -817,6 +819,7 @@ def _v2_keyframes(r: Request):
                 "prompt": saved_prompts.get(sid) or default_prompt,
                 "has_image": has_img,
                 "locked": sid in locked_ids,
+                "pending_edits": list(pending_edits_map.get(sid) or []),
                 "image_url": f"/file/{slug}/{png_rel}" if has_img else "",
                 "needs_attention": bool(attention_notes) and not has_img,
                 "attention_reason": "; ".join(attention_notes),
