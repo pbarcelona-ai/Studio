@@ -1557,7 +1557,7 @@ def _v2_dialogue_render(r: Request):
 
 
 def _synth_foley_wav(wav_path: Path, prompt: str, preset: str, duration: int = 10):
-    """Synthesize a clean multi-layered stereo ambient foley WAV tailored to the prompt/preset."""
+    """Synthesize a distinct stereo foley soundscape driven directly by the chosen preset."""
     import math
     import random
     import struct
@@ -1566,37 +1566,110 @@ def _synth_foley_wav(wav_path: Path, prompt: str, preset: str, duration: int = 1
     sr = 22050
     dur = max(4, min(30, int(duration or 10)))
     n = sr * dur
-    low_p = (prompt + " " + preset).lower()
-    has_rain = any(w in low_p for w in ("rain", "storm", "water", "wind", "ocean"))
-    has_beeps = any(w in low_p for w in ("beep", "console", "cockpit", "ship", "space", "chime", "saturn"))
-    has_hum = any(w in low_p for w in ("thruster", "hum", "engine", "ship", "cabin", "space", "rocket")) or not has_rain
+    mode = (preset or "space_adventure").strip().lower()
+    rng = random.Random(hash(mode + ":" + prompt) & 0xFFFFFFFF)
 
-    rng = random.Random(hash(low_p) & 0xFFFFFFFF)
-    lp_l, lp_r = 0.0, 0.0
+    lp1_l = lp1_r = lp2_l = lp2_r = 0.0
     frames = bytearray()
+
+    # Pre-generate random droplet / crackle / crystal event timestamps so each preset has rich, distinct texture
+    events = sorted(rng.uniform(0.2, dur - 0.3) for _ in range(int(dur * 6)))
+    ev_idx = 0
+    active_pings: list[tuple[float, float, float, float]] = []  # (start_t, freq, decay, pan)
+
     for i in range(n):
         t = i / sr
-        env = min(1.0, t / 0.8) * min(1.0, (dur - t) / 0.8)
-        sig_l, sig_r = 0.0, 0.0
-        if has_hum:
-            lfo = 0.85 + 0.15 * math.sin(2 * math.pi * 0.25 * t)
-            hum = (0.18 * math.sin(2 * math.pi * 62.0 * t) + 0.10 * math.sin(2 * math.pi * 93.0 * t) + 0.05 * math.sin(2 * math.pi * 124.0 * t)) * lfo
+        env = min(1.0, t / 0.6) * min(1.0, (dur - t) / 0.6)
+        sig_l = sig_r = 0.0
+
+        while ev_idx < len(events) and events[ev_idx] <= t:
+            et = events[ev_idx]
+            ev_idx += 1
+            if mode == "rainy_home":
+                # Water droplets on glass + occasional soft hearth pop
+                active_pings.append((et, rng.uniform(900.0, 2200.0), rng.uniform(28.0, 55.0), rng.uniform(0.15, 0.85)))
+            elif mode == "cosmic_storm":
+                # Sparkling ice-ring crystal chimes
+                f = rng.choice([1046.5, 1318.5, 1567.98, 2093.0, 2637.02])
+                active_pings.append((et, f, rng.uniform(3.5, 7.0), rng.uniform(0.1, 0.9)))
+            elif mode == "forest_nature":
+                # Cricket chirps
+                active_pings.append((et, rng.uniform(3800.0, 4400.0), 18.0, rng.uniform(0.1, 0.9)))
+
+        if mode == "rainy_home":
+            # Steady warm rain patter (filtered stereo noise) + soft distant thunder swell + glass droplets
+            nl, nr = rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)
+            lp1_l = lp1_l * 0.72 + nl * 0.28
+            lp1_r = lp1_r * 0.72 + nr * 0.28
+            thunder = 0.14 * max(0.0, math.sin(2 * math.pi * 0.11 * t - 1.0)) * (math.sin(2 * math.pi * 44.0 * t) + 0.6 * math.sin(2 * math.pi * 58.0 * t))
+            sig_l += lp1_l * 0.42 + thunder
+            sig_r += lp1_r * 0.42 + thunder * 0.92
+        elif mode == "cosmic_storm":
+            # Sweeping stereo howling wind (LFO-modulated resonant noise) + deep planetary sub-drone + ice chimes
+            nl, nr = rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)
+            sweep = 0.06 + 0.14 * (0.5 + 0.5 * math.sin(2 * math.pi * 0.18 * t))
+            lp1_l = lp1_l * (1.0 - sweep) + nl * sweep
+            lp1_r = lp1_r * (1.0 - sweep) + nr * sweep
+            wind_whistle = 0.12 * (0.5 + 0.5 * math.sin(2 * math.pi * 0.22 * t)) * math.sin(2 * math.pi * (310.0 + 95.0 * math.sin(2 * math.pi * 0.14 * t)) * t)
+            sub = 0.14 * math.sin(2 * math.pi * 52.0 * t)
+            sig_l += lp1_l * 0.55 + wind_whistle * 0.7 + sub
+            sig_r += lp1_r * 0.55 + wind_whistle * 1.1 + sub
+        elif mode == "action_launch":
+            # Building rocket roar (heavy low-passed rumble + rising turbine whine + ignition crackle)
+            ramp = min(1.0, 0.25 + 0.75 * (t / dur))
+            nl, nr = rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)
+            lp1_l = lp1_l * 0.91 + nl * 0.09
+            lp1_r = lp1_r * 0.91 + nr * 0.09
+            lp2_l = lp2_l * 0.85 + lp1_l * 0.15
+            lp2_r = lp2_r * 0.85 + lp1_r * 0.15
+            roar = 0.75 * ramp
+            turbine = 0.10 * ramp * math.sin(2 * math.pi * (120.0 + 380.0 * (t / dur)) * t)
+            sub = 0.28 * ramp * math.sin(2 * math.pi * (36.0 + 18.0 * ramp) * t)
+            sig_l += lp2_l * roar + sub + turbine * 0.9
+            sig_r += lp2_r * roar + sub + turbine * 1.1
+        elif mode == "forest_nature":
+            # Gentle evening breeze + rhythmic cricket chorus
+            nl, nr = rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)
+            lp1_l = lp1_l * 0.95 + nl * 0.05
+            lp1_r = lp1_r * 0.95 + nr * 0.05
+            breeze = 0.25 + 0.15 * math.sin(2 * math.pi * 0.15 * t)
+            chirp_gate = 1.0 if (t % 0.9) < 0.28 else 0.0
+            chirp_pulse = 0.5 + 0.5 * math.sin(2 * math.pi * 24.0 * t)
+            crickets = 0.11 * chirp_gate * chirp_pulse * math.sin(2 * math.pi * 4150.0 * t)
+            sig_l += lp1_l * breeze + crickets * 0.6
+            sig_r += lp1_r * breeze + crickets * 1.1
+        else:
+            # space_adventure: Clean starship bridge hum + dual-tone sonar/telemetry chimes (NO rain)
+            lfo = 0.82 + 0.18 * math.sin(2 * math.pi * 0.35 * t)
+            hum = (0.20 * math.sin(2 * math.pi * 65.41 * t) + 0.11 * math.sin(2 * math.pi * 98.0 * t) + 0.05 * math.sin(2 * math.pi * 130.81 * t)) * lfo
             sig_l += hum
-            sig_r += hum * 0.96
-        if has_rain:
-            nl = rng.uniform(-1.0, 1.0)
-            nr = rng.uniform(-1.0, 1.0)
-            lp_l = lp_l * 0.88 + nl * 0.12
-            lp_r = lp_r * 0.88 + nr * 0.12
-            sig_l += lp_l * 0.35
-            sig_r += lp_r * 0.35
-        if has_beeps:
-            cycle = t % 2.4
-            if 0.4 < cycle < 0.56:
-                be = math.sin(math.pi * (cycle - 0.4) / 0.16)
-                beep = 0.14 * be * math.sin(2 * math.pi * (880.0 if int(t / 2.4) % 2 == 0 else 1174.66) * t)
-                sig_l += beep * 0.8
-                sig_r += beep
+            sig_r += hum * 0.94
+            cyc = t % 1.8
+            if 0.25 < cyc < 0.40:
+                be = math.sin(math.pi * (cyc - 0.25) / 0.15)
+                f = [784.0, 987.77, 1174.66][int(t / 1.8) % 3]
+                bp = 0.18 * be * math.sin(2 * math.pi * f * t)
+                sig_l += bp * 0.65
+                sig_r += bp
+            elif 0.44 < cyc < 0.54:
+                be = math.sin(math.pi * (cyc - 0.44) / 0.10)
+                bp = 0.13 * be * math.sin(2 * math.pi * 1567.98 * t)
+                sig_l += bp
+                sig_r += bp * 0.65
+
+        # Mix active transient pings (droplets / crystal chimes)
+        if active_pings:
+            keep = []
+            for st, f, dec, pan in active_pings:
+                dt = t - st
+                if dt < 0.7:
+                    amp = 0.11 * math.exp(-dt * dec)
+                    v = amp * math.sin(2 * math.pi * f * dt)
+                    sig_l += v * (1.0 - pan)
+                    sig_r += v * pan
+                    keep.append((st, f, dec, pan))
+            active_pings = keep
+
         sig_l = max(-0.95, min(0.95, sig_l * env))
         sig_r = max(-0.95, min(0.95, sig_r * env))
         frames.extend(struct.pack("<hh", int(sig_l * 32767), int(sig_r * 32767)))

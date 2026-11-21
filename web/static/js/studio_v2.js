@@ -4143,6 +4143,21 @@
 
     const getSlug = () => ($("proj")?.value || "").trim();
 
+    const FOLEY_PRESET_PROMPTS = {
+      space_adventure: "Starship bridge hum, cockpit console telemetry chimes, and clean sci-fi instrumentation.",
+      rainy_home: "Steady rain pattering on a living room window, individual droplets on glass, and soft distant thunder.",
+      cosmic_storm: "Sweeping atmospheric wind gusts, sparkling ice-ring crystal chimes, and deep planetary resonance.",
+      action_launch: "Building rocket engine roar, heavy sub-bass ignition rumble, and rising thruster turbine whine.",
+      forest_nature: "Gentle evening breeze with rhythmic distant night crickets and quiet outdoor air.",
+    };
+    const selFoleyPreset = $("v2FoleyPreset");
+    if (selFoleyPreset) {
+      selFoleyPreset.addEventListener("change", () => {
+        const p = FOLEY_PRESET_PROMPTS[selFoleyPreset.value];
+        if (p && $("v2FoleyPrompt")) $("v2FoleyPrompt").value = p;
+      });
+    }
+
     if (btnFoley) {
       btnFoley.addEventListener("click", async () => {
         const slug = getSlug();
