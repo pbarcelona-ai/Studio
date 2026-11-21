@@ -456,6 +456,295 @@
         }
       });
     }
+
+    // Step 01: One-Click Autopilot "Make Full Film" button with Film Type & Voices Popup
+    const btnAuto = $("bV2AutopilotFilm");
+    if (btnAuto) {
+      btnAuto.addEventListener("click", () => launchV2AutopilotFilm());
+    }
+  }
+
+  // ===== ONE-CLICK AUTOPILOT: FULL FILM CREATION (STEPS 01 -> 22) =====
+  function showAutopilotFilmModal(bookSlug) {
+    return new Promise((resolve) => {
+      const existing = $("v2AutopilotModalBackdrop");
+      if (existing) existing.remove();
+
+      const backdrop = document.createElement("div");
+      backdrop.id = "v2AutopilotModalBackdrop";
+      backdrop.style.cssText = "position:fixed;inset:0;background:rgba(2,6,23,0.82);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;";
+
+      const box = document.createElement("div");
+      box.style.cssText = "background:#0f172a;border:1px solid #f59e0b;border-radius:14px;max-width:520px;width:100%;padding:22px;box-shadow:0 24px 60px rgba(0,0,0,0.7);color:#f8fafc;";
+      box.innerHTML = `
+        <h3 style="margin:0 0 6px;font-size:18px;color:#f59e0b">🚀 One-Click Full Film Autopilot</h3>
+        <p style="margin:0 0 14px;font-size:13px;color:#cbd5e1;line-height:1.45">
+          Automatically runs <strong>${bookSlug}</strong> from book ingest through chapters, screenplay, continuity, shot list, spoken dialogue, score &amp; foley, keyframes, audio mix, and final MP4 premiere.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px">
+          <div>
+            <label class="f" for="v2AutoLook">Film Visual Style / Type</label>
+            <select id="v2AutoLook" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
+              <option value="pixar_3d" selected>Pixar 3D Animated Feature</option>
+              <option value="pixar_disney">Classic 3D Storybook Feature</option>
+              <option value="live_action">Cinematic Live Action (35mm)</option>
+              <option value="claymation">Stop-Motion Claymation</option>
+              <option value="travel_poster">Vintage Illustrated Travel Poster</option>
+              <option value="cyberpunk_3d">Stylized 3D Sci-Fi / Cyberpunk</option>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label class="f" for="v2AutoVoiceEng">Voice Engine</label>
+              <select id="v2AutoVoiceEng" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
+                <option value="gemini-tts" selected>✨ Gemini Neural TTS (Studio Final)</option>
+                <option value="kokoro">🎙️ Kokoro-82M Local Neural</option>
+                <option value="macos-say">⚡ Fast Scratch Preview (macOS)</option>
+              </select>
+            </div>
+            <div>
+              <label class="f" for="v2AutoDialect">Voice Dialect</label>
+              <select id="v2AutoDialect" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
+                <option value="american" selected>🇺🇸 American English</option>
+                <option value="british">🇬🇧 British RP</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label class="f" for="v2AutoScoreMood">Musical Score Mood</label>
+              <select id="v2AutoScoreMood" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
+                <option value="wonder" selected>Wonder &amp; Discovery</option>
+                <option value="epic">Epic Space Adventure</option>
+                <option value="cozy">Warm &amp; Cozy Family</option>
+                <option value="mysterious">Cosmic Mystery</option>
+                <option value="playful">Playful &amp; Whimsical</option>
+              </select>
+            </div>
+            <div>
+              <label class="f" for="v2AutoKfLimit">Keyframes to Generate</label>
+              <select id="v2AutoKfLimit" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
+                <option value="12" selected>First 12 Shots (Fast Film Cut)</option>
+                <option value="30">First 30 Shots (Extended Cut)</option>
+                <option value="9999">All Shots in Film</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px">
+          <button type="button" class="btn btn--ghost" id="bV2AutoCancel">Cancel</button>
+          <button type="button" class="btn btn--primary" id="bV2AutoStart">🚀 OK — Make Full Film</button>
+        </div>
+      `;
+      backdrop.appendChild(box);
+      document.body.appendChild(backdrop);
+
+      const finish = (val) => { backdrop.remove(); resolve(val); };
+      box.querySelector("#bV2AutoCancel").addEventListener("click", () => finish(null));
+      backdrop.addEventListener("click", (e) => { if (e.target === backdrop) finish(null); });
+      box.querySelector("#bV2AutoStart").addEventListener("click", () => {
+        finish({
+          look: box.querySelector("#v2AutoLook").value,
+          voiceEngine: box.querySelector("#v2AutoVoiceEng").value,
+          dialect: box.querySelector("#v2AutoDialect").value,
+          scoreMood: box.querySelector("#v2AutoScoreMood").value,
+          kfLimit: parseInt(box.querySelector("#v2AutoKfLimit").value, 10) || 12,
+        });
+      });
+    });
+  }
+
+  async function waitForStudioJob(isCancelled, onLine) {
+    let since = 0;
+    for (let i = 0; i < 600; i++) {
+      if (isCancelled()) return false;
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const lg = await rawCallApi(`/api/log?since=${since}`);
+        since = lg.next || since;
+        if (lg.lines && lg.lines.length && onLine) {
+          onLine(String(lg.lines[lg.lines.length - 1] || "").slice(0, 110));
+        }
+        if (!lg.running) return true;
+      } catch (e) {}
+    }
+    return true;
+  }
+
+  async function launchV2AutopilotFilm() {
+    // If user typed a story in Step 01 but hasn't clicked Save yet, save & ingest it first!
+    let slug = ($("proj")?.value || "").trim();
+    const typedText = ($("storyInputText")?.value || "").trim();
+    if (!slug && typedText) {
+      const fn = ($("storyFilename")?.value || "my_story.txt").trim();
+      const sv = await callApi("/api/save_story", { filename: fn, text: typedText });
+      slug = sv.slug;
+    }
+    if (!slug) {
+      alert("Paste a story, upload a book file, or select a book in Step 01 first.");
+      return;
+    }
+
+    const cfg = await showAutopilotFilmModal(slug);
+    if (!cfg) return;
+
+    // Show live Autopilot progress overlay with Stop button
+    let cancelled = false;
+    const overlay = document.createElement("div");
+    overlay.id = "v2AutopilotProgressOverlay";
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(2,6,23,0.86);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;";
+    overlay.innerHTML = `
+      <div style="background:#0f172a;border:1px solid #f59e0b;border-radius:14px;max-width:560px;width:100%;padding:22px;color:#f8fafc;box-shadow:0 24px 60px rgba(0,0,0,0.75)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">
+          <h3 style="margin:0;color:#f59e0b;font-size:17px">🎬 Making Full Film: ${slug}</h3>
+          <button type="button" class="btn btn--ghost" id="bV2AutoStop" style="color:#f87171;padding:4px 10px;font-size:12px">⏹ Stop</button>
+        </div>
+        <div id="v2AutoStageText" style="font-size:13px;color:#fde68a;font-weight:600;margin-bottom:8px">Starting Autopilot…</div>
+        <div style="background:#1e293b;height:8px;border-radius:999px;overflow:hidden;margin-bottom:12px">
+          <div id="v2AutoBar" style="height:100%;width:5%;background:linear-gradient(90deg,#f59e0b,#10b981);transition:width 0.35s"></div>
+        </div>
+        <pre id="v2AutoLog" style="background:#0a0d14;border:1px solid #1e293b;border-radius:8px;padding:10px;max-height:220px;overflow:auto;font-size:11px;color:#cbd5e1;white-space:pre-wrap;margin:0"></pre>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const stageEl = overlay.querySelector("#v2AutoStageText");
+    const barEl = overlay.querySelector("#v2AutoBar");
+    const logEl = overlay.querySelector("#v2AutoLog");
+    const btnStop = overlay.querySelector("#bV2AutoStop");
+    const log = (msg) => {
+      if (logEl) { logEl.textContent += msg + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+    };
+    const setStage = (pct, msg) => {
+      if (stageEl) stageEl.textContent = msg;
+      if (barEl) barEl.style.width = `${pct}%`;
+      log("▸ " + msg);
+    };
+    btnStop.addEventListener("click", () => {
+      cancelled = true;
+      btnStop.disabled = true;
+      btnStop.textContent = "Stopping…";
+      log("⏹ Stop requested by user.");
+    });
+
+    try {
+      // 1. Ensure book is read & chapters split
+      setStage(8, "Step 02: Reading book & splitting chapters…");
+      try {
+        const ch = await rawCallApi(`/api/chapters?project=${encodeURIComponent(slug)}`);
+        if (!ch || !(ch.chapters || []).length) throw new Error("not read");
+        log(`  ✓ ${ch.chapters.length} chapter(s) already ready.`);
+      } catch (e) {
+        const ing = await rawCallApi("/api/v2_ingest_book", { project: slug });
+        log(`  ✓ Book read & split into ${ing.chapters || 1} chapter(s).`);
+      }
+      if (cancelled) return;
+
+      // 2. Save chosen film style
+      setStage(16, `Step 09: Locking visual style (${cfg.look})…`);
+      await rawCallApi("/api/global_params", { project: slug, look: cfg.look });
+      if (cancelled) return;
+
+      // 3. Ensure Coverage & Screenplay exist
+      setStage(26, "Steps 03–06: Checking coverage, beats & screenplay…");
+      let sp = null;
+      try { sp = await rawCallApi(`/api/screenplay?project=${encodeURIComponent(slug)}`); } catch (e) {}
+      if (!sp || !(sp.scenes || []).length) {
+        log("  Writing coverage, beats & screenplay (this may take a minute)…");
+        await rawCallApi("/api/readin", { project: slug });
+        await waitForStudioJob(() => cancelled, (ln) => log("  " + ln));
+      } else {
+        log(`  ✓ Screenplay ready (${sp.scenes.length} scenes).`);
+      }
+      if (cancelled) return;
+
+      // 4. Continuity Book + Approve
+      setStage(38, "Step 07: Building & approving continuity book…");
+      let cb = null;
+      try { cb = await rawCallApi(`/api/continuity_book?project=${encodeURIComponent(slug)}`); } catch (e) {}
+      if (!cb || !cb.book || !(cb.book.characters || []).length) {
+        await rawCallApi("/api/continuity_bootstrap", { project: slug });
+      }
+      try { await rawCallApi("/api/continuity_approve", { project: slug }); } catch (e) {}
+      log("  ✓ Continuity book locked & approved.");
+      if (cancelled) return;
+
+      // 5. Shot List + Approve
+      setStage(48, "Step 12: Checking & approving shot list…");
+      let sl = null;
+      try { sl = await rawCallApi(`/api/shot_list?project=${encodeURIComponent(slug)}`); } catch (e) {}
+      if (!sl || !sl.list || !(sl.list.scenes || []).length) {
+        log("  Generating shot list…");
+        await rawCallApi("/api/shot_list", { project: slug });
+        await waitForStudioJob(() => cancelled, (ln) => log("  " + ln));
+      }
+      try { await rawCallApi("/api/shot_list_approve", { project: slug }); } catch (e) {}
+      log("  ✓ Shot list ready & approved.");
+      if (cancelled) return;
+
+      // 6. Voice Casting & Spoken Dialogue
+      setStage(58, `Steps 14–15: Casting voices (${cfg.dialect}) & rendering dialogue via ${cfg.voiceEngine}…`);
+      await rawCallApi("/api/redo_audio", { project: slug, mode: "dialogue", dialect: cfg.dialect });
+      const dlg = await rawCallApi(`/api/v2_dialogue?project=${encodeURIComponent(slug)}`);
+      const unrenderedDlg = (dlg.lines || []).filter(l => !l.has_audio);
+      if (unrenderedDlg.length) {
+        for (let i = 0; i < unrenderedDlg.length; i += 4) {
+          if (cancelled) return;
+          const batch = unrenderedDlg.slice(i, i + 4);
+          log(`  Rendering dialogue lines ${i + 1}–${Math.min(i + 4, unrenderedDlg.length)} of ${unrenderedDlg.length}…`);
+          await rawCallApi("/api/v2_dialogue_render", {
+            project: slug,
+            dialect: cfg.dialect,
+            engine: cfg.voiceEngine,
+            lines: batch,
+          });
+        }
+      }
+      log(`  ✓ Spoken dialogue ready (${(dlg.lines || []).length} lines).`);
+      if (cancelled) return;
+
+      // 7. Score & Foley
+      setStage(70, `Step 16: Generating Foley & Cinematic Score (${cfg.scoreMood})…`);
+      await rawCallApi("/api/v2_sound_design_render", { project: slug, kind: "foley", preset: "space_adventure", duration: 12 });
+      await rawCallApi("/api/v2_sound_design_render", { project: slug, kind: "score", mood: cfg.scoreMood, duration: 15 });
+      log("  ✓ Foley & Score tracks rendered.");
+      if (cancelled) return;
+
+      // 8. Storyboard Keyframes (up to chosen cap, skipping already rendered/locked)
+      setStage(80, `Step 17: Rendering storyboard keyframes (up to ${cfg.kfLimit === 9999 ? "all" : cfg.kfLimit} shots)…`);
+      const kf = await rawCallApi(`/api/v2_keyframes?project=${encodeURIComponent(slug)}`);
+      const allShots = (kf.scenes || []).flatMap(sc => sc.shots || []);
+      const todoShots = allShots.filter(s => !s.has_image && !s.locked).slice(0, cfg.kfLimit);
+      for (let i = 0; i < todoShots.length; i++) {
+        if (cancelled) return;
+        const sh = todoShots[i];
+        log(`  Rendering keyframe ${sh.id} (${i + 1}/${todoShots.length})…`);
+        await rawCallApi("/api/v2_keyframe_render", { project: slug, id: sh.id, prompt: sh.prompt, aspect_ratio: "16:9" });
+      }
+      log(`  ✓ Keyframes ready.`);
+      if (cancelled) return;
+
+      // 9. Mix Master Audio
+      setStage(90, "Step 21: Mixing Dialogue, Foley & Score stems…");
+      await rawCallApi("/api/v2_audio_mix_render", { project: slug, dialogue_db: 0, foley_db: -3, score_db: -6, ducking: true });
+      log("  ✓ Master audio mixed.");
+      if (cancelled) return;
+
+      // 10. Assemble Master MP4 & jump to Step 22 Premiere
+      setStage(96, "Step 22: Assembling 16:9 Master Cinema MP4…");
+      await rawCallApi("/api/v2_export_make", { project: slug, target: "master_mp4" });
+      setStage(100, "🎉 Full Film Complete! Opening Cinema Premiere (Step 22)…");
+      await new Promise(r => setTimeout(r, 900));
+      overlay.remove();
+      activateStep(22);
+    } catch (err) {
+      log("❌ Autopilot paused on error: " + (err.message || err));
+      if (stageEl) stageEl.textContent = "⚠️ Autopilot stopped — see log below";
+      btnStop.disabled = false;
+      btnStop.textContent = "Close";
+      btnStop.onclick = () => overlay.remove();
+      return;
+    }
+    if (cancelled) overlay.remove();
   }
 
   // ===== SCROLL POSITION PRESERVATION =====
