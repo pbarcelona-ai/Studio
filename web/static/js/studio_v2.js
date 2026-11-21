@@ -2312,7 +2312,9 @@
       wardrobeStatesMap = (ws && ws.states) || {};
     } catch (e) {}
 
-    const allChars = [...merged.values()];
+    const allChars = [...merged.values()].sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
+    );
     if (summaryEl) {
       summaryEl.innerHTML = `<strong style="color:#f59e0b">${allChars.length} character(s)</strong> found for <strong>${slug}</strong>` +
         (allChars.length ? " — edit any dossier inline, save, delete, or add missing characters." : " — click <strong>➕ Add Character</strong> or <strong>🔄 Sync from Book</strong> to populate your cast.");
@@ -3412,7 +3414,9 @@
     } catch (e) {}
     Object.keys(savedCast).forEach(name => addChar(name, ""));
 
-    const list = [...chars.values()];
+    const list = [...chars.values()].sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
+    );
     if (summaryEl) {
       summaryEl.innerHTML = `<strong style="color:#f59e0b">${list.length} character(s)</strong> · Active dialect: <strong style="color:#f8fafc">${savedDialect}</strong> (${savedMode} mode)`;
     }
@@ -5097,7 +5101,9 @@
     if (prevH > 0) list.style.minHeight = prevH + "px";
     list.innerHTML = "";
 
-    const chars = v2TurnState.characters || [];
+    const chars = [...(v2TurnState.characters || [])].sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
+    );
     let totalViews = 0, doneViews = 0;
     chars.forEach(c => {
       const outfits = (c.outfits && c.outfits.length) ? c.outfits : [{ id: "default", scenes: "All Scenes", location: "", wardrobe: c.desc || "", views: c.views || {} }];
