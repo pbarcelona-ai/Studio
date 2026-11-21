@@ -317,7 +317,10 @@ class ReadItIn:
                     "patterns like 'striped shirt'). Carry that EXACT costume verbatim into every subsequent scene unless the story explicitly changes the "
                     "character's clothes in a new scene. "
                     "EXACT SCENE & LOCATION CONTINUITY: Keep the exact same location heading, spatial layout, key furniture, props, and lighting across "
-                    "consecutive scenes in the same place unless the story explicitly transitions characters to a new location.")
+                    "consecutive scenes in the same place unless the story explicitly transitions characters to a new location. "
+                    "SMOOTH SCENE-BY-SCENE & MULTI-STORYLINE FLOW: Every scene must flow seamlessly into the next with strong narrative momentum; "
+                    "jumps between separate storylines or subplots within the overall story are allowed, but must use smooth, motivated transitions "
+                    "(visual match, sound bridge, thematic echo, or clean establishing handoff) so the story always reads and plays effortlessly.")
 
     def act_scenes(self, act: dict, n: int, of: int, treatment: str, plan: dict, cov: dict, prev: dict | None, seconds: float) -> list[dict]:
         self.say("screenplay", f"Your screenwriter is writing act {n} of {of}" + (" (episode)" if self.series else ""))

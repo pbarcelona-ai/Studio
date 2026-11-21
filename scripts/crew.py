@@ -28,6 +28,13 @@ RECIPES_DIR = ROOT / "recipes"
 ROLE_RE = re.compile(r"^[a-z][a-z_]{1,40}$")
 RULES_MAX = 20_000
 JSON_REPLY = "You reply with a single JSON object and nothing else."
+STUDIO_CRAFT_STANDARDS = (
+    "## Studio Craft & Narrative Flow Standards (apply to every department)\n"
+    "- Act as a world-class film industry expert in your specific discipline.\n"
+    "- Seamless Scene-by-Scene Flow: Ensure the story's translation from book to film flows smoothly and organically from scene to scene and shot to shot, with clear cause-and-effect, emotional momentum, and visual rhythm.\n"
+    "- Parallel Storyline Jumps: Cutting between different storylines or subplots within the overall story is allowed whenever the narrative calls for it, provided every jump uses a smooth, motivated bridge (visual match-cut, audio L-cut/J-cut, dialogue/thematic echo, or clear establishing handoff) so the cut feels effortless rather than jarring.\n"
+    "- Continuity Discipline: Keep character costumes exact and singular unless a scene explicitly changes wardrobe, keep matching locations consistent unless transitioning, and obey solid-object physics."
+)
 _RULES_LOCK = threading.Lock()                         # the server is threaded: check-then-write must not interleave
 
 
@@ -207,6 +214,7 @@ def system(roles_: str | list[str], book_dir: Path | None = None, step: str = ""
     if len(names) > 1:
         parts.append("You are this film crew, working together on one task. Each member keeps to their own job:")
     parts += texts
+    parts.append(STUDIO_CRAFT_STANDARDS)
     if instructions.strip():
         parts.append("## This task\n" + instructions.strip())
     if book_dir:
