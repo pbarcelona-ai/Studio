@@ -650,7 +650,7 @@
       try { sp = await rawCallApi(`/api/screenplay?project=${encodeURIComponent(slug)}`); } catch (e) {}
       if (!sp || !(sp.scenes || []).length) {
         log("  Writing coverage, beats & screenplay (this may take a minute)…");
-        await rawCallApi("/api/readin", { project: slug });
+        await rawCallApi("/api/read_it_in", { project: slug });
         await waitForStudioJob(() => cancelled, (ln) => log("  " + ln));
       } else {
         log(`  ✓ Screenplay ready (${sp.scenes.length} scenes).`);
