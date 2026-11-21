@@ -1915,3 +1915,131 @@ def _v2_sound_design_render(r: Request):
     return {"status": "ok", "kind": kind, "scene": scene_id, "audio_url": rel_url, "duration": duration}
 
 
+def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:9") -> str:
+    """Generate a storyboard keyframe PNG using Gemini Image Generation (SDK first, else HTTPS REST fallback)."""
+    import base64
+    import urllib.error
+    import urllib.request
+    import run_gemini_omni
+
+    api_key = run_gemini_omni.get_gemini_api_key()
+    if not api_key:
+        raise PlanError("Gemini API key is not configured. Save your GEMINI_API_KEY in Step 13 first.")
+
+    full_prompt = f"Generate a single clean cinematic widescreen 16:9 film storyboard keyframe with NO text, NO captions, NO watermarks:\n\n{prompt}"
+    models = ("gemini-2.5-flash-image", "gemini-3.1-flash-image-preview", "gemini-3.1-flash-lite-image", "gemini-2.0-flash-exp-image-generation")
+    last_err = None
+
+    if run_gemini_omni.sdk_available():
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        for m in models:
+            try:
+                resp = client.models.generate_content(
+                    model=m,
+                    contents=full_prompt,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                        image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+                    ),
+                )
+                for part in getattr(resp, "parts", None) or []:
+                    inline = getattr(part, "inline_data", None)
+                    if inline and getattr(inline, "data", None):
+                        raw = inline.data
+                        if isinstance(raw, str):
+                            raw = base64.b64decode(raw)
+                        out_png.write_bytes(raw)
+                        return m
+            except Exception as e:
+                last_err = e
+                continue
+
+    payload = json.dumps({
+        "contents": [{"parts": [{"text": full_prompt}]}],
+        "generationConfig": {
+            "responseModalities": ["IMAGE", "TEXT"],
+        },
+    }).encode("utf-8")
+
+    for m in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            for cand in data.get("candidates") or []:
+                for part in (cand.get("content") or {}).get("parts") or []:
+                    inline = part.get("inlineData") or part.get("inline_data") or {}
+                    b64 = inline.get("data")
+                    if b64:
+                        out_png.write_bytes(base64.b64decode(b64))
+                        return m
+        except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode("utf-8", errors="ignore")[:300]
+            except Exception:
+                body = str(e)
+            last_err = RuntimeError(f"HTTP {e.code}: {body}")
+            continue
+        except Exception as e:
+            last_err = e
+            continue
+
+    raise PlanError(f"Keyframe image generation failed: {run_gemini_omni.sanitize_error(last_err) if last_err else 'no image returned'}")
+
+
+@route("POST", "/api/v2_keyframe_render")
+def _v2_keyframe_render(r: Request):
+    """Generate or upload a storyboard keyframe PNG in <project>/keyframes/<shot_id>.png."""
+    import base64
+
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = "".join(c for c in str(r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
+    if not slug or not shot_id:
+        raise PlanError("project and id are required")
+
+    pd = pdir(slug, "book")
+    kf_dir = pd / "keyframes"
+    kf_dir.mkdir(parents=True, exist_ok=True)
+    out_png = kf_dir / f"{shot_id}.png"
+    rel_url = f"/file/{slug}/keyframes/{shot_id}.png"
+
+    # Persist edited prompt if provided
+    prompt = str(r.body.get("prompt") or "").strip()
+    if prompt:
+        meta_path = pd / "keyframes_v2.json"
+        meta = {}
+        if meta_path.is_file():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+            except Exception:
+                meta = {}
+        prompts = dict(meta.get("prompts") or {})
+        prompts[shot_id] = prompt
+        meta["prompts"] = prompts
+        meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    b64 = str(r.body.get("image_base64") or "").strip()
+    if b64:
+        if "," in b64 and b64.startswith("data:"):
+            b64 = b64.split(",", 1)[1]
+        raw = base64.b64decode(b64)
+        if len(raw) < 100:
+            raise PlanError("uploaded image is empty")
+        out_png.write_bytes(raw)
+        return {"status": "ok", "id": shot_id, "image_url": rel_url, "model": "uploaded"}
+
+    if not prompt:
+        raise PlanError("prompt is required to generate a keyframe")
+    model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"))
+    return {"status": "ok", "id": shot_id, "image_url": rel_url, "model": model_used}
+
+

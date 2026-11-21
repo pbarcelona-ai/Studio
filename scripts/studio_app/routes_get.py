@@ -616,5 +616,135 @@ def _v2_sound_design(r: Request):
     }
 
 
+@route("GET", "/api/v2_keyframes")
+def _v2_keyframes(r: Request):
+    """Return all scenes & shots from shots/shotlist.json with keyframe PNG status and editable prompts."""
+    import json
+
+    slug = r.q("project")
+    if not slug:
+        return {"scenes": [], "look": "", "total_shots": 0, "rendered_shots": 0, "gemini_ready": False}
+    pd = pdir(slug, "book")
+
+    look = "pixar_3d"
+    gp_path = pd / "global_params.json"
+    if gp_path.is_file():
+        try:
+            gp = json.loads(gp_path.read_text(encoding="utf-8")) or {}
+            look = str(gp.get("look") or look)
+        except Exception:
+            pass
+
+    # Character visual tokens from continuity book so prompts stay visually consistent
+    char_tokens = {}
+    for cb_file in (pd / f"{slug}.json", pd / "continuity.json"):
+        if cb_file.is_file():
+            try:
+                cb = json.loads(cb_file.read_text(encoding="utf-8")) or {}
+                for c in cb.get("characters") or []:
+                    if isinstance(c, dict) and c.get("name") and c.get("token"):
+                        char_tokens[str(c["name"]).lower()] = str(c["token"]).strip()
+                break
+            except Exception:
+                pass
+
+    saved_prompts = {}
+    kf_meta = pd / "keyframes_v2.json"
+    if kf_meta.is_file():
+        try:
+            saved_prompts = (json.loads(kf_meta.read_text(encoding="utf-8")) or {}).get("prompts") or {}
+        except Exception:
+            pass
+
+    sl_path = pd / "shots" / "shotlist.json"
+    raw_scenes = []
+    if sl_path.is_file():
+        try:
+            raw_scenes = (json.loads(sl_path.read_text(encoding="utf-8")) or {}).get("scenes") or []
+        except Exception:
+            pass
+
+    look_labels = {
+        "live_action": "cinematic live-action film still, photorealistic, 35mm film grain",
+        "claymation": "handcrafted stop-motion claymation still, tactile miniature set, warm studio lighting",
+        "pixar_3d": "Pixar 3D animated film still, expressive characters, rich volumetric lighting",
+        "pixar_disney": "classic stylized 3D animated feature film still, warm storybook lighting",
+        "travel_poster": "vintage illustrated travel poster art style, bold graphic composition",
+        "cyberpunk_3d": "stylized 3D sci-fi cinematic still, dramatic neon rim lighting",
+    }
+    style_prefix = look_labels.get(look, "cinematic 3D animated film still")
+
+    scenes = []
+    total_shots = 0
+    rendered_shots = 0
+    for sc in raw_scenes:
+        if not isinstance(sc, dict):
+            continue
+        sc_id = str(sc.get("id") or sc.get("scene") or "S001")
+        heading = str(sc.get("heading") or "")
+        shots_out = []
+        for idx, sh in enumerate(sc.get("shots") or [], start=1):
+            if not isinstance(sh, dict):
+                continue
+            n = int(sh.get("n") or idx)
+            sid = f"{sc_id}-{n:02d}"
+            stype = str(sh.get("type") or "MS")
+            lens = sh.get("lens_mm") or 35
+            secs = sh.get("seconds") or 4.0
+            comp = str(sh.get("composition") or "").strip()
+            act = str(sh.get("action") or "").strip()
+            light = str(sh.get("lighting") or "").strip()
+            chars = [str(c) for c in (sh.get("characters") or []) if c]
+            toks = [char_tokens[c.lower()] for c in chars if c.lower() in char_tokens]
+
+            bits = [f"{style_prefix}, {stype} shot ({lens}mm lens), {heading}"]
+            if comp:
+                bits.append(comp)
+            if act and act.lower() not in comp.lower():
+                bits.append(act)
+            if light:
+                bits.append(light)
+            if toks:
+                bits.append("Characters: " + "; ".join(toks[:3]))
+            default_prompt = ". ".join(b.rstrip(".") for b in bits if b)
+
+            png_rel = f"keyframes/{sid}.png"
+            png_path = pd / png_rel
+            has_img = png_path.is_file() and png_path.stat().st_size > 200
+            total_shots += 1
+            if has_img:
+                rendered_shots += 1
+
+            shots_out.append({
+                "id": sid,
+                "scene": sc_id,
+                "n": n,
+                "type": stype,
+                "lens_mm": lens,
+                "movement": str(sh.get("movement") or "static"),
+                "seconds": secs,
+                "action": act or comp[:120],
+                "prompt": saved_prompts.get(sid) or default_prompt,
+                "has_image": has_img,
+                "image_url": f"/file/{slug}/{png_rel}" if has_img else "",
+            })
+        scenes.append({"id": sc_id, "heading": heading, "shots": shots_out})
+
+    gemini_ready = False
+    try:
+        import run_gemini_omni
+        gemini_ready = bool(run_gemini_omni.get_gemini_api_key())
+    except Exception:
+        pass
+
+    return {
+        "scenes": scenes,
+        "look": look,
+        "total_shots": total_shots,
+        "rendered_shots": rendered_shots,
+        "gemini_ready": gemini_ready,
+    }
+
+
 
 

@@ -216,6 +216,7 @@
   const BUSY_API_LABELS = [
     [/\/api\/v2_dialogue_render/, "Generating dialogue audio…"],
     [/\/api\/v2_sound_design_render/, "Generating Score / Foley audio…"],
+    [/\/api\/v2_keyframe_render/, "Generating storyboard keyframe…"],
     [/\/api\/gemini_omni_generate/, "Generating video via Gemini Omni 1.2 Flash…"],
     [/\/api\/v2_install_engine/, "Installing package into Studio…"],
     [/\/api\/v2_voice_baseline_set/, "Saving character voice baseline…"],
@@ -459,6 +460,11 @@
     // If entering Step 16 (Score & Foley Sound Design), load saved prompts & rendered tracks
     if (currentStep === 16) {
       loadV2SoundDesign();
+    }
+
+    // If entering Step 17 (Storyboard Keyframes), load all scenes & shots filmstrip
+    if (currentStep === 17) {
+      loadV2Keyframes();
     }
 
     // Check for storyline drift and load step autopilot
@@ -4534,6 +4540,275 @@
     if (btnReload) btnReload.addEventListener("click", () => loadV2SoundDesign());
   }
 
+  // ===== STEP 17: STORYBOARD KEYFRAMES =====
+  let v2KfState = { project: "", scenes: [], activeSceneId: "", look: "", total_shots: 0, rendered_shots: 0 };
+
+  function setV2KfStatus(msg, isErr) {
+    const el = $("v2KfStatus");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.style.color = isErr ? "#f87171" : "#34d399";
+  }
+
+  function renderV2KfScenesBar() {
+    const bar = $("v2KfScenes");
+    if (!bar) return;
+    bar.innerHTML = "";
+    (v2KfState.scenes || []).forEach(sc => {
+      const isAct = sc.id === v2KfState.activeSceneId;
+      const done = (sc.shots || []).filter(s => s.has_image).length;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn " + (isAct ? "btn--primary" : "btn--ghost");
+      btn.style.cssText = "white-space:nowrap;padding:5px 12px;font-size:var(--text-xs)";
+      btn.textContent = `${sc.id} (${done}/${(sc.shots || []).length})`;
+      btn.title = sc.heading || sc.id;
+      btn.addEventListener("click", () => {
+        v2KfState.activeSceneId = sc.id;
+        renderV2KfScenesBar();
+        renderV2KfGrid();
+      });
+      bar.appendChild(btn);
+    });
+  }
+
+  async function renderSingleKeyframe(shot, promptText, triggerBtn, cardEl) {
+    const stopBusy = startBusyFeedback(triggerBtn, cardEl, `Generating keyframe ${shot.id}…`);
+    setV2KfStatus(`Generating 16:9 keyframe for ${shot.id}…`);
+    try {
+      const res = await callApi("/api/v2_keyframe_render", {
+        project: v2KfState.project,
+        id: shot.id,
+        prompt: promptText,
+        aspect_ratio: "16:9",
+      });
+      shot.prompt = promptText;
+      if (!shot.has_image) v2KfState.rendered_shots++;
+      shot.has_image = true;
+      shot.image_url = res.image_url + "?t=" + Date.now();
+      renderV2KfScenesBar();
+      renderV2KfGrid();
+      setV2KfStatus(`✓ Rendered keyframe ${shot.id} (${res.model || "image"})`);
+    } catch (err) {
+      setV2KfStatus(`Keyframe ${shot.id} failed: ` + (err.message || err), true);
+    } finally {
+      stopBusy();
+    }
+  }
+
+  function renderV2KfGrid() {
+    const grid = $("v2KfGrid");
+    const summary = $("v2KfSummary");
+    const badge = $("v2KfBadge");
+    if (!grid) return;
+
+    const savedY = window.scrollY || 0;
+    const prevH = grid.offsetHeight;
+    if (prevH > 0) grid.style.minHeight = prevH + "px";
+    grid.innerHTML = "";
+
+    const sc = (v2KfState.scenes || []).find(s => s.id === v2KfState.activeSceneId) || (v2KfState.scenes || [])[0];
+    if (summary) {
+      summary.textContent = v2KfState.total_shots
+        ? `${v2KfState.scenes.length} scenes · ${v2KfState.total_shots} total shots · ${v2KfState.rendered_shots} keyframes rendered` + (sc ? ` · Viewing ${sc.id}: ${sc.heading}` : "")
+        : "No shots found yet. Generate your Shot List in Step 12 first.";
+    }
+    if (badge) {
+      badge.textContent = v2KfState.rendered_shots > 0
+        ? `✓ ${v2KfState.rendered_shots}/${v2KfState.total_shots} Rendered`
+        : `${v2KfState.total_shots} Shots Ready`;
+    }
+
+    if (!sc || !(sc.shots || []).length) {
+      const empty = document.createElement("div");
+      empty.className = "direct-story-card";
+      empty.style.cssText = "grid-column:1/-1;color:#94a3b8";
+      empty.textContent = "No shots in this scene yet.";
+      grid.appendChild(empty);
+      grid.style.minHeight = "";
+      return;
+    }
+
+    sc.shots.forEach(shot => {
+      const card = document.createElement("div");
+      card.className = "deliverable-card v2-kf-card";
+      card.dataset.shotId = shot.id;
+
+      // 16:9 Preview Box
+      const preview = document.createElement("div");
+      preview.style.cssText = "background:#000;aspect-ratio:16/9;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#64748b;position:relative;border:1px solid #1e293b";
+      if (shot.has_image && shot.image_url) {
+        const img = document.createElement("img");
+        img.src = shot.image_url;
+        img.alt = `Keyframe ${shot.id}`;
+        img.style.cssText = "width:100%;height:100%;object-fit:cover;cursor:zoom-in;display:block";
+        img.title = "Click to view full-size keyframe";
+        img.addEventListener("click", () => window.open(shot.image_url, "_blank"));
+        preview.appendChild(img);
+      } else {
+        const ph = document.createElement("span");
+        ph.style.cssText = "font-size:var(--text-xs);padding:12px;text-align:center";
+        ph.textContent = `[${shot.id} · ${shot.type} · Not rendered yet]`;
+        preview.appendChild(ph);
+      }
+      card.appendChild(preview);
+
+      // Title + Shot specs
+      const title = document.createElement("strong");
+      title.style.cssText = "color:#f59e0b;margin-top:6px;font-size:var(--text-sm)";
+      title.textContent = `${shot.id} · ${shot.type} · ${shot.lens_mm}mm · ${shot.movement} (${shot.seconds}s)`;
+      card.appendChild(title);
+
+      // Editable visual prompt
+      const ta = document.createElement("textarea");
+      ta.className = "v2-kf-prompt";
+      ta.rows = 3;
+      ta.value = shot.prompt || "";
+      ta.style.cssText = "width:100%;padding:6px 8px;background:#0a0d14;color:#e2e8f0;border:1px solid #334155;border-radius:4px;font-size:11px;resize:vertical;margin-top:4px";
+      card.appendChild(ta);
+
+      // Action buttons
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin-top:6px";
+
+      const btnGen = document.createElement("button");
+      btnGen.type = "button";
+      btnGen.className = "btn " + (shot.has_image ? "btn--secondary" : "btn--primary");
+      btnGen.style.cssText = "padding:4px 10px;font-size:var(--text-xs);flex:1";
+      btnGen.textContent = shot.has_image ? "↺ Re-roll Keyframe" : "✨ Generate Keyframe";
+      btnGen.addEventListener("click", () => renderSingleKeyframe(shot, ta.value.trim(), btnGen, card));
+
+      const upIn = document.createElement("input");
+      upIn.type = "file";
+      upIn.accept = "image/*";
+      upIn.style.display = "none";
+      upIn.addEventListener("change", () => {
+        const f = upIn.files && upIn.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const stopBusy = startBusyFeedback(btnUp, card, `Uploading ${f.name}…`);
+          try {
+            const res = await callApi("/api/v2_keyframe_render", {
+              project: v2KfState.project,
+              id: shot.id,
+              prompt: ta.value.trim(),
+              image_base64: reader.result,
+            });
+            if (!shot.has_image) v2KfState.rendered_shots++;
+            shot.has_image = true;
+            shot.image_url = res.image_url + "?t=" + Date.now();
+            renderV2KfScenesBar();
+            renderV2KfGrid();
+            setV2KfStatus(`✓ Uploaded custom keyframe "${f.name}" for ${shot.id}.`);
+          } catch (err) {
+            setV2KfStatus("Upload failed: " + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        };
+        reader.readAsDataURL(f);
+      });
+
+      const btnUp = document.createElement("button");
+      btnUp.type = "button";
+      btnUp.className = "btn btn--ghost";
+      btnUp.style.cssText = "padding:4px 8px;font-size:var(--text-xs)";
+      btnUp.textContent = "⬆ Upload";
+      btnUp.addEventListener("click", () => upIn.click());
+
+      row.appendChild(btnGen);
+      row.appendChild(btnUp);
+      row.appendChild(upIn);
+      card.appendChild(row);
+      grid.appendChild(card);
+    });
+
+    window.scrollTo({ top: savedY, behavior: "instant" });
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: savedY, behavior: "instant" });
+      grid.style.minHeight = "";
+    });
+  }
+
+  async function loadV2Keyframes() {
+    const selProj = $("proj");
+    const slug = selProj ? (selProj.value || "").trim() : "";
+    const summary = $("v2KfSummary");
+    const grid = $("v2KfGrid");
+    if (!grid) return;
+    if (!slug) {
+      if (summary) summary.textContent = "Select a book in Step 01 first.";
+      grid.innerHTML = "";
+      return;
+    }
+    if (summary) summary.textContent = "Loading scenes & shots…";
+    try {
+      const data = await callApi(`/api/v2_keyframes?project=${encodeURIComponent(slug)}`);
+      v2KfState.project = slug;
+      v2KfState.scenes = data.scenes || [];
+      v2KfState.look = data.look || "";
+      v2KfState.total_shots = data.total_shots || 0;
+      v2KfState.rendered_shots = data.rendered_shots || 0;
+      if (!v2KfState.activeSceneId || !v2KfState.scenes.some(s => s.id === v2KfState.activeSceneId)) {
+        v2KfState.activeSceneId = (v2KfState.scenes[0] && v2KfState.scenes[0].id) || "";
+      }
+      renderV2KfScenesBar();
+      renderV2KfGrid();
+    } catch (e) {
+      setV2KfStatus("Could not load keyframes: " + (e.message || e), true);
+    }
+  }
+
+  function initV2Keyframes() {
+    const btnReload = $("bV2KfReload");
+    const btnRenderScene = $("bV2KfRenderScene");
+    if (btnReload) btnReload.addEventListener("click", () => loadV2Keyframes());
+    if (btnRenderScene) {
+      btnRenderScene.addEventListener("click", async () => {
+        const sc = (v2KfState.scenes || []).find(s => s.id === v2KfState.activeSceneId);
+        if (!sc || !(sc.shots || []).length) return;
+        const cards = [...document.querySelectorAll("#v2KfGrid .v2-kf-card")];
+        const stopBusy = startBusyFeedback(btnRenderScene, cards, `Generating ${sc.shots.length} keyframes for ${sc.id}…`);
+        let okCount = 0;
+        try {
+          for (const shot of sc.shots) {
+            const cardEl = document.querySelector(`#v2KfGrid .v2-kf-card[data-shot-id="${shot.id}"]`);
+            const promptText = (cardEl?.querySelector(".v2-kf-prompt")?.value || shot.prompt || "").trim();
+            setV2KfStatus(`Generating ${shot.id} (${okCount + 1}/${sc.shots.length})…`);
+            try {
+              const res = await callApi("/api/v2_keyframe_render", {
+                project: v2KfState.project,
+                id: shot.id,
+                prompt: promptText,
+                aspect_ratio: "16:9",
+              });
+              shot.prompt = promptText;
+              if (!shot.has_image) v2KfState.rendered_shots++;
+              shot.has_image = true;
+              shot.image_url = res.image_url + "?t=" + Date.now();
+              okCount++;
+              renderV2KfScenesBar();
+              renderV2KfGrid();
+            } catch (err) {
+              setV2KfStatus(`Stopped at ${shot.id}: ` + (err.message || err), true);
+              break;
+            }
+          }
+          if (okCount > 0) setV2KfStatus(`✓ Rendered ${okCount}/${sc.shots.length} keyframes for ${sc.id}!`);
+        } finally {
+          stopBusy();
+        }
+      });
+    }
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        if (currentStep === 17) loadV2Keyframes();
+      });
+    }
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
@@ -4553,6 +4828,7 @@
     initV2VoiceCast();
     initV2Dialogue();
     initV2SoundDesign();
+    initV2Keyframes();
     initV2GeminiOmni();
 
     // Bind step pills in 6-phase bar
@@ -4612,6 +4888,7 @@
       if (currentStep === 14) loadV2VoiceCast();
       if (currentStep === 15) loadV2Dialogue();
       if (currentStep === 16) loadV2SoundDesign();
+      if (currentStep === 17) loadV2Keyframes();
     }, 1200);
   });
 
@@ -4629,6 +4906,7 @@
     loadV2VoiceCast,
     loadV2Dialogue,
     loadV2SoundDesign,
+    loadV2Keyframes,
     loadV2GeminiStatus,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,

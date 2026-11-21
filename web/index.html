@@ -1178,57 +1178,32 @@
         <div class="step-zone-header">
           <div class="step-title-wrap">
             <h2 id="step17Title">Step 17: Storyboard Keyframes</h2>
-            <p class="step-goal">Scene-by-scene filmstrip showing master keyframes. Review each shot before motion synthesis.</p>
+            <p class="step-goal">Scene-by-scene filmstrip showing master keyframes. Generate, re-roll, or upload keyframes before motion synthesis.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Keyframes Rendered</span>
+          <span class="status-badge status-badge--synced" id="v2KfBadge">Loading Shots…</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> FLUX.1-dev &mdash; <em>Cinematic master still generation with Depth-Anything-V2 spatial geometry.</em>
+          ✨ <strong>Autopilot Pick:</strong> Gemini Image / FLUX.1-dev &mdash; <em>16:9 master storyboard stills locked to your visual style &amp; character tokens.</em>
         </div>
         <div class="step-zone-workspace">
-          <!-- Scene Selector Strip -->
-          <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:var(--space-3)">
-            <button type="button" class="btn btn--secondary" style="white-space:nowrap;background:#f59e0b;color:#0b0e14;font-weight:700">Scene 1: Orbiting Saturn (3 shots)</button>
-            <button type="button" class="btn btn--ghost" style="white-space:nowrap">Scene 2: Titan Descent (4 shots)</button>
-            <button type="button" class="btn btn--ghost" style="white-space:nowrap">Scene 3: Ice Shoreline (3 shots)</button>
+          <!-- Controls & Scene Selector Strip -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <div id="v2KfSummary" style="font-size:var(--text-sm);color:#cbd5e1">Loading scenes &amp; shots from your shot list…</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn--primary" id="bV2KfRenderScene">🎨 Generate Scene Keyframes</button>
+                <button type="button" class="btn btn--ghost" id="bV2KfReload">↻ Reload</button>
+              </div>
+            </div>
+            <div id="v2KfScenes" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:6px"></div>
+            <div id="v2KfStatus" style="font-size:var(--text-xs);color:#34d399" aria-live="polite"></div>
           </div>
 
-          <!-- Scene Filmstrip (3 shots in a row, zero vertical hunting!) -->
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#64748b">
-                <span>[Keyframe 1: Ship at Rings]</span>
-              </div>
-              <strong style="color:#f59e0b;margin-top:6px">Shot 1 &middot; Wide</strong>
-              <small style="color:#94a3b8">Ship approaching rings with sunlight flare</small>
-              <div style="display:flex;gap:6px;margin-top:6px">
-                <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">↺ Re-roll</button>
-              </div>
-            </div>
-            <div class="deliverable-card">
-              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#64748b">
-                <span>[Keyframe 2: Tommy & Judah]</span>
-              </div>
-              <strong style="color:#f59e0b;margin-top:6px">Shot 2 &middot; Medium Two-Shot</strong>
-              <small style="color:#94a3b8">Tommy pointing, Judah at console</small>
-              <div style="display:flex;gap:6px;margin-top:6px">
-                <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">↺ Re-roll</button>
-              </div>
-            </div>
-            <div class="deliverable-card">
-              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#64748b">
-                <span>[Keyframe 3: Tommy Close-Up]</span>
-              </div>
-              <strong style="color:#f59e0b;margin-top:6px">Shot 3 &middot; Close-Up Dialogue</strong>
-              <small style="color:#94a3b8">Tommy speaking (InstantID face locked)</small>
-              <div style="display:flex;gap:6px;margin-top:6px">
-                <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">↺ Re-roll</button>
-              </div>
-            </div>
-          </div>
+          <!-- Dynamic Scene Filmstrip Grid -->
+          <div id="v2KfGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(290px, 1fr));gap:var(--space-3)"></div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Score &amp; Foley</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Motion & Video ➔</button>
         </div>
       </section>
