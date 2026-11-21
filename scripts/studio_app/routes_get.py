@@ -635,8 +635,9 @@ def _v2_keyframes(r: Request):
         except Exception:
             pass
 
-    # Character visual tokens from continuity book so prompts stay visually consistent
+    # Character visual/wardrobe tokens (prefer Step 08 saved dossiers, fallback to continuity book)
     char_tokens = {}
+    loc_tokens = {}
     for cb_file in (pd / f"{slug}.json", pd / "continuity.json"):
         if cb_file.is_file():
             try:
@@ -644,9 +645,28 @@ def _v2_keyframes(r: Request):
                 for c in cb.get("characters") or []:
                     if isinstance(c, dict) and c.get("name") and c.get("token"):
                         char_tokens[str(c["name"]).lower()] = str(c["token"]).strip()
+                for loc in cb.get("locations") or []:
+                    if isinstance(loc, dict) and loc.get("name") and loc.get("token"):
+                        loc_tokens[str(loc["name"]).lower()] = str(loc["token"]).strip()
                 break
             except Exception:
                 pass
+    try:
+        for ch in character_tokens.list_characters(slug) or []:
+            if isinstance(ch, dict) and ch.get("name"):
+                vt = str(ch.get("visual_token") or ch.get("token") or "").strip()
+                desc = str(ch.get("description") or "").strip()
+                if vt or desc:
+                    char_tokens[str(ch["name"]).lower()] = vt or desc
+    except Exception:
+        pass
+
+    def _match_location_token(heading_text: str) -> str:
+        low_h = heading_text.lower()
+        for lname, ltok in loc_tokens.items():
+            if lname and lname in low_h:
+                return ltok
+        return ""
 
     saved_prompts = {}
     kf_meta = pd / "keyframes_v2.json"
@@ -695,17 +715,22 @@ def _v2_keyframes(r: Request):
             act = str(sh.get("action") or "").strip()
             light = str(sh.get("lighting") or "").strip()
             chars = [str(c) for c in (sh.get("characters") or []) if c]
-            toks = [char_tokens[c.lower()] for c in chars if c.lower() in char_tokens]
+            toks = [f"{c}: {char_tokens[c.lower()]}" for c in chars if c.lower() in char_tokens]
+            loc_tok = _match_location_token(heading)
 
-            bits = [f"{style_prefix}, {stype} shot ({lens}mm lens), {heading}"]
+            bits = [f"{style_prefix}, {stype} shot ({lens}mm lens)"]
+            if loc_tok:
+                bits.append(f"LOCKED LOCATION ({heading}): {loc_tok}")
+            elif heading:
+                bits.append(f"LOCKED LOCATION: {heading}")
             if comp:
                 bits.append(comp)
             if act and act.lower() not in comp.lower():
                 bits.append(act)
             if light:
-                bits.append(light)
+                bits.append(f"Lighting: {light}")
             if toks:
-                bits.append("Characters: " + "; ".join(toks[:3]))
+                bits.append("LOCKED CHARACTERS & SINGULAR WARDROBE (exact clothing colors & outfit unchanged in this scene): " + "; ".join(toks[:4]))
             default_prompt = ". ".join(b.rstrip(".") for b in bits if b)
 
             png_rel = f"keyframes/{sid}.png"
@@ -724,6 +749,8 @@ def _v2_keyframes(r: Request):
                 "movement": str(sh.get("movement") or "static"),
                 "seconds": secs,
                 "action": act or comp[:120],
+                "characters": chars,
+                "default_prompt": default_prompt,
                 "prompt": saved_prompts.get(sid) or default_prompt,
                 "has_image": has_img,
                 "image_url": f"/file/{slug}/{png_rel}" if has_img else "",

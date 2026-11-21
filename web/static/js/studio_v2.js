@@ -4777,7 +4777,31 @@
     const btnReload = $("bV2KfReload");
     const btnRenderScene = $("bV2KfRenderScene");
     const btnSavePrompts = $("bV2KfSavePrompts");
+    const btnRebuildPrompts = $("bV2KfRebuildPrompts");
     if (btnReload) btnReload.addEventListener("click", () => loadV2Keyframes());
+    if (btnRebuildPrompts) {
+      btnRebuildPrompts.addEventListener("click", async () => {
+        const sc = (v2KfState.scenes || []).find(s => s.id === v2KfState.activeSceneId);
+        if (!sc) return;
+        await loadV2Keyframes();
+        const freshSc = (v2KfState.scenes || []).find(s => s.id === sc.id);
+        if (!freshSc) return;
+        const prompts = {};
+        (freshSc.shots || []).forEach(sh => {
+          if (sh.default_prompt) {
+            sh.prompt = sh.default_prompt;
+            prompts[sh.id] = sh.default_prompt;
+          }
+        });
+        renderV2KfGrid();
+        try {
+          await callApi("/api/v2_keyframe_prompts_save", { project: v2KfState.project, prompts });
+          setV2KfStatus(`✓ Synced ${Object.keys(prompts).length} prompts in ${sc.id} with latest locked wardrobes & locations.`);
+        } catch (err) {
+          setV2KfStatus("Sync failed: " + (err.message || err), true);
+        }
+      });
+    }
     if (btnSavePrompts) {
       btnSavePrompts.addEventListener("click", async () => {
         const sc = (v2KfState.scenes || []).find(s => s.id === v2KfState.activeSceneId);

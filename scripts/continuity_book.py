@@ -87,8 +87,12 @@ def material(pdir: Path) -> str:
 PROMPT = """Write the continuity book for this film from its screenplay: every character who appears, every location and every prop that
 matters, described so they look the same in every picture of every style.
 Tokens describe IDENTITY, never rendering: age, build, height relative to the others, face shape, hair shape and colour, eye colour, skin tone,
-outfit cut and colours, one distinctive feature. Never use words such as photorealistic, clay, 3D, anime, cartoon, painted: the style is
-added later. Each token is self-contained (it is pasted into prompts on its own), under 200 characters.
+and a SINGULAR, FULLY SPECIFIED WARDROBE (exact solid/specific colours for top, bottoms, footwear, and accessories — e.g., "solid brown t-shirt,
+blue jeans, white socks", NEVER vague patterns like "striped shirt" or incomplete outfits). Each character wears ONE locked outfit per scene;
+if a character changes clothes, that must happen in a new scene. Location tokens must lock concrete spatial landmarks, wall/ground colours, and
+key furniture so characters remain visually grounded in the exact same location across every shot of a scene until a scene transition moves them.
+Never use words such as photorealistic, clay, 3D, anime, cartoon, painted: the style is added later. Each token is self-contained (it is pasted
+into prompts on its own), under 200 characters.
 Every character also gets a personality profile (temperament, motivation, speech patterns, mannerisms, how they move) for the director, the
 actors and the voice director, and a narration voice: one of {voices}. Add "stages" only for a character who visibly ages.
 Reply as JSON: {{"title": "...", "setting": "era, region, world", "music_theme": "instruments, mood, tempo",

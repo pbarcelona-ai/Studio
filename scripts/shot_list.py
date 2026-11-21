@@ -143,6 +143,9 @@ performance notes using the characters' personalities), then the shots: shot typ
 movement ({moves}), composition, lighting setup, blocking, action, expression, the dialogue spoken in the shot, sound, length in seconds,
 transition to the next shot ({transitions}), priority (1 must have, 3 nice to have), characters and props in frame, and source "ai" (or
 "footage" when the owner's own footage will be used). The shots together run about {seconds} seconds. {rules}
+STRICT CONTINUITY RULES:
+- WARDROBE LOCK: Every character must keep their exact, singular locked outfit and exact clothing colours from the continuity book across every shot in this scene (never change or improvise clothing mid-scene; an outfit change belongs in a new scene).
+- LOCATION LOCK: Keep every shot strictly anchored in this scene's single locked location, spatial layout, and background props; characters stay in this location until a scene transition explicitly moves them to the next scene's location.
 Reply as JSON: {{"breakdown": {{"intent": "...", "emotional_beat": "...", "blocking": "...", "performance": "..."}}, "shots": [{{"type": "WS",
 "lens_mm": 24, "height": "eye", "angle": "straight", "movement": "static", "composition": "...", "lighting": "...", "blocking": "...",
 "action": "...", "expression": "...", "dialogue": "", "sound": "...", "seconds": 4, "transition": "cut", "priority": 1, "characters": [],

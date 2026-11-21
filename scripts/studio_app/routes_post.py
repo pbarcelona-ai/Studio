@@ -1926,7 +1926,13 @@ def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:
     if not api_key:
         raise PlanError("Gemini API key is not configured. Save your GEMINI_API_KEY in Step 13 first.")
 
-    full_prompt = f"Generate a single clean cinematic widescreen 16:9 film storyboard keyframe with NO text, NO captions, NO watermarks:\n\n{prompt}"
+    full_prompt = (
+        "Generate a single clean cinematic widescreen 16:9 film storyboard keyframe with NO text, NO captions, NO watermarks.\n"
+        "STRICT CONTINUITY RULES:\n"
+        "- WARDROBE LOCK: Keep every character's exact specified singular clothing (exact solid colors, exact top, bottoms, and footwear). Do NOT add stripes, patterns, or color changes that were not specified.\n"
+        "- LOCATION LOCK: Keep the exact specified room/location, background props, and lighting consistent across every shot of this scene.\n\n"
+        f"{prompt}"
+    )
     models = ("gemini-2.5-flash-image", "gemini-3.1-flash-image-preview", "gemini-3.1-flash-lite-image", "gemini-2.0-flash-exp-image-generation")
     last_err = None
 
