@@ -2385,24 +2385,32 @@
       wsBox.appendChild(wsHdr);
 
       const wsRows = document.createElement("div");
-      wsRows.style.cssText = "display:flex;flex-direction:column;gap:6px;";
+      wsRows.style.cssText = "display:flex;flex-direction:column;gap:8px;";
       const appendStateRow = (st = { scenes: "", location: "", wardrobe: "" }) => {
         const r = document.createElement("div");
         r.className = "v2-ws-row";
-        r.style.cssText = "display:grid;grid-template-columns:92px 130px 1fr auto;gap:5px;align-items:center;";
+        r.style.cssText = "display:flex;flex-direction:column;gap:5px;padding:6px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;box-sizing:border-box;width:100%;min-width:0;";
+
+        const topLine = document.createElement("div");
+        topLine.style.cssText = "display:flex;gap:5px;align-items:center;width:100%;min-width:0;";
         const inSc = document.createElement("input");
         inSc.type = "text"; inSc.className = "v2-ws-scenes"; inSc.placeholder = "S001-S003"; inSc.value = st.scenes || "";
-        inSc.style.cssText = "padding:4px 6px;background:#0f172a;color:#f59e0b;border:1px solid #334155;border-radius:4px;font-size:11px;";
+        inSc.style.cssText = "width:96px;min-width:0;padding:5px 6px;background:#0a0d14;color:#f59e0b;border:1px solid #334155;border-radius:4px;font-size:11px;box-sizing:border-box;";
         const inLoc = document.createElement("input");
-        inLoc.type = "text"; inLoc.className = "v2-ws-loc"; inLoc.placeholder = "Location"; inLoc.value = st.location || "";
-        inLoc.style.cssText = "padding:4px 6px;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:11px;";
+        inLoc.type = "text"; inLoc.className = "v2-ws-loc"; inLoc.placeholder = "Location (e.g. Living Room)"; inLoc.value = st.location || "";
+        inLoc.style.cssText = "flex:1;min-width:0;padding:5px 6px;background:#0a0d14;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:11px;box-sizing:border-box;";
+        const bRm = document.createElement("button");
+        bRm.type = "button"; bRm.className = "btn btn--ghost"; bRm.style.cssText = "padding:3px 7px;font-size:11px;color:#f87171;flex-shrink:0;"; bRm.textContent = "✕";
+        bRm.title = "Remove this outfit state";
+        bRm.addEventListener("click", () => r.remove());
+        topLine.appendChild(inSc); topLine.appendChild(inLoc); topLine.appendChild(bRm);
+
         const inW = document.createElement("input");
         inW.type = "text"; inW.className = "v2-ws-wardrobe"; inW.placeholder = "Exact outfit (e.g. solid brown t-shirt, blue jeans, white socks)"; inW.value = st.wardrobe || "";
-        inW.style.cssText = "padding:4px 6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:11px;";
-        const bRm = document.createElement("button");
-        bRm.type = "button"; bRm.className = "btn btn--ghost"; bRm.style.cssText = "padding:2px 6px;font-size:11px;color:#f87171;"; bRm.textContent = "✕";
-        bRm.addEventListener("click", () => r.remove());
-        r.appendChild(inSc); r.appendChild(inLoc); r.appendChild(inW); r.appendChild(bRm);
+        inW.style.cssText = "width:100%;min-width:0;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:12px;box-sizing:border-box;";
+
+        r.appendChild(topLine);
+        r.appendChild(inW);
         wsRows.appendChild(r);
       };
       charStates.forEach(st => appendStateRow(st));
