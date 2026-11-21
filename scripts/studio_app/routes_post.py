@@ -1938,7 +1938,7 @@ def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:
         "- REFERENCE IDENTITY LOCK: Match the EXACT face, hair, eyes, skin tone, age, and body proportions of the character(s) shown in the attached reference image(s). Apply ONLY the requested camera angle, pose, or explicit wardrobe change.\n"
         if valid_refs else ""
     )
-    frame_hint = "square 1:1 character turnaround sheet" if aspect_ratio == "1:1" else "widescreen 16:9 film storyboard keyframe"
+    frame_hint = "square 1:1 SINGLE standalone character portrait (ONLY ONE figure in frame, NO multi-view sheet, NO collage, NO split panels, NO duplicate figures)" if aspect_ratio == "1:1" else "widescreen 16:9 film storyboard keyframe"
     full_prompt = (
         f"Generate a single clean cinematic {frame_hint} with NO text, NO captions, NO watermarks.\n"
         "STRICT CONTINUITY RULES:\n"
@@ -2389,7 +2389,11 @@ def _v2_turnaround_render(r: Request):
     desc = str(r.body.get("desc") or "").strip()
     wardrobe = str(r.body.get("wardrobe") or "").strip()
     look = str(r.body.get("look") or "pixar_3d").strip()
-    view_desc = {"front": "front facing portrait", "three_quarter": "three-quarter angle view", "profile": "side profile view"}[view]
+    view_desc = {
+        "front": "straight-on front view facing the camera",
+        "three_quarter": "three-quarter angle view turned slightly to the side",
+        "profile": "strict 90-degree side profile view",
+    }[view]
 
     # Look for existing generated turnaround images for this character to lock facial & body identity across angles and wardrobe changes
     ref_imgs = _find_character_turnaround_refs(pd, char_name, prefer_outfit=outfit_id, exclude_path=out_png, limit=2)
@@ -2397,12 +2401,16 @@ def _v2_turnaround_render(r: Request):
     if ref_imgs:
         same_outfit_ref = any(f"_{outfit_id}_" in p.name for p in ref_imgs) if outfit_id != "default" else True
         if same_outfit_ref:
-            ref_note = f" Using the attached existing turnaround image(s) of {char_name}, keep the EXACT SAME face, hair, body, and clothing, rotated cleanly into a {view_desc}."
+            ref_note = f" Using the attached existing reference image(s) of {char_name}, keep the EXACT SAME face, hair, body, and clothing, rendered as ONE single figure from a {view_desc}."
         else:
-            ref_note = f" Using the attached existing image(s) of {char_name} as the exact identity reference, preserve their EXACT SAME face, hair, eyes, skin tone, age, and proportions, and apply ONLY the new wardrobe change described below for this {view_desc}."
+            ref_note = f" Using the attached existing image(s) of {char_name} as the exact identity reference, preserve their EXACT SAME face, hair, eyes, skin tone, age, and proportions, and apply ONLY the new wardrobe change described below, rendered as ONE single figure from a {view_desc}."
 
     wardrobe_clause = f" EXACT LOCKED WARDROBE (keep exact solid colors and clothing items, no unrequested patterns): {wardrobe}." if wardrobe else ""
-    prompt = f"Character design turnaround sheet ({view_desc}) of {char_name}. {desc}.{ref_note}{wardrobe_clause} Style: {look}. Clean neutral studio backdrop, clearly showing the exact outfit and face, consistent lighting."
+    prompt = (
+        f"SINGLE standalone full-body character portrait of {char_name} shown from a {view_desc}. "
+        f"ONLY ONE single character centered in frame — NO multi-view grid, NO turnaround sheet, NO side-by-side poses, NO duplicate figures. "
+        f"{desc}.{ref_note}{wardrobe_clause} Style: {look}. Clean neutral studio backdrop, clearly showing the exact outfit and face, consistent lighting."
+    )
     model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio="1:1", ref_images=ref_imgs)
     return {"status": "ok", "character": char_name, "outfit_id": outfit_id, "view": view, "image_url": rel_url, "model": model_used, "refs_used": len(ref_imgs)}
 
