@@ -3555,15 +3555,38 @@
       const hdr = document.createElement("div");
       hdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px";
       const left = document.createElement("div");
+      left.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:8px";
       const strong = document.createElement("strong");
       strong.style.color = "#f59e0b";
       strong.textContent = `${line.id} · ${line.character.toUpperCase()}`;
       left.appendChild(strong);
       if (line.heading) {
         const sub = document.createElement("span");
-        sub.style.cssText = "color:#94a3b8;font-size:var(--text-xs);margin-left:8px";
+        sub.style.cssText = "color:#94a3b8;font-size:var(--text-xs)";
         sub.textContent = line.heading;
         left.appendChild(sub);
+      }
+      const charBase = getCharacterBaseline(line.character);
+      if (charBase && charBase.audio_url) {
+        const baseWrap = document.createElement("span");
+        baseWrap.style.cssText = "display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.55);color:#fde68a;font-size:11px;font-weight:600";
+        const baseTxt = document.createElement("span");
+        baseTxt.textContent = `🎯 Baseline: ${charBase.source}`;
+        baseWrap.appendChild(baseTxt);
+
+        const btnPlayBase = document.createElement("button");
+        btnPlayBase.type = "button";
+        btnPlayBase.className = "btn btn--ghost";
+        btnPlayBase.style.cssText = "padding:1px 6px;font-size:11px;color:#fde68a;border-color:rgba(245,158,11,0.4)";
+        btnPlayBase.textContent = "▶ Play Baseline";
+        btnPlayBase.title = `Play ${line.character}'s locked voice baseline (${charBase.source})`;
+        btnPlayBase.addEventListener("click", () => {
+          const url = charBase.audio_url + (charBase.audio_url.includes("?") ? "&" : "?") + "t=" + Date.now();
+          const a = new Audio(url);
+          a.play().catch(() => {});
+        });
+        baseWrap.appendChild(btnPlayBase);
+        left.appendChild(baseWrap);
       }
       hdr.appendChild(left);
 
