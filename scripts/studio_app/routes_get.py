@@ -365,6 +365,7 @@ def _v2_dialogue(r: Request):
     pd = pdir(slug, "book")
     vc = {}
     profiles = {}
+    baselines_raw = {}
     dialect = "american"
     vc_path = pd / "voice_cast.json"
     if vc_path.is_file():
@@ -372,11 +373,24 @@ def _v2_dialogue(r: Request):
             vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
             vc = vdata.get("cast") or {}
             profiles = vdata.get("profiles") or {}
+            baselines_raw = vdata.get("baselines") or {}
             dialect = vdata.get("dialect") or "american"
         except Exception:
             pass
     vc_lc = {str(k).lower(): v for k, v in vc.items()}
     prof_lc = {str(k).lower(): v for k, v in profiles.items() if isinstance(v, dict)}
+    baselines = {}
+    for ch_name, binfo in baselines_raw.items():
+        if not isinstance(binfo, dict) or not binfo.get("file"):
+            continue
+        bf = pd / str(binfo["file"])
+        if bf.is_file() and bf.stat().st_size > 100:
+            baselines[ch_name] = {
+                "file": str(binfo["file"]),
+                "source": str(binfo.get("source") or "custom"),
+                "text": str(binfo.get("text") or ""),
+                "audio_url": f"/file/{slug}/{binfo['file']}",
+            }
 
     saved = {}
     saved_engine = ""
@@ -471,6 +485,7 @@ def _v2_dialogue(r: Request):
         "dialect": dialect,
         "cast": vc,
         "profiles": profiles,
+        "baselines": baselines,
         "engine": saved_engine,
         "macos_voices": macos_voices,
         "engines": {

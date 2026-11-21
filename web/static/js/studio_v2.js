@@ -3223,7 +3223,112 @@
   }
 
   // ===== STEP 15: SPOKEN DIALOGUE DELIVERY =====
-  let v2DialogueState = { project: "", lines: [], scenes: [], dialect: "american", activeScene: "ALL", engine: "gemini-tts", engines: {} };
+  let v2DialogueState = { project: "", lines: [], scenes: [], dialect: "american", activeScene: "ALL", engine: "gemini-tts", engines: {}, baselines: {} };
+
+  function getCharacterBaseline(character) {
+    const b = v2DialogueState.baselines || {};
+    const k = Object.keys(b).find(x => x.toLowerCase() === String(character || "").toLowerCase());
+    return k ? b[k] : null;
+  }
+
+  function renderV2DialogueBaselines() {
+    const bar = $("v2DialogueBaselines");
+    if (!bar) return;
+    bar.innerHTML = "";
+
+    const chars = [...new Set((v2DialogueState.lines || []).map(l => l.character).filter(Boolean))];
+    if (!chars.length) return;
+
+    const lbl = document.createElement("span");
+    lbl.style.cssText = "font-size:var(--text-xs);color:#94a3b8;font-weight:600";
+    lbl.textContent = "🎯 Character Voice Baselines:";
+    bar.appendChild(lbl);
+
+    chars.forEach(ch => {
+      const base = getCharacterBaseline(ch);
+      const pill = document.createElement("div");
+      pill.style.cssText = "display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px;font-size:var(--text-xs);border:1px solid " + (base ? "#f59e0b" : "#334155") + ";background:" + (base ? "rgba(245,158,11,0.12)" : "#0f172a");
+
+      const nameEl = document.createElement("span");
+      nameEl.style.color = base ? "#fde68a" : "#cbd5e1";
+      nameEl.textContent = base ? `${ch.toUpperCase()} (${base.source})` : `${ch.toUpperCase()}: none`;
+      pill.appendChild(nameEl);
+
+      if (base && base.audio_url) {
+        const playBtn = document.createElement("button");
+        playBtn.type = "button";
+        playBtn.className = "btn btn--ghost";
+        playBtn.style.cssText = "padding:1px 6px;font-size:11px";
+        playBtn.textContent = "▶";
+        playBtn.title = "Play baseline reference clip";
+        playBtn.addEventListener("click", () => {
+          const a = new Audio(base.audio_url + (base.audio_url.includes("?") ? "&" : "?") + "t=" + Date.now());
+          a.play().catch(() => {});
+        });
+        pill.appendChild(playBtn);
+
+        const clearBtn = document.createElement("button");
+        clearBtn.type = "button";
+        clearBtn.className = "btn btn--ghost";
+        clearBtn.style.cssText = "padding:1px 5px;font-size:11px;color:#f87171";
+        clearBtn.textContent = "✕";
+        clearBtn.title = "Clear baseline for " + ch;
+        clearBtn.addEventListener("click", async () => {
+          try {
+            await callApi("/api/v2_voice_baseline_set", { project: v2DialogueState.project, character: ch, clear: true });
+            Object.keys(v2DialogueState.baselines).forEach(k => {
+              if (k.toLowerCase() === ch.toLowerCase()) delete v2DialogueState.baselines[k];
+            });
+            renderV2DialogueBaselines();
+            renderV2DialogueList();
+            setV2DialogueStatus(`Cleared voice baseline for ${ch}.`);
+          } catch (err) {
+            setV2DialogueStatus("Could not clear baseline: " + (err.message || err), true);
+          }
+        });
+        pill.appendChild(clearBtn);
+      }
+
+      const upIn = document.createElement("input");
+      upIn.type = "file";
+      upIn.accept = "audio/*";
+      upIn.style.display = "none";
+      upIn.addEventListener("change", () => {
+        const f = upIn.files && upIn.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          setV2DialogueStatus(`Uploading baseline clip for ${ch}…`);
+          try {
+            const res = await callApi("/api/v2_voice_baseline_set", {
+              project: v2DialogueState.project,
+              character: ch,
+              filename: f.name,
+              audio_base64: reader.result,
+            });
+            v2DialogueState.baselines[ch] = res.baseline;
+            renderV2DialogueBaselines();
+            renderV2DialogueList();
+            setV2DialogueStatus(`✓ Locked "${f.name}" as ${ch}'s voice baseline across all scenes.`);
+          } catch (err) {
+            setV2DialogueStatus("Upload failed: " + (err.message || err), true);
+          }
+        };
+        reader.readAsDataURL(f);
+      });
+
+      const upBtn = document.createElement("button");
+      upBtn.type = "button";
+      upBtn.className = "btn btn--ghost";
+      upBtn.style.cssText = "padding:1px 6px;font-size:11px";
+      upBtn.textContent = base ? "⬆ Replace" : "⬆ Upload Clip";
+      upBtn.title = "Upload a 5-15s voice sample clip as baseline for " + ch;
+      upBtn.addEventListener("click", () => upIn.click());
+      pill.appendChild(upBtn);
+      pill.appendChild(upIn);
+      bar.appendChild(pill);
+    });
+  }
 
   function renderV2DialogueEngineUI() {
     const active = v2DialogueState.engine || "gemini-tts";
@@ -3569,6 +3674,36 @@
 
       actions.appendChild(btnPlay);
       actions.appendChild(btnRedo);
+
+      if (line.has_audio) {
+        const curBase = getCharacterBaseline(line.character);
+        const isThisBase = curBase && curBase.source === line.id;
+        const btnBase = document.createElement("button");
+        btnBase.type = "button";
+        btnBase.className = "btn " + (isThisBase ? "btn--primary" : "btn--secondary");
+        btnBase.style.cssText = "padding:4px 10px;font-size:var(--text-xs)";
+        btnBase.textContent = isThisBase ? `✓ ${line.character.toUpperCase()} Baseline` : `🎯 Set as ${line.character.toUpperCase()} Baseline`;
+        btnBase.title = `Lock this exact rendered take as ${line.character}'s audio voice baseline for all other lines`;
+        btnBase.addEventListener("click", async () => {
+          setV2DialogueStatus(`Locking ${line.id} as ${line.character}'s audio voice baseline…`);
+          try {
+            const res = await callApi("/api/v2_voice_baseline_set", {
+              project: v2DialogueState.project,
+              character: line.character,
+              from_line_id: line.id,
+              text: (card.querySelector(".v2-dlg-text")?.value || line.text || "").trim(),
+            });
+            v2DialogueState.baselines[line.character] = res.baseline;
+            renderV2DialogueBaselines();
+            renderV2DialogueList();
+            setV2DialogueStatus(`✓ Locked ${line.id} as ${line.character}'s permanent audio baseline. Future renders for ${line.character} will match this voice.`);
+          } catch (err) {
+            setV2DialogueStatus("Could not set baseline: " + (err.message || err), true);
+          }
+        });
+        actions.appendChild(btnBase);
+      }
+
       actions.appendChild(btnApplyAll);
       actions.appendChild(btnUpload);
       actions.appendChild(fileIn);
@@ -3719,11 +3854,13 @@
       v2DialogueState.engine = data.engine || "gemini-tts";
       v2DialogueState.engines = data.engines || {};
       v2DialogueState.macos_voices = data.macos_voices || [];
+      v2DialogueState.baselines = data.baselines || {};
       if (v2DialogueState.activeScene !== "ALL" && !v2DialogueState.scenes.includes(v2DialogueState.activeScene)) {
         v2DialogueState.activeScene = v2DialogueState.scenes[0] || "ALL";
       }
       renderV2DialogueEngineUI();
       renderV2DialogueScenes();
+      renderV2DialogueBaselines();
       renderV2DialogueList();
     } catch (e) {
       setV2DialogueStatus("Could not load dialogue: " + (e.message || e), true);

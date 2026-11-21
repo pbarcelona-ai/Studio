@@ -915,6 +915,106 @@ def _v2_dialogue_upload(r: Request):
     return {"status": "ok", "id": safe_id, "audio_url": f"/file/{slug}/audio/dialogue/{safe_id}.wav"}
 
 
+@route("POST", "/api/v2_voice_baseline_set")
+def _v2_voice_baseline_set(r: Request):
+    """Lock a rendered dialogue take or uploaded audio clip as a character's permanent voice baseline (or clear it)."""
+    import base64
+    import tempfile
+
+    slug = str(r.body.get("project") or "").strip()
+    character = str(r.body.get("character") or "").strip()
+    if not slug or not character:
+        raise PlanError("project and character are required")
+
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    vc_path = pd / "voice_cast.json"
+    vdata = {}
+    if vc_path.is_file():
+        try:
+            vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            vdata = {}
+    baselines = vdata.get("baselines") if isinstance(vdata.get("baselines"), dict) else {}
+    existing_key = next((k for k in baselines if k.lower() == character.lower()), character)
+
+    if r.body.get("clear"):
+        old = baselines.pop(existing_key, None)
+        if isinstance(old, dict) and old.get("file"):
+            try:
+                (pd / str(old["file"])).unlink(missing_ok=True)
+            except OSError:
+                pass
+        vdata["baselines"] = baselines
+        vc_path.write_text(json.dumps(vdata, indent=2), encoding="utf-8")
+        return {"status": "ok", "character": existing_key, "cleared": True}
+
+    safe_char = "".join(c if c.isalnum() else "_" for c in character.lower()).strip("_") or "speaker"
+    ref_dir = pd / "audio" / "voice_refs"
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    rel_file = f"audio/voice_refs/{safe_char}.wav"
+    dest_wav = pd / rel_file
+
+    from_line = str(r.body.get("from_line_id") or "").strip()
+    b64 = str(r.body.get("audio_base64") or "").strip()
+    source_label = ""
+    sample_text = str(r.body.get("text") or "").strip()
+
+    if from_line:
+        safe_id = "".join(c for c in from_line if c.isalnum() or c in "-_")
+        src_wav = pd / "audio" / "dialogue" / f"{safe_id}.wav"
+        if not src_wav.is_file():
+            raise PlanError(f"Line {safe_id} has not been rendered yet — render or play it first.")
+        shutil.copyfile(src_wav, dest_wav)
+        source_label = safe_id
+    elif b64:
+        filename = str(r.body.get("filename") or "baseline.wav").strip()
+        if "," in b64 and b64.startswith("data:"):
+            b64 = b64.split(",", 1)[1]
+        raw = base64.b64decode(b64)
+        if len(raw) < 64:
+            raise PlanError("uploaded baseline audio file is empty")
+        if raw[:4] == b"RIFF":
+            dest_wav.write_bytes(raw)
+        else:
+            suffix = Path(filename).suffix or ".mp3"
+            afconvert_bin = shutil.which("afconvert")
+            ffmpeg_bin = shutil.which("ffmpeg")
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
+                tf.write(raw)
+                tmp_in = Path(tf.name)
+            try:
+                if afconvert_bin:
+                    subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@24000", str(tmp_in), str(dest_wav)], check=True, timeout=30)
+                elif ffmpeg_bin:
+                    subprocess.run([ffmpeg_bin, "-y", "-i", str(tmp_in), str(dest_wav)], check=True, timeout=30)
+                else:
+                    dest_wav.write_bytes(raw)
+            finally:
+                tmp_in.unlink(missing_ok=True)
+        source_label = filename
+    else:
+        raise PlanError("Provide either from_line_id or audio_base64 to set a character voice baseline.")
+
+    baselines[existing_key] = {
+        "file": rel_file,
+        "source": source_label,
+        "text": sample_text,
+    }
+    vdata["baselines"] = baselines
+    vc_path.write_text(json.dumps(vdata, indent=2), encoding="utf-8")
+    return {
+        "status": "ok",
+        "character": existing_key,
+        "baseline": {
+            "file": rel_file,
+            "source": source_label,
+            "text": sample_text,
+            "audio_url": f"/file/{slug}/{rel_file}",
+        },
+    }
+
+
 def _macos_voice_for_kokoro(voice_id: str, dialect: str = "american") -> str:
     """Map Kokoro voice IDs to distinct built-in macOS speech voices for instant local preview/render."""
     v = (voice_id or "").lower()
@@ -970,8 +1070,8 @@ def _write_wav_bytes(wav_path: Path, raw: bytes, sample_rate: int = 24000):
         wf.writeframes(raw)
 
 
-def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str, note: str, wav_path: Path, persona: str = "", gemini_voice: str = "", character: str = "") -> str:
-    """Render one spoken line with Gemini Neural TTS using a deterministic per-character seed & low temperature for line-to-line voice consistency."""
+def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str, note: str, wav_path: Path, persona: str = "", gemini_voice: str = "", character: str = "", ref_wav_path: Path | None = None) -> str:
+    """Render one spoken line with Gemini Neural TTS using a locked voice baseline WAV (if set), deterministic per-character seed & low temperature."""
     import base64
     import hashlib
     import urllib.error
@@ -992,6 +1092,9 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
     # Structured Director's Notes prompt (keeps vocal identity anchored while honoring per-scene tone/direction)
     profile_desc = persona.strip() if persona.strip() else f"consistent {accent} voice actor"
     tone_desc = emotion if (emotion and emotion != "natural") else "natural, steady"
+    has_ref = bool(ref_wav_path and ref_wav_path.is_file() and ref_wav_path.stat().st_size > 100)
+    ref_bytes = ref_wav_path.read_bytes() if has_ref and ref_wav_path else b""
+
     dir_lines = [
         "# AUDIO PROFILE",
         f"Character: {(character or 'Speaker').strip()}",
@@ -1002,6 +1105,8 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
         f"Maintain the exact same vocal pitch, age, and timbre for {(character or 'Speaker').strip()} across all lines.",
         f"Scene Tone: {tone_desc}",
     ]
+    if has_ref:
+        dir_lines.insert(6, "Match the exact voice pitch, age, timbre, and cadence of the attached baseline audio reference clip.")
     if note:
         dir_lines.append(f"Delivery Note: {note}")
     dir_lines.extend(["", "# TRANSCRIPT (speak ONLY the line below, nothing else)", text])
@@ -1016,77 +1121,96 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
         from google.genai import types
 
         client = genai.Client(api_key=api_key)
-        for model_name in models:
-            try:
-                resp = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.2,
-                        seed=char_seed,
-                        response_modalities=["AUDIO"],
-                        speech_config=types.SpeechConfig(
-                            voice_config=types.VoiceConfig(
-                                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=g_voice)
-                            )
+        # Try with inline baseline audio reference first if available, then fall back to text-only seeded call
+        content_variants = []
+        if has_ref and ref_bytes:
+            content_variants.append([types.Part.from_bytes(data=ref_bytes, mime_type="audio/wav"), prompt])
+        content_variants.append(prompt)
+
+        for contents_arg in content_variants:
+            used_ref = isinstance(contents_arg, list)
+            for model_name in models:
+                try:
+                    resp = client.models.generate_content(
+                        model=model_name,
+                        contents=contents_arg,
+                        config=types.GenerateContentConfig(
+                            temperature=0.2,
+                            seed=char_seed,
+                            response_modalities=["AUDIO"],
+                            speech_config=types.SpeechConfig(
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=g_voice)
+                                )
+                            ),
                         ),
-                    ),
-                )
-                for part in getattr(resp, "parts", None) or []:
-                    inline = getattr(part, "inline_data", None)
-                    if inline and getattr(inline, "data", None):
-                        raw = inline.data
-                        if isinstance(raw, str):
-                            raw = base64.b64decode(raw)
-                        _write_wav_bytes(wav_path, raw, sample_rate=24000)
-                        return f"{g_voice} ({model_name}, seed={char_seed})"
+                    )
+                    for part in getattr(resp, "parts", None) or []:
+                        inline = getattr(part, "inline_data", None)
+                        if inline and getattr(inline, "data", None):
+                            raw = inline.data
+                            if isinstance(raw, str):
+                                raw = base64.b64decode(raw)
+                            _write_wav_bytes(wav_path, raw, sample_rate=24000)
+                            ref_tag = "+baseline" if used_ref else ""
+                            return f"{g_voice} ({model_name}{ref_tag}, seed={char_seed})"
+                except Exception as e:
+                    last_err = e
+                    continue
+
+    # Path 2: Zero-dependency HTTPS REST fallback (works inside .venv without google-genai installed)
+    rest_variants = []
+    if has_ref and ref_bytes:
+        rest_variants.append((True, [
+            {"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(ref_bytes).decode("ascii")}},
+            {"text": prompt},
+        ]))
+    rest_variants.append((False, [{"text": prompt}]))
+
+    for used_ref, parts in rest_variants:
+        payload = json.dumps({
+            "contents": [{"parts": parts}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "seed": char_seed,
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {
+                    "voiceConfig": {
+                        "prebuiltVoiceConfig": {"voiceName": g_voice}
+                    }
+                },
+            },
+        }).encode("utf-8")
+
+        for model_name in models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=45) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                for cand in data.get("candidates") or []:
+                    for part in (cand.get("content") or {}).get("parts") or []:
+                        inline = part.get("inlineData") or part.get("inline_data") or {}
+                        b64 = inline.get("data")
+                        if b64:
+                            _write_wav_bytes(wav_path, base64.b64decode(b64), sample_rate=24000)
+                            ref_tag = "+baseline" if used_ref else ""
+                            return f"{g_voice} ({model_name}{ref_tag}, seed={char_seed})"
+            except urllib.error.HTTPError as e:
+                try:
+                    body = e.read().decode("utf-8", errors="ignore")[:300]
+                except Exception:
+                    body = str(e)
+                last_err = RuntimeError(f"HTTP {e.code}: {body}")
+                continue
             except Exception as e:
                 last_err = e
                 continue
-
-    # Path 2: Zero-dependency HTTPS REST fallback (works inside .venv without google-genai installed)
-    payload = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.2,
-            "seed": char_seed,
-            "responseModalities": ["AUDIO"],
-            "speechConfig": {
-                "voiceConfig": {
-                    "prebuiltVoiceConfig": {"voiceName": g_voice}
-                }
-            },
-        },
-    }).encode("utf-8")
-
-    for model_name in models:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=45) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            for cand in data.get("candidates") or []:
-                for part in (cand.get("content") or {}).get("parts") or []:
-                    inline = part.get("inlineData") or part.get("inline_data") or {}
-                    b64 = inline.get("data")
-                    if b64:
-                        _write_wav_bytes(wav_path, base64.b64decode(b64), sample_rate=24000)
-                        return f"{g_voice} ({model_name}, seed={char_seed})"
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="ignore")[:300]
-            except Exception:
-                body = str(e)
-            last_err = RuntimeError(f"HTTP {e.code}: {body}")
-            continue
-        except Exception as e:
-            last_err = e
-            continue
 
     raise PlanError(f"Gemini Neural TTS failed: {run_gemini_omni.sanitize_error(last_err) if last_err else 'no audio returned'}")
 
@@ -1304,8 +1428,22 @@ def _v2_dialogue_render(r: Request):
         wav_path = out_dir / f"{safe_id}.wav"
 
         character = str(item.get("character") or "").strip()
+        # Check if this character has a locked voice baseline WAV in voice_cast.json
+        ref_wav = None
+        if character:
+            vc_file = pd / "voice_cast.json"
+            if vc_file.is_file():
+                try:
+                    bmap = (json.loads(vc_file.read_text(encoding="utf-8")) or {}).get("baselines") or {}
+                    bkey = next((k for k in bmap if k.lower() == character.lower()), "")
+                    if bkey and isinstance(bmap[bkey], dict) and bmap[bkey].get("file"):
+                        cand_ref = pd / str(bmap[bkey]["file"])
+                        if cand_ref.is_file() and cand_ref.stat().st_size > 100:
+                            ref_wav = cand_ref
+                except Exception:
+                    pass
         if engine == "gemini-tts":
-            voice_used = _render_line_gemini_tts(text, voice_id, dialect, emotion, note, wav_path, persona=persona, gemini_voice=gemini_voice, character=character)
+            voice_used = _render_line_gemini_tts(text, voice_id, dialect, emotion, note, wav_path, persona=persona, gemini_voice=gemini_voice, character=character, ref_wav_path=ref_wav)
         elif engine == "kokoro":
             voice_used = _render_line_kokoro(text, voice_id, dialect, speed, wav_path, blend_voice=kokoro_blend)
         else:
