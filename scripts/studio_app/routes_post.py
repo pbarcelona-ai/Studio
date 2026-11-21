@@ -1927,7 +1927,7 @@ def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:
         raise PlanError("Gemini API key is not configured. Save your GEMINI_API_KEY in Step 13 first.")
 
     valid_refs: list[bytes] = []
-    for rp in (ref_images or [])[:3]:
+    for rp in (ref_images or [])[:4]:
         try:
             if rp and rp.is_file() and rp.stat().st_size > 100:
                 valid_refs.append(rp.read_bytes())
@@ -1941,8 +1941,9 @@ def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:
     frame_hint = "square 1:1 SINGLE standalone character portrait (ONLY ONE figure in frame, NO multi-view sheet, NO collage, NO split panels, NO duplicate figures)" if aspect_ratio == "1:1" else "widescreen 16:9 film storyboard keyframe"
     full_prompt = (
         f"Generate a single clean cinematic {frame_hint} with NO text, NO captions, NO watermarks.\n"
-        "STRICT CONTINUITY RULES:\n"
+        "STRICT CONTINUITY & PHYSICS RULES:\n"
         f"{ref_clause}"
+        "- SOLID-OBJECT PHYSICS LOCK: Strictly obey real-world solid-object physics and anatomical integrity. Nothing solid may ever pass through, clip into, or merge with another solid object — arms, hands, heads, legs, dog tails, toys, furniture, walls, rugs, and props must have clean physical contact and proper occlusion (never intersecting or passing through one another, unless a character/object is explicitly described as a ghost or hologram).\n"
         "- WARDROBE LOCK: Keep every character's exact specified singular clothing (exact solid colors, exact top, bottoms, and footwear). Do NOT add stripes, patterns, or color changes that were not specified.\n"
         "- LOCATION LOCK: Keep the exact specified room/location, background props, and lighting consistent across every shot of this scene.\n\n"
         f"{prompt}"
@@ -2113,28 +2114,99 @@ def _v2_keyframe_render(r: Request):
     if not prompt:
         raise PlanError("prompt is required to generate a keyframe")
 
-    # Automatically attach existing Step 10 turnaround reference images for characters appearing in this shot
+    # 1. Check for the immediately preceding rendered keyframe & its text in the SAME scene
+    import difflib
+
     ref_imgs: list[Path] = []
+    prev_shot_ref = ""
+    continuity_mode = "none"
+    continuity_prefix = ""
+
+    sc_id = shot_id.split("-")[0] if "-" in shot_id else ""
+    sh_num = int(shot_id.split("-")[1]) if ("-" in shot_id and shot_id.split("-")[1].isdigit()) else 0
+
+    saved_prompts_map = {}
+    meta_path = pd / "keyframes_v2.json"
+    if meta_path.is_file():
+        try:
+            saved_prompts_map = (json.loads(meta_path.read_text(encoding="utf-8")) or {}).get("prompts") or {}
+        except Exception:
+            pass
+
+    sl_data = {}
     sl_path = pd / "shots" / "shotlist.json"
     if sl_path.is_file():
         try:
-            sl = json.loads(sl_path.read_text(encoding="utf-8")) or {}
-            sc_id = shot_id.split("-")[0] if "-" in shot_id else ""
-            sh_num = int(shot_id.split("-")[1]) if ("-" in shot_id and shot_id.split("-")[1].isdigit()) else 0
-            for sc in sl.get("scenes") or []:
+            sl_data = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            pass
+
+    if sc_id and sh_num > 1:
+        # Walk backwards within the same scene to find the closest rendered previous keyframe
+        for prev_n in range(sh_num - 1, 0, -1):
+            cand_id = f"{sc_id}-{prev_n:02d}"
+            cand_png = kf_dir / f"{cand_id}.png"
+            if cand_png.is_file() and cand_png.stat().st_size > 200:
+                prev_shot_ref = cand_id
+                ref_imgs.append(cand_png)
+                prev_text = str(saved_prompts_map.get(cand_id) or "").strip()
+                if not prev_text and sl_data:
+                    for sc in sl_data.get("scenes") or []:
+                        if str(sc.get("id") or "") == sc_id:
+                            for sh in sc.get("shots") or []:
+                                if int(sh.get("n") or 0) == prev_n:
+                                    prev_text = f"{sh.get('type', '')} {sh.get('composition', '')} {sh.get('action', '')}".strip()
+                                    break
+                            break
+                sim = difflib.SequenceMatcher(None, prev_text.lower(), prompt.lower()).ratio() if prev_text else 0.5
+                if sim >= 0.55:
+                    continuity_mode = "incremental"
+                    continuity_prefix = (
+                        f"SHOT-TO-SHOT CONTINUITY (SMALL INCREMENTAL CHANGE from previous keyframe {cand_id}): "
+                        f"The first attached image is the immediately preceding shot ({cand_id}). "
+                        f"Maintain the EXACT SAME room layout, lighting, furniture positions, camera world, character faces, and clothing from {cand_id}. "
+                        f"Make ONLY the small incremental pose, expression, or framing adjustment described in the new shot below.\n"
+                        f"Previous shot ({cand_id}) text: {prev_text[:280]}\n"
+                        f"Current shot ({shot_id}) text: "
+                    )
+                else:
+                    continuity_mode = "scene_cut"
+                    continuity_prefix = (
+                        f"SHOT-TO-SHOT CONTINUITY (CAMERA/ACTION CHANGE within the SAME scene as previous keyframe {cand_id}): "
+                        f"The first attached image is the previous shot ({cand_id}) in this same scene. "
+                        f"Keep the EXACT SAME character identities, clothing colors, room palette, props, and lighting from {cand_id}, "
+                        f"while executing the specific camera angle, framing, or blocking change described in the new shot below.\n"
+                        f"Previous shot ({cand_id}) text: {prev_text[:280]}\n"
+                        f"Current shot ({shot_id}) text: "
+                    )
+                break
+
+    # 2. Also attach existing Step 10 turnaround reference images for characters appearing in this shot
+    if sl_data and sc_id:
+        try:
+            for sc in sl_data.get("scenes") or []:
                 if str(sc.get("id") or "") == sc_id:
                     for sh in sc.get("shots") or []:
                         if int(sh.get("n") or 0) == sh_num:
                             for ch in sh.get("characters") or []:
-                                if len(ref_imgs) < 3:
+                                if len(ref_imgs) < 4:
                                     ref_imgs.extend(_find_character_turnaround_refs(pd, str(ch), limit=1))
                             break
                     break
         except Exception:
             pass
 
-    model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"), ref_images=ref_imgs)
-    return {"status": "ok", "id": shot_id, "image_url": rel_url, "model": model_used, "refs_used": len(ref_imgs)}
+    final_prompt = continuity_prefix + prompt if continuity_prefix else prompt
+    model_used = _render_keyframe_gemini(final_prompt, out_png, aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"), ref_images=ref_imgs)
+    return {
+        "status": "ok",
+        "id": shot_id,
+        "image_url": rel_url,
+        "model": model_used,
+        "refs_used": len(ref_imgs),
+        "prev_shot_ref": prev_shot_ref,
+        "continuity_mode": continuity_mode,
+    }
 
 
 @route("POST", "/api/v2_keyframe_prompts_save")
