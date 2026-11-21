@@ -1682,7 +1682,7 @@ def _synth_foley_wav(wav_path: Path, prompt: str, preset: str, duration: int = 1
 
 
 def _synth_score_wav(wav_path: Path, mood: str, duration: int = 12):
-    """Synthesize a lush, warm stereo cinematic orchestral pad & celesta arpeggio preview WAV."""
+    """Synthesize a distinctly orchestrated stereo score preview per mood (tempo, rhythm, instruments, and harmony)."""
     import math
     import struct
     import wave
@@ -1690,37 +1690,107 @@ def _synth_score_wav(wav_path: Path, mood: str, duration: int = 12):
     sr = 22050
     dur = max(6, min(30, int(duration or 12)))
     n = sr * dur
-    # Chord progressions in Hz by mood
-    progs = {
-        "wonder": [(130.81, 261.63, 329.63, 392.00, 493.88), (110.00, 220.00, 261.63, 329.63, 392.00), (87.31, 174.61, 220.00, 261.63, 329.63), (98.00, 196.00, 246.94, 293.66, 392.00)],
-        "epic": [(110.00, 220.00, 261.63, 329.63, 440.00), (87.31, 174.61, 220.00, 261.63, 349.23), (130.81, 261.63, 329.63, 392.00, 523.25), (98.00, 196.00, 246.94, 293.66, 392.00)],
-        "cozy": [(174.61, 261.63, 329.63, 392.00, 523.25), (146.83, 220.00, 293.66, 349.23, 440.00), (130.81, 196.00, 261.63, 329.63, 392.00), (116.54, 174.61, 233.08, 293.66, 349.23)],
-        "mysterious": [(110.00, 220.00, 261.63, 311.13, 392.00), (103.83, 207.65, 246.94, 311.13, 392.00), (98.00, 196.00, 233.08, 293.66, 369.99), (110.00, 220.00, 261.63, 329.63, 440.00)],
-        "playful": [(130.81, 261.63, 329.63, 392.00, 523.25), (146.83, 293.66, 349.23, 440.00, 587.33), (98.00, 196.00, 246.94, 293.66, 392.00), (130.81, 261.63, 329.63, 392.00, 523.25)],
-    }
-    chords = progs.get(mood, progs["wonder"])
-    chord_len = dur / len(chords)
+    m = (mood or "wonder").strip().lower()
     frames = bytearray()
+
     for i in range(n):
         t = i / sr
-        env = min(1.0, t / 1.0) * min(1.0, (dur - t) / 1.2)
-        ci = min(len(chords) - 1, int(t / chord_len))
-        ct = t - ci * chord_len
-        c_env = min(1.0, ct / 0.35) * min(1.0, (chord_len - ct) / 0.35)
-        chord = chords[ci]
-        # Warm string pad
-        pad_l, pad_r = 0.0, 0.0
-        for idx, f in enumerate(chord):
-            w = 0.14 if idx == 0 else 0.09
-            pad_l += w * math.sin(2 * math.pi * f * t)
-            pad_r += w * math.sin(2 * math.pi * (f * 1.003) * t)
-        # Gentle celesta shimmer arpeggio
-        arp_step = int(t * 2.5)
-        arp_t = (t * 2.5) - arp_step
-        arp_f = chord[1 + (arp_step % (len(chord) - 1))] * 2.0
-        arp = 0.07 * math.exp(-arp_t * 5.0) * math.sin(2 * math.pi * arp_f * t)
-        sig_l = max(-0.95, min(0.95, (pad_l * c_env + arp * 0.9) * env))
-        sig_r = max(-0.95, min(0.95, (pad_r * c_env + arp * 1.1) * env))
+        env = min(1.0, t / 0.7) * min(1.0, (dur - t) / 0.9)
+        sig_l = sig_r = 0.0
+
+        if m == "epic":
+            # Driving 120 BPM orchestral ostinato + bold brass fifths + deep timpani hits
+            chords = [(110.0, 164.81, 220.0, 329.63), (87.31, 130.81, 174.61, 261.63), (130.81, 196.0, 261.63, 392.0), (98.0, 146.83, 196.0, 293.66)]
+            ci = int(t / 2.0) % len(chords)
+            ch = chords[ci]
+            # 8th-note pulsing bass ostinato (4 pulses/sec)
+            pulse_t = (t * 4.0) % 1.0
+            ost_env = math.exp(-pulse_t * 5.5)
+            ost = 0.28 * ost_env * (math.sin(2 * math.pi * ch[0] * t) + 0.45 * math.sin(2 * math.pi * ch[0] * 2.0 * t))
+            # Brass swell (rich odd+even harmonics)
+            br_swell = 0.5 + 0.5 * math.sin(2 * math.pi * 0.25 * t)
+            brass = 0.14 * br_swell * (math.sin(2 * math.pi * ch[2] * t) + 0.5 * math.sin(2 * math.pi * ch[2] * 2.0 * t) + 0.25 * math.sin(2 * math.pi * ch[3] * t))
+            # Timpani boom on beat 1 of every bar (every 2s)
+            bar_t = t % 2.0
+            timp = 0.34 * math.exp(-bar_t * 6.5) * math.sin(2 * math.pi * (62.0 - 14.0 * min(1.0, bar_t * 3.0)) * bar_t)
+            sig_l = ost + brass * 0.9 + timp
+            sig_r = ost * 0.95 + brass * 1.1 + timp
+
+        elif m == "playful":
+            # Upbeat 145 BPM bouncy pizzicato bass + staccato xylophone/glockenspiel melody
+            mel = [523.25, 659.25, 783.99, 659.25, 880.0, 783.99, 659.25, 587.33, 523.25, 587.33, 659.25, 783.99, 1046.5, 783.99, 659.25, 523.25]
+            bass = [130.81, 196.0, 146.83, 196.0, 164.81, 196.0, 146.83, 130.81]
+            step = int(t * 4.8)
+            st = (t * 4.8) - step
+            mf = mel[step % len(mel)]
+            bf = bass[(step // 2) % len(bass)]
+            # Bright wooden xylophone plink
+            xylo = 0.22 * math.exp(-st * 14.0) * (math.sin(2 * math.pi * mf * t) + 0.35 * math.sin(2 * math.pi * mf * 3.0 * t))
+            # Bouncy pizzicato string pluck
+            bt = (t * 2.4) % 1.0
+            pizz = 0.26 * math.exp(-bt * 9.0) * (math.sin(2 * math.pi * bf * t) + 0.4 * math.sin(2 * math.pi * bf * 2.0 * t))
+            pan = 0.35 + 0.3 * (step % 2)
+            sig_l = pizz + xylo * (1.0 - pan)
+            sig_r = pizz + xylo * pan
+
+        elif m == "cozy":
+            # Gentle 3/4 waltz music-box / warm electric piano
+            waltz_chords = [(174.61, 261.63, 349.23, 440.0), (130.81, 196.0, 261.63, 329.63), (146.83, 220.0, 293.66, 349.23), (116.54, 174.61, 233.08, 293.66)]
+            bar = int(t / 1.8) % len(waltz_chords)
+            beat = int((t % 1.8) / 0.6)  # 0, 1, 2 (3/4 waltz)
+            bt = (t % 0.6)
+            ch = waltz_chords[bar]
+            if beat == 0:
+                # Warm bass note on beat 1
+                v = 0.26 * math.exp(-bt * 3.2) * (math.sin(2 * math.pi * ch[0] * t) + 0.25 * math.sin(2 * math.pi * ch[0] * 2.0 * t))
+                sig_l += v
+                sig_r += v
+            else:
+                # Soft Rhodes chord on beats 2 & 3
+                ce = math.exp(-bt * 4.5)
+                v = 0.14 * ce * (math.sin(2 * math.pi * ch[1] * t) + math.sin(2 * math.pi * ch[2] * t) + 0.8 * math.sin(2 * math.pi * ch[3] * t))
+                sig_l += v * 0.9
+                sig_r += v * 1.05
+            # Delicate music-box twinkle
+            mb_step = int(t / 0.6)
+            mb_f = ch[1 + (mb_step % 3)] * 2.0
+            mb = 0.10 * math.exp(-bt * 6.0) * math.sin(2 * math.pi * mb_f * t)
+            sig_l += mb * 1.1
+            sig_r += mb * 0.8
+
+        elif m == "mysterious":
+            # Dark minor cosmic drone + eerie glass-harmonica vibrato + sparse echoing bell
+            vib = 1.0 + 0.008 * math.sin(2 * math.pi * 4.5 * t)
+            drone = 0.22 * math.sin(2 * math.pi * 55.0 * t) + 0.14 * math.sin(2 * math.pi * 82.41 * t)
+            eerie = 0.12 * (0.5 + 0.5 * math.sin(2 * math.pi * 0.19 * t)) * math.sin(2 * math.pi * 311.13 * vib * t)
+            # Sparse echoing metallic bell every 2.8s
+            bell_t = t % 2.8
+            bell_f = [440.0, 466.16, 392.0, 329.63][int(t / 2.8) % 4]
+            bell = 0.18 * math.exp(-bell_t * 1.8) * (math.sin(2 * math.pi * bell_f * t) + 0.3 * math.sin(2 * math.pi * bell_f * 2.756 * t))
+            sig_l = drone + eerie * 1.1 + bell * 0.7
+            sig_r = drone * 0.95 + eerie * 0.7 + bell * 1.1
+
+        else:
+            # wonder: Lush sweeping orchestral strings + celesta sparkles in C Major
+            chords = [(130.81, 261.63, 329.63, 392.00, 493.88), (110.00, 220.00, 261.63, 329.63, 392.00), (87.31, 174.61, 220.00, 261.63, 329.63), (98.00, 196.00, 246.94, 293.66, 392.00)]
+            clen = dur / len(chords)
+            ci = min(len(chords) - 1, int(t / clen))
+            ct = t - ci * clen
+            c_env = min(1.0, ct / 0.45) * min(1.0, (clen - ct) / 0.45)
+            ch = chords[ci]
+            for idx, f in enumerate(ch):
+                w = 0.14 if idx == 0 else 0.085
+                sig_l += w * c_env * math.sin(2 * math.pi * f * t)
+                sig_r += w * c_env * math.sin(2 * math.pi * (f * 1.003) * t)
+            arp_step = int(t * 2.5)
+            arp_t = (t * 2.5) - arp_step
+            arp_f = ch[1 + (arp_step % (len(ch) - 1))] * 2.0
+            arp = 0.09 * math.exp(-arp_t * 5.0) * math.sin(2 * math.pi * arp_f * t)
+            sig_l += arp * 0.85
+            sig_r += arp * 1.15
+
+        sig_l = max(-0.95, min(0.95, sig_l * env))
+        sig_r = max(-0.95, min(0.95, sig_r * env))
         frames.extend(struct.pack("<hh", int(sig_l * 32767), int(sig_r * 32767)))
 
     with wave.open(str(wav_path), "wb") as wf:

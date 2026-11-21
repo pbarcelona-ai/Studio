@@ -4158,6 +4158,21 @@
       });
     }
 
+    const SCORE_MOOD_PROMPTS = {
+      wonder: "Sweeping cinematic orchestral strings, warm French horns, and sparkling celesta arpeggios in major key.",
+      epic: "Driving 120 BPM pulsing bass ostinato, bold heroic brass fifths, and deep booming timpani drums.",
+      cozy: "Gentle 3/4 family waltz with warm Rhodes electric piano chords, soft bass, and delicate music-box twinkles.",
+      mysterious: "Dark minor-key cosmic synth drone, eerie glass-harmonica shimmer, and sparse echoing metallic bells.",
+      playful: "Bouncy 145 BPM pizzicato strings and cheerful staccato xylophone & glockenspiel adventure melody.",
+    };
+    const selScoreMood = $("v2ScoreMood");
+    if (selScoreMood) {
+      selScoreMood.addEventListener("change", () => {
+        const p = SCORE_MOOD_PROMPTS[selScoreMood.value];
+        if (p && $("v2ScorePrompt")) $("v2ScorePrompt").value = p;
+      });
+    }
+
     if (btnFoley) {
       btnFoley.addEventListener("click", async () => {
         const slug = getSlug();
