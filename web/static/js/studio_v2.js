@@ -5149,9 +5149,38 @@
         pill.textContent = `👗 ${of.scenes || "All Scenes"}` + (of.location ? ` · ${of.location}` : "");
         ofHdr.appendChild(pill);
         const wTxt = document.createElement("span");
-        wTxt.style.cssText = "color:#e2e8f0;font-size:11px;";
+        wTxt.style.cssText = "color:#e2e8f0;font-size:11px;flex:1;";
         wTxt.textContent = of.wardrobe || "No specific wardrobe set in Step 08 yet";
         ofHdr.appendChild(wTxt);
+
+        if (of.id && of.id !== "default") {
+          const btnDelOf = document.createElement("button");
+          btnDelOf.type = "button";
+          btnDelOf.className = "btn btn--ghost";
+          btnDelOf.style.cssText = "padding:2px 8px;font-size:11px;color:#f87171;margin-left:auto;";
+          btnDelOf.textContent = "🗑️ Delete Outfit";
+          btnDelOf.title = `Delete this wardrobe change for ${c.name} (also removes it from Step 08)`;
+          btnDelOf.addEventListener("click", async () => {
+            const ok = await showInstallApprovalModal(
+              `Delete "${of.scenes || "Outfit"}" for ${c.name}?`,
+              `This will remove this wardrobe change ("${(of.wardrobe || "").slice(0, 80)}") from Step 10 AND Step 08 (Cast & Characters), and delete its generated turnaround images.\n\nClick OK to delete, or Cancel to keep it.`
+            );
+            if (!ok) return;
+            setV2TurnStatus(`Deleting outfit ${of.scenes} for ${c.name}…`);
+            try {
+              await callApi("/api/v2_wardrobe_state_delete", {
+                project: v2TurnState.project,
+                character: c.name,
+                outfit_index: ofIdx,
+              });
+              await loadV2Turnarounds();
+              setV2TurnStatus(`✓ Deleted outfit "${of.scenes}" for ${c.name} (synced back to Step 08).`);
+            } catch (err) {
+              setV2TurnStatus("Could not delete outfit: " + (err.message || err), true);
+            }
+          });
+          ofHdr.appendChild(btnDelOf);
+        }
         sec.appendChild(ofHdr);
 
         const grid = document.createElement("div");

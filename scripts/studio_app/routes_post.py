@@ -2197,6 +2197,52 @@ def _v2_wardrobe_states_save(r: Request):
     return {"status": "ok", "character": key, "states": clean_states}
 
 
+@route("POST", "/api/v2_wardrobe_state_delete")
+def _v2_wardrobe_state_delete(r: Request):
+    """Delete a wardrobe change state for a character (syncs back to Step 08 wardrobe_states.json & removes its Step 10 turnaround PNGs)."""
+    slug = str(r.body.get("project") or "").strip()
+    character = str(r.body.get("character") or "").strip()
+    idx = int(r.body.get("outfit_index", -1))
+    if not slug or not character or idx < 0:
+        raise PlanError("project, character, and outfit_index (>= 0) are required")
+
+    pd = pdir(slug, "book")
+    ws_path = pd / "wardrobe_states.json"
+    cur = {}
+    if ws_path.is_file():
+        try:
+            cur = json.loads(ws_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            cur = {}
+    key = next((k for k in cur if k.lower() == character.lower()), "")
+    states = list(cur.get(key) or []) if key else []
+    if idx >= len(states):
+        raise PlanError("wardrobe state index out of range")
+
+    removed = states.pop(idx)
+    if states:
+        cur[key] = states
+    elif key:
+        cur.pop(key, None)
+    ws_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
+
+    # Remove the deleted outfit's PNGs and shift higher outfit indices down so remaining turnarounds stay aligned
+    safe = "".join(c if c.isalnum() else "_" for c in character.lower()).strip("_") or "char"
+    t_dir = pd / "assets" / "turnarounds"
+    if t_dir.is_dir():
+        del_num = idx + 1
+        for v in ("front", "three_quarter", "profile"):
+            (t_dir / f"{safe}_outfit{del_num}_{v}.png").unlink(missing_ok=True)
+        for old_num in range(del_num + 1, len(states) + 2):
+            for v in ("front", "three_quarter", "profile"):
+                src = t_dir / f"{safe}_outfit{old_num}_{v}.png"
+                dst = t_dir / f"{safe}_outfit{old_num - 1}_{v}.png"
+                if src.is_file():
+                    src.replace(dst)
+
+    return {"status": "ok", "character": character, "removed": removed, "remaining": len(states)}
+
+
 @route("POST", "/api/v2_sync_upstream")
 def _v2_sync_upstream(r: Request):
     """User-approved upstream feedback sync: propagate edits made in a later step back to earlier steps."""
