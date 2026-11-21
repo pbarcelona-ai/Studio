@@ -567,8 +567,38 @@ def _characters(r: Request):
     return fn(r.body)
 
 
+def _run_book_ingest_sync(slug: str, src_path: Path) -> dict:
+    """Run scripts/book_ingest.py synchronously to create source_text.txt, chapters/, and chapters.json for a book."""
+    import sys
+
+    ingest_script = ROOT / "scripts" / "book_ingest.py"
+    if not ingest_script.is_file():
+        raise PlanError("book_ingest.py not found")
+    proc = subprocess.run(
+        [sys.executable, str(ingest_script), slug, str(src_path)],
+        cwd=str(ROOT / "scripts"),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "book_ingest failed").strip()[-350:]
+        raise PlanError(f"Could not read & split book: {err}")
+    pd = pdir(slug, "book")
+    chap_count = 0
+    cj = pd / "chapters.json"
+    if cj.is_file():
+        try:
+            chap_count = len((json.loads(cj.read_text(encoding="utf-8")) or {}).get("chapters") or [])
+        except Exception:
+            pass
+    return {"slug": slug, "chapters": chap_count, "read": cj.is_file()}
+
+
 @route("POST", "/api/save_story")
 def _save_story(r: Request):
+    from bookkit import slugify
+
     filename = str(r.body.get("filename") or "").strip()
     text = str(r.body.get("text") or "").strip()
     if not filename:
@@ -583,7 +613,51 @@ def _save_story(r: Request):
     books_dir.mkdir(parents=True, exist_ok=True)
     target = books_dir / safe_name
     target.write_text(text, encoding="utf-8")
-    return {"saved": True, "filename": safe_name, "path": str(target.relative_to(ROOT)), "bytes": len(text)}
+
+    slug = slugify(Path(safe_name).stem)
+    ingest_info = _run_book_ingest_sync(slug, target)
+    return {
+        "saved": True,
+        "slug": slug,
+        "filename": safe_name,
+        "path": str(target.relative_to(ROOT)),
+        "bytes": len(text),
+        "chapters": ingest_info.get("chapters", 0),
+        "read": ingest_info.get("read", False),
+    }
+
+
+@route("POST", "/api/v2_ingest_book")
+def _v2_ingest_book(r: Request):
+    """Read & split an uploaded or books/-folder book into chapters/ + chapters.json immediately."""
+    from bookkit import slugify
+
+    raw_proj = str(r.body.get("project") or r.body.get("filename") or "").strip()
+    if not raw_proj:
+        raise PlanError("project or filename is required")
+    slug = slugify(Path(raw_proj).stem if "." in raw_proj else raw_proj)
+    pd = pdir(slug, "book")
+
+    src_file = None
+    if r.body.get("filename"):
+        cand = ROOT / "books" / Path(str(r.body["filename"])).name
+        if cand.is_file():
+            src_file = cand
+    if src_file is None and (pd / "source").is_dir():
+        for p in sorted((pd / "source").iterdir()):
+            if p.is_file() and p.suffix.lower() in (".pdf", ".epub", ".docx", ".txt", ".md", ".html"):
+                src_file = p
+                break
+    if src_file is None and (ROOT / "books").is_dir():
+        for p in sorted((ROOT / "books").iterdir()):
+            if p.is_file() and slugify(p.stem) == slug:
+                src_file = p
+                break
+    if src_file is None:
+        raise PlanError(f"Could not find source book file for '{slug}'. Save or upload the book in Step 01 first.")
+
+    info = _run_book_ingest_sync(slug, src_file)
+    return {"status": "ok", **info, "source": src_file.name}
 
 
 @route("POST", "/api/redo_audio")

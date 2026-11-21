@@ -237,7 +237,10 @@
         </div>
         <div class="step-zone-workspace">
           <div class="direct-story-card">
-            <p class="warn" id="chapNote" aria-live="polite">Pick a book that has been read to see its chapters.</p>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <p class="warn" id="chapNote" aria-live="polite" style="margin:0">Pick a book that has been read to see its chapters.</p>
+              <button type="button" class="btn btn--primary" id="bV2IngestBook" style="padding:5px 12px;font-size:var(--text-xs)">📖 Read Book &amp; Split Chapters</button>
+            </div>
             <div id="chapBar" class="row hidden" style="gap:8px;margin:8px 0;flex-wrap:wrap">
               <button type="button" class="btn btn--secondary" id="chapDrop" disabled>Drop ticked</button>
               <span class="warn" id="chapSummary"></span>

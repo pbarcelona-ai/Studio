@@ -265,6 +265,8 @@
     [/\/api\/v2_turnaround_render/, "Generating character turnaround…"],
     [/\/api\/v2_audio_mix_render/, "Mixing master audio stems…"],
     [/\/api\/v2_export_make/, "Building export deliverable…"],
+    [/\/api\/save_story/, "Saving & reading book into chapters…"],
+    [/\/api\/v2_ingest_book/, "Reading book & splitting chapters…"],
     [/\/api\/gemini_omni_generate/, "Generating video via Gemini Omni 1.2 Flash…"],
     [/\/api\/v2_install_engine/, "Installing package into Studio…"],
     [/\/api\/v2_voice_baseline_set/, "Saving character voice baseline…"],
@@ -341,17 +343,17 @@
       try {
         const res = await callApi("/api/save_story", { filename, text });
         if (statusMsg) {
-          statusMsg.textContent = `✓ Saved to books/${res.filename} (${res.bytes} characters)`;
+          statusMsg.textContent = `✓ Saved & read books/${res.filename} (${res.chapters || 1} chapter(s))`;
           statusMsg.className = "status-badge status-badge--synced";
         }
 
-        // Auto-refresh the book dropdown if present
+        // Auto-refresh the book dropdown with the exact ingested project slug
         const selProj = $("proj");
         if (selProj) {
-          const optSlug = res.filename.replace(/\.[^/.]+$/, "");
+          const optSlug = res.slug || res.filename.replace(/\.[^/.]+$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "_");
           let found = false;
           for (let i = 0; i < selProj.options.length; i++) {
-            if (selProj.options[i].value === optSlug || selProj.options[i].text.includes(optSlug)) {
+            if (selProj.options[i].value === optSlug) {
               selProj.selectedIndex = i;
               found = true;
               break;
@@ -366,6 +368,9 @@
           }
           selProj.dispatchEvent(new Event("change"));
         }
+        if (typeof window.loadChapters === "function") {
+          try { window.loadChapters(); } catch (e) {}
+        }
       } catch (err) {
         if (statusMsg) {
           statusMsg.textContent = "Error saving story: " + err.message;
@@ -376,6 +381,81 @@
         btnSave.disabled = false;
       }
     });
+
+    // Also auto-ingest when a book file (.pdf, .epub, .docx, .txt) is picked in Step 01
+    const fileInput = $("file");
+    if (fileInput) {
+      fileInput.addEventListener("change", async () => {
+        const f = fileInput.files && fileInput.files[0];
+        if (!f) return;
+        const stopBusy = startBusyFeedback(null, fileInput.closest(".card"), `Uploading & reading ${f.name}…`);
+        if (statusMsg) {
+          statusMsg.textContent = `Uploading & reading ${f.name}…`;
+          statusMsg.className = "status-badge status-badge--working";
+        }
+        try {
+          const token = (document.querySelector('meta[name="studio-token"]') || {}).content || "";
+          const headers = {};
+          if (token && token !== "__TOKEN__") headers["X-Studio-Token"] = token;
+          const upResp = await fetch(`/api/upload?name=${encodeURIComponent(f.name)}`, {
+            method: "POST",
+            headers,
+            body: f,
+          });
+          const upJson = await upResp.json().catch(() => ({}));
+          if (!upResp.ok) throw new Error(upJson.error || upResp.statusText);
+          const uploadedName = upJson.saved || upJson.name || f.name;
+          const ing = await callApi("/api/v2_ingest_book", { filename: uploadedName });
+          const selProj = $("proj");
+          if (selProj && ing.slug) {
+            let found = false;
+            for (let i = 0; i < selProj.options.length; i++) {
+              if (selProj.options[i].value === ing.slug) { selProj.selectedIndex = i; found = true; break; }
+            }
+            if (!found) {
+              const opt = document.createElement("option");
+              opt.value = ing.slug;
+              opt.text = uploadedName;
+              opt.selected = true;
+              selProj.add(opt);
+            }
+            selProj.dispatchEvent(new Event("change"));
+          }
+          if (typeof window.loadChapters === "function") {
+            try { window.loadChapters(); } catch (e) {}
+          }
+          if (statusMsg) {
+            statusMsg.textContent = `✓ Ingested "${uploadedName}" (${ing.chapters || 1} chapter(s) ready)`;
+            statusMsg.className = "status-badge status-badge--synced";
+          }
+        } catch (err) {
+          if (statusMsg) {
+            statusMsg.textContent = "Ingest error: " + (err.message || err);
+            statusMsg.className = "status-badge status-badge--drift";
+          }
+        } finally {
+          stopBusy();
+        }
+      });
+    }
+
+    // Step 02: Manual "Read Book & Split Chapters" button for any unread book
+    const btnIngest = $("bV2IngestBook");
+    if (btnIngest) {
+      btnIngest.addEventListener("click", async () => {
+        const slug = ($("proj")?.value || "").trim();
+        if (!slug) { alert("Select or upload a book in Step 01 first."); return; }
+        const note = $("chapNote");
+        if (note) note.textContent = `Reading & splitting chapters for "${slug}"…`;
+        try {
+          const res = await callApi("/api/v2_ingest_book", { project: slug });
+          if (note) note.textContent = `✓ Read "${res.source || slug}" (${res.chapters || 1} chapter(s)).`;
+          if (typeof window.loadChapters === "function") window.loadChapters();
+        } catch (err) {
+          if (note) note.textContent = "Could not read book: " + (err.message || err);
+        }
+      });
+    }
   }
 
   // ===== SCROLL POSITION PRESERVATION =====
