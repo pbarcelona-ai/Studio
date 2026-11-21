@@ -2197,6 +2197,119 @@ def _v2_wardrobe_states_save(r: Request):
     return {"status": "ok", "character": key, "states": clean_states}
 
 
+@route("POST", "/api/v2_sync_upstream")
+def _v2_sync_upstream(r: Request):
+    """User-approved upstream feedback sync: propagate edits made in a later step back to earlier steps."""
+    slug = str(r.body.get("project") or "").strip()
+    kind = str(r.body.get("kind") or "").strip().lower()
+    if not r.body.get("approved"):
+        raise PlanError("User permission is required before updating earlier steps.")
+    if not slug or not kind:
+        raise PlanError("project and kind are required")
+
+    pd = pdir(slug, "book")
+    payload = r.body.get("payload") or {}
+    updated = 0
+
+    if kind == "dialogue_to_screenplay":
+        # Propagate Step 15 dialogue text/note edits back into screenplay/scene-*.json (Step 06)
+        lines = payload.get("lines") if isinstance(payload, dict) else []
+        by_scene: dict[str, dict[int, dict]] = {}
+        for ln in lines or []:
+            lid = str(ln.get("id") or "")
+            if "-" not in lid:
+                continue
+            sc_id, idx_s = lid.rsplit("-", 1)
+            if idx_s.isdigit():
+                by_scene.setdefault(sc_id, {})[int(idx_s)] = ln
+        sp_dir = pd / "screenplay"
+        for sc_id, edits in by_scene.items():
+            sp_file = sp_dir / f"scene-{sc_id}.json"
+            if not sp_file.is_file():
+                continue
+            try:
+                sc = json.loads(sp_file.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            dlg_idx = 0
+            changed = False
+            for el in sc.get("elements") or []:
+                if isinstance(el, dict) and el.get("type") == "dialogue":
+                    dlg_idx += 1
+                    if dlg_idx in edits:
+                        new_t = str(edits[dlg_idx].get("text") or "").strip()
+                        new_n = str(edits[dlg_idx].get("note") or "").strip()
+                        if new_t and new_t != el.get("text"):
+                            el["text"] = new_t
+                            changed = True
+                            updated += 1
+                        if new_n != (el.get("note") or ""):
+                            el["note"] = new_n
+                            changed = True
+            if changed:
+                sp_file.write_text(json.dumps(sc, indent=1, ensure_ascii=False), encoding="utf-8")
+        return {"status": "ok", "kind": kind, "updated": updated, "steps_updated": ["Step 06 (Screenplay)"]}
+
+    if kind == "keyframe_to_shotlist":
+        # Propagate Step 17 edited shot prompts back into shots/shotlist.json (Step 12)
+        prompts = payload.get("prompts") if isinstance(payload, dict) else {}
+        sl_path = pd / "shots" / "shotlist.json"
+        if sl_path.is_file() and isinstance(prompts, dict):
+            sl = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+            for sc in sl.get("scenes") or []:
+                sc_id = str(sc.get("id") or "")
+                for sh in sc.get("shots") or []:
+                    sid = f"{sc_id}-{int(sh.get('n') or 0):02d}"
+                    if sid in prompts and str(prompts[sid]).strip():
+                        sh["composition"] = str(prompts[sid]).strip()[:400]
+                        updated += 1
+            if updated:
+                sl_path.write_text(json.dumps(sl, indent=1, ensure_ascii=False), encoding="utf-8")
+        return {"status": "ok", "kind": kind, "updated": updated, "steps_updated": ["Step 12 (Shot List)"]}
+
+    if kind in ("character_to_continuity", "location_to_continuity", "score_to_continuity"):
+        cb_file = pd / f"{slug}.json"
+        if not cb_file.is_file():
+            cb_file = pd / "continuity.json"
+        if not cb_file.is_file():
+            return {"status": "ok", "kind": kind, "updated": 0, "steps_updated": []}
+        cb = json.loads(cb_file.read_text(encoding="utf-8")) or {}
+        if kind == "character_to_continuity":
+            cname = str(payload.get("name") or "").strip()
+            ctok = str(payload.get("token") or "").strip()[:198]
+            if cname and ctok:
+                chars = list(cb.get("characters") or [])
+                hit = next((c for c in chars if isinstance(c, dict) and str(c.get("name") or "").lower() == cname.lower()), None)
+                if hit:
+                    hit["token"] = ctok
+                else:
+                    chars.append({"name": cname, "token": ctok, "voice": "narrator", "personality": {}})
+                cb["characters"] = chars
+                updated = 1
+        elif kind == "location_to_continuity":
+            lname = str(payload.get("name") or "").strip()
+            ltok = str(payload.get("token") or "").strip()[:198]
+            if lname and ltok:
+                locs = list(cb.get("locations") or [])
+                hit = next((x for x in locs if isinstance(x, dict) and str(x.get("name") or "").lower() == lname.lower()), None)
+                if hit:
+                    hit["token"] = ltok
+                else:
+                    locs.append({"name": lname, "token": ltok})
+                cb["locations"] = locs
+                updated = 1
+        elif kind == "score_to_continuity":
+            theme = str(payload.get("music_theme") or "").strip()[:198]
+            if theme:
+                cb["music_theme"] = theme
+                updated = 1
+        if updated:
+            cb_file.write_text(json.dumps(cb, indent=1, ensure_ascii=False), encoding="utf-8")
+        return {"status": "ok", "kind": kind, "updated": updated, "steps_updated": ["Step 07 (Continuity Book)"]}
+
+    raise PlanError(f"Unknown upstream sync kind: {kind}")
+
+
 @route("POST", "/api/v2_turnaround_render")
 def _v2_turnaround_render(r: Request):
     """Generate or upload a character turnaround view (front, three_quarter, profile) per outfit state in assets/turnarounds/."""

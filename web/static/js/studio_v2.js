@@ -234,6 +234,29 @@
     if (banner) banner.remove();
   }
 
+  // ===== UPSTREAM FEEDBACK SYNC (LATER STEP -> EARLIER STEPS WITH USER PERMISSION) =====
+  async function proposeUpstreamSync({ project, kind, affectedStepNums, title, message, payload, onSynced }) {
+    if (!project || !kind) return false;
+    const pills = (affectedStepNums || [])
+      .map(n => document.querySelector(`.step-pill[data-step="${n}"]`))
+      .filter(Boolean);
+    pills.forEach(p => p.classList.add("v2-needs-attention"));
+    try {
+      const ok = await showInstallApprovalModal(
+        title || "🔄 Update Earlier Step(s) to Match?",
+        message + "\n\nClick OK to update the earlier step(s) automatically, or Cancel to leave them unchanged."
+      );
+      if (!ok) return false;
+      const res = await rawCallApi("/api/v2_sync_upstream", { project, kind, approved: true, payload });
+      if (typeof onSynced === "function") onSynced(res);
+      return true;
+    } catch (e) {
+      return false;
+    } finally {
+      pills.forEach(p => p.classList.remove("v2-needs-attention"));
+    }
+  }
+
   const BUSY_API_LABELS = [
     [/\/api\/v2_dialogue_render/, "Generating dialogue audio…"],
     [/\/api\/v2_sound_design_render/, "Generating Score / Foley audio…"],
@@ -2437,6 +2460,16 @@
           await callApi("/api/v2_wardrobe_states_save", { project: slug, character: c.name, states });
           if (states.some(s => s.wardrobe.length >= 12)) clearNeedsAttention(card);
           msg.textContent = `✓ Saved ${states.length} wardrobe state(s)`;
+          if (states.length && states[0].wardrobe) {
+            proposeUpstreamSync({
+              project: slug,
+              kind: "character_to_continuity",
+              affectedStepNums: [7],
+              title: `🔄 Sync ${c.name}'s Wardrobe Back to Step 07?`,
+              message: `You updated ${c.name}'s wardrobe in Step 08 ("${states[0].wardrobe.slice(0, 80)}").\n\nWould you like to update Step 07 (Continuity Book) so earlier steps match?`,
+              payload: { name: c.name, token: `${c.name}: ${(descTa.value || "").trim().slice(0, 90)} | ${states[0].wardrobe}`.trim() },
+            });
+          }
         } catch (err) {
           msg.textContent = "Error: " + (err.message || err);
         }
@@ -4193,6 +4226,27 @@
         try {
           const res = await callApi("/api/v2_dialogue_save", { project: proj, engine: v2DialogueState.engine, lines: edits });
           setV2DialogueStatus(`✓ Saved ${res.saved || edits.length} dialogue line edits.`);
+          const textChanged = edits.filter(ed => {
+            const orig = (v2DialogueState.lines || []).find(l => l.id === ed.id);
+            return orig && ed.text && ed.text !== orig.text;
+          });
+          if (textChanged.length) {
+            proposeUpstreamSync({
+              project: proj,
+              kind: "dialogue_to_screenplay",
+              affectedStepNums: [6],
+              title: "🔄 Sync Dialogue Edits Back to Step 06 (Screenplay)?",
+              message: `You changed ${textChanged.length} spoken dialogue line(s) in Step 15.\n\nWould you like to update Step 06 (Screenplay) so the script matches your new lines?`,
+              payload: { lines: textChanged },
+              onSynced: () => {
+                textChanged.forEach(ed => {
+                  const orig = (v2DialogueState.lines || []).find(l => l.id === ed.id);
+                  if (orig) orig.text = ed.text;
+                });
+                setV2DialogueStatus(`✓ Saved & synced ${textChanged.length} line edit(s) back to Step 06 (Screenplay).`);
+              },
+            });
+          }
         } catch (e) {
           setV2DialogueStatus("Save failed: " + (e.message || e), true);
         }
@@ -4666,6 +4720,18 @@
             scenes: scenesPayload,
           });
           setV2SoundStatus("✓ Saved Step 16 sound strategy, master tracks, and all scene cues.");
+          const scorePrompt = ($("v2ScorePrompt")?.value || "").trim();
+          if (scorePrompt) {
+            proposeUpstreamSync({
+              project: slug,
+              kind: "score_to_continuity",
+              affectedStepNums: [7],
+              title: "🔄 Sync Score Theme Back to Step 07 (Continuity Book)?",
+              message: `You updated the film's musical score in Step 16.\n\nWould you like to update Step 07 (Continuity Book music theme) to match?`,
+              payload: { music_theme: scorePrompt },
+              onSynced: () => setV2SoundStatus("✓ Saved Step 16 sound plan & synced music theme back to Step 07."),
+            });
+          }
         } catch (err) {
           setV2SoundStatus("Save failed: " + (err.message || err), true);
         }
@@ -4944,6 +5010,15 @@
         try {
           const res = await callApi("/api/v2_keyframe_prompts_save", { project: v2KfState.project, prompts });
           setV2KfStatus(`✓ Saved ${res.saved || Object.keys(prompts).length} prompt(s) for ${sc.id} (no images re-rendered).`);
+          proposeUpstreamSync({
+            project: v2KfState.project,
+            kind: "keyframe_to_shotlist",
+            affectedStepNums: [12],
+            title: `🔄 Sync ${sc.id} Prompt Edits Back to Step 12 (Shot List)?`,
+            message: `You edited keyframe shot description(s) in Step 17 for ${sc.id}.\n\nWould you like to update Step 12 (Shot List) so the shot descriptions match?`,
+            payload: { prompts },
+            onSynced: () => setV2KfStatus(`✓ Saved prompts & synced ${sc.id} back to Step 12 (Shot List).`),
+          });
         } catch (err) {
           setV2KfStatus("Could not save prompts: " + (err.message || err), true);
         }
