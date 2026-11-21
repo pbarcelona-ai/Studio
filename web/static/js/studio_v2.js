@@ -120,8 +120,8 @@
     return true;
   }
 
-  async function rawCallApi(url, body) {
-    if (typeof window.api === "function") {
+  async function rawCallApi(url, body, signal) {
+    if (!signal && typeof window.api === "function") {
       return window.api(url, body);
     }
     const token = (document.querySelector('meta[name="studio-token"]') || {}).content || "";
@@ -130,8 +130,9 @@
     const opts = body !== undefined ? {
       method: "POST",
       headers,
-      body: JSON.stringify(body)
-    } : { method: "GET", headers };
+      body: JSON.stringify(body),
+      ...(signal ? { signal } : {})
+    } : { method: "GET", headers, ...(signal ? { signal } : {}) };
     const r = await fetch(url, opts);
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || j.detail || j.message || r.statusText);
@@ -570,14 +571,29 @@
     });
   }
 
-  async function waitForStudioJob(isCancelled, onLine) {
+  function _sleepAbortable(ms, signal) {
+    return new Promise((resolve) => {
+      if (signal && signal.aborted) return resolve();
+      const tid = setTimeout(() => {
+        if (signal) signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(tid);
+        resolve();
+      };
+      if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  async function waitForStudioJob(isCancelled, onLine, signal) {
     let since = 0;
     let idleStreak = 0;
     while (!isCancelled()) {
-      await new Promise(r => setTimeout(r, 1500));
+      await _sleepAbortable(1200, signal);
       if (isCancelled()) return false;
       try {
-        const lg = await rawCallApi(`/api/log?since=${since}`);
+        const lg = await rawCallApi(`/api/log?since=${since}`, undefined, signal);
         since = lg.next || since;
         if (lg.lines && lg.lines.length && onLine) {
           onLine(String(lg.lines[lg.lines.length - 1] || "").slice(0, 120));
@@ -588,12 +604,17 @@
         } else {
           idleStreak = 0;
         }
-      } catch (e) {}
+      } catch (e) {
+        if (isCancelled() || (e && e.name === "AbortError")) return false;
+      }
     }
     return false;
   }
 
+  let _v2AutopilotRunning = false;
+
   async function launchV2AutopilotFilm() {
+    if (_v2AutopilotRunning) return;
     // If user typed a story in Step 01 but hasn't clicked Save yet, save & ingest it first!
     let slug = ($("proj")?.value || "").trim();
     const typedText = ($("storyInputText")?.value || "").trim();
@@ -610,8 +631,26 @@
     const cfg = await showAutopilotFilmModal(slug);
     if (!cfg) return;
 
-    // Show live Autopilot progress overlay with Stop button
+    _v2AutopilotRunning = true;
+
+    // Show live Autopilot progress overlay with graceful Stop button
     let cancelled = false;
+    const ac = new AbortController();
+    const makeCancelErr = () => {
+      const e = new Error("Autopilot stopped by user");
+      e.name = "AutopilotCancelled";
+      return e;
+    };
+    const checkCancelled = () => {
+      if (cancelled || ac.signal.aborted) throw makeCancelErr();
+    };
+    const autoApi = async (url, body) => {
+      checkCancelled();
+      const res = await rawCallApi(url, body, ac.signal);
+      checkCancelled();
+      return res;
+    };
+
     const overlay = document.createElement("div");
     overlay.id = "v2AutopilotProgressOverlay";
     overlay.style.cssText = "position:fixed;inset:0;background:rgba(2,6,23,0.86);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;";
@@ -641,94 +680,138 @@
       if (barEl) barEl.style.width = `${pct}%`;
       log("▸ " + msg);
     };
-    btnStop.addEventListener("click", () => {
+
+    let canDismiss = false;
+    const closeOverlay = () => {
+      document.removeEventListener("keydown", onKeyDown);
+      overlay.remove();
+      try { activateStep(currentStep); } catch (e) {}
+    };
+    const onKeyDown = (e) => {
+      if (e.key === "Escape" && canDismiss) closeOverlay();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay && canDismiss) closeOverlay();
+    });
+
+    const enableCloseButton = () => {
+      canDismiss = true;
+      btnStop.disabled = false;
+      btnStop.textContent = "Close";
+      btnStop.style.color = "#e2e8f0";
+      btnStop.onclick = closeOverlay;
+    };
+
+    btnStop.onclick = () => {
+      if (cancelled) return;
       cancelled = true;
       btnStop.disabled = true;
-      btnStop.textContent = "Stopping…";
-      log("⏹ Stop requested by user.");
-    });
+      btnStop.textContent = "Stopping safely…";
+      if (stageEl) stageEl.textContent = "⏹ Stopping safely — halting active job…";
+      if (barEl) barEl.style.background = "#64748b";
+      log("⏹ Stop requested — halting current task safely…");
+      // Tell backend to gracefully stop any running job and clear queued steps
+      rawCallApi("/api/stop", {}).catch(() => {});
+      // Abort any in-flight autopilot HTTP request immediately
+      try { ac.abort(); } catch (e) {}
+    };
 
     try {
       // 1. Ensure book is read & chapters split
       setStage(8, "Step 02: Reading book & splitting chapters…");
       try {
-        const ch = await rawCallApi(`/api/chapters?project=${encodeURIComponent(slug)}`);
+        const ch = await autoApi(`/api/chapters?project=${encodeURIComponent(slug)}`);
         if (!ch || !(ch.chapters || []).length) throw new Error("not read");
         log(`  ✓ ${ch.chapters.length} chapter(s) already ready.`);
       } catch (e) {
-        const ing = await rawCallApi("/api/v2_ingest_book", { project: slug });
+        if (cancelled || e?.name === "AbortError" || e?.name === "AutopilotCancelled") throw makeCancelErr();
+        const ing = await autoApi("/api/v2_ingest_book", { project: slug });
         log(`  ✓ Book read & split into ${ing.chapters || 1} chapter(s).`);
       }
-      if (cancelled) return;
+      checkCancelled();
 
       // 2. Save chosen film style & target runtime
       const lenLbl = cfg.lengthMin > 0 ? `${cfg.lengthMin} min` : "auto";
       setStage(16, `Step 09: Locking visual style (${cfg.look}) & target length (${lenLbl})…`);
-      await rawCallApi("/api/global_params", {
+      await autoApi("/api/global_params", {
         project: slug,
         look: cfg.look,
         ...(cfg.lengthMin > 0 ? { target_minutes: cfg.lengthMin } : {}),
       });
-      if (cancelled) return;
+      checkCancelled();
 
       // 3. Ensure Coverage & Screenplay exist
       setStage(26, "Steps 03–06: Checking coverage, beats & screenplay…");
       let sp = null;
-      try { sp = await rawCallApi(`/api/screenplay?project=${encodeURIComponent(slug)}`); } catch (e) {}
+      try { sp = await autoApi(`/api/screenplay?project=${encodeURIComponent(slug)}`); } catch (e) {
+        if (cancelled || e?.name === "AbortError" || e?.name === "AutopilotCancelled") throw makeCancelErr();
+      }
       if (!sp || !(sp.scenes || []).length) {
         log(`  Writing coverage, beats & screenplay (target: ${lenLbl})…`);
-        await rawCallApi("/api/read_it_in", {
+        await autoApi("/api/read_it_in", {
           project: slug,
           ...(cfg.lengthMin > 0 ? { minutes: cfg.lengthMin } : {}),
         });
-        await waitForStudioJob(() => cancelled, (ln) => log("  " + ln));
+        const ok = await waitForStudioJob(() => cancelled, (ln) => log("  " + ln), ac.signal);
+        if (!ok) throw makeCancelErr();
       } else {
         log(`  ✓ Screenplay ready (${sp.scenes.length} scenes).`);
       }
-      if (cancelled) return;
+      checkCancelled();
 
       // 4. Continuity Book + Approve
       setStage(38, "Step 07: Building & approving continuity book…");
       let cb = null;
-      try { cb = await rawCallApi(`/api/continuity_book?project=${encodeURIComponent(slug)}`); } catch (e) {}
-      if (!cb || !cb.book || !(cb.book.characters || []).length) {
-        await rawCallApi("/api/continuity_bootstrap", { project: slug });
+      try { cb = await autoApi(`/api/continuity_book?project=${encodeURIComponent(slug)}`); } catch (e) {
+        if (cancelled || e?.name === "AbortError" || e?.name === "AutopilotCancelled") throw makeCancelErr();
       }
-      try { await rawCallApi("/api/continuity_approve", { project: slug }); } catch (e) {}
+      if (!cb || !cb.book || !(cb.book.characters || []).length) {
+        await autoApi("/api/continuity_bootstrap", { project: slug });
+      }
+      try { await autoApi("/api/continuity_approve", { project: slug }); } catch (e) {
+        if (cancelled || e?.name === "AbortError" || e?.name === "AutopilotCancelled") throw makeCancelErr();
+      }
       log("  ✓ Continuity book locked & approved.");
-      if (cancelled) return;
+      checkCancelled();
 
       // 5. Shot List + Approve
       setStage(48, "Step 12: Checking & approving shot list…");
       let sl = null;
-      try { sl = await rawCallApi(`/api/shot_list?project=${encodeURIComponent(slug)}`); } catch (e) {}
+      try { sl = await autoApi(`/api/shot_list?project=${encodeURIComponent(slug)}`); } catch (e) {
+        if (cancelled || e?.name === "AbortError" || e?.name === "AutopilotCancelled") throw makeCancelErr();
+      }
       if (!sl || !sl.list || !(sl.list.scenes || []).length) {
         // Ensure any earlier background job has completely finished before starting shot_list
-        const curJob = await rawCallApi("/api/log?since=0").catch(() => ({}));
+        const curJob = await autoApi("/api/log?since=0").catch(() => ({}));
         if (curJob && (curJob.running || curJob.queued > 0)) {
           log("  Waiting for active background job to finish before starting shot list…");
-          await waitForStudioJob(() => cancelled, (ln) => log("  " + ln));
+          const ok = await waitForStudioJob(() => cancelled, (ln) => log("  " + ln), ac.signal);
+          if (!ok) throw makeCancelErr();
         }
-        if (cancelled) return;
+        checkCancelled();
         log("  Generating shot list…");
-        await rawCallApi("/api/shot_list", { project: slug, queue: true });
-        await waitForStudioJob(() => cancelled, (ln) => log("  " + ln));
+        await autoApi("/api/shot_list", { project: slug, queue: true });
+        const ok = await waitForStudioJob(() => cancelled, (ln) => log("  " + ln), ac.signal);
+        if (!ok) throw makeCancelErr();
       }
-      try { await rawCallApi("/api/shot_list_approve", { project: slug }); } catch (e) {}
+      try { await autoApi("/api/shot_list_approve", { project: slug }); } catch (e) {
+        if (cancelled || e?.name === "AbortError" || e?.name === "AutopilotCancelled") throw makeCancelErr();
+      }
       log("  ✓ Shot list ready & approved.");
-      if (cancelled) return;
+      checkCancelled();
 
       // 6. Voice Casting & Spoken Dialogue
       setStage(58, `Steps 14–15: Casting voices (${cfg.dialect}) & rendering dialogue via ${cfg.voiceEngine}…`);
-      await rawCallApi("/api/redo_audio", { project: slug, mode: "dialogue", dialect: cfg.dialect });
-      const dlg = await rawCallApi(`/api/v2_dialogue?project=${encodeURIComponent(slug)}`);
+      await autoApi("/api/redo_audio", { project: slug, mode: "dialogue", dialect: cfg.dialect });
+      const dlg = await autoApi(`/api/v2_dialogue?project=${encodeURIComponent(slug)}`);
       const unrenderedDlg = (dlg.lines || []).filter(l => !l.has_audio);
       if (unrenderedDlg.length) {
         for (let i = 0; i < unrenderedDlg.length; i += 4) {
-          if (cancelled) return;
+          checkCancelled();
           const batch = unrenderedDlg.slice(i, i + 4);
           log(`  Rendering dialogue lines ${i + 1}–${Math.min(i + 4, unrenderedDlg.length)} of ${unrenderedDlg.length}…`);
-          await rawCallApi("/api/v2_dialogue_render", {
+          await autoApi("/api/v2_dialogue_render", {
             project: slug,
             dialect: cfg.dialect,
             engine: cfg.voiceEngine,
@@ -737,51 +820,65 @@
         }
       }
       log(`  ✓ Spoken dialogue ready (${(dlg.lines || []).length} lines).`);
-      if (cancelled) return;
+      checkCancelled();
 
       // 7. Score & Foley
       setStage(70, `Step 16: Generating Foley & Cinematic Score (${cfg.scoreMood})…`);
-      await rawCallApi("/api/v2_sound_design_render", { project: slug, kind: "foley", preset: "space_adventure", duration: 12 });
-      await rawCallApi("/api/v2_sound_design_render", { project: slug, kind: "score", mood: cfg.scoreMood, duration: 15 });
+      await autoApi("/api/v2_sound_design_render", { project: slug, kind: "foley", preset: "space_adventure", duration: 12 });
+      await autoApi("/api/v2_sound_design_render", { project: slug, kind: "score", mood: cfg.scoreMood, duration: 15 });
       log("  ✓ Foley & Score tracks rendered.");
-      if (cancelled) return;
+      checkCancelled();
 
       // 8. Storyboard Keyframes (up to chosen cap, skipping already rendered/locked)
       setStage(80, `Step 17: Rendering storyboard keyframes (up to ${cfg.kfLimit === 9999 ? "all" : cfg.kfLimit} shots)…`);
-      const kf = await rawCallApi(`/api/v2_keyframes?project=${encodeURIComponent(slug)}`);
+      const kf = await autoApi(`/api/v2_keyframes?project=${encodeURIComponent(slug)}`);
       const allShots = (kf.scenes || []).flatMap(sc => sc.shots || []);
       const todoShots = allShots.filter(s => !s.has_image && !s.locked).slice(0, cfg.kfLimit);
       for (let i = 0; i < todoShots.length; i++) {
-        if (cancelled) return;
+        checkCancelled();
         const sh = todoShots[i];
         log(`  Rendering keyframe ${sh.id} (${i + 1}/${todoShots.length})…`);
-        await rawCallApi("/api/v2_keyframe_render", { project: slug, id: sh.id, prompt: sh.prompt, aspect_ratio: "16:9" });
+        await autoApi("/api/v2_keyframe_render", { project: slug, id: sh.id, prompt: sh.prompt, aspect_ratio: "16:9" });
       }
       log(`  ✓ Keyframes ready.`);
-      if (cancelled) return;
+      checkCancelled();
 
       // 9. Mix Master Audio
       setStage(90, "Step 21: Mixing Dialogue, Foley & Score stems…");
-      await rawCallApi("/api/v2_audio_mix_render", { project: slug, dialogue_db: 0, foley_db: -3, score_db: -6, ducking: true });
+      await autoApi("/api/v2_audio_mix_render", { project: slug, dialogue_db: 0, foley_db: -3, score_db: -6, ducking: true });
       log("  ✓ Master audio mixed.");
-      if (cancelled) return;
+      checkCancelled();
 
       // 10. Assemble Master MP4 & jump to Step 22 Premiere
       setStage(96, "Step 22: Assembling 16:9 Master Cinema MP4…");
-      await rawCallApi("/api/v2_export_make", { project: slug, target: "master_mp4" });
+      await autoApi("/api/v2_export_make", { project: slug, target: "master_mp4" });
       setStage(100, "🎉 Full Film Complete! Opening Cinema Premiere (Step 22)…");
       await new Promise(r => setTimeout(r, 900));
+      document.removeEventListener("keydown", onKeyDown);
       overlay.remove();
       activateStep(22);
     } catch (err) {
+      if (cancelled || err?.name === "AutopilotCancelled" || err?.name === "AbortError") {
+        // Wait briefly for any backend job to finish winding down cleanly so Studio is immediately ready
+        for (let k = 0; k < 8; k++) {
+          try {
+            const st = await rawCallApi("/api/log?since=0");
+            if (!st || (!st.running && !(st.queued > 0))) break;
+          } catch (e) { break; }
+          await new Promise(r => setTimeout(r, 500));
+        }
+        log("✓ Stopped cleanly. All completed steps were saved — you can edit or resume from any step.");
+        if (stageEl) stageEl.textContent = "⏹ Autopilot stopped cleanly — completed work saved";
+        enableCloseButton();
+        return;
+      }
       log("❌ Autopilot paused on error: " + (err.message || err));
-      if (stageEl) stageEl.textContent = "⚠️ Autopilot stopped — see log below";
-      btnStop.disabled = false;
-      btnStop.textContent = "Close";
-      btnStop.onclick = () => overlay.remove();
+      if (stageEl) stageEl.textContent = "⚠️ Autopilot paused — see log below";
+      enableCloseButton();
       return;
+    } finally {
+      _v2AutopilotRunning = false;
     }
-    if (cancelled) overlay.remove();
   }
 
   // ===== SCROLL POSITION PRESERVATION =====
