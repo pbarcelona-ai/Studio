@@ -2111,12 +2111,13 @@ def _v2_wardrobe_states_save(r: Request):
 
 @route("POST", "/api/v2_turnaround_render")
 def _v2_turnaround_render(r: Request):
-    """Generate or upload a character turnaround view (front, three_quarter, profile) in assets/turnarounds/."""
+    """Generate or upload a character turnaround view (front, three_quarter, profile) per outfit state in assets/turnarounds/."""
     import base64
 
     slug = str(r.body.get("project") or "").strip()
     char_name = str(r.body.get("character") or "").strip()
     view = str(r.body.get("view") or "front").strip().lower()
+    outfit_id = "".join(c for c in str(r.body.get("outfit_id") or "default").strip().lower() if c.isalnum() or c in "_-") or "default"
     if not slug or not char_name or view not in ("front", "three_quarter", "profile"):
         raise PlanError("project, character, and valid view (front, three_quarter, profile) are required")
 
@@ -2124,8 +2125,9 @@ def _v2_turnaround_render(r: Request):
     safe = "".join(c if c.isalnum() else "_" for c in char_name.lower()).strip("_") or "char"
     t_dir = pd / "assets" / "turnarounds"
     t_dir.mkdir(parents=True, exist_ok=True)
-    out_png = t_dir / f"{safe}_{view}.png"
-    rel_url = f"/file/{slug}/assets/turnarounds/{safe}_{view}.png"
+    fname = f"{safe}_{view}.png" if outfit_id == "default" else f"{safe}_{outfit_id}_{view}.png"
+    out_png = t_dir / fname
+    rel_url = f"/file/{slug}/assets/turnarounds/{fname}"
 
     b64 = str(r.body.get("image_base64") or "").strip()
     if b64:
@@ -2135,14 +2137,16 @@ def _v2_turnaround_render(r: Request):
         if len(raw) < 100:
             raise PlanError("uploaded turnaround image is empty")
         out_png.write_bytes(raw)
-        return {"status": "ok", "character": char_name, "view": view, "image_url": rel_url, "model": "uploaded"}
+        return {"status": "ok", "character": char_name, "outfit_id": outfit_id, "view": view, "image_url": rel_url, "model": "uploaded"}
 
     desc = str(r.body.get("desc") or "").strip()
+    wardrobe = str(r.body.get("wardrobe") or "").strip()
     look = str(r.body.get("look") or "pixar_3d").strip()
     view_desc = {"front": "front facing portrait", "three_quarter": "three-quarter angle view", "profile": "side profile view"}[view]
-    prompt = f"Character design turnaround sheet ({view_desc}) of {char_name}. {desc}. Style: {look}. Clean neutral studio backdrop, full head and shoulders clearly visible, consistent costume and lighting."
+    wardrobe_clause = f" EXACT LOCKED WARDROBE (keep exact solid colors and clothing items, no unrequested patterns): {wardrobe}." if wardrobe else ""
+    prompt = f"Character design turnaround sheet ({view_desc}) of {char_name}. {desc}.{wardrobe_clause} Style: {look}. Clean neutral studio backdrop, full head-to-toe or upper body clearly showing the exact outfit, consistent lighting."
     model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio="1:1")
-    return {"status": "ok", "character": char_name, "view": view, "image_url": rel_url, "model": model_used}
+    return {"status": "ok", "character": char_name, "outfit_id": outfit_id, "view": view, "image_url": rel_url, "model": model_used}
 
 
 @route("POST", "/api/v2_postprod_save")

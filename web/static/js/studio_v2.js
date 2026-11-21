@@ -5023,11 +5023,17 @@
     list.innerHTML = "";
 
     const chars = v2TurnState.characters || [];
-    const totalViews = chars.length * 3;
-    const doneViews = chars.reduce((acc, c) => acc + ["front", "three_quarter", "profile"].filter(v => c.views && c.views[v] && c.views[v].has_image).length, 0);
+    let totalViews = 0, doneViews = 0;
+    chars.forEach(c => {
+      const outfits = (c.outfits && c.outfits.length) ? c.outfits : [{ id: "default", scenes: "All Scenes", location: "", wardrobe: c.desc || "", views: c.views || {} }];
+      outfits.forEach(of => {
+        totalViews += 3;
+        doneViews += ["front", "three_quarter", "profile"].filter(v => of.views && of.views[v] && of.views[v].has_image).length;
+      });
+    });
     if (summary) {
       summary.textContent = chars.length
-        ? `${chars.length} character(s) · ${doneViews}/${totalViews} turnaround views locked · Style: ${v2TurnState.look}`
+        ? `${chars.length} character(s) synced from Step 08 · ${doneViews}/${totalViews} turnaround views locked · Style: ${v2TurnState.look}`
         : "No characters found yet. Run Step 07 (Continuity) or Step 08 (Cast) first.";
     }
     if (badge) badge.textContent = doneViews > 0 ? `✓ ${doneViews}/${totalViews} Views` : `${chars.length} Characters`;
@@ -5041,114 +5047,138 @@
     chars.forEach(c => {
       const card = document.createElement("div");
       card.className = "direct-story-card v2-turn-card";
+      const outfits = (c.outfits && c.outfits.length) ? c.outfits : [{ id: "default", scenes: "All Scenes", location: "", wardrobe: c.desc || "", views: c.views || {} }];
+
       const hdr = document.createElement("div");
       hdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px";
       const title = document.createElement("strong");
       title.style.color = "#f59e0b";
-      title.textContent = c.name.toUpperCase();
+      title.textContent = c.name.toUpperCase() + (outfits.length > 1 ? ` · ${outfits.length} Wardrobe Changes` : "");
       hdr.appendChild(title);
       if (c.desc) {
         const desc = document.createElement("span");
         desc.style.cssText = "color:#94a3b8;font-size:var(--text-xs)";
-        desc.textContent = c.desc.slice(0, 120);
+        desc.textContent = c.desc.slice(0, 140);
         hdr.appendChild(desc);
       }
       card.appendChild(hdr);
 
-      const grid = document.createElement("div");
-      grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:10px";
+      outfits.forEach((of, ofIdx) => {
+        const sec = document.createElement("div");
+        if (ofIdx > 0) sec.style.cssText = "margin-top:12px;padding-top:12px;border-top:1px solid #232d3f;";
 
-      VIEWS.forEach(([vk, vlabel]) => {
-        const vinfo = (c.views && c.views[vk]) || {};
-        const box = document.createElement("div");
-        box.style.cssText = "background:#0a0d14;border:1px solid #232d3f;border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px";
+        const ofHdr = document.createElement("div");
+        ofHdr.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;font-size:12px;";
+        const pill = document.createElement("span");
+        pill.style.cssText = "padding:2px 8px;border-radius:999px;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.45);color:#fde68a;font-weight:600;font-size:11px;";
+        pill.textContent = `👗 ${of.scenes || "All Scenes"}` + (of.location ? ` · ${of.location}` : "");
+        ofHdr.appendChild(pill);
+        const wTxt = document.createElement("span");
+        wTxt.style.cssText = "color:#e2e8f0;font-size:11px;";
+        wTxt.textContent = of.wardrobe || "No specific wardrobe set in Step 08 yet";
+        ofHdr.appendChild(wTxt);
+        sec.appendChild(ofHdr);
 
-        const imgBox = document.createElement("div");
-        imgBox.style.cssText = "aspect-ratio:1/1;background:#020617;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:11px;text-align:center";
-        if (vinfo.has_image && vinfo.image_url) {
-          const img = document.createElement("img");
-          img.src = vinfo.image_url;
-          img.alt = `${c.name} ${vlabel}`;
-          img.style.cssText = "width:100%;height:100%;object-fit:cover;cursor:zoom-in";
-          img.addEventListener("click", () => window.open(vinfo.image_url, "_blank"));
-          imgBox.appendChild(img);
-        } else {
-          imgBox.textContent = `${c.name} · ${vlabel}`;
-        }
-        box.appendChild(imgBox);
+        const grid = document.createElement("div");
+        grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:10px";
 
-        const row = document.createElement("div");
-        row.style.cssText = "display:flex;gap:6px";
-        const btnGen = document.createElement("button");
-        btnGen.type = "button";
-        btnGen.className = "btn " + (vinfo.has_image ? "btn--secondary" : "btn--primary");
-        btnGen.style.cssText = "flex:1;padding:4px 8px;font-size:11px";
-        btnGen.textContent = vinfo.has_image ? `↺ Re-roll` : `✨ Generate ${vlabel}`;
-        btnGen.addEventListener("click", async () => {
-          const stopBusy = startBusyFeedback(btnGen, box, `Generating ${c.name} (${vlabel})…`);
-          setV2TurnStatus(`Generating ${vlabel} for ${c.name}…`);
-          try {
-            const res = await callApi("/api/v2_turnaround_render", {
-              project: v2TurnState.project,
-              character: c.name,
-              view: vk,
-              desc: c.desc,
-              look: v2TurnState.look,
-            });
-            c.views[vk] = { has_image: true, image_url: res.image_url + "?t=" + Date.now() };
-            renderV2Turnarounds();
-            setV2TurnStatus(`✓ Generated ${vlabel} for ${c.name}!`);
-          } catch (err) {
-            setV2TurnStatus("Turnaround failed: " + (err.message || err), true);
-          } finally {
-            stopBusy();
+        VIEWS.forEach(([vk, vlabel]) => {
+          const vinfo = (of.views && of.views[vk]) || {};
+          const box = document.createElement("div");
+          box.style.cssText = "background:#0a0d14;border:1px solid #232d3f;border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px";
+
+          const imgBox = document.createElement("div");
+          imgBox.style.cssText = "aspect-ratio:1/1;background:#020617;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:11px;text-align:center;padding:6px";
+          if (vinfo.has_image && vinfo.image_url) {
+            const img = document.createElement("img");
+            img.src = vinfo.image_url;
+            img.alt = `${c.name} ${of.scenes} ${vlabel}`;
+            img.style.cssText = "width:100%;height:100%;object-fit:cover;cursor:zoom-in";
+            img.addEventListener("click", () => window.open(vinfo.image_url, "_blank"));
+            imgBox.appendChild(img);
+          } else {
+            imgBox.textContent = `${c.name} · ${of.scenes} · ${vlabel}`;
           }
-        });
+          box.appendChild(imgBox);
 
-        const upIn = document.createElement("input");
-        upIn.type = "file";
-        upIn.accept = "image/*";
-        upIn.style.display = "none";
-        upIn.addEventListener("change", () => {
-          const f = upIn.files && upIn.files[0];
-          if (!f) return;
-          const reader = new FileReader();
-          reader.onload = async () => {
-            const stopBusy = startBusyFeedback(btnUp, box, `Uploading ${f.name}…`);
+          const row = document.createElement("div");
+          row.style.cssText = "display:flex;gap:6px";
+          const btnGen = document.createElement("button");
+          btnGen.type = "button";
+          btnGen.className = "btn " + (vinfo.has_image ? "btn--secondary" : "btn--primary");
+          btnGen.style.cssText = "flex:1;padding:4px 8px;font-size:11px";
+          btnGen.textContent = vinfo.has_image ? `↺ Re-roll` : `✨ Generate ${vlabel}`;
+          btnGen.addEventListener("click", async () => {
+            const stopBusy = startBusyFeedback(btnGen, box, `Generating ${c.name} (${of.scenes} · ${vlabel})…`);
+            setV2TurnStatus(`Generating ${vlabel} for ${c.name} (${of.scenes})…`);
             try {
               const res = await callApi("/api/v2_turnaround_render", {
                 project: v2TurnState.project,
                 character: c.name,
+                outfit_id: of.id || "default",
                 view: vk,
-                image_base64: reader.result,
+                desc: c.desc,
+                wardrobe: of.wardrobe || "",
+                look: v2TurnState.look,
               });
-              c.views[vk] = { has_image: true, image_url: res.image_url + "?t=" + Date.now() };
+              of.views[vk] = { has_image: true, image_url: res.image_url + "?t=" + Date.now() };
               renderV2Turnarounds();
-              setV2TurnStatus(`✓ Uploaded ${vlabel} reference for ${c.name}.`);
+              setV2TurnStatus(`✓ Generated ${vlabel} for ${c.name} (${of.scenes})!`);
             } catch (err) {
-              setV2TurnStatus("Upload failed: " + (err.message || err), true);
+              setV2TurnStatus("Turnaround failed: " + (err.message || err), true);
             } finally {
               stopBusy();
             }
-          };
-          reader.readAsDataURL(f);
-        });
-        const btnUp = document.createElement("button");
-        btnUp.type = "button";
-        btnUp.className = "btn btn--ghost";
-        btnUp.style.cssText = "padding:4px 8px;font-size:11px";
-        btnUp.textContent = "📷";
-        btnUp.title = `Upload custom ${vlabel} reference photo`;
-        btnUp.addEventListener("click", () => upIn.click());
+          });
 
-        row.appendChild(btnGen);
-        row.appendChild(btnUp);
-        row.appendChild(upIn);
-        box.appendChild(row);
-        grid.appendChild(box);
+          const upIn = document.createElement("input");
+          upIn.type = "file";
+          upIn.accept = "image/*";
+          upIn.style.display = "none";
+          upIn.addEventListener("change", () => {
+            const f = upIn.files && upIn.files[0];
+            if (!f) return;
+            const reader = new FileReader();
+            reader.onload = async () => {
+              const stopBusy = startBusyFeedback(btnUp, box, `Uploading ${f.name}…`);
+              try {
+                const res = await callApi("/api/v2_turnaround_render", {
+                  project: v2TurnState.project,
+                  character: c.name,
+                  outfit_id: of.id || "default",
+                  view: vk,
+                  image_base64: reader.result,
+                });
+                of.views[vk] = { has_image: true, image_url: res.image_url + "?t=" + Date.now() };
+                renderV2Turnarounds();
+                setV2TurnStatus(`✓ Uploaded ${vlabel} reference for ${c.name} (${of.scenes}).`);
+              } catch (err) {
+                setV2TurnStatus("Upload failed: " + (err.message || err), true);
+              } finally {
+                stopBusy();
+              }
+            };
+            reader.readAsDataURL(f);
+          });
+          const btnUp = document.createElement("button");
+          btnUp.type = "button";
+          btnUp.className = "btn btn--ghost";
+          btnUp.style.cssText = "padding:4px 8px;font-size:11px";
+          btnUp.textContent = "📷";
+          btnUp.title = `Upload custom ${vlabel} reference photo for ${of.scenes}`;
+          btnUp.addEventListener("click", () => upIn.click());
+
+          row.appendChild(btnGen);
+          row.appendChild(btnUp);
+          row.appendChild(upIn);
+          box.appendChild(row);
+          grid.appendChild(box);
+        });
+
+        sec.appendChild(grid);
+        card.appendChild(sec);
       });
 
-      card.appendChild(grid);
       list.appendChild(card);
     });
 

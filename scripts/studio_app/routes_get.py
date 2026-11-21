@@ -837,7 +837,7 @@ def _v2_keyframes(r: Request):
 
 @route("GET", "/api/v2_turnarounds")
 def _v2_turnarounds(r: Request):
-    """Return all characters for the active book with their 3 turnaround views (front, three_quarter, profile)."""
+    """Return all characters for the active book dynamically synced with Step 08 dossiers & wardrobe_states.json."""
     import json
 
     slug = r.q("project")
@@ -854,14 +854,14 @@ def _v2_turnarounds(r: Request):
             pass
 
     chars = {}
-    def _add(name, desc=""):
+    def _add(name, desc="", prefer=False):
         clean = str(name or "").strip()
         if not clean:
             return
         k = clean.lower()
         if k not in chars:
             chars[k] = {"name": clean, "desc": str(desc or "").strip()}
-        elif desc and not chars[k]["desc"]:
+        elif desc and (prefer or not chars[k]["desc"]):
             chars[k]["desc"] = str(desc).strip()
 
     for cb_file in (pd / f"{slug}.json", pd / "continuity.json"):
@@ -896,16 +896,73 @@ def _v2_turnarounds(r: Request):
             except Exception:
                 continue
 
+    # Always prefer latest Step 08 saved character dossiers
+    try:
+        for ch in character_tokens.list_characters(slug) or []:
+            if isinstance(ch, dict) and ch.get("name"):
+                vt = str(ch.get("visual_token") or ch.get("token") or "").strip()
+                desc = str(ch.get("description") or "").strip()
+                combined = f"{vt}. {desc}".strip(". ") if (vt and desc and vt.lower() not in desc.lower()) else (desc or vt)
+                _add(ch["name"], combined, prefer=True)
+    except Exception:
+        pass
+
+    # Load Step 08 per-scene/location wardrobe states
+    ws_map = {}
+    ws_path = pd / "wardrobe_states.json"
+    if ws_path.is_file():
+        try:
+            raw_ws = json.loads(ws_path.read_text(encoding="utf-8")) or {}
+            ws_map = {str(k).lower(): v for k, v in raw_ws.items() if isinstance(v, list)}
+        except Exception:
+            pass
+
     out = []
     for item in chars.values():
         safe = "".join(c if c.isalnum() else "_" for c in item["name"].lower()).strip("_") or "char"
-        views = {}
-        for v in ("front", "three_quarter", "profile"):
-            rel = f"assets/turnarounds/{safe}_{v}.png"
-            p = pd / rel
-            ok = p.is_file() and p.stat().st_size > 100
-            views[v] = {"has_image": ok, "image_url": f"/file/{slug}/{rel}" if ok else ""}
-        out.append({"name": item["name"], "slug": safe, "desc": item["desc"], "views": views})
+        states = [st for st in (ws_map.get(item["name"].lower()) or []) if isinstance(st, dict) and str(st.get("wardrobe") or "").strip()]
+
+        outfits = []
+        if states:
+            for idx, st in enumerate(states, start=1):
+                sc_lbl = str(st.get("scenes") or f"Outfit {idx}").strip()
+                loc_lbl = str(st.get("location") or "").strip()
+                w_txt = str(st.get("wardrobe") or "").strip()
+                oid = f"outfit{idx}"
+                views = {}
+                for v in ("front", "three_quarter", "profile"):
+                    rel = f"assets/turnarounds/{safe}_{oid}_{v}.png"
+                    p = pd / rel
+                    # Fallback to legacy base filename for outfit1 if already generated
+                    if not (p.is_file() and p.stat().st_size > 100) and idx == 1:
+                        leg = f"assets/turnarounds/{safe}_{v}.png"
+                        if (pd / leg).is_file() and (pd / leg).stat().st_size > 100:
+                            rel, p = leg, pd / leg
+                    ok = p.is_file() and p.stat().st_size > 100
+                    views[v] = {"has_image": ok, "image_url": f"/file/{slug}/{rel}" if ok else ""}
+                outfits.append({
+                    "id": oid,
+                    "scenes": sc_lbl,
+                    "location": loc_lbl,
+                    "wardrobe": w_txt,
+                    "views": views,
+                })
+        else:
+            views = {}
+            for v in ("front", "three_quarter", "profile"):
+                rel = f"assets/turnarounds/{safe}_{v}.png"
+                p = pd / rel
+                ok = p.is_file() and p.stat().st_size > 100
+                views[v] = {"has_image": ok, "image_url": f"/file/{slug}/{rel}" if ok else ""}
+            outfits.append({
+                "id": "default",
+                "scenes": "All Scenes",
+                "location": "",
+                "wardrobe": item["desc"],
+                "views": views,
+            })
+
+        out.append({"name": item["name"], "slug": safe, "desc": item["desc"], "outfits": outfits, "views": outfits[0]["views"]})
     return {"characters": out, "look": look}
 
 
