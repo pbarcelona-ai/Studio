@@ -746,5 +746,194 @@ def _v2_keyframes(r: Request):
     }
 
 
+@route("GET", "/api/v2_turnarounds")
+def _v2_turnarounds(r: Request):
+    """Return all characters for the active book with their 3 turnaround views (front, three_quarter, profile)."""
+    import json
+
+    slug = r.q("project")
+    if not slug:
+        return {"characters": [], "look": "pixar_3d"}
+    pd = pdir(slug, "book")
+
+    look = "pixar_3d"
+    gp_path = pd / "global_params.json"
+    if gp_path.is_file():
+        try:
+            look = str((json.loads(gp_path.read_text(encoding="utf-8")) or {}).get("look") or look)
+        except Exception:
+            pass
+
+    chars = {}
+    def _add(name, desc=""):
+        clean = str(name or "").strip()
+        if not clean:
+            return
+        k = clean.lower()
+        if k not in chars:
+            chars[k] = {"name": clean, "desc": str(desc or "").strip()}
+        elif desc and not chars[k]["desc"]:
+            chars[k]["desc"] = str(desc).strip()
+
+    for cb_file in (pd / f"{slug}.json", pd / "continuity.json"):
+        if cb_file.is_file():
+            try:
+                cb = json.loads(cb_file.read_text(encoding="utf-8")) or {}
+                for c in cb.get("characters") or []:
+                    if isinstance(c, dict):
+                        _add(c.get("name"), c.get("token") or c.get("description") or "")
+                break
+            except Exception:
+                pass
+    cov_path = pd / "readin" / "coverage.json"
+    if cov_path.is_file():
+        try:
+            cov = json.loads(cov_path.read_text(encoding="utf-8")) or {}
+            for c in cov.get("characters") or []:
+                if isinstance(c, dict):
+                    _add(c.get("name"), c.get("description") or c.get("role") or "")
+                elif isinstance(c, str):
+                    _add(c)
+        except Exception:
+            pass
+    sp_dir = pd / "screenplay"
+    if sp_dir.is_dir():
+        for sf in sorted(sp_dir.glob("scene-*.json")):
+            try:
+                sc = json.loads(sf.read_text(encoding="utf-8")) or {}
+                for el in sc.get("elements") or []:
+                    if isinstance(el, dict) and el.get("type") == "dialogue" and el.get("character"):
+                        _add(el["character"])
+            except Exception:
+                continue
+
+    out = []
+    for item in chars.values():
+        safe = "".join(c if c.isalnum() else "_" for c in item["name"].lower()).strip("_") or "char"
+        views = {}
+        for v in ("front", "three_quarter", "profile"):
+            rel = f"assets/turnarounds/{safe}_{v}.png"
+            p = pd / rel
+            ok = p.is_file() and p.stat().st_size > 100
+            views[v] = {"has_image": ok, "image_url": f"/file/{slug}/{rel}" if ok else ""}
+        out.append({"name": item["name"], "slug": safe, "desc": item["desc"], "views": views})
+    return {"characters": out, "look": look}
+
+
+@route("GET", "/api/v2_postprod")
+def _v2_postprod(r: Request):
+    """Unified dynamic state for Steps 19 (Polish), 20 (Timeline), 21 (Audio Mix), and 22 (Premiere & Export)."""
+    import json
+
+    slug = r.q("project")
+    if not slug:
+        return {"project": "", "title": "", "polish": {}, "timeline": {}, "mix": {}, "exports": {}}
+    pd = pdir(slug, "book")
+    title = slug.replace("_", " ").title()
+    cov_path = pd / "readin" / "coverage.json"
+    if cov_path.is_file():
+        try:
+            cov = json.loads(cov_path.read_text(encoding="utf-8")) or {}
+            if cov.get("title"):
+                title = str(cov["title"])
+        except Exception:
+            pass
+
+    # Discover rendered media dynamically for this book
+    kf_files = sorted((pd / "keyframes").glob("*.png")) if (pd / "keyframes").is_dir() else []
+    vid_files = []
+    for vdir in (pd / "videos" / "gemini_omni_12_flash", pd / "videos"):
+        if vdir.is_dir():
+            vid_files.extend(sorted(vdir.glob("*.mp4")))
+    dlg_files = sorted((pd / "audio" / "dialogue").glob("*.wav")) if (pd / "audio" / "dialogue").is_dir() else []
+    foley_master = pd / "audio" / "foley" / "foley_master.wav"
+    score_master = pd / "audio" / "score" / "score_master.wav"
+    mix_master = pd / "audio" / "mix" / "master_mix.wav"
+    film_master = pd / "films" / "master_cut.mp4"
+    shorts_master = pd / "films" / "shorts_9x16.mp4"
+    sp_fountain = pd / "exports" / f"{slug}.fountain"
+    edl_file = pd / "exports" / "timeline.edl"
+    stems_zip = pd / "exports" / "audio_stems.zip"
+
+    # Load saved polish / timeline / mix settings
+    pp_path = pd / "postprod_v2.json"
+    saved = {}
+    if pp_path.is_file():
+        try:
+            saved = json.loads(pp_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            saved = {}
+
+    # Build timeline summary from shots/shotlist.json
+    total_shots = 0
+    total_sec = 0.0
+    tl_scenes = []
+    sl_path = pd / "shots" / "shotlist.json"
+    if sl_path.is_file():
+        try:
+            sl = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+            for sc in sl.get("scenes") or []:
+                shs = sc.get("shots") or []
+                sc_sec = sum(float(s.get("seconds") or 4.0) for s in shs if isinstance(s, dict))
+                total_shots += len(shs)
+                total_sec += sc_sec
+                tl_scenes.append({"id": str(sc.get("id") or ""), "heading": str(sc.get("heading") or ""), "shots": len(shs), "seconds": round(sc_sec, 1)})
+        except Exception:
+            pass
+
+    def _furl(p, kind: str = "file") -> str:
+        if not (p.is_file() and p.stat().st_size > 64):
+            return ""
+        rel = p.relative_to(pd).as_posix()
+        return f"/{kind}/{slug}/{rel}"
+
+    preview_video = _furl(film_master) or (_furl(vid_files[0]) if vid_files else "")
+    polish_cfg = saved.get("polish") or {}
+    mix_cfg = saved.get("mix") or {}
+    tl_cfg = saved.get("timeline") or {}
+
+    return {
+        "project": slug,
+        "title": title,
+        "counts": {
+            "keyframes": len(kf_files),
+            "videos": len(vid_files),
+            "dialogue_wavs": len(dlg_files),
+            "has_foley": foley_master.is_file(),
+            "has_score": score_master.is_file(),
+            "total_shots": total_shots,
+            "total_seconds": round(total_sec, 1),
+        },
+        "polish": {
+            "lipsync_mode": polish_cfg.get("lipsync_mode") or "gemini_native",
+            "upscale_target": polish_cfg.get("upscale_target") or "1080p",
+            "deflicker": bool(polish_cfg.get("deflicker", True)),
+        },
+        "timeline": {
+            "crossfade_sec": float(tl_cfg.get("crossfade_sec", 0.5)),
+            "use_keyframe_fallback": bool(tl_cfg.get("use_keyframe_fallback", True)),
+            "scenes": tl_scenes,
+            "master_video_url": _furl(film_master),
+        },
+        "mix": {
+            "dialogue_db": float(mix_cfg.get("dialogue_db", 0.0)),
+            "foley_db": float(mix_cfg.get("foley_db", -3.0)),
+            "score_db": float(mix_cfg.get("score_db", -6.0)),
+            "ducking": bool(mix_cfg.get("ducking", True)),
+            "lufs": int(mix_cfg.get("lufs", -16)),
+            "master_audio_url": _furl(mix_master),
+        },
+        "exports": {
+            "preview_video_url": preview_video,
+            "master_mp4_url": _furl(film_master, "download"),
+            "shorts_mp4_url": _furl(shorts_master, "download"),
+            "master_audio_url": _furl(mix_master, "download"),
+            "fountain_url": _furl(sp_fountain, "download"),
+            "edl_url": _furl(edl_file, "download"),
+            "stems_zip_url": _furl(stems_zip, "download"),
+        },
+    }
+
+
 
 

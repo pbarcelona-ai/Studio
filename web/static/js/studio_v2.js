@@ -217,6 +217,9 @@
     [/\/api\/v2_dialogue_render/, "Generating dialogue audio…"],
     [/\/api\/v2_sound_design_render/, "Generating Score / Foley audio…"],
     [/\/api\/v2_keyframe_render/, "Generating storyboard keyframe…"],
+    [/\/api\/v2_turnaround_render/, "Generating character turnaround…"],
+    [/\/api\/v2_audio_mix_render/, "Mixing master audio stems…"],
+    [/\/api\/v2_export_make/, "Building export deliverable…"],
     [/\/api\/gemini_omni_generate/, "Generating video via Gemini Omni 1.2 Flash…"],
     [/\/api\/v2_install_engine/, "Installing package into Studio…"],
     [/\/api\/v2_voice_baseline_set/, "Saving character voice baseline…"],
@@ -432,6 +435,11 @@
       loadV2Cast();
     }
 
+    // If entering Step 10 (Character Turnarounds), load all book characters' 3-view sheets
+    if (currentStep === 10) {
+      loadV2Turnarounds();
+    }
+
     // If entering Step 11 (Locations & Sets), load all story locations/sets
     if (currentStep === 11) {
       loadV2Locations();
@@ -465,6 +473,11 @@
     // If entering Step 17 (Storyboard Keyframes), load all scenes & shots filmstrip
     if (currentStep === 17) {
       loadV2Keyframes();
+    }
+
+    // If entering Steps 19-22 (Polish, Timeline, Mix, Premiere & Export), load dynamic post-production state
+    if (currentStep >= 19 && currentStep <= 22) {
+      loadV2PostProd();
     }
 
     // Check for storyline drift and load step autopilot
@@ -4809,6 +4822,391 @@
     }
   }
 
+  // ===== STEP 10: LOOK DEVELOPMENT & TURNAROUNDS =====
+  let v2TurnState = { project: "", look: "pixar_3d", characters: [] };
+
+  function setV2TurnStatus(msg, isErr) {
+    const el = $("v2TurnStatus");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.style.color = isErr ? "#f87171" : "#34d399";
+  }
+
+  function renderV2Turnarounds() {
+    const list = $("v2TurnList");
+    const summary = $("v2TurnSummary");
+    const badge = $("v2TurnBadge");
+    if (!list) return;
+    const savedY = window.scrollY || 0;
+    const prevH = list.offsetHeight;
+    if (prevH > 0) list.style.minHeight = prevH + "px";
+    list.innerHTML = "";
+
+    const chars = v2TurnState.characters || [];
+    const totalViews = chars.length * 3;
+    const doneViews = chars.reduce((acc, c) => acc + ["front", "three_quarter", "profile"].filter(v => c.views && c.views[v] && c.views[v].has_image).length, 0);
+    if (summary) {
+      summary.textContent = chars.length
+        ? `${chars.length} character(s) · ${doneViews}/${totalViews} turnaround views locked · Style: ${v2TurnState.look}`
+        : "No characters found yet. Run Step 07 (Continuity) or Step 08 (Cast) first.";
+    }
+    if (badge) badge.textContent = doneViews > 0 ? `✓ ${doneViews}/${totalViews} Views` : `${chars.length} Characters`;
+
+    const VIEWS = [
+      ["front", "Front View"],
+      ["three_quarter", "3/4 Angle"],
+      ["profile", "Side Profile"],
+    ];
+
+    chars.forEach(c => {
+      const card = document.createElement("div");
+      card.className = "direct-story-card v2-turn-card";
+      const hdr = document.createElement("div");
+      hdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px";
+      const title = document.createElement("strong");
+      title.style.color = "#f59e0b";
+      title.textContent = c.name.toUpperCase();
+      hdr.appendChild(title);
+      if (c.desc) {
+        const desc = document.createElement("span");
+        desc.style.cssText = "color:#94a3b8;font-size:var(--text-xs)";
+        desc.textContent = c.desc.slice(0, 120);
+        hdr.appendChild(desc);
+      }
+      card.appendChild(hdr);
+
+      const grid = document.createElement("div");
+      grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:10px";
+
+      VIEWS.forEach(([vk, vlabel]) => {
+        const vinfo = (c.views && c.views[vk]) || {};
+        const box = document.createElement("div");
+        box.style.cssText = "background:#0a0d14;border:1px solid #232d3f;border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px";
+
+        const imgBox = document.createElement("div");
+        imgBox.style.cssText = "aspect-ratio:1/1;background:#020617;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:11px;text-align:center";
+        if (vinfo.has_image && vinfo.image_url) {
+          const img = document.createElement("img");
+          img.src = vinfo.image_url;
+          img.alt = `${c.name} ${vlabel}`;
+          img.style.cssText = "width:100%;height:100%;object-fit:cover;cursor:zoom-in";
+          img.addEventListener("click", () => window.open(vinfo.image_url, "_blank"));
+          imgBox.appendChild(img);
+        } else {
+          imgBox.textContent = `${c.name} · ${vlabel}`;
+        }
+        box.appendChild(imgBox);
+
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;gap:6px";
+        const btnGen = document.createElement("button");
+        btnGen.type = "button";
+        btnGen.className = "btn " + (vinfo.has_image ? "btn--secondary" : "btn--primary");
+        btnGen.style.cssText = "flex:1;padding:4px 8px;font-size:11px";
+        btnGen.textContent = vinfo.has_image ? `↺ Re-roll` : `✨ Generate ${vlabel}`;
+        btnGen.addEventListener("click", async () => {
+          const stopBusy = startBusyFeedback(btnGen, box, `Generating ${c.name} (${vlabel})…`);
+          setV2TurnStatus(`Generating ${vlabel} for ${c.name}…`);
+          try {
+            const res = await callApi("/api/v2_turnaround_render", {
+              project: v2TurnState.project,
+              character: c.name,
+              view: vk,
+              desc: c.desc,
+              look: v2TurnState.look,
+            });
+            c.views[vk] = { has_image: true, image_url: res.image_url + "?t=" + Date.now() };
+            renderV2Turnarounds();
+            setV2TurnStatus(`✓ Generated ${vlabel} for ${c.name}!`);
+          } catch (err) {
+            setV2TurnStatus("Turnaround failed: " + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        });
+
+        const upIn = document.createElement("input");
+        upIn.type = "file";
+        upIn.accept = "image/*";
+        upIn.style.display = "none";
+        upIn.addEventListener("change", () => {
+          const f = upIn.files && upIn.files[0];
+          if (!f) return;
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const stopBusy = startBusyFeedback(btnUp, box, `Uploading ${f.name}…`);
+            try {
+              const res = await callApi("/api/v2_turnaround_render", {
+                project: v2TurnState.project,
+                character: c.name,
+                view: vk,
+                image_base64: reader.result,
+              });
+              c.views[vk] = { has_image: true, image_url: res.image_url + "?t=" + Date.now() };
+              renderV2Turnarounds();
+              setV2TurnStatus(`✓ Uploaded ${vlabel} reference for ${c.name}.`);
+            } catch (err) {
+              setV2TurnStatus("Upload failed: " + (err.message || err), true);
+            } finally {
+              stopBusy();
+            }
+          };
+          reader.readAsDataURL(f);
+        });
+        const btnUp = document.createElement("button");
+        btnUp.type = "button";
+        btnUp.className = "btn btn--ghost";
+        btnUp.style.cssText = "padding:4px 8px;font-size:11px";
+        btnUp.textContent = "📷";
+        btnUp.title = `Upload custom ${vlabel} reference photo`;
+        btnUp.addEventListener("click", () => upIn.click());
+
+        row.appendChild(btnGen);
+        row.appendChild(btnUp);
+        row.appendChild(upIn);
+        box.appendChild(row);
+        grid.appendChild(box);
+      });
+
+      card.appendChild(grid);
+      list.appendChild(card);
+    });
+
+    window.scrollTo({ top: savedY, behavior: "instant" });
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: savedY, behavior: "instant" });
+      list.style.minHeight = "";
+    });
+  }
+
+  async function loadV2Turnarounds() {
+    const slug = ($("proj")?.value || "").trim();
+    if (!slug) return;
+    try {
+      const data = await callApi(`/api/v2_turnarounds?project=${encodeURIComponent(slug)}`);
+      v2TurnState = { project: slug, look: data.look || "pixar_3d", characters: data.characters || [] };
+      renderV2Turnarounds();
+    } catch (e) {
+      setV2TurnStatus("Could not load turnarounds: " + (e.message || e), true);
+    }
+  }
+
+  function initV2Turnarounds() {
+    const btnRel = $("bV2TurnReload");
+    if (btnRel) btnRel.addEventListener("click", () => loadV2Turnarounds());
+    const selProj = $("proj");
+    if (selProj) selProj.addEventListener("change", () => { if (currentStep === 10) loadV2Turnarounds(); });
+  }
+
+  // ===== STEPS 19-22: POLISH, TIMELINE, AUDIO MIX, PREMIERE & EXPORT =====
+  let v2PostState = null;
+
+  async function loadV2PostProd() {
+    const slug = ($("proj")?.value || "").trim();
+    if (!slug) return;
+    try {
+      const data = await callApi(`/api/v2_postprod?project=${encodeURIComponent(slug)}`);
+      v2PostState = data;
+      const c = data.counts || {};
+
+      // Step 19: Polish
+      if ($("v2PolishBadge")) $("v2PolishBadge").textContent = `${c.videos || 0} Clips · ${c.dialogue_wavs || 0} Dialogue WAVs`;
+      if ($("v2PolishLipDesc")) $("v2PolishLipDesc").textContent = `${c.dialogue_wavs || 0} rendered dialogue lines and ${c.videos || 0} video clips ready for synchronization in "${data.title}".`;
+      if ($("v2PolishLipMode") && data.polish) $("v2PolishLipMode").value = data.polish.lipsync_mode || "gemini_native";
+      if ($("v2PolishUpscale") && data.polish) $("v2PolishUpscale").value = data.polish.upscale_target || "1080p";
+      if ($("v2PolishDeflicker") && data.polish) $("v2PolishDeflicker").checked = Boolean(data.polish.deflicker);
+
+      // Step 20: Timeline
+      const tl = data.timeline || {};
+      if ($("v2TlBadge")) $("v2TlBadge").textContent = `${(tl.scenes || []).length} Scenes · ${c.total_shots || 0} Shots`;
+      if ($("v2TlSummary")) $("v2TlSummary").textContent = `"${data.title}" · ${c.total_shots || 0} shots (~${c.total_seconds || 0}s) · ${c.videos || 0} video clips · ${c.keyframes || 0} keyframes · ${c.dialogue_wavs || 0} dialogue tracks`;
+      if ($("v2TlCrossfade")) $("v2TlCrossfade").value = String(tl.crossfade_sec ?? 0.5);
+      const tracksEl = $("v2TlTracks");
+      if (tracksEl) {
+        tracksEl.innerHTML = "";
+        const makeTrack = (label, color, items) => {
+          const r = document.createElement("div");
+          r.style.cssText = "background:#0f172a;padding:8px 12px;border-radius:4px;display:flex;align-items:center;gap:12px";
+          const l = document.createElement("span");
+          l.style.cssText = `font-weight:700;color:${color};min-width:110px;font-size:11px`;
+          l.textContent = label;
+          const bar = document.createElement("div");
+          bar.style.cssText = "flex:1;background:#1e293b;min-height:26px;border-radius:4px;display:flex;gap:2px;overflow-x:auto;padding:2px";
+          items.forEach(([txt, bg, flex]) => {
+            const seg = document.createElement("div");
+            seg.style.cssText = `flex:${flex};min-width:54px;background:${bg};padding:4px 6px;font-size:10px;color:#fff;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+            seg.textContent = txt;
+            seg.title = txt;
+            bar.appendChild(seg);
+          });
+          r.appendChild(l);
+          r.appendChild(bar);
+          tracksEl.appendChild(r);
+        };
+        const scSegs = (tl.scenes || []).length
+          ? tl.scenes.map((s, i) => [`${s.id} (${s.shots}sh · ${s.seconds}s)`, i % 2 === 0 ? "#2563eb" : "#1d4ed8", Math.max(1, s.seconds)])
+          : [["No shots yet (generate in Step 12)", "#334155", 1]];
+        makeTrack("TRACK 1: VIDEO", "#f59e0b", scSegs);
+        makeTrack("TRACK 2: DIALOGUE", "#10b981", [[`${c.dialogue_wavs || 0} rendered spoken dialogue WAV tracks`, c.dialogue_wavs ? "#059669" : "#334155", 1]]);
+        makeTrack("TRACK 3: SCORE/SFX", "#a78bfa", [[`Foley: ${c.has_foley ? "Ready" : "Not rendered"} · Score: ${c.has_score ? "Ready" : "Not rendered"}`, (c.has_foley || c.has_score) ? "#7c3aed" : "#334155", 1]]);
+      }
+
+      // Step 21: Audio Mix
+      const mx = data.mix || {};
+      if ($("v2MixBadge")) $("v2MixBadge").textContent = mx.master_audio_url ? "✓ Master Mixed" : "Ready to Mix";
+      if ($("v2MixDlgDesc")) $("v2MixDlgDesc").textContent = `${c.dialogue_wavs || 0} rendered dialogue WAV(s) found.`;
+      if ($("v2MixFolDesc")) $("v2MixFolDesc").textContent = c.has_foley ? "✓ Foley master WAV ready." : "Not rendered yet (Step 16).";
+      if ($("v2MixScoDesc")) $("v2MixScoDesc").textContent = c.has_score ? "✓ Score master WAV ready." : "Not rendered yet (Step 16).";
+      if ($("v2MixDlgRange")) { $("v2MixDlgRange").value = String(mx.dialogue_db ?? 0); if ($("v2MixDlgLbl")) $("v2MixDlgLbl").textContent = `Volume: ${mx.dialogue_db ?? 0} dB`; }
+      if ($("v2MixFolRange")) { $("v2MixFolRange").value = String(mx.foley_db ?? -3); if ($("v2MixFolLbl")) $("v2MixFolLbl").textContent = `Volume: ${mx.foley_db ?? -3} dB`; }
+      if ($("v2MixScoRange")) { $("v2MixScoRange").value = String(mx.score_db ?? -6); if ($("v2MixScoLbl")) $("v2MixScoLbl").textContent = `Volume: ${mx.score_db ?? -6} dB`; }
+      if ($("v2MixDucking")) $("v2MixDucking").checked = Boolean(mx.ducking ?? true);
+      _renderV2SoundPlayer("v2MixPlayerWrap", mx.master_audio_url || "", "Not mixed yet — click 🎚️ Mix & Preview Master Audio");
+
+      // Step 22: Premiere & Export
+      const ex = data.exports || {};
+      if ($("v2ExpBadge")) $("v2ExpBadge").textContent = ex.preview_video_url ? "✓ Video Ready" : `"${data.title}"`;
+      const th = $("v2TheaterContent");
+      if (th) {
+        th.innerHTML = "";
+        if (ex.preview_video_url) {
+          const vid = document.createElement("video");
+          vid.controls = true;
+          vid.src = ex.preview_video_url + "?t=" + Date.now();
+          vid.style.cssText = "width:100%;height:100%;max-height:480px;background:#000";
+          th.appendChild(vid);
+        } else {
+          const p = document.createElement("p");
+          p.style.cssText = "color:#e2e8f0;font-weight:600;margin:0;font-size:1.1rem";
+          p.textContent = `${data.title} (Director's Cut)`;
+          const sm = document.createElement("small");
+          sm.style.cssText = "color:#94a3b8;margin-top:6px";
+          sm.textContent = `${c.videos || 0} video clip(s), ${c.keyframes || 0} keyframe(s), ${c.dialogue_wavs || 0} dialogue line(s) — click "🎬 Build & Download MP4" below to assemble your preview.`;
+          th.appendChild(p);
+          th.appendChild(sm);
+        }
+      }
+    } catch (e) {
+      if ($("v2ExpStatus")) $("v2ExpStatus").textContent = "Could not load post-production state: " + (e.message || e);
+    }
+  }
+
+  function initV2PostProd() {
+    const getSlug = () => ($("proj")?.value || "").trim();
+
+    // Step 19 Save
+    const btnPolish = $("bV2PolishSave");
+    if (btnPolish) {
+      btnPolish.addEventListener("click", async () => {
+        const slug = getSlug();
+        if (!slug) return;
+        const st = $("v2PolishStatus");
+        try {
+          await callApi("/api/v2_postprod_save", {
+            project: slug,
+            polish: {
+              lipsync_mode: $("v2PolishLipMode")?.value || "gemini_native",
+              upscale_target: $("v2PolishUpscale")?.value || "1080p",
+              deflicker: Boolean($("v2PolishDeflicker")?.checked),
+            },
+          });
+          if (st) { st.style.color = "#34d399"; st.textContent = "✓ Saved Step 19 Lip-Sync & Upscaling settings."; }
+        } catch (err) {
+          if (st) { st.style.color = "#f87171"; st.textContent = "Error: " + (err.message || err); }
+        }
+      });
+    }
+
+    // Step 21 live slider labels
+    [
+      ["v2MixDlgRange", "v2MixDlgLbl"],
+      ["v2MixFolRange", "v2MixFolLbl"],
+      ["v2MixScoRange", "v2MixScoLbl"],
+    ].forEach(([rid, lid]) => {
+      const r = $(rid), l = $(lid);
+      if (r && l) r.addEventListener("input", () => { l.textContent = `Volume: ${r.value} dB`; });
+    });
+
+    const btnMix = $("bV2MixRender");
+    if (btnMix) {
+      btnMix.addEventListener("click", async () => {
+        const slug = getSlug();
+        if (!slug) return;
+        const st = $("v2MixStatus");
+        const stopBusy = startBusyFeedback(btnMix, $("v2MixCard"), "Mixing Dialogue, Foley & Score stems…");
+        if (st) { st.style.color = "#34d399"; st.textContent = "Mixing stems into master_mix.wav…"; }
+        try {
+          const res = await callApi("/api/v2_audio_mix_render", {
+            project: slug,
+            dialogue_db: parseFloat($("v2MixDlgRange")?.value || "0"),
+            foley_db: parseFloat($("v2MixFolRange")?.value || "-3"),
+            score_db: parseFloat($("v2MixScoRange")?.value || "-6"),
+            ducking: Boolean($("v2MixDucking")?.checked),
+          });
+          const aud = _renderV2SoundPlayer("v2MixPlayerWrap", res.audio_url, "");
+          if ($("v2MixBadge")) $("v2MixBadge").textContent = `✓ Mixed (${res.duration_sec || 0}s)`;
+          if (st) st.textContent = `✓ Mixed master audio (${res.duration_sec || 0}s)!`;
+          if (aud) aud.play().catch(() => {});
+        } catch (err) {
+          if (st) { st.style.color = "#f87171"; st.textContent = "Mix failed: " + (err.message || err); }
+        } finally {
+          stopBusy();
+        }
+      });
+    }
+
+    // Export helper for Steps 20 & 22
+    const triggerExport = async (target, btn, statusId) => {
+      const slug = getSlug();
+      if (!slug) return;
+      const st = $(statusId);
+      const stopBusy = startBusyFeedback(btn, null, `Building ${target}…`);
+      if (st) { st.style.color = "#34d399"; st.textContent = `Building ${target} for "${slug}"…`; }
+      try {
+        const res = await callApi("/api/v2_export_make", { project: slug, target });
+        if (st) st.textContent = `✓ Ready: ${target}`;
+        if (res.video_url) await loadV2PostProd();
+        if (res.download_url) window.open(res.download_url, "_blank");
+      } catch (err) {
+        if (st) { st.style.color = "#f87171"; st.textContent = "Export failed: " + (err.message || err); }
+      } finally {
+        stopBusy();
+      }
+    };
+
+    const bindExp = (id, target, stId) => {
+      const b = $(id);
+      if (b) b.addEventListener("click", () => triggerExport(target, b, stId));
+    };
+    bindExp("bV2TlAssemble", "master_mp4", "v2TlStatus");
+    bindExp("bV2TlEdl", "edl", "v2TlStatus");
+    bindExp("bV2ExpMasterMp4", "master_mp4", "v2ExpStatus");
+    bindExp("bV2ExpShorts", "shorts_9x16", "v2ExpStatus");
+    bindExp("bV2ExpFountain", "fountain", "v2ExpStatus");
+    bindExp("bV2ExpEdl", "edl", "v2ExpStatus");
+    bindExp("bV2ExpStems", "stems_zip", "v2ExpStatus");
+
+    const btnExpAud = $("bV2ExpAudio");
+    if (btnExpAud) {
+      btnExpAud.addEventListener("click", () => {
+        const url = v2PostState && v2PostState.exports && v2PostState.exports.master_audio_url;
+        if (url) {
+          window.open(url, "_blank");
+        } else {
+          const st = $("v2ExpStatus");
+          if (st) { st.style.color = "#f87171"; st.textContent = "Mix your master audio in Step 21 first."; }
+        }
+      });
+    }
+
+    const selProj = $("proj");
+    if (selProj) {
+      selProj.addEventListener("change", () => {
+        if (currentStep >= 19 && currentStep <= 22) loadV2PostProd();
+      });
+    }
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
@@ -4823,12 +5221,14 @@
     initV2Continuity();
     initV2Cast();
     initV2Styles();
+    initV2Turnarounds();
     initV2Locations();
     initV2ShotList();
     initV2VoiceCast();
     initV2Dialogue();
     initV2SoundDesign();
     initV2Keyframes();
+    initV2PostProd();
     initV2GeminiOmni();
 
     // Bind step pills in 6-phase bar
@@ -4883,12 +5283,14 @@
       if (currentStep === 6) loadV2Screenplay();
       if (currentStep === 7) loadV2Continuity();
       if (currentStep === 8) loadV2Cast();
+      if (currentStep === 10) loadV2Turnarounds();
       if (currentStep === 11) loadV2Locations();
       if (currentStep === 12) loadV2ShotList();
       if (currentStep === 14) loadV2VoiceCast();
       if (currentStep === 15) loadV2Dialogue();
       if (currentStep === 16) loadV2SoundDesign();
       if (currentStep === 17) loadV2Keyframes();
+      if (currentStep >= 19 && currentStep <= 22) loadV2PostProd();
     }, 1200);
   });
 
@@ -4901,12 +5303,14 @@
     loadV2Screenplay,
     loadV2Continuity,
     loadV2Cast,
+    loadV2Turnarounds,
     loadV2Locations,
     loadV2ShotList,
     loadV2VoiceCast,
     loadV2Dialogue,
     loadV2SoundDesign,
     loadV2Keyframes,
+    loadV2PostProd,
     loadV2GeminiStatus,
     triggerAudioRedo,
     triggerSelectiveStorylineRedo,

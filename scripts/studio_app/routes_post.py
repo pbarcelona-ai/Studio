@@ -2043,3 +2043,281 @@ def _v2_keyframe_render(r: Request):
     return {"status": "ok", "id": shot_id, "image_url": rel_url, "model": model_used}
 
 
+@route("POST", "/api/v2_turnaround_render")
+def _v2_turnaround_render(r: Request):
+    """Generate or upload a character turnaround view (front, three_quarter, profile) in assets/turnarounds/."""
+    import base64
+
+    slug = str(r.body.get("project") or "").strip()
+    char_name = str(r.body.get("character") or "").strip()
+    view = str(r.body.get("view") or "front").strip().lower()
+    if not slug or not char_name or view not in ("front", "three_quarter", "profile"):
+        raise PlanError("project, character, and valid view (front, three_quarter, profile) are required")
+
+    pd = pdir(slug, "book")
+    safe = "".join(c if c.isalnum() else "_" for c in char_name.lower()).strip("_") or "char"
+    t_dir = pd / "assets" / "turnarounds"
+    t_dir.mkdir(parents=True, exist_ok=True)
+    out_png = t_dir / f"{safe}_{view}.png"
+    rel_url = f"/file/{slug}/assets/turnarounds/{safe}_{view}.png"
+
+    b64 = str(r.body.get("image_base64") or "").strip()
+    if b64:
+        if "," in b64 and b64.startswith("data:"):
+            b64 = b64.split(",", 1)[1]
+        raw = base64.b64decode(b64)
+        if len(raw) < 100:
+            raise PlanError("uploaded turnaround image is empty")
+        out_png.write_bytes(raw)
+        return {"status": "ok", "character": char_name, "view": view, "image_url": rel_url, "model": "uploaded"}
+
+    desc = str(r.body.get("desc") or "").strip()
+    look = str(r.body.get("look") or "pixar_3d").strip()
+    view_desc = {"front": "front facing portrait", "three_quarter": "three-quarter angle view", "profile": "side profile view"}[view]
+    prompt = f"Character design turnaround sheet ({view_desc}) of {char_name}. {desc}. Style: {look}. Clean neutral studio backdrop, full head and shoulders clearly visible, consistent costume and lighting."
+    model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio="1:1")
+    return {"status": "ok", "character": char_name, "view": view, "image_url": rel_url, "model": model_used}
+
+
+@route("POST", "/api/v2_postprod_save")
+def _v2_postprod_save(r: Request):
+    """Save Steps 19-21 polish, timeline, and audio mix settings to postprod_v2.json."""
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    pp_path = pd / "postprod_v2.json"
+    cur = {}
+    if pp_path.is_file():
+        try:
+            cur = json.loads(pp_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            cur = {}
+    for section in ("polish", "timeline", "mix"):
+        if isinstance(r.body.get(section), dict):
+            cur[section] = {**(cur.get(section) or {}), **r.body[section]}
+    pp_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
+    return {"status": "ok", "saved": cur}
+
+
+@route("POST", "/api/v2_audio_mix_render")
+def _v2_audio_mix_render(r: Request):
+    """Mix Dialogue + Foley + Score WAV stems into audio/mix/master_mix.wav using saved dB levels."""
+    import math
+    import struct
+    import wave
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    dlg_db = float(r.body.get("dialogue_db", 0.0))
+    foley_db = float(r.body.get("foley_db", -3.0))
+    score_db = float(r.body.get("score_db", -6.0))
+    ducking = bool(r.body.get("ducking", True))
+
+    # Save mix settings
+    pp_path = pd / "postprod_v2.json"
+    cur = {}
+    if pp_path.is_file():
+        try:
+            cur = json.loads(pp_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            cur = {}
+    cur["mix"] = {"dialogue_db": dlg_db, "foley_db": foley_db, "score_db": score_db, "ducking": ducking, "lufs": int(r.body.get("lufs", -16))}
+    pp_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
+
+    dlg_dir = pd / "audio" / "dialogue"
+    dlg_files = sorted(dlg_dir.glob("*.wav")) if dlg_dir.is_dir() else []
+    foley_file = pd / "audio" / "foley" / "foley_master.wav"
+    score_file = pd / "audio" / "score" / "score_master.wav"
+    if not dlg_files and not foley_file.is_file() and not score_file.is_file():
+        raise PlanError("No audio tracks found yet. Render at least one Dialogue line (Step 15) or Score/Foley track (Step 16) first.")
+
+    def _read_mono_22k(path: Path) -> list[float]:
+        with wave.open(str(path), "rb") as wf:
+            ch = wf.getnchannels()
+            sw = wf.getsampwidth()
+            sr = wf.getframerate()
+            raw = wf.readframes(wf.getnframes())
+        if sw != 2:
+            return []
+        vals = struct.unpack(f"<{len(raw)//2}h", raw)
+        mono = [(vals[i] / 32768.0) for i in range(0, len(vals), ch)] if ch > 1 else [v / 32768.0 for v in vals]
+        if sr != 22050 and mono:
+            ratio = sr / 22050.0
+            out_n = max(1, int(len(mono) / ratio))
+            mono = [mono[min(len(mono) - 1, int(i * ratio))] for i in range(out_n)]
+        return mono
+
+    dlg_track: list[float] = []
+    gap = [0.0] * int(22050 * 0.35)
+    for f in dlg_files[:20]:
+        try:
+            dlg_track.extend(_read_mono_22k(f))
+            dlg_track.extend(gap)
+        except Exception:
+            continue
+
+    foley_track = _read_mono_22k(foley_file) if foley_file.is_file() else []
+    score_track = _read_mono_22k(score_file) if score_file.is_file() else []
+
+    total_len = max(len(dlg_track), len(foley_track), len(score_track), 22050 * 4)
+    total_len = min(total_len, 22050 * 120)  # cap preview mix at 2 min for instant response
+
+    g_dlg = 10.0 ** (dlg_db / 20.0)
+    g_fol = 10.0 ** (foley_db / 20.0)
+    g_sco = 10.0 ** (score_db / 20.0)
+
+    out_dir = pd / "audio" / "mix"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_wav = out_dir / "master_mix.wav"
+    frames = bytearray()
+    for i in range(total_len):
+        d = dlg_track[i] * g_dlg if i < len(dlg_track) else 0.0
+        duck = 0.45 if (ducking and abs(d) > 0.02) else 1.0
+        f = (foley_track[i % len(foley_track)] * g_fol * (0.75 if duck < 1.0 else 1.0)) if foley_track else 0.0
+        s = (score_track[i % len(score_track)] * g_sco * duck) if score_track else 0.0
+        v = max(-0.96, min(0.96, d + f + s))
+        frames.extend(struct.pack("<h", int(v * 32767)))
+
+    with wave.open(str(out_wav), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(22050)
+        wf.writeframes(bytes(frames))
+
+    return {
+        "status": "ok",
+        "audio_url": f"/file/{slug}/audio/mix/master_mix.wav",
+        "duration_sec": round(total_len / 22050.0, 1),
+        "stems": {"dialogue_files": len(dlg_files), "foley": foley_file.is_file(), "score": score_file.is_file()},
+    }
+
+
+@route("POST", "/api/v2_export_make")
+def _v2_export_make(r: Request):
+    """Generate dynamic deliverables for the active book: fountain screenplay, EDL, WAV stems ZIP, or assembled MP4."""
+    import zipfile
+
+    slug = str(r.body.get("project") or "").strip()
+    target = str(r.body.get("target") or "").strip().lower()
+    if not slug or not target:
+        raise PlanError("project and target are required")
+    pd = pdir(slug, "book")
+    exp_dir = pd / "exports"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+
+    if target == "fountain":
+        sp_dir = pd / "screenplay"
+        lines = [f"Title: {slug.replace('_', ' ').title()}", "Credit: Adapted by Pistachio's Studio", ""]
+        if sp_dir.is_dir():
+            for sf in sorted(sp_dir.glob("scene-*.json")):
+                try:
+                    sc = json.loads(sf.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    continue
+                if sc.get("heading"):
+                    lines.append(str(sc["heading"]).upper())
+                    lines.append("")
+                for el in sc.get("elements") or []:
+                    if not isinstance(el, dict):
+                        continue
+                    if el.get("type") == "dialogue":
+                        lines.append(str(el.get("character") or "SPEAKER").upper())
+                        if el.get("note"):
+                            lines.append(f"({el['note']})")
+                        lines.append(str(el.get("text") or ""))
+                        lines.append("")
+                    elif el.get("text"):
+                        lines.append(str(el["text"]))
+                        lines.append("")
+        out = exp_dir / f"{slug}.fountain"
+        out.write_text("\n".join(lines), encoding="utf-8")
+        return {"status": "ok", "target": target, "download_url": f"/download/{slug}/exports/{slug}.fountain"}
+
+    if target == "edl":
+        sl_path = pd / "shots" / "shotlist.json"
+        edl_lines = [f"TITLE: {slug.upper()}", "FCM: NON-DROP FRAME", ""]
+        idx = 1
+        cur_sec = 0.0
+        if sl_path.is_file():
+            sl = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+            for sc in sl.get("scenes") or []:
+                for sh in sc.get("shots") or []:
+                    dur = float(sh.get("seconds") or 4.0)
+                    def _tc(s):
+                        h, rem = divmod(int(s), 3600)
+                        m, sec = divmod(rem, 60)
+                        return f"{h:02d}:{m:02d}:{sec:02d}:00"
+                    edl_lines.append(f"{idx:03d}  AX       V     C        00:00:00:00 {_tc(dur)} {_tc(cur_sec)} {_tc(cur_sec + dur)}")
+                    edl_lines.append(f"* FROM CLIP NAME: {sc.get('id', 'S001')}-{int(sh.get('n') or idx):02d}")
+                    cur_sec += dur
+                    idx += 1
+        out = exp_dir / "timeline.edl"
+        out.write_text("\n".join(edl_lines), encoding="utf-8")
+        return {"status": "ok", "target": target, "download_url": f"/download/{slug}/exports/timeline.edl"}
+
+    if target == "stems_zip":
+        out = exp_dir / "audio_stems.zip"
+        wavs = list((pd / "audio").rglob("*.wav")) if (pd / "audio").is_dir() else []
+        if not wavs:
+            raise PlanError("No rendered WAV stems found yet. Render dialogue (Step 15) or Score/Foley (Step 16) first.")
+        with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for w in wavs:
+                zf.write(w, arcname=w.relative_to(pd / "audio").as_posix())
+        return {"status": "ok", "target": target, "files": len(wavs), "download_url": f"/download/{slug}/exports/audio_stems.zip"}
+
+    if target in ("master_mp4", "shorts_9x16"):
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            raise PlanError("ffmpeg is required to assemble MP4 video cuts.")
+        films_dir = pd / "films"
+        films_dir.mkdir(parents=True, exist_ok=True)
+        out_mp4 = films_dir / ("shorts_9x16.mp4" if target == "shorts_9x16" else "master_cut.mp4")
+
+        vid_files = []
+        for vdir in (pd / "videos" / "gemini_omni_12_flash", pd / "videos"):
+            if vdir.is_dir():
+                vid_files.extend(sorted(vdir.glob("*.mp4")))
+        kf_files = sorted((pd / "keyframes").glob("*.png")) if (pd / "keyframes").is_dir() else []
+        mix_wav = pd / "audio" / "mix" / "master_mix.wav"
+
+        if vid_files:
+            concat_txt = films_dir / "_concat.txt"
+            concat_txt.write_text("\n".join(f"file '{v.resolve()}'" for v in vid_files), encoding="utf-8")
+            vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" if target == "shorts_9x16" else "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+            cmd = [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_txt)]
+            if mix_wav.is_file():
+                cmd.extend(["-i", str(mix_wav), "-map", "0:v:0", "-map", "1:a:0", "-shortest"])
+            cmd.extend(["-vf", vf, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(out_mp4)])
+            subprocess.run(cmd, check=True, timeout=180)
+        elif kf_files:
+            # Assemble a real animatic MP4 from rendered Step 17 keyframes + Step 21 audio mix
+            concat_txt = films_dir / "_kf_concat.txt"
+            entries = []
+            for kf in kf_files:
+                entries.append(f"file '{kf.resolve()}'")
+                entries.append("duration 3")
+            entries.append(f"file '{kf_files[-1].resolve()}'")
+            concat_txt.write_text("\n".join(entries), encoding="utf-8")
+            vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" if target == "shorts_9x16" else "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+            cmd = [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_txt)]
+            if mix_wav.is_file():
+                cmd.extend(["-i", str(mix_wav), "-shortest"])
+            cmd.extend(["-vf", vf, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "24", "-c:a", "aac", str(out_mp4)])
+            subprocess.run(cmd, check=True, timeout=180)
+        else:
+            raise PlanError("No video clips (Step 18) or storyboard keyframes (Step 17) rendered yet to assemble.")
+
+        return {
+            "status": "ok",
+            "target": target,
+            "video_url": f"/file/{slug}/films/{out_mp4.name}",
+            "download_url": f"/download/{slug}/films/{out_mp4.name}",
+        }
+
+    raise PlanError(f"Unknown export target: {target}")
+
+

@@ -741,36 +741,23 @@
       <section class="step-panel" id="panel-step-10" data-step="10" aria-labelledby="step10Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step10Title">Step 10: Look Development & Turnarounds</h2>
-            <p class="step-goal">Generate 3-view turnaround reference sheets (Front, 3/4, Profile) using FLUX + InstantID to lock actor identities.</p>
+            <h2 id="step10Title">Step 10: Look Development &amp; Turnarounds</h2>
+            <p class="step-goal">Generate or upload 3-view turnaround reference sheets (Front, 3/4, Profile) for every character in your book.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ InstantID Ready</span>
+          <span class="status-badge status-badge--synced" id="v2TurnBadge">Loading Cast…</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> FLUX.1-dev + InstantX/InstantID &mdash; <em>Zero-shot facial identity preservation.</em>
+          ✨ <strong>Autopilot Pick:</strong> Gemini Image / FLUX.1-dev + InstantID &mdash; <em>Visual identity locking across all shots.</em>
         </div>
         <div class="step-zone-workspace">
-          <div class="direct-story-card">
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-              <h3 style="margin:0;font-size:var(--text-base);color:#f8fafc">Actor Likeness & Turnaround Sheets</h3>
-              <label class="btn btn--secondary" style="margin:0;cursor:pointer">
-                📷 Upload Real Actor Reference Photo
-                <input type="file" accept="image/*" style="display:none">
-              </label>
+              <div id="v2TurnSummary" style="font-size:var(--text-sm);color:#cbd5e1">Loading characters for this book…</div>
+              <button type="button" class="btn btn--ghost" id="bV2TurnReload">↻ Reload</button>
             </div>
-            <p style="color:#94a3b8;font-size:var(--text-sm)">Studio generates 3-view reference turnarounds from character descriptions or your uploaded likeness to lock the actor's face across all shots.</p>
-            <div style="display:flex;gap:12px;margin-top:8px">
-              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
-                Front View Reference (Locked)
-              </div>
-              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
-                Three-Quarter Profile (Locked)
-              </div>
-              <div style="flex:1;background:#0a0d14;border:1px dashed #334155;border-radius:8px;padding:24px;text-align:center;color:#64748b">
-                Side Profile (Locked)
-              </div>
-            </div>
+            <div id="v2TurnStatus" style="font-size:var(--text-xs);color:#34d399;margin-top:4px" aria-live="polite"></div>
           </div>
+          <div id="v2TurnList" style="display:flex;flex-direction:column;gap:12px"></div>
         </div>
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Style</button>
@@ -1299,30 +1286,45 @@
       <section class="step-panel" id="panel-step-19" data-step="19" aria-labelledby="step19Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step19Title">Step 19: Lip-Sync & Visual Polish</h2>
-            <p class="step-goal">Phoneme mouth synchronization for speaking actors and Real-ESRGAN super-resolution upscaling.</p>
+            <h2 id="step19Title">Step 19: Lip-Sync &amp; Visual Polish</h2>
+            <p class="step-goal">Configure mouth synchronization and super-resolution upscaling for this book's rendered clips.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Polish Applied</span>
+          <span class="status-badge status-badge--synced" id="v2PolishBadge">Loading…</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> LivePortrait (Lip-Sync) + Real-ESRGAN x2 (2x Crisp Upscaling)
+          ✨ <strong>Autopilot Pick:</strong> Gemini Omni Native Lip-Sync / LivePortrait + Real-ESRGAN x2 Upscaling
         </div>
         <div class="step-zone-workspace">
+          <div id="v2PolishStatus" style="font-size:var(--text-xs);color:#34d399;margin-bottom:8px" aria-live="polite"></div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:var(--space-3)">
             <div class="deliverable-card">
-              <span class="deliverable-title">Mouth Synchronization (Lip-Sync)</span>
-              <p class="deliverable-desc">Applied to Shot 3 (Tommy) and Shot 4 (Judah). Mouth movement locked to Kokoro speech waveform.</p>
-              <button type="button" class="btn btn--secondary" style="margin-top:6px">▶ Preview Lip-Sync</button>
+              <span class="deliverable-title">👄 Mouth Synchronization (Lip-Sync)</span>
+              <p class="deliverable-desc" id="v2PolishLipDesc">Checking dialogue tracks &amp; rendered video clips…</p>
+              <select id="v2PolishLipMode" style="width:100%;padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);margin-top:6px">
+                <option value="gemini_native">Gemini Omni 1.2 Flash Native Audio Lip-Sync</option>
+                <option value="liveportrait">LivePortrait Post-Process Lip-Sync (Dialogue WAVs)</option>
+                <option value="off">Off (Keep Raw Motion)</option>
+              </select>
             </div>
             <div class="deliverable-card">
-              <span class="deliverable-title">Super-Resolution Upscaling</span>
-              <p class="deliverable-desc">Clips upscaled to 1080p/4K resolution with temporal de-flickering.</p>
-              <button type="button" class="btn btn--secondary" style="margin-top:6px">✓ Upscale Complete</button>
+              <span class="deliverable-title">✨ Super-Resolution Upscaling &amp; Polish</span>
+              <p class="deliverable-desc" id="v2PolishUpDesc">Choose final resolution target and temporal de-flickering.</p>
+              <select id="v2PolishUpscale" style="width:100%;padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);margin-top:6px">
+                <option value="1080p">1080p Full HD (Recommended)</option>
+                <option value="4k">4K Ultra HD (Real-ESRGAN x2)</option>
+                <option value="none">Keep Native Clip Resolution</option>
+              </select>
+              <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-xs);color:#cbd5e1;margin-top:8px">
+                <input type="checkbox" id="v2PolishDeflicker" checked> Enable temporal de-flickering
+              </label>
             </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:var(--space-3)">
+            <button type="button" class="btn btn--primary" id="bV2PolishSave">💾 Save Polish Settings</button>
           </div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Video</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Timeline Sequence ➔</button>
         </div>
       </section>
@@ -1332,43 +1334,34 @@
         <div class="step-zone-header">
           <div class="step-title-wrap">
             <h2 id="step20Title">Step 20: Timeline Sequence Assembly</h2>
-            <p class="step-goal">Visual 3-track timeline editor for video, dialogue, and score sequencing.</p>
+            <p class="step-goal">Dynamic 3-track timeline built from this book's scenes, shots, dialogue WAVs, and score.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Timeline Assembled</span>
+          <span class="status-badge status-badge--synced" id="v2TlBadge">Loading…</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Automatic EDL Stitching with 0.5s Crossfade Audio Transitions
+          ✨ <strong>Autopilot Pick:</strong> Automatic EDL &amp; MP4 Stitching with Crossfade Audio Transitions
         </div>
         <div class="step-zone-workspace">
-          <div class="direct-story-card">
-            <div style="display:flex;flex-direction:column;gap:8px">
-              <div style="background:#0f172a;padding:8px 12px;border-radius:4px;display:flex;align-items:center;gap:12px">
-                <span style="font-weight:700;color:#f59e0b;min-width:80px">TRACK 1: VIDEO</span>
-                <div style="flex:1;background:#1e293b;height:24px;border-radius:4px;display:flex;gap:2px;overflow:hidden">
-                  <div style="flex:5;background:#3b82f6;padding:4px;font-size:10px;color:#fff">Clip 1 (5s)</div>
-                  <div style="flex:5;background:#2563eb;padding:4px;font-size:10px;color:#fff">Clip 2 (5s)</div>
-                  <div style="flex:4;background:#1d4ed8;padding:4px;font-size:10px;color:#fff">Clip 3 (4s)</div>
-                </div>
-              </div>
-              <div style="background:#0f172a;padding:8px 12px;border-radius:4px;display:flex;align-items:center;gap:12px">
-                <span style="font-weight:700;color:#10b981;min-width:80px">TRACK 2: DIALOGUE</span>
-                <div style="flex:1;background:#1e293b;height:24px;border-radius:4px;display:flex;gap:2px;overflow:hidden">
-                  <div style="flex:5;background:transparent"></div>
-                  <div style="flex:5;background:#059669;padding:4px;font-size:10px;color:#fff">Tommy: "Judah, look..." (4.2s)</div>
-                  <div style="flex:4;background:#047857;padding:4px;font-size:10px;color:#fff">Judah: "Navigation..." (3.8s)</div>
-                </div>
-              </div>
-              <div style="background:#0f172a;padding:8px 12px;border-radius:4px;display:flex;align-items:center;gap:12px">
-                <span style="font-weight:700;color:#8b5cf6;min-width:80px">TRACK 3: SCORE</span>
-                <div style="flex:1;background:#7c3aed;height:24px;border-radius:4px;padding:4px;font-size:10px;color:#fff">
-                  MusicGen Orbital Theme (14.0s Full Length)
-                </div>
+          <div class="direct-story-card" style="margin-bottom:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+              <div id="v2TlSummary" style="font-size:var(--text-sm);color:#cbd5e1">Loading timeline tracks for this book…</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <select id="v2TlCrossfade" style="padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                  <option value="0">Cut: 0.0s</option>
+                  <option value="0.3">Crossfade: 0.3s</option>
+                  <option value="0.5" selected>Crossfade: 0.5s</option>
+                  <option value="1.0">Crossfade: 1.0s</option>
+                </select>
+                <button type="button" class="btn btn--primary" id="bV2TlAssemble">🎬 Assemble Timeline Cut (MP4)</button>
+                <button type="button" class="btn btn--secondary" id="bV2TlEdl">📄 Export EDL</button>
               </div>
             </div>
+            <div id="v2TlStatus" style="font-size:var(--text-xs);color:#34d399;margin-bottom:8px" aria-live="polite"></div>
+            <div id="v2TlTracks" style="display:flex;flex-direction:column;gap:8px"></div>
           </div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Polish</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Audio Mix ➔</button>
         </div>
       </section>
@@ -1377,122 +1370,115 @@
       <section class="step-panel" id="panel-step-21" data-step="21" aria-labelledby="step21Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step21Title">Step 21: Audio Stem Mix & Mastering</h2>
-            <p class="step-goal">Mix Dialogue, Foley SFX, and Music stems with automatic loudness balancing to -16 LUFS.</p>
+            <h2 id="step21Title">Step 21: Audio Stem Mix &amp; Mastering</h2>
+            <p class="step-goal">Mix this book's Dialogue, Foley SFX, and Music Score stems into a single master audio track.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Mixed to -16 LUFS</span>
+          <span class="status-badge status-badge--synced" id="v2MixBadge">Loading Stems…</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Broadcast Standard (-16 LUFS Integrated Loudness &middot; Dialogue Ducking -6dB)
+          ✨ <strong>Autopilot Pick:</strong> Broadcast Standard (-16 LUFS Integrated Loudness &middot; Auto Dialogue Ducking)
         </div>
         <div class="step-zone-workspace">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:var(--space-3)">
+          <div id="v2MixStatus" style="font-size:var(--text-xs);color:#34d399;margin-bottom:8px" aria-live="polite"></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:var(--space-3)" id="v2MixCard">
             <div class="deliverable-card">
-              <span class="deliverable-title">Dialogue Stem</span>
-              <p class="deliverable-desc">Vocal clarity and presence.</p>
-              <label class="f">Volume: 0 dB</label>
-              <input type="range" min="-12" max="6" value="0" style="width:100%">
+              <span class="deliverable-title">🎙️ Dialogue Stem</span>
+              <p class="deliverable-desc" id="v2MixDlgDesc">Checking rendered dialogue tracks…</p>
+              <label class="f" id="v2MixDlgLbl">Volume: 0 dB</label>
+              <input type="range" id="v2MixDlgRange" min="-12" max="6" step="1" value="0" style="width:100%">
             </div>
             <div class="deliverable-card">
-              <span class="deliverable-title">Foley SFX Stem</span>
-              <p class="deliverable-desc">Environmental effects and action sounds.</p>
-              <label class="f">Volume: -3 dB</label>
-              <input type="range" min="-18" max="6" value="-3" style="width:100%">
+              <span class="deliverable-title">🎧 Foley SFX Stem</span>
+              <p class="deliverable-desc" id="v2MixFolDesc">Checking Foley track…</p>
+              <label class="f" id="v2MixFolLbl">Volume: -3 dB</label>
+              <input type="range" id="v2MixFolRange" min="-18" max="6" step="1" value="-3" style="width:100%">
             </div>
             <div class="deliverable-card">
-              <span class="deliverable-title">Music Score Stem</span>
-              <p class="deliverable-desc">Cinematic soundtrack with auto-ducking during speech.</p>
-              <label class="f">Volume: -6 dB</label>
-              <input type="range" min="-24" max="0" value="-6" style="width:100%">
+              <span class="deliverable-title">🎻 Music Score Stem</span>
+              <p class="deliverable-desc" id="v2MixScoDesc">Checking Score track…</p>
+              <label class="f" id="v2MixScoLbl">Volume: -6 dB</label>
+              <input type="range" id="v2MixScoRange" min="-24" max="0" step="1" value="-6" style="width:100%">
+            </div>
+          </div>
+          <div class="direct-story-card" style="margin-top:var(--space-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-xs);color:#cbd5e1">
+                <input type="checkbox" id="v2MixDucking" checked> Auto-duck Score &amp; Foley during spoken dialogue
+              </label>
+              <button type="button" class="btn btn--primary" id="bV2MixRender">🎚️ Mix &amp; Preview Master Audio</button>
+            </div>
+            <div id="v2MixPlayerWrap" style="background:#0a0d14;padding:8px 10px;border-radius:6px;font-size:var(--text-xs);color:#64748b">
+              Not mixed yet — click 🎚️ Mix &amp; Preview Master Audio
             </div>
           </div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
+          <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Timeline</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Premiere & Export ➔</button>
         </div>
       </section>
 
-      <!-- STEP 22: PREMIERE & MULTI-FORMAT EXPORT (ALL THREE OPTIONS HARMONIZED) -->
+      <!-- STEP 22: PREMIERE & MULTI-FORMAT EXPORT -->
       <section class="step-panel" id="panel-step-22" data-step="22" aria-labelledby="step22Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step22Title">Step 22: Cinema Premiere & Multi-Format Export</h2>
-            <p class="step-goal">Watch your finished film, download one-click master deliverables, or export pro NLE project files.</p>
+            <h2 id="step22Title">Step 22: Cinema Premiere &amp; Multi-Format Export</h2>
+            <p class="step-goal">Watch your assembled film, download one-click deliverables, or export NLE files for this book.</p>
           </div>
-          <span class="status-badge status-badge--synced">✓ Master Cut Ready</span>
+          <span class="status-badge status-badge--synced" id="v2ExpBadge">Loading…</span>
         </div>
 
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Master Premiere Ready &mdash; <em>4K/1080p MP4, 9:16 Shorts, M4B Audiobook, and PDF Screenplay.</em>
+          ✨ <strong>Autopilot Pick:</strong> Multi-Format Master &mdash; <em>16:9 Cinema MP4, 9:16 Vertical Shorts, Mixed Audio, Fountain Screenplay &amp; NLE Stems.</em>
         </div>
 
         <div class="step-zone-workspace">
-          <!-- 1. CINEMA THEATER PLAYER (Top) -->
-          <div class="cinema-theater-box">
-            <div style="aspect-ratio:16/9;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">
-              <div style="font-size:3rem;cursor:pointer;color:#f59e0b" title="Play Film">▶</div>
-              <p style="color:#e2e8f0;margin-top:8px;font-weight:600">Tommy and Judah visit Saturn's Moons (Director's Cut)</p>
-              <div style="position:absolute;bottom:12px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center">
-                <span style="color:#94a3b8;font-size:var(--text-xs)">00:00 / 03:45</span>
-                <div style="display:flex;gap:8px">
-                  <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">CC Subtitles: ON</button>
-                  <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">Audio: Full Mix</button>
-                  <button type="button" class="btn btn--ghost" style="padding:4px 8px;font-size:var(--text-xs)">⛶ Fullscreen</button>
-                </div>
-              </div>
+          <div id="v2ExpStatus" style="font-size:var(--text-xs);color:#34d399;margin-bottom:8px" aria-live="polite"></div>
+          <!-- 1. CINEMA THEATER PLAYER (Dynamic for Active Book) -->
+          <div class="cinema-theater-box" id="v2TheaterBox">
+            <div id="v2TheaterContent" style="aspect-ratio:16/9;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;padding:16px;text-align:center">
+              <p id="v2TheaterTitle" style="color:#e2e8f0;font-weight:600;margin:0">Loading active film…</p>
+              <small id="v2TheaterHint" style="color:#94a3b8;margin-top:6px">Assemble a Master MP4 below (from Step 18 clips or Step 17 keyframes) to watch it here.</small>
             </div>
           </div>
 
-          <!-- 2. ONE-CLICK DELIVERABLE CARDS (Novice-Friendly Middle) -->
+          <!-- 2. ONE-CLICK DELIVERABLE CARDS -->
           <div class="export-deliverables-grid">
             <div class="deliverable-card">
-              <span class="deliverable-title">🎬 4K Master Cinema Film</span>
-              <p class="deliverable-desc">Full 16:9 widescreen master with mixed audio, titles, and burned or toggleable subtitles.</p>
-              <button type="button" class="btn btn--primary" style="margin-top:auto">Download MP4 Master</button>
+              <span class="deliverable-title">🎬 Master Cinema Film (16:9 MP4)</span>
+              <p class="deliverable-desc">Assembles your rendered video clips (or keyframe animatic) + Step 21 mixed audio into a widescreen MP4.</p>
+              <button type="button" class="btn btn--primary" id="bV2ExpMasterMp4" style="margin-top:auto">🎬 Build &amp; Download MP4</button>
             </div>
             <div class="deliverable-card">
-              <span class="deliverable-title">📱 Mobile / Social Shorts</span>
+              <span class="deliverable-title">📱 Mobile / Social Shorts (9:16)</span>
               <p class="deliverable-desc">Vertical 9:16 cut optimized for TikTok, Instagram Reels, and YouTube Shorts.</p>
-              <button type="button" class="btn btn--secondary" style="margin-top:auto">Download Shorts (9:16)</button>
+              <button type="button" class="btn btn--secondary" id="bV2ExpShorts" style="margin-top:auto">📱 Build &amp; Download 9:16</button>
             </div>
             <div class="deliverable-card">
-              <span class="deliverable-title">🎧 Illustrated M4B Audiobook</span>
-              <p class="deliverable-desc">Audiobook with embedded chapter keyframes, dialogue, and synchronized audio.</p>
-              <button type="button" class="btn btn--secondary" style="margin-top:auto">Download M4B Book</button>
+              <span class="deliverable-title">🎧 Mixed Master Audio (WAV)</span>
+              <p class="deliverable-desc">Download your Step 21 mixed Dialogue + Foley + Score master audio track.</p>
+              <button type="button" class="btn btn--secondary" id="bV2ExpAudio" style="margin-top:auto">🎧 Download Master Audio</button>
             </div>
             <div class="deliverable-card">
-              <span class="deliverable-title">📄 Screenplay & Storyboard</span>
-              <p class="deliverable-desc">Formatted Industry Standard PDF and Fountain screenplay with storyboard shots.</p>
-              <button type="button" class="btn btn--secondary" style="margin-top:auto">Download PDF / Fountain</button>
+              <span class="deliverable-title">📄 Screenplay (.fountain)</span>
+              <p class="deliverable-desc">Compiles all scenes of this book into an industry-standard Fountain screenplay file.</p>
+              <button type="button" class="btn btn--secondary" id="bV2ExpFountain" style="margin-top:auto">📄 Export Fountain Screenplay</button>
             </div>
           </div>
 
-          <!-- 3. PRO TECHNICAL & NLE CONSOLE (Collapsible Drawer for Editors) -->
+          <!-- 3. PRO TECHNICAL & NLE CONSOLE -->
           <details style="margin-top:var(--space-4);background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px">
             <summary style="cursor:pointer;font-weight:700;color:#cbd5e1;font-size:var(--text-sm)">
-              ⚙️ Pro Studio NLE & Transcode Console (DaVinci Resolve / Premiere / ProRes)
+              ⚙️ Pro Studio NLE &amp; Stems Console (DaVinci Resolve / Premiere)
             </summary>
             <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;margin-top:12px">
               <div>
-                <label class="f">Master Codec</label>
-                <select style="width:100%;padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px">
-                  <option selected>Apple ProRes 422 HQ</option>
-                  <option>H.265 / HEVC (10-bit 4:2:2)</option>
-                  <option>H.264 (Maximum Compatibility)</option>
-                  <option>AV1 (Next-Gen Open Web)</option>
-                </select>
-              </div>
-              <div>
                 <label class="f">NLE Timeline Export</label>
-                <div style="display:flex;gap:6px">
-                  <button type="button" class="btn btn--secondary" style="flex:1">Export EDL</button>
-                  <button type="button" class="btn btn--secondary" style="flex:1">Export Final Cut XML</button>
-                </div>
+                <button type="button" class="btn btn--secondary" id="bV2ExpEdl" style="width:100%">📄 Export Timeline EDL</button>
               </div>
               <div>
                 <label class="f">Uncompressed Audio Stems</label>
-                <button type="button" class="btn btn--secondary" style="width:100%">Download 24-bit WAV Stems (ZIP)</button>
+                <button type="button" class="btn btn--secondary" id="bV2ExpStems" style="width:100%">📦 Download All WAV Stems (ZIP)</button>
               </div>
             </div>
           </details>
