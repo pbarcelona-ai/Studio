@@ -1915,8 +1915,8 @@ def _v2_sound_design_render(r: Request):
     return {"status": "ok", "kind": kind, "scene": scene_id, "audio_url": rel_url, "duration": duration}
 
 
-def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:9") -> str:
-    """Generate a storyboard keyframe PNG using Gemini Image Generation (SDK first, else HTTPS REST fallback)."""
+def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:9", ref_images: list[Path] | None = None) -> str:
+    """Generate a storyboard keyframe or turnaround PNG using Gemini Image Generation, attaching existing character reference images for visual consistency."""
     import base64
     import urllib.error
     import urllib.request
@@ -1926,9 +1926,23 @@ def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:
     if not api_key:
         raise PlanError("Gemini API key is not configured. Save your GEMINI_API_KEY in Step 13 first.")
 
+    valid_refs: list[bytes] = []
+    for rp in (ref_images or [])[:3]:
+        try:
+            if rp and rp.is_file() and rp.stat().st_size > 100:
+                valid_refs.append(rp.read_bytes())
+        except OSError:
+            continue
+
+    ref_clause = (
+        "- REFERENCE IDENTITY LOCK: Match the EXACT face, hair, eyes, skin tone, age, and body proportions of the character(s) shown in the attached reference image(s). Apply ONLY the requested camera angle, pose, or explicit wardrobe change.\n"
+        if valid_refs else ""
+    )
+    frame_hint = "square 1:1 character turnaround sheet" if aspect_ratio == "1:1" else "widescreen 16:9 film storyboard keyframe"
     full_prompt = (
-        "Generate a single clean cinematic widescreen 16:9 film storyboard keyframe with NO text, NO captions, NO watermarks.\n"
+        f"Generate a single clean cinematic {frame_hint} with NO text, NO captions, NO watermarks.\n"
         "STRICT CONTINUITY RULES:\n"
+        f"{ref_clause}"
         "- WARDROBE LOCK: Keep every character's exact specified singular clothing (exact solid colors, exact top, bottoms, and footwear). Do NOT add stripes, patterns, or color changes that were not specified.\n"
         "- LOCATION LOCK: Keep the exact specified room/location, background props, and lighting consistent across every shot of this scene.\n\n"
         f"{prompt}"
@@ -1941,65 +1955,118 @@ def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:
         from google.genai import types
 
         client = genai.Client(api_key=api_key)
+        variants = []
+        if valid_refs:
+            parts = [types.Part.from_bytes(data=b, mime_type="image/png") for b in valid_refs]
+            parts.append(full_prompt)
+            variants.append((len(valid_refs), parts))
+        variants.append((0, full_prompt))
+
+        for nrefs, contents_arg in variants:
+            for m in models:
+                try:
+                    resp = client.models.generate_content(
+                        model=m,
+                        contents=contents_arg,
+                        config=types.GenerateContentConfig(
+                            response_modalities=["IMAGE"],
+                            image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+                        ),
+                    )
+                    for part in getattr(resp, "parts", None) or []:
+                        inline = getattr(part, "inline_data", None)
+                        if inline and getattr(inline, "data", None):
+                            raw = inline.data
+                            if isinstance(raw, str):
+                                raw = base64.b64decode(raw)
+                            out_png.write_bytes(raw)
+                            return f"{m}+ref({nrefs})" if nrefs else m
+                except Exception as e:
+                    last_err = e
+                    continue
+
+    rest_variants = []
+    if valid_refs:
+        rparts = [{"inlineData": {"mimeType": "image/png", "data": base64.b64encode(b).decode("ascii")}} for b in valid_refs]
+        rparts.append({"text": full_prompt})
+        rest_variants.append((len(valid_refs), rparts))
+    rest_variants.append((0, [{"text": full_prompt}]))
+
+    for nrefs, rparts in rest_variants:
+        payload = json.dumps({
+            "contents": [{"parts": rparts}],
+            "generationConfig": {
+                "responseModalities": ["IMAGE", "TEXT"],
+            },
+        }).encode("utf-8")
+
         for m in models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+                method="POST",
+            )
             try:
-                resp = client.models.generate_content(
-                    model=m,
-                    contents=full_prompt,
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE"],
-                        image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
-                    ),
-                )
-                for part in getattr(resp, "parts", None) or []:
-                    inline = getattr(part, "inline_data", None)
-                    if inline and getattr(inline, "data", None):
-                        raw = inline.data
-                        if isinstance(raw, str):
-                            raw = base64.b64decode(raw)
-                        out_png.write_bytes(raw)
-                        return m
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                for cand in data.get("candidates") or []:
+                    for part in (cand.get("content") or {}).get("parts") or []:
+                        inline = part.get("inlineData") or part.get("inline_data") or {}
+                        b64 = inline.get("data")
+                        if b64:
+                            out_png.write_bytes(base64.b64decode(b64))
+                            return f"{m}+ref({nrefs})" if nrefs else m
+            except urllib.error.HTTPError as e:
+                try:
+                    body = e.read().decode("utf-8", errors="ignore")[:300]
+                except Exception:
+                    body = str(e)
+                last_err = RuntimeError(f"HTTP {e.code}: {body}")
+                continue
             except Exception as e:
                 last_err = e
                 continue
 
-    payload = json.dumps({
-        "contents": [{"parts": [{"text": full_prompt}]}],
-        "generationConfig": {
-            "responseModalities": ["IMAGE", "TEXT"],
-        },
-    }).encode("utf-8")
-
-    for m in models:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            for cand in data.get("candidates") or []:
-                for part in (cand.get("content") or {}).get("parts") or []:
-                    inline = part.get("inlineData") or part.get("inline_data") or {}
-                    b64 = inline.get("data")
-                    if b64:
-                        out_png.write_bytes(base64.b64decode(b64))
-                        return m
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="ignore")[:300]
-            except Exception:
-                body = str(e)
-            last_err = RuntimeError(f"HTTP {e.code}: {body}")
-            continue
-        except Exception as e:
-            last_err = e
-            continue
-
     raise PlanError(f"Keyframe image generation failed: {run_gemini_omni.sanitize_error(last_err) if last_err else 'no image returned'}")
+
+
+def _find_character_turnaround_refs(pd: Path, char_name: str, prefer_outfit: str = "", exclude_path: Path | None = None, limit: int = 3) -> list[Path]:
+    """Find existing generated turnaround PNGs for a character (prioritizing front views & preferred outfit)."""
+    t_dir = pd / "assets" / "turnarounds"
+    if not t_dir.is_dir():
+        return []
+    safe = "".join(c if c.isalnum() else "_" for c in char_name.lower()).strip("_")
+    if not safe:
+        return []
+    ex_res = exclude_path.resolve() if exclude_path else None
+    found: list[Path] = []
+    seen = set()
+
+    def _try(p: Path):
+        if len(found) >= limit or not p.is_file():
+            return
+        try:
+            rp = p.resolve()
+            if (ex_res and rp == ex_res) or rp in seen or p.stat().st_size <= 100:
+                return
+            seen.add(rp)
+            found.append(p)
+        except OSError:
+            pass
+
+    # 1. Preferred outfit views (front first)
+    if prefer_outfit and prefer_outfit != "default":
+        for v in ("front", "three_quarter", "profile"):
+            _try(t_dir / f"{safe}_{prefer_outfit}_{v}.png")
+    # 2. Base / outfit1 front view (anchors facial identity across outfit changes!)
+    for cand in (f"{safe}_front.png", f"{safe}_outfit1_front.png", f"{safe}_three_quarter.png", f"{safe}_outfit1_three_quarter.png"):
+        _try(t_dir / cand)
+    # 3. Any remaining generated turnarounds for this character
+    for p in sorted(t_dir.glob(f"{safe}_*.png")):
+        _try(p)
+    return found
 
 
 @route("POST", "/api/v2_keyframe_render")
@@ -2045,8 +2112,29 @@ def _v2_keyframe_render(r: Request):
 
     if not prompt:
         raise PlanError("prompt is required to generate a keyframe")
-    model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"))
-    return {"status": "ok", "id": shot_id, "image_url": rel_url, "model": model_used}
+
+    # Automatically attach existing Step 10 turnaround reference images for characters appearing in this shot
+    ref_imgs: list[Path] = []
+    sl_path = pd / "shots" / "shotlist.json"
+    if sl_path.is_file():
+        try:
+            sl = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+            sc_id = shot_id.split("-")[0] if "-" in shot_id else ""
+            sh_num = int(shot_id.split("-")[1]) if ("-" in shot_id and shot_id.split("-")[1].isdigit()) else 0
+            for sc in sl.get("scenes") or []:
+                if str(sc.get("id") or "") == sc_id:
+                    for sh in sc.get("shots") or []:
+                        if int(sh.get("n") or 0) == sh_num:
+                            for ch in sh.get("characters") or []:
+                                if len(ref_imgs) < 3:
+                                    ref_imgs.extend(_find_character_turnaround_refs(pd, str(ch), limit=1))
+                            break
+                    break
+        except Exception:
+            pass
+
+    model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"), ref_images=ref_imgs)
+    return {"status": "ok", "id": shot_id, "image_url": rel_url, "model": model_used, "refs_used": len(ref_imgs)}
 
 
 @route("POST", "/api/v2_keyframe_prompts_save")
@@ -2143,10 +2231,21 @@ def _v2_turnaround_render(r: Request):
     wardrobe = str(r.body.get("wardrobe") or "").strip()
     look = str(r.body.get("look") or "pixar_3d").strip()
     view_desc = {"front": "front facing portrait", "three_quarter": "three-quarter angle view", "profile": "side profile view"}[view]
+
+    # Look for existing generated turnaround images for this character to lock facial & body identity across angles and wardrobe changes
+    ref_imgs = _find_character_turnaround_refs(pd, char_name, prefer_outfit=outfit_id, exclude_path=out_png, limit=2)
+    ref_note = ""
+    if ref_imgs:
+        same_outfit_ref = any(f"_{outfit_id}_" in p.name for p in ref_imgs) if outfit_id != "default" else True
+        if same_outfit_ref:
+            ref_note = f" Using the attached existing turnaround image(s) of {char_name}, keep the EXACT SAME face, hair, body, and clothing, rotated cleanly into a {view_desc}."
+        else:
+            ref_note = f" Using the attached existing image(s) of {char_name} as the exact identity reference, preserve their EXACT SAME face, hair, eyes, skin tone, age, and proportions, and apply ONLY the new wardrobe change described below for this {view_desc}."
+
     wardrobe_clause = f" EXACT LOCKED WARDROBE (keep exact solid colors and clothing items, no unrequested patterns): {wardrobe}." if wardrobe else ""
-    prompt = f"Character design turnaround sheet ({view_desc}) of {char_name}. {desc}.{wardrobe_clause} Style: {look}. Clean neutral studio backdrop, full head-to-toe or upper body clearly showing the exact outfit, consistent lighting."
-    model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio="1:1")
-    return {"status": "ok", "character": char_name, "outfit_id": outfit_id, "view": view, "image_url": rel_url, "model": model_used}
+    prompt = f"Character design turnaround sheet ({view_desc}) of {char_name}. {desc}.{ref_note}{wardrobe_clause} Style: {look}. Clean neutral studio backdrop, clearly showing the exact outfit and face, consistent lighting."
+    model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio="1:1", ref_images=ref_imgs)
+    return {"status": "ok", "character": char_name, "outfit_id": outfit_id, "view": view, "image_url": rel_url, "model": model_used, "refs_used": len(ref_imgs)}
 
 
 @route("POST", "/api/v2_postprod_save")
