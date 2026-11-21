@@ -5274,6 +5274,35 @@
 
           row.appendChild(btnGen);
           row.appendChild(btnUp);
+          if (vinfo.has_image) {
+            const btnDelPic = document.createElement("button");
+            btnDelPic.type = "button";
+            btnDelPic.className = "btn btn--ghost";
+            btnDelPic.style.cssText = "padding:4px 8px;font-size:11px;color:#f87171";
+            btnDelPic.textContent = "🗑️";
+            btnDelPic.title = `Delete this ${vlabel} picture so it will not be used as a reference`;
+            btnDelPic.addEventListener("click", async () => {
+              const ok = await showInstallApprovalModal(
+                `Delete ${c.name}'s ${vlabel} picture?`,
+                `This removes the ${vlabel} image for ${of.scenes || "this outfit"} so it will NOT be used as a visual reference for future turnarounds or keyframes.\n\nClick OK to delete, or Cancel to keep it.`
+              );
+              if (!ok) return;
+              try {
+                await callApi("/api/v2_turnaround_delete", {
+                  project: v2TurnState.project,
+                  character: c.name,
+                  outfit_id: of.id || "default",
+                  view: vk,
+                });
+                of.views[vk] = { has_image: false, image_url: "" };
+                renderV2Turnarounds();
+                setV2TurnStatus(`✓ Deleted ${vlabel} image for ${c.name} (${of.scenes}).`);
+              } catch (err) {
+                setV2TurnStatus("Could not delete image: " + (err.message || err), true);
+              }
+            });
+            row.appendChild(btnDelPic);
+          }
           row.appendChild(upIn);
           box.appendChild(row);
           grid.appendChild(box);

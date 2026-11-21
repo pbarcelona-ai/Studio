@@ -2407,6 +2407,30 @@ def _v2_turnaround_render(r: Request):
     return {"status": "ok", "character": char_name, "outfit_id": outfit_id, "view": view, "image_url": rel_url, "model": model_used, "refs_used": len(ref_imgs)}
 
 
+@route("POST", "/api/v2_turnaround_delete")
+def _v2_turnaround_delete(r: Request):
+    """Delete one individual turnaround image so it is no longer used as a visual reference."""
+    slug = str(r.body.get("project") or "").strip()
+    char_name = str(r.body.get("character") or "").strip()
+    view = str(r.body.get("view") or "").strip().lower()
+    outfit_id = "".join(c for c in str(r.body.get("outfit_id") or "default").strip().lower() if c.isalnum() or c in "_-") or "default"
+    if not slug or not char_name or view not in ("front", "three_quarter", "profile"):
+        raise PlanError("project, character, and valid view are required")
+
+    pd = pdir(slug, "book")
+    safe = "".join(c if c.isalnum() else "_" for c in char_name.lower()).strip("_") or "char"
+    t_dir = pd / "assets" / "turnarounds"
+    removed = 0
+    targets = [t_dir / (f"{safe}_{view}.png" if outfit_id == "default" else f"{safe}_{outfit_id}_{view}.png")]
+    if outfit_id == "outfit1":
+        targets.append(t_dir / f"{safe}_{view}.png")
+    for p in targets:
+        if p.is_file():
+            p.unlink(missing_ok=True)
+            removed += 1
+    return {"status": "ok", "character": char_name, "outfit_id": outfit_id, "view": view, "removed": removed}
+
+
 @route("POST", "/api/v2_postprod_save")
 def _v2_postprod_save(r: Request):
     """Save Steps 19-21 polish, timeline, and audio mix settings to postprod_v2.json."""
