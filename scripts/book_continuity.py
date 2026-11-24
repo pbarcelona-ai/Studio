@@ -14,7 +14,7 @@ from bookkit import COST, VOICE_MAP, continuity_file, cost_note, llm_json, proje
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
-ap.add_argument("--engine", default="claude", choices=["claude", "fcc-claude", "codex", "fcc-codex"],
+ap.add_argument("--engine", default="claude", choices=["claude", "fcc-claude", "codex", "fcc-codex", "hf", "local"],
                 help="which CLI writes the prompts (fcc-* route through your Free Claude Code proxy)")
 ap.add_argument("--model", default=None, help="model name for that engine; blank = the engine's default (sonnet for claude)")
 ap.add_argument("--force", action="store_true")

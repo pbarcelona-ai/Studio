@@ -142,3 +142,56 @@ class TestDispatch:
             assert p in api.ROUTES["GET"]
         for p in ("/api/plan", "/api/run", "/api/stop", "/api/make_film", "/api/characters", "/api/copy_file"):
             assert p in api.ROUTES["POST"]
+
+    def test_parameterized_routes_and_exact_precedence(self, monkeypatch):
+        monkeypatch.setitem(api.ROUTES, "GET", dict(api.ROUTES["GET"]))
+        monkeypatch.setitem(api.ROUTES, "POST", dict(api.ROUTES["POST"]))
+        monkeypatch.setitem(api.PATTERN_ROUTES, "GET", [])
+        monkeypatch.setitem(api.PATTERN_ROUTES, "POST", [])
+
+        api.route("GET", "/api/apps/status")(lambda r: {"exact": True})
+        api.route("GET", "/api/apps/<id>")(lambda r: {"app_id": r.p("id"), "path": r.path})
+        api.route("GET", "/api/apps/<id>/workflow")(lambda r: {"workflow": r.p("id")})
+        api.route("POST", "/api/apps/<id>/run")(lambda r: {"ran": r.p("id"), "seed": r.body.get("seed")})
+        api.route("POST", "/api/apps/<id>/send-to-shot")(lambda r: {"sent": r.p("id")})
+        api.route("POST", "/api/packs/<id>/download")(lambda r: {"downloaded": r.p("id")})
+
+        with pytest.raises(RuntimeError):
+            api.route("GET", "/api/apps/<app_id>")(lambda r: {})
+        with pytest.raises(RuntimeError):
+            api.route("GET", "/api/x/<id>/<a>/<id>")(lambda r: {})
+
+        assert api.dispatch("GET", "/api/apps/status", api.Request()) == (200, {"exact": True})
+        assert api.dispatch("GET", "/api/apps/flux%20pro", api.Request()) == (200, {"app_id": "flux pro", "path": "/api/apps/flux%20pro"})
+        assert api.dispatch("GET", "/api/apps/flux/workflow", api.Request()) == (200, {"workflow": "flux"})
+        assert api.dispatch("POST", "/api/apps/flux/run", api.Request(body={"seed": 7})) == (200, {"ran": "flux", "seed": 7})
+        assert api.dispatch("POST", "/api/apps/flux/send-to-shot", api.Request()) == (200, {"sent": "flux"})
+        assert api.dispatch("POST", "/api/packs/pack-1/download", api.Request()) == (200, {"downloaded": "pack-1"})
+        assert api.has_route("POST", "/api/apps/flux/run") is True
+        assert api.has_route("POST", "/api/apps/flux/extra/nested") is False
+
+    def test_parameterized_post_over_http_and_optional_loader(self, server, monkeypatch, tmp_path):
+        import sys
+        from studio_app import handler
+
+        monkeypatch.setitem(api.PATTERN_ROUTES, "POST", list(api.PATTERN_ROUTES["POST"]))
+        api.route("POST", "/api/test_apps/<id>/run")(lambda r: {"id": r.p("id"), "path": r.path, "ok": r.body.get("ok")})
+
+        code, data = server.api("POST", "/api/test_apps/demo-app/run", {"ok": True})
+        assert code == 200 and data == {"id": "demo-app", "path": "/api/test_apps/demo-app/run", "ok": True}
+
+        code_404, data_404 = server.api("POST", "/api/test_apps/demo-app/missing", {"ok": True})
+        assert code_404 == 404 and data_404 == {"error": "not found"}
+
+        pkg_dir = tmp_path / "opt_pkg"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
+        (pkg_dir / "apps_routes.py").write_text("LOADED_OPTIONAL = True\n", encoding="utf-8")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        try:
+            loaded = handler.load_optional_routes("opt_pkg")
+            assert loaded == ["opt_pkg.apps_routes"]
+            assert sys.modules["opt_pkg.apps_routes"].LOADED_OPTIONAL is True
+        finally:
+            sys.modules.pop("opt_pkg.apps_routes", None)
+            sys.modules.pop("opt_pkg", None)

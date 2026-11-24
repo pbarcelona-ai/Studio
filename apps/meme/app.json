@@ -1,0 +1,328 @@
+{
+  "$schema": "../../schema/app.schema.json",
+  "id": "meme",
+  "name": "Meme Generator",
+  "section": "image",
+  "summary": "A meme image from a scene and two captions (FLUX 3 Klein).",
+  "higgsfield_feature": "Meme Generator",
+  "pack": "image-flux3",
+  "status": "ready",
+  "workflow": "workflow.api.json",
+  "source": {
+    "template": "image_flux3_klein_distilled_t2i.json",
+    "comfyui": "0.42.0",
+    "notes": "Template app written by tools/template_apps.py: the workflow is apps/create-image's (built by tools/build_apps.py) without the 9B prompt upsampler (the prompt goes straight to the text encoder); the prompt below is fixed and \"Extra direction\" is appended to it."
+  },
+  "inputs": [
+    {
+      "id": "scene",
+      "type": "textarea",
+      "label": "Scene",
+      "required": true,
+      "default": "a cat staring at a laptop screen with a worried face"
+    },
+    {
+      "id": "top",
+      "type": "text",
+      "label": "Top text",
+      "default": "WHEN THE BUILD",
+      "required": true
+    },
+    {
+      "id": "bottom",
+      "type": "text",
+      "label": "Bottom text",
+      "default": "PASSES ON FRIDAY",
+      "required": true
+    },
+    {
+      "id": "details",
+      "type": "textarea",
+      "label": "Extra direction",
+      "default": "",
+      "help": "Added at the end of the app's prompt.",
+      "bind": [
+        {
+          "node": "18:17",
+          "field": "value",
+          "template": "A meme image: {scene}. Bold white capital letters in a thick Impact-style font with a black outline read \"{top}\" at the top and \"{bottom}\" at the bottom of the image. {details}"
+        }
+      ]
+    },
+    {
+      "id": "aspect",
+      "type": "select",
+      "label": "Aspect ratio",
+      "default": "1:1",
+      "help": "At 1K the image has about 1 megapixel in this shape; Resolution scales it.",
+      "options": [
+        {
+          "value": "1:1",
+          "label": "1:1",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 1024
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 1024
+            }
+          ]
+        },
+        {
+          "value": "4:3",
+          "label": "4:3",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 1152
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 864
+            }
+          ]
+        },
+        {
+          "value": "3:4",
+          "label": "3:4",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 864
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 1152
+            }
+          ]
+        },
+        {
+          "value": "3:2",
+          "label": "3:2",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 1248
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 832
+            }
+          ]
+        },
+        {
+          "value": "2:3",
+          "label": "2:3",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 832
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 1248
+            }
+          ]
+        },
+        {
+          "value": "5:4",
+          "label": "5:4",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 1120
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 896
+            }
+          ]
+        },
+        {
+          "value": "4:5",
+          "label": "4:5",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 896
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 1120
+            }
+          ]
+        },
+        {
+          "value": "16:9",
+          "label": "16:9",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 1344
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 768
+            }
+          ]
+        },
+        {
+          "value": "9:16",
+          "label": "9:16",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 768
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 1344
+            }
+          ]
+        },
+        {
+          "value": "21:9",
+          "label": "21:9",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 1536
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 640
+            }
+          ]
+        }
+      ],
+      "bind": []
+    },
+    {
+      "id": "resolution",
+      "type": "select",
+      "label": "Resolution",
+      "default": 1,
+      "help": "1K is about 1 megapixel; 2K is four times the pixels and takes about four times as long.",
+      "options": [
+        {
+          "value": 1,
+          "label": "1K"
+        },
+        {
+          "value": 1.5,
+          "label": "1.5K"
+        },
+        {
+          "value": 2,
+          "label": "2K"
+        }
+      ],
+      "bind": [
+        {
+          "node": "ff_res",
+          "field": "scale_by"
+        }
+      ]
+    },
+    {
+      "id": "steps",
+      "type": "slider",
+      "label": "Steps",
+      "min": 8,
+      "max": 24,
+      "step": 1,
+      "default": 15,
+      "bind": [
+        {
+          "node": "18:7",
+          "field": "steps"
+        }
+      ]
+    },
+    {
+      "id": "seed",
+      "type": "seed",
+      "label": "Seed",
+      "default": -1,
+      "help": "-1 picks a random seed",
+      "bind": [
+        {
+          "node": "18:7",
+          "field": "seed"
+        }
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "node": "9",
+      "type": "image",
+      "label": "Result"
+    }
+  ],
+  "models": [
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "diffusion_models/flux3-image-klein-int8-convrot.safetensors",
+      "dir": "diffusion_models",
+      "gb": 5.83,
+      "phase": "denoise",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    },
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "text_encoders/qwen3vl_4b_int8_convrot.safetensors",
+      "dir": "text_encoders",
+      "gb": 4.86,
+      "phase": "encode",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    },
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "vae/flux2-vae.safetensors",
+      "dir": "vae",
+      "gb": 0.34,
+      "phase": "decode",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    }
+  ],
+  "credits": [
+    "FLUX 3 Image Klein and its prompt upsampler by Black Forest Labs (FLUX Kommunity License)"
+  ],
+  "test": {
+    "scene": "a golden retriever sitting at a desk in front of three monitors, looking proud",
+    "top": "WHEN THE TESTS",
+    "bottom": "PASS FIRST TRY"
+  },
+  "min_vram_gb": 5.83,
+  "platforms": [
+    "win_cuda",
+    "linux_cuda",
+    "mac_metal"
+  ]
+}

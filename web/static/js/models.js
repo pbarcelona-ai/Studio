@@ -396,9 +396,11 @@ function engineNote() {
     : e === "local" ? "Local model: " + (ST.local_llm.ready ? "answering at " + ST.local_llm.url + ". Nothing leaves this computer." : ST.local_llm.reason) : "";
 }
 function initLocalLlm() {                                     // the box looks greyed out until the computer qualifies (see local_llm_status in studio.py)
-  const L = ST.local_llm, box = $("localLlm"), label = box.closest("label");
+  if (!ST || typeof document === "undefined" || !document) return;
+  const L = ST.local_llm, box = $("localLlm"), label = box && box.closest ? box.closest("label") : null;
+  if (!box) return;
   box.setAttribute("aria-disabled", String(!L.ready));
-  label.classList.toggle("is-off", !L.ready);
+  if (label && label.classList) label.classList.toggle("is-off", !L.ready);
   $("localLlmNote").textContent = L.ready ? `Ready: a model server answers at ${L.url} with ${L.models.length} model(s). Ticking this uses it instead of the engine above.`
     : `Not available on this computer: ${L.reason}. Click the box to see what is needed.`;
   box.checked = L.ready && $("engine").value === "local";
@@ -431,10 +433,10 @@ function showLocalDialog() {
 }
 // Ask the server again whether the computer and a model server qualify, and switch the box (and the engine choice) on or off to match.
 async function refreshLocalLlm(force = false) {
-  if (!ST) return;                                            // the page has not loaded its data yet (the saved tab is clicked at start-up)
+  if (!ST || typeof document === "undefined" || !document) return;                                            // the page has not loaded its data yet (the saved tab is clicked at start-up)
   let L;
   try { L = await api("/api/local_llm" + (force ? "?fresh=1" : "")); } catch (e) { return; }
-  if (!ST) return;
+  if (!ST || typeof document === "undefined" || !document) return;
   const was = ST.local_llm && ST.local_llm.ready;
   ST.local_llm = L; ST.tools.local = L.ready;
   initLocalLlm();

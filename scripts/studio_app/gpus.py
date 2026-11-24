@@ -1,6 +1,16 @@
 """What each GPU/service can run: memory checks, blockers, suggestions."""
 import os
-import sys
+import subprocess
+import sys as _real_sys
+from typing import Any
+
+
+class _SysProxy:
+    def __getattr__(self, name: str) -> Any:
+        return getattr(_real_sys, name)
+
+
+sys: Any = _SysProxy()
 import hf_spaces
 import model_advisor
 import run_local_model
@@ -28,12 +38,19 @@ def all_gpus():
     return _ALL_GPUS
 
 
+def legacy_cloud_enabled() -> bool:
+    """True only when STUDIO_LEGACY_CLOUD=1 opts back into Kaggle/Colab/HF Spaces/Cloud API UI."""
+    return os.environ.get("STUDIO_LEGACY_CLOUD", "").strip() == "1"
+
+
 def local_gpus():
-    """The GPUs the models can run on here [(name, GB, compute capability or AMD gfx name)]: NVIDIA, AMD with ROCm (experimental), or Apple Silicon (MPS);
+    """The GPUs the models can run on here [(name, GB, compute capability or AMD gfx name)]: NVIDIA (Linux/Windows), AMD with ROCm (Linux), or Apple Silicon (MPS);
     [] if none (or unsupported system)."""
     u = run_local_model.usable(all_gpus())
     if sys.platform.startswith("linux"):
         return [(g["name"], g["gb"], g["cap"]) for g in u]
+    if sys.platform == "win32":
+        return [(g["name"], g["gb"], g["cap"]) for g in u if g.get("nvidia_ready")]
     if sys.platform == "darwin":
         return [(g["name"], g["gb"], g["cap"]) for g in u if g.get("mps_ready")]
     return []
@@ -41,7 +58,80 @@ def local_gpus():
 
 def local_is_amd():
     u = run_local_model.usable(all_gpus())
-    return bool(u) and not u[0]["nvidia_ready"]
+    return bool(u) and bool(u[0].get("rocm_ready")) and not u[0].get("nvidia_ready")
+
+
+def local_is_mps():
+    u = run_local_model.usable(all_gpus())
+    return bool(u) and bool(u[0].get("mps_ready")) and not u[0].get("nvidia_ready")
+
+
+def system_ram_gb() -> float:
+    """Installed system RAM in GB (1 decimal), dispatching on sys.platform; 0.0 if unreadable."""
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=3).stdout.strip()
+            return round(int(out) / 2**30, 1) if out else 0.0
+        if sys.platform == "win32":
+            import ctypes
+
+            windll = getattr(ctypes, "windll", None)
+            if windll is None:
+                return 0.0
+
+            class _Mem(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            m = _Mem()
+            m.dwLength = ctypes.sizeof(_Mem)
+            if windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+                return round(float(m.ullTotalPhys) / 2**30, 1)
+            return 0.0
+        return round((os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")) / 2**30, 1)
+    except (AttributeError, OSError, ValueError, subprocess.SubprocessError):
+        return 0.0
+
+
+def gpu_profile() -> dict[str, Any]:
+    """Structured local hardware profile for runner routing and UI tiering (5090 48 GB PC vs 8 GB Mac vs CPU)."""
+    ram_gb = system_ram_gb()
+    legacy = legacy_cloud_enabled()
+    u = run_local_model.usable(all_gpus())
+    if not u:
+        return {"platform": sys.platform, "backend": "cpu", "name": local_gpu_label(), "vram_gb": 0.0, "ram_gb": ram_gb, "compute_cap": "",
+                "is_blackwell": False, "tier": "cpu", "supports_local_video": False, "supports_local_images": False,
+                "default_image_backend": "none", "default_video_backend": "none", "legacy_cloud": legacy}
+    g = u[0]
+    vram = float(g.get("gb") or 0.0)
+    cap = str(g.get("cap") or "")
+    if g.get("nvidia_ready"):
+        blackwell = run_local_model.is_blackwell_gpu(g["name"], cap)
+        tier = "full_48g" if vram >= 40 else ("standard_gpu" if vram >= 12 else "low_vram")
+        return {"platform": sys.platform, "backend": "cuda", "name": g["name"], "vram_gb": vram, "ram_gb": ram_gb, "compute_cap": cap,
+                "is_blackwell": blackwell, "tier": tier, "supports_local_video": vram >= 12, "supports_local_images": True,
+                "default_image_backend": "comfyui", "default_video_backend": "comfyui" if vram >= 20 else "wan2gp",
+                "legacy_cloud": legacy}
+    if g.get("mps_ready"):
+        tier = "mac_8g_lite" if vram < 16 else "standard_gpu"
+        return {"platform": sys.platform, "backend": "mps", "name": g["name"], "vram_gb": vram, "ram_gb": ram_gb, "compute_cap": "MPS",
+                "is_blackwell": False, "tier": tier, "supports_local_video": vram >= 24, "supports_local_images": True,
+                "default_image_backend": "sd_cli", "default_video_backend": "wan2gp" if vram >= 24 else "none",
+                "legacy_cloud": legacy}
+    return {"platform": sys.platform, "backend": "rocm", "name": g["name"], "vram_gb": vram, "ram_gb": ram_gb, "compute_cap": cap,
+            "is_blackwell": False, "tier": "standard_gpu" if vram >= 16 else "low_vram",
+            "supports_local_video": vram >= 16, "supports_local_images": True,
+            "default_image_backend": "comfyui", "default_video_backend": "comfyui" if vram >= 16 else "none",
+            "legacy_cloud": legacy}
 
 
 def local_gpu_label():
@@ -96,7 +186,6 @@ def suggestions(look, service, gpu):
         for step, what in (("video_i2v", "animating keyframes"), ("upscale", "upscaling")):
             if not out[step]["pick"]:
                 out[step]["note"] = f"{what} runs on Kaggle, this computer, or Cloud API: choose one of them in the Models tab"
-    return {"look": look, "service": service, "gpu": gpu, "gpu_problem": gpu_why or "", "steps": out}
     return {"look": look, "service": service, "gpu": gpu, "gpu_problem": gpu_why or "", "steps": out}
 
 

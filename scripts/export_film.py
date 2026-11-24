@@ -207,7 +207,7 @@ def main(argv=None):
     ap.add_argument("--preset", required=True, choices=sorted(PRESETS))
     ap.add_argument("--languages", default="", help="comma-separated codes for extra subtitle tracks, translated by the AI engine")
     ap.add_argument("--audio-track", action="append", default=[], metavar="LANG=FILE", help="a dubbed audio track you made (file inside the book's folder)")
-    ap.add_argument("--engine", default="claude", choices=["claude", "fcc-claude", "codex", "fcc-codex"])
+    ap.add_argument("--engine", default="claude", choices=["claude", "fcc-claude", "codex", "fcc-codex", "hf", "local"])
     ap.add_argument("--model", default=None)
     ap.add_argument("--out", default="")
     ap.add_argument("--title", default="")

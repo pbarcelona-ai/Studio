@@ -1,0 +1,166 @@
+{
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "18:8",
+        0
+      ],
+      "filename_prefix": "freefield/cinema-studio"
+    },
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "18:1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "flux3-image-klein-int8-convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "18:2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_4b_int8_convrot.safetensors",
+      "type": "flux3",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "18:3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "18:4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "18:2",
+        0
+      ],
+      "text": [
+        "18:13",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "18:5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "18:2",
+        0
+      ],
+      "text": ""
+    },
+    "_meta": {
+      "title": "Negative Prompt (empty = reference default)"
+    }
+  },
+  "18:6": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+      "batch_size": 1,
+      "width": 1344,
+      "height": 768
+    },
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "18:7": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "18:1",
+        0
+      ],
+      "positive": [
+        "18:4",
+        0
+      ],
+      "negative": [
+        "18:5",
+        0
+      ],
+      "latent_image": [
+        "ff_res",
+        0
+      ],
+      "seed": 3,
+      "steps": 15,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "18:8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "18:7",
+        0
+      ],
+      "vae": [
+        "18:3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "18:13": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "18:17",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Preview as Text"
+    }
+  },
+  "18:17": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "A rainy neon street in Mexico City at night, cinematic, 35mm"
+    },
+    "_meta": {
+      "title": "Text (Multiline)"
+    }
+  },
+  "ff_res": {
+    "class_type": "LatentUpscaleBy",
+    "inputs": {
+      "samples": [
+        "18:6",
+        0
+      ],
+      "upscale_method": "nearest-exact",
+      "scale_by": 1.0
+    },
+    "_meta": {
+      "title": "Resolution (1K, 1.5K, 2K)"
+    }
+  }
+}

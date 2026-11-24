@@ -3,14 +3,19 @@
 POST /api/read_it_in {project, engine, claude_model, force}   start scripts/read_it_in.py as a background job (the job log shows the progress)
 GET  /api/readin?project=                                    {progress, summary, coverage, development, plan, beats, treatment, critique, script, exports}
 POST /api/readin_export {project, formats: [pdf, fountain, docx, fdx, notes]}   write projects/books/<book>/exports/ and list the downloads
+POST /api/readin_import {project, file}                       import screenplay from .fdx or .fountain file
+  file: {name: str, content_base64: str}
 """
 from __future__ import annotations
 
+import base64
 import json
+import tempfile
 from pathlib import Path
 
 import read_it_in
 import screenplay_export
+import screenplay_import
 from layout import project_dir
 
 from .api import Request, route
@@ -86,3 +91,53 @@ def _export(r: Request):
     except ValueError as e:
         raise PlanError(str(e)) from e
     return {"exports": exports_of(d)}
+
+
+MAX_IMPORT_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+@route("POST", "/api/readin_import")
+def _import(r: Request):
+    d = _book(str(r.body.get("project") or ""))
+    file_data = r.body.get("file")
+    if not file_data or not isinstance(file_data, dict):
+        raise PlanError("file object required with 'name' and 'content_base64'")
+    name = file_data.get("name", "")
+    content_b64 = file_data.get("content_base64", "")
+    if not name or not content_b64:
+        raise PlanError("file must have 'name' and 'content_base64'")
+
+    # Decode with size limit
+    try:
+        content = base64.b64decode(content_b64, validate=True)
+    except Exception as e:
+        raise PlanError("invalid base64 content") from e
+
+    if len(content) > MAX_IMPORT_SIZE:
+        raise PlanError(f"file too large (max {MAX_IMPORT_SIZE // (1024*1024)} MB)")
+
+    suffix = Path(name).suffix.lower()
+    if suffix not in (".fdx", ".fountain", ".fntn"):
+        raise PlanError("supported formats: .fdx, .fountain")
+
+    # Basic content validation
+    if suffix == ".fdx" and not content.lstrip().startswith(b"<?xml"):
+        raise PlanError("invalid .fdx file: missing XML declaration")
+    if suffix in (".fountain", ".fntn") and not content.lstrip().startswith(b"Title:"):
+        raise PlanError("invalid .fountain file: missing Title header")
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        if suffix == ".fdx":
+            result = screenplay_import.import_fdx(d, tmp_path)
+        else:
+            result = screenplay_import.import_fountain(d, tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    if result.get("errors"):
+        raise PlanError("import completed with errors")
+    return result

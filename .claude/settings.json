@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/review_on_edit.py\"",
+            "command": "uv run --no-project --offline \"$CLAUDE_PROJECT_DIR/.claude/hooks/review_on_edit.py\"",
             "timeout": 10
           }
         ]

@@ -21,6 +21,7 @@ import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import crew  # noqa: E402
@@ -162,8 +163,8 @@ def _clean_token(text: str, fallback: str) -> str:
 def bootstrap_from_readin(pdir: Path) -> dict:
     """Instantly build a valid, style-neutral continuity book from existing readin/coverage.json & screenplay.json."""
     rd = pdir / "readin"
-    cov = {}
-    sp = {}
+    cov: dict[str, Any] = {}
+    sp: dict[str, Any] = {}
     try:
         cov = json.loads((rd / "coverage.json").read_text(encoding="utf-8")) or {}
     except (OSError, ValueError):

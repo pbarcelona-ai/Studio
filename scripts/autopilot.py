@@ -264,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("project")
     ap.add_argument("--stop-at", default="")
-    ap.add_argument("--engine", default="claude", choices=["claude", "fcc-claude", "codex", "fcc-codex", "fake"])
+    ap.add_argument("--engine", default="claude", choices=["claude", "fcc-claude", "codex", "fcc-codex", "hf", "local", "fake"])
     ap.add_argument("--model", default=None)
     ap.add_argument("--service", default="kaggle", choices=list(LIMITS))
     ap.add_argument("--gpu", default="NvidiaTeslaT4")

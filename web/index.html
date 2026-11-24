@@ -17,6 +17,116 @@
 <link rel="stylesheet" href="/static/css/pizazz.css">
 </head>
 <body class="mode-pipeline">
+  <!-- Splash Screen -->
+  <div id="splashScreen" class="splash-screen" role="status" aria-label="Loading Pistachio's Studio">
+    <div class="splash-content">
+      <div class="splash-logo" aria-hidden="true">
+        <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="60" cy="60" r="56" stroke="#22d3ee" stroke-width="3" stroke-dasharray="352" stroke-dashoffset="352">
+            <animate attributeName="stroke-dashoffset" from="352" to="0" dur="2s" repeatCount="indefinite" />
+            <animate attributeName="stroke-dasharray" from="0 352" to="352 0" dur="1.5s" repeatCount="indefinite" />
+          </circle>
+          <circle cx="60" cy="60" r="40" fill="#22d3ee" opacity="0.15" />
+          <text x="60" y="70" font-family="Georgia, serif" font-size="48" font-weight="bold" fill="#22d3ee" text-anchor="middle">🌰</text>
+        </svg>
+      </div>
+      <h1 class="splash-title">Pistachio's Studio</h1>
+      <p class="splash-subtitle">AI Book to Film Production</p>
+      <div class="splash-progress">
+        <div class="splash-bar">
+          <div class="splash-fill" id="splashFill"></div>
+        </div>
+        <p class="splash-status" id="splashStatus">Initializing…</p>
+      </div>
+      <p class="splash-version">v1.0</p>
+    </div>
+  </div>
+
+  <style>
+    .splash-screen {
+      position: fixed;
+      inset: 0;
+      background: #0b0e14;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+    .splash-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .splash-content {
+      text-align: center;
+      animation: splashIn 0.6s ease-out;
+    }
+    @keyframes splashIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .splash-logo {
+      margin-bottom: 1.5rem;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+    }
+    .splash-title {
+      font-family: 'Inter', sans-serif;
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.02em;
+    }
+    .splash-subtitle {
+      font-size: 1.1rem;
+      color: #94a3b8;
+      margin: 0 0 2rem;
+      font-weight: 400;
+    }
+    .splash-progress {
+      width: 280px;
+      margin: 0 auto 1.5rem;
+    }
+    .splash-bar {
+      height: 4px;
+      background: #1e293b;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .splash-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #22d3ee, #f59e0b);
+      border-radius: 2px;
+      animation: fillProgress 2.5s ease-in-out forwards;
+    }
+    @keyframes fillProgress {
+      0% { width: 0%; }
+      100% { width: 100%; }
+    }
+    .splash-status {
+      font-size: 0.85rem;
+      color: #64748b;
+      margin: 0.75rem 0 0;
+      min-height: 1.25rem;
+    }
+    .splash-version {
+      font-size: 0.75rem;
+      color: #334155;
+      margin-top: 2rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .splash-fill { animation: none; width: 100%; }
+      .splash-logo circle { animation: none; }
+      .splash-content { animation: none; }
+    }
+  </style>
 <header class="studio-header">
     <video class="hero-video" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
     <div class="header-brand">
@@ -27,6 +137,7 @@
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:1rem">
+      <img id="livePreview" data-live-preview="1" class="live-preview-img hidden" alt="Live preview" width="64" height="48">
       <span class="status-badge" id="statusBadge"><span class="dot"></span><span>Connecting…</span></span>
       <button type="button" id="setupBtn" aria-label="Setup" title="Setup: Kaggle login, keys and what this computer needs">⚙</button>
       <button type="button" id="fxToggle" aria-pressed="true" aria-label="Visual effects" title="Turn the animated effects on or off">✨</button>
@@ -41,51 +152,35 @@
 
     <section class="session-banner hidden" id="sessionBanner" role="alert" aria-live="polite"></section>
 
-    <!-- Guided flow: seven screens, one per stage of the film. "All tabs" shows the classic tab layout. -->
-    <nav class="flow-nav" id="flowNav" aria-label="Film stages">
-      <ol class="flow-nav__list" id="flowList"></ol>
-      <button type="button" class="flow-nav__toggle" id="flowToggle" title="Switch between the seven guided screens and the classic tabs">All tabs</button>
-    </nav>
-    <p class="flow-about" id="flowAbout" role="status"></p>
-
-    <!-- Tab Navigation -->
+    <!-- Unified 4-Workspace Navigation -->
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
-        <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-project" data-tab="project">
+        <button class="tab-btn workspace-tab active" role="tab" aria-selected="true" aria-controls="panel-project" data-tab="project" data-workspace="film-studio">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-            Book and Script
+            Film Studio
         </button>
-        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-characters" data-tab="characters">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            Cast and Look
-        </button>
-        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-movies" data-tab="movies">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-            Storyboard and Shoot
-        </button>
-        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-results" data-tab="results">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Cut and Premiere
-        </button>
-        <button type="button" class="adv-toggle" id="advToggle" aria-expanded="false" aria-controls="advTabs" title="Models, Single Prompts, Library and Compare: for when you want to choose things yourself">Advanced <span aria-hidden="true">▾</span></button>
-        <span class="adv-tabs hidden" id="advTabs">
-        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-models" data-tab="models">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
-            Models
-        </button>
-        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-prompts" data-tab="prompts">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-            Single Prompts
-        </button>
-        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-library" data-tab="library">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-            Library
-        </button>
-        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-compare" data-tab="compare">
+        <button class="tab-btn workspace-tab" role="tab" aria-selected="false" aria-controls="panel-apps" data-tab="apps" data-workspace="apps">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            Compare
+            Apps
         </button>
-        </span>
+        <button class="tab-btn workspace-tab" role="tab" aria-selected="false" aria-controls="panel-compare" data-tab="compare" data-workspace="canvas-compare">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+            Canvas &amp; Compare
+        </button>
+        <button class="tab-btn workspace-tab" role="tab" aria-selected="false" aria-controls="panel-models" data-tab="models" data-workspace="models-hardware">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+            Models &amp; Hardware
+        </button>
     </nav>
+    <div class="sub-tabs hidden" id="legacySubTabs" aria-hidden="true">
+        <button type="button" id="advToggle" class="adv-toggle" aria-expanded="false" aria-controls="advTabs">Advanced</button>
+        <span class="adv-tabs hidden" id="advTabs">
+          <button type="button" data-tab="characters" aria-controls="panel-characters">Cast and Look</button>
+          <button type="button" data-tab="movies" aria-controls="panel-movies">Storyboard and Shoot</button>
+          <button type="button" data-tab="results" aria-controls="panel-results">Cut and Premiere</button>
+          <button type="button" data-tab="prompts" aria-controls="panel-prompts">Single Prompts</button>
+          <button type="button" data-tab="library" aria-controls="panel-library">Library</button>
+        </span>
+    </div>
 
     <section class="lookbar" id="lookbar" aria-labelledby="lookTitle">
       <h2 class="lookbar__title" id="lookTitle">What are you making?</h2>
@@ -93,8 +188,6 @@
       <button type="button" id="bLookSuggest" title="Show the models suggested for every step (Models tab)">Suggested models</button>
       <p class="look-about" id="lookAbout" role="status"></p>
     </section>
-
-    <div id="msg" class="warn" role="status" aria-live="polite"></div>
 
     <div id="msg" class="warn" role="status" aria-live="polite"></div>
 
@@ -154,13 +247,14 @@
       </div>
 
       <div class="workbench-toggle-group">
-        <button type="button" class="workbench-toggle-btn" id="workbenchToggle" title="Open Single Prompts, Models, Compare, and Library">
+        <button type="button" class="workbench-toggle-btn" id="workbenchToggle" title="Open Apps, Single Prompts, Models, Compare, and Library">
           🔬 Creative Workbench ▾
         </button>
         <div class="workbench-dropdown hidden" id="workbenchDropdown">
+          <button type="button" class="wb-tab-btn" data-target="panel-apps">🧩 ComfyUI Apps Gallery</button>
+          <button type="button" class="wb-tab-btn" data-target="panel-compare">⚖️ Canvas &amp; Compare View</button>
+          <button type="button" class="wb-tab-btn" data-target="panel-models">🧠 Models &amp; Hardware</button>
           <button type="button" class="wb-tab-btn" data-target="panel-prompts">⚡ Single Prompts</button>
-          <button type="button" class="wb-tab-btn" data-target="panel-models">🧠 Models & Hardware</button>
-          <button type="button" class="wb-tab-btn" data-target="panel-compare">⚖️ Compare View</button>
           <button type="button" class="wb-tab-btn" data-target="panel-library">📚 Prompt Library</button>
         </div>
       </div>
@@ -192,10 +286,28 @@
                 <button type="button" class="btn btn--primary" id="bSaveStory" style="padding:6px 14px">💾 Save Story as Book</button>
               </div>
             </div>
-            <textarea id="storyInputText" rows="6" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:8px;padding:12px;font:inherit" placeholder="Type or paste your story text here... (e.g. Tommy and Judah boarded their vessel bound for the shimmering rings of Saturn...)"></textarea>
+            <textarea id="storyInputText" aria-label="Story text" rows="6" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:8px;padding:12px;font:inherit" placeholder="Type or paste your story text here... (e.g. Tommy and Judah boarded their vessel bound for the shimmering rings of Saturn...)"></textarea>
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
               <span id="storySaveStatus" class="status-badge" style="display:inline-block"></span>
               <small style="color:#64748b">Saved directly to <code>books/&lt;filename&gt;.txt</code> for automatic chapter, dialogue & scene extraction.</small>
+            </div>
+          </div>
+
+          <!-- MCP Firecrawl Research -->
+          <div id="step1McpResearch" class="card" style="margin-top:var(--space-3);border-color:rgba(34,211,238,0.3)">
+            <div class="card__header">
+              <h3 class="card__title" style="font-size:var(--text-base);display:flex;align-items:center;gap:8px">
+                <span style="color:#22d3ee">🔍</span> Web Research (Firecrawl MCP)
+              </h3>
+            </div>
+            <div class="card__body">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+                <input type="text" id="step1ResearchQuery" placeholder="Research query (e.g., 'sci-fi film budget 2024', 'comparable films to Dune')" style="flex:1;min-width:200px;padding:8px 12px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit">
+                <button type="button" class="btn btn--secondary" id="bStep1Research" style="padding:6px 14px">🔍 Search</button>
+                <button type="button" class="btn btn--ghost" id="bStep1ResearchGenre" style="padding:6px 14px">🎬 Film Comparables</button>
+                <button type="button" class="btn btn--ghost" id="bStep1ResearchScreenplay" style="padding:6px 14px">📝 Screenplay Analysis</button>
+              </div>
+              <div id="step1ResearchResults" style="max-height:300px;overflow:auto;font-size:var(--text-sm);color:#cbd5e1;background:#0a0d14;padding:12px;border-radius:6px;border:1px solid #1e293b;display:none"></div>
             </div>
           </div>
 
@@ -218,7 +330,7 @@
           </div>
         </div>
         <div class="step-zone-dock">
-          <button type="button" class="btn-dock-redo" onclick="document.getElementById('storyInputText').value='';">↺ Clear Story</button>
+          <button type="button" class="btn-dock-redo" id="bClearStory">↺ Clear Story</button>
           <button type="button" class="btn btn--primary" id="bV2AutopilotFilm" style="background:linear-gradient(135deg,#f59e0b,#ea580c);color:#0b0e14;font-weight:700;padding:10px 18px">🚀 Make Full Film (1-Click Autopilot)</button>
           <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Check Chapters ➔</button>
         </div>
@@ -327,7 +439,7 @@
             <div class="deliverable-card">
               <span class="deliverable-title">1. Target Runtime &amp; Adaptation Depth</span>
               <p class="deliverable-desc">Options dynamically calculated from this book's reading length plus standard film formats.</p>
-              <select id="v2Duration" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;width:100%"></select>
+              <select id="v2Duration" aria-label="Target runtime and adaptation depth" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;width:100%"></select>
               <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
                 <label class="f" for="v2CustomMinutes" style="margin:0;white-space:nowrap">Exact Minutes:</label>
                 <input type="number" id="v2CustomMinutes" min="0.5" max="300" step="0.5" value="5" style="width:90px;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
@@ -339,7 +451,7 @@
             <div class="deliverable-card">
               <span class="deliverable-title">2. Story &amp; Chapter Scope</span>
               <p class="deliverable-desc">Choose whether to adapt the entire book, a specific chapter range, a single-chapter pilot, or a trailer.</p>
-              <select id="v2ScopeMode" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;width:100%">
+              <select id="v2ScopeMode" aria-label="Story and chapter scope" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;width:100%">
                 <option value="full" selected>Full Book (All chapters)</option>
                 <option value="pilot_ch1">Pilot: Chapter 1 Only</option>
                 <option value="range">Custom Chapter Range</option>
@@ -357,7 +469,7 @@
             <div class="deliverable-card">
               <span class="deliverable-title">3. Aspect Ratio &amp; Shot Pacing</span>
               <p class="deliverable-desc">Frame geometry and average clip length for video synthesis.</p>
-              <select id="v2Aspect" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;width:100%">
+              <select id="v2Aspect" aria-label="Aspect ratio" style="padding:8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;width:100%">
                 <option value="16:9" selected>16:9 Cinema Widescreen (Landscape)</option>
                 <option value="2.39:1">2.39:1 Anamorphic Scope (Cinema)</option>
                 <option value="9:16">9:16 Vertical Video (TikTok / YouTube Shorts)</option>
@@ -487,6 +599,35 @@
             </div>
           </div>
 
+          <!-- Round-trip flow diagram & Import/Export buttons -->
+          <div id="spFlow" class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;padding:12px;background:var(--bg-tertiary, #1e293b);border-radius:8px;font-size:var(--text-sm);font-family:var(--font-mono, monospace);color:var(--text-muted, #94a3b8);border:1px solid var(--border, #334155);">
+              <span style="white-space:nowrap">Round-trip:</span>
+              <span class="flow-step" style="color:var(--accent, #22d3ee)"><b>Export .fdx</b></span>
+              <span class="flow-arrow" aria-hidden="true">→</span>
+              <span class="flow-step" style="color:var(--accent, #22d3ee)"><b>Edit in Final Draft</b></span>
+              <span class="flow-arrow" aria-hidden="true">→</span>
+              <span class="flow-step" style="color:var(--accent, #22d3ee)"><b>Import .fdx</b></span>
+              <span class="flow-arrow" aria-hidden="true">→</span>
+              <span class="flow-step" style="color:var(--success, #22c55e)"><b>Continue in Studio</b></span>
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+              <button type="button" class="btn btn--secondary" id="spExport">Export downloads (.fdx, .fountain, .docx, .pdf)</button>
+              <label class="btn btn--ghost" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;margin:0">
+                  <span>Import .fdx / .fountain</span>
+                  <input type="file" id="spImportFile" accept=".fdx,.fountain,.fntn" style="display:none" aria-label="Import screenplay file">
+              </label>
+              <span id="spFiles"></span>
+          </div>
+
+          <!-- MCP Integration Buttons -->
+          <div id="spMcpTools" class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;padding:12px;background:var(--bg-tertiary, #1e293b);border-radius:8px;border:1px solid var(--border, #334155);">
+              <span style="font-size:var(--text-xs);color:#94a3b8;font-weight:600">MCP Integrations:</span>
+              <button type="button" class="btn btn--secondary" id="spMcpPremiere" title="Send FDX to Premiere Pro via MCP" style="padding:6px 12px;font-size:var(--text-xs)">🎬 Send to Premiere Pro</button>
+              <button type="button" class="btn btn--secondary" id="spMcpBlender" title="Generate 3D previs for current scene via Blender MCP" style="padding:6px 12px;font-size:var(--text-xs)">🎯 Generate Previs (Blender)</button>
+              <button type="button" class="btn btn--secondary" id="spMcpFinalDraft" title="Open FDX in Final Draft Web via Playwright MCP" style="padding:6px 12px;font-size:var(--text-xs)">📝 Open in Final Draft Web</button>
+              <span id="spMcpStatus" style="font-size:var(--text-xs);color:#64748b;margin-left:auto"></span>
+          </div>
+
           <div class="direct-story-card" id="v2ScreenplayCard">
             <!-- Scene Switcher & View Toggle -->
             <div class="v2-sp-toolbar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding-bottom:10px;border-bottom:1px solid #232d3f">
@@ -499,6 +640,15 @@
                 <button type="button" class="btn btn--primary" id="v2SpViewSingle" style="padding:4px 10px;font-size:var(--text-xs)">Edit One Scene</button>
                 <button type="button" class="btn btn--ghost" id="v2SpViewAll" style="padding:4px 10px;font-size:var(--text-xs)">View All Scenes</button>
                 <button type="button" class="btn btn--ghost" id="v2SpRefresh" style="padding:4px 10px;font-size:var(--text-xs)" title="Reload scenes from project">↻ Reload</button>
+                <select id="v2SpFilter" style="padding:4px 8px;font-size:var(--text-xs);background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px" title="Filter displayed content">
+                  <option value="A">A Action</option>
+                  <option value="D" selected>D Dialogue</option>
+                  <option value="T">T Transition</option>
+                  <option value="AD">A D Action Dialogue</option>
+                  <option value="AT">A T Action Transition</option>
+                  <option value="DT">D T Dialogue Transition</option>
+                  <option value="ADT">A D T All</option>
+                </select>
               </div>
             </div>
 
@@ -520,6 +670,18 @@
               <div>
                 <label class="f" for="v2SpBody">Scene Action &amp; Dialogue (<code>A:</code> Action, <code>D CHARACTER (note):</code> Dialogue, <code>T:</code> Transition)</label>
                 <textarea id="v2SpBody" rows="12" spellcheck="false" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:8px;padding:12px;font-family:var(--font-mono);font-size:var(--text-sm);line-height:1.6"></textarea>
+              </div>
+              <!-- AI Scene Update: Additional Instructions -->
+              <div style="margin-top:8px;padding:10px;background:#0a0d14;border:1px solid #232d3f;border-radius:8px">
+                <label class="f" for="v2SpInstructions" style="font-weight:600">Additional Instructions for AI Rewrite</label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:flex-end">
+                  <textarea id="v2SpInstructions" rows="3" placeholder="e.g., Make the dialogue more tense, add a character beat, change the tone to be more comedic, have the character hesitate before answering..." style="flex:1;min-width:200px;padding:8px;background:#020617;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-family:var(--font-mono);font-size:var(--text-sm);line-height:1.5"></textarea>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap">
+                    <button type="button" class="btn btn--primary" id="v2SpRewrite" style="padding:6px 14px">✨ Update Scene (AI)</button>
+                    <button type="button" class="btn btn--ghost" id="v2SpClearInstructions" style="padding:6px 14px">Clear</button>
+                  </div>
+                </div>
+                <small style="color:#64748b;margin-top:4px;display:block">Only affects the currently selected scene. The AI will rewrite the scene incorporating your instructions.</small>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px">
                 <div style="display:flex;align-items:center;gap:10px">
@@ -583,7 +745,7 @@
                 <button type="button" class="btn btn--ghost v2-cont-chip" data-snippet="- Props: Track handheld items and vehicles across consecutive cuts." style="padding:3px 8px;font-size:var(--text-xs)">+ Prop Tracking</button>
                 <button type="button" class="btn btn--ghost v2-cont-chip" data-snippet="- Atmosphere: Preserve consistent weather, sky, and time-of-day within each sequence." style="padding:3px 8px;font-size:var(--text-xs)">+ Time &amp; Weather</button>
               </div>
-              <textarea id="v2ContRules" rows="7" placeholder="Enter wardrobe, prop, and world continuity rules for this book…" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:10px;font:inherit;font-size:var(--text-sm)"></textarea>
+              <textarea id="v2ContRules" aria-label="Wardrobe, props, and world continuity rules" rows="7" placeholder="Enter wardrobe, prop, and world continuity rules for this book…" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:10px;font:inherit;font-size:var(--text-sm)"></textarea>
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <button type="button" class="btn btn--primary" id="v2ContRulesSave" style="padding:6px 14px">💾 Save World Rules</button>
                 <span id="v2ContRulesMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
@@ -886,44 +1048,47 @@
             <h2 id="step13Title">Step 13: Hardware &amp; Where to Run</h2>
             <p class="step-goal">Click any compute backend below to choose where heavy visual and video models execute.</p>
           </div>
-          <span class="status-badge status-badge--synced" id="v2HwBadge">✓ Active: Gemini API</span>
+          <span class="status-badge status-badge--synced" id="v2HwBadge">✓ Active: Local Computer GPU</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> Hybrid Smart Routing &mdash; <em>Kokoro &amp; Audio locally; Video &amp; Keyframes on your chosen compute backend.</em>
+          ✨ <strong>Autopilot Pick:</strong> Local-First Smart Routing &mdash; <em>Kokoro-82M &amp; Audio locally; ComfyUI / sd-cli / Wan 2.2 on this machine's GPU (or Gemini API when selected).</em>
         </div>
         <div class="step-zone-workspace">
           <div id="v2HwGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:var(--space-3)">
+            <div class="deliverable-card v2-hw-card" data-hw="computer" data-svc="computer" style="cursor:pointer">
+              <span class="deliverable-title">💻 Local Computer GPU (Default)</span>
+              <p class="deliverable-desc" id="v2LocalGpuDesc">Run ComfyUI, stable-diffusion.cpp (sd-cli Metal/CUDA), Wan 2.1/2.2 Diffusers, Wan2GP, Kokoro-82M TTS, and FFmpeg locally on this machine.</p>
+              <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto">
+                <span class="status-badge status-badge--synced" id="v2LocalGpuBadge" style="align-self:flex-start">Detecting Local GPU…</span>
+                <button type="button" class="btn btn--primary v2-hw-select" data-hw="computer" style="width:100%">✓ Selected</button>
+              </div>
+            </div>
             <div class="deliverable-card v2-hw-card" data-hw="gemini" data-svc="cloud_api" style="cursor:pointer">
               <span class="deliverable-title">✨ Google Gemini API (Omni 1.2 Flash)</span>
               <p class="deliverable-desc">Native 3–15s video + synchronized audio (up to 4K), up to 6 character/set reference images, and conversational "Edit by Talking" redos.</p>
               <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto">
                 <span class="status-badge" id="v2GeminiKeyBadge" style="align-self:flex-start">Checking Gemini API…</span>
                 <div style="display:flex;gap:6px">
-                  <input type="password" id="v2GeminiKeyInput" placeholder="Paste GEMINI_API_KEY…" autocomplete="new-password" style="flex:1;min-width:110px;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                  <input type="password" id="v2GeminiKeyInput" aria-label="Gemini API key" placeholder="Paste GEMINI_API_KEY…" autocomplete="new-password" style="flex:1;min-width:110px;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
                   <button type="button" class="btn btn--primary" id="bSaveGeminiKey" style="padding:6px 10px;font-size:var(--text-xs)">Save Key</button>
                 </div>
                 <button type="button" class="btn btn--secondary v2-hw-select" data-hw="gemini" style="width:100%">Use Gemini Omni API</button>
               </div>
             </div>
-            <div class="deliverable-card v2-hw-card" data-hw="huggingface" data-svc="huggingface" style="cursor:pointer">
+            <div class="deliverable-card v2-hw-card" data-hw="huggingface" data-svc="huggingface" data-legacy-cloud="1" style="cursor:pointer">
               <span class="deliverable-title">🤗 Hugging Face Spaces (ZeroGPU)</span>
               <p class="deliverable-desc">Free daily shared GPU quota for FLUX.1 and Wan 2.1 with zero local GPU requirements.</p>
               <button type="button" class="btn btn--secondary v2-hw-select" data-hw="huggingface" style="margin-top:auto;width:100%">Use Hugging Face Spaces</button>
             </div>
-            <div class="deliverable-card v2-hw-card" data-hw="cloud_api" data-svc="cloud_api" style="cursor:pointer">
+            <div class="deliverable-card v2-hw-card" data-hw="cloud_api" data-svc="cloud_api" data-legacy-cloud="1" style="cursor:pointer">
               <span class="deliverable-title">⚡ Direct Cloud API (Fal / Replicate)</span>
               <p class="deliverable-desc">Fastest turnaround via Fal.ai or Replicate serverless endpoints for instant generation.</p>
               <button type="button" class="btn btn--secondary v2-hw-select" data-hw="cloud_api" style="margin-top:auto;width:100%">Use Cloud API</button>
             </div>
-            <div class="deliverable-card v2-hw-card" data-hw="kaggle" data-svc="kaggle" style="cursor:pointer">
+            <div class="deliverable-card v2-hw-card" data-hw="kaggle" data-svc="kaggle" data-legacy-cloud="1" style="cursor:pointer">
               <span class="deliverable-title">📓 Kaggle Dual T4 / Colab</span>
               <p class="deliverable-desc">Run batch generation through free remote Kaggle notebooks (15GB x2 VRAM).</p>
               <button type="button" class="btn btn--secondary v2-hw-select" data-hw="kaggle" style="margin-top:auto;width:100%">Use Kaggle / Colab</button>
-            </div>
-            <div class="deliverable-card v2-hw-card" data-hw="computer" data-svc="computer" style="cursor:pointer">
-              <span class="deliverable-title">💻 Local Computer GPU</span>
-              <p class="deliverable-desc">Generate on this machine's GPU or CPU (ideal for Kokoro audio and Real-ESRGAN upscaling).</p>
-              <button type="button" class="btn btn--secondary v2-hw-select" data-hw="computer" style="margin-top:auto;width:100%">Use Local Hardware</button>
             </div>
           </div>
 
@@ -1085,16 +1250,16 @@
                 <span class="deliverable-title">🎧 Video-Aligned Foley (SFX)</span>
                 <span class="status-badge" id="v2FoleyStatusBadge">Ready</span>
               </div>
-              <textarea id="v2FoleyPrompt" rows="3" placeholder="Describe ambient sound & SFX (e.g., rain on window, rocket thruster hum, cockpit console chimes)…" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);resize:vertical"></textarea>
+              <textarea id="v2FoleyPrompt" aria-label="Foley SFX prompt" rows="3" placeholder="Describe ambient sound & SFX (e.g., rain on window, rocket thruster hum, cockpit console chimes)…" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);resize:vertical"></textarea>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <select id="v2FoleyPreset" style="flex:1;padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                <select id="v2FoleyPreset" aria-label="Foley SFX preset" style="flex:1;padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
                   <option value="space_adventure">Preset: Space &amp; Cockpit Adventure</option>
                   <option value="rainy_home">Preset: Rainy Living Room &amp; Cozy Home</option>
                   <option value="cosmic_storm">Preset: Ice Rings &amp; Atmospheric Wind</option>
                   <option value="action_launch">Preset: Rocket Launch &amp; Thruster Boost</option>
                   <option value="forest_nature">Preset: Quiet Night &amp; Distant Crickets</option>
                 </select>
-                <select id="v2FoleyDuration" style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                <select id="v2FoleyDuration" aria-label="Foley SFX duration" style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
                   <option value="8">8 sec</option>
                   <option value="12" selected>12 sec</option>
                   <option value="20">20 sec</option>
@@ -1103,7 +1268,7 @@
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
                 <button type="button" class="btn btn--primary" id="bV2RenderFoley" style="flex:1">✨ Generate &amp; Preview Foley</button>
                 <button type="button" class="btn btn--ghost" id="bV2UploadFoley">⬆ Upload SFX</button>
-                <input type="file" id="v2UploadFoleyInput" accept="audio/*" style="display:none">
+                <input type="file" id="v2UploadFoleyInput" aria-label="Upload Foley SFX audio file" accept="audio/*" style="display:none">
               </div>
               <div id="v2FoleyPlayerWrap" style="margin-top:6px;background:#0a0d14;padding:6px 10px;border-radius:6px;font-size:var(--text-xs);color:#64748b">
                 Not rendered yet — click ✨ Generate &amp; Preview Foley
@@ -1116,16 +1281,16 @@
                 <span class="deliverable-title">🎻 Cinematic Soundtrack Score</span>
                 <span class="status-badge" id="v2ScoreStatusBadge">Ready</span>
               </div>
-              <textarea id="v2ScorePrompt" rows="3" placeholder="Describe the musical score (e.g., sweeping strings, French horns, warm celesta sparkles)…" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);resize:vertical"></textarea>
+              <textarea id="v2ScorePrompt" aria-label="Soundtrack score prompt" rows="3" placeholder="Describe the musical score (e.g., sweeping strings, French horns, warm celesta sparkles)…" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);resize:vertical"></textarea>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <select id="v2ScoreMood" style="flex:1;padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                <select id="v2ScoreMood" aria-label="Soundtrack score mood" style="flex:1;padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
                   <option value="wonder">Mood: Wonder &amp; Discovery</option>
                   <option value="epic">Mood: Epic Space Adventure</option>
                   <option value="cozy">Mood: Warm &amp; Cozy Family</option>
                   <option value="mysterious">Mood: Cosmic Mystery</option>
                   <option value="playful">Mood: Playful &amp; Whimsical</option>
                 </select>
-                <select id="v2ScoreDuration" style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                <select id="v2ScoreDuration" aria-label="Soundtrack score duration" style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
                   <option value="8">8 sec</option>
                   <option value="12" selected>12 sec</option>
                   <option value="20">20 sec</option>
@@ -1134,7 +1299,7 @@
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
                 <button type="button" class="btn btn--primary" id="bV2RenderScore" style="flex:1">✨ Generate &amp; Preview Score</button>
                 <button type="button" class="btn btn--ghost" id="bV2UploadScore">⬆ Upload Score</button>
-                <input type="file" id="v2UploadScoreInput" accept="audio/*" style="display:none">
+                <input type="file" id="v2UploadScoreInput" aria-label="Upload soundtrack score audio file" accept="audio/*" style="display:none">
               </div>
               <div id="v2ScorePlayerWrap" style="margin-top:6px;background:#0a0d14;padding:6px 10px;border-radius:6px;font-size:var(--text-xs);color:#64748b">
                 Not rendered yet — click ✨ Generate &amp; Preview Score
@@ -1217,6 +1382,42 @@
           ✨ <strong>Autopilot Pick:</strong> Wan-AI/Wan2.1-I2V-14B-720P-Diffusers &mdash; <em>Best physical dynamics, cloth motion, and camera tracking.</em>
         </div>
         <div class="step-zone-workspace">
+          <!-- Local GPU Video Synthesis Engine (Wan 2.2 Diffusers / Wan2GP / ComfyUI / Local Motion Animatic) -->
+          <div class="direct-story-card" id="v2LocalVideoCard" style="margin-bottom:var(--space-3);border-color:rgba(16,185,129,0.35)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <h3 style="margin:0;font-size:var(--text-base);color:#10b981">💻 Local GPU Video Engine &mdash; Wan 2.2 Diffusers / Wan2GP / ComfyUI / Motion Animatic</h3>
+              <span class="status-badge status-badge--synced" id="v2LocalVideoBadge">Local GPU Ready</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:8px;margin-bottom:8px">
+              <div>
+                <label class="f" for="v2LocalVideoEngine">Local Video Runner</label>
+                <select id="v2LocalVideoEngine" style="width:100%;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                  <option value="auto" selected>Auto (Best for Detected GPU)</option>
+                  <option value="wan_diffusers">Wan 2.2 Multi-Segment Diffusers (16GB+ VRAM)</option>
+                  <option value="wan2gp">Wan2GP Local CLI / MCP</option>
+                  <option value="comfyui">ComfyUI Declarative Video Workflow</option>
+                  <option value="local_animatic">Local FFmpeg Motion Animatic (All Hardware / 8GB Mac)</option>
+                </select>
+              </div>
+              <div>
+                <label class="f" for="v2LocalVideoShotSelect">Target Shot</label>
+                <select id="v2LocalVideoShotSelect" style="width:100%;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                  <option value="S001-01">S001-01</option>
+                </select>
+              </div>
+              <div>
+                <label class="f" for="v2LocalVideoDuration">Duration (seconds)</label>
+                <input type="number" id="v2LocalVideoDuration" min="2" max="30" value="4" style="width:100%;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button type="button" class="btn btn--primary" id="bV2RunLocalVideo">🎬 Synthesize Shot Video Locally</button>
+              <button type="button" class="btn btn--secondary" id="bV2RunLocalVideoBatch">⚡ Render All Keyframed Shots</button>
+              <button type="button" class="btn btn--ghost" id="bV2ReloadVideos">↻ Reload Clips</button>
+            </div>
+            <div id="v2LocalVideoStatus" style="font-size:var(--text-xs);color:#34d399;margin-top:6px" aria-live="polite"></div>
+          </div>
+
           <!-- Gemini Omni 1.2 Flash Interactive Generator & Conversational Editor -->
           <div class="direct-story-card" id="v2GeminiOmniCard" style="margin-bottom:var(--space-3);border-color:rgba(56,189,248,0.35)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
@@ -1261,29 +1462,7 @@
             <div id="v2OmniStatus" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></div>
           </div>
 
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
-            <div class="deliverable-card">
-              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#38bdf8">
-                <span>▶ [Clip 1: Dolly Forward 5.0s]</span>
-              </div>
-              <strong style="color:#f59e0b;margin-top:6px">Clip 1 &middot; 720p 24fps</strong>
-              <button type="button" class="btn btn--ghost" style="margin-top:4px;font-size:var(--text-xs)">↺ Redo Clip</button>
-            </div>
-            <div class="deliverable-card">
-              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#38bdf8">
-                <span>▶ [Clip 2: Orbit Pan 5.0s]</span>
-              </div>
-              <strong style="color:#f59e0b;margin-top:6px">Clip 2 &middot; 720p 24fps</strong>
-              <button type="button" class="btn btn--ghost" style="margin-top:4px;font-size:var(--text-xs)">↺ Redo Clip</button>
-            </div>
-            <div class="deliverable-card">
-              <div style="background:#000;aspect-ratio:16/9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#38bdf8">
-                <span>▶ [Clip 3: Subtle Speech Motion 4.2s]</span>
-              </div>
-              <strong style="color:#f59e0b;margin-top:6px">Clip 3 &middot; 720p 24fps</strong>
-              <button type="button" class="btn btn--ghost" style="margin-top:4px;font-size:var(--text-xs)">↺ Redo Clip</button>
-            </div>
-          </div>
+          <div id="v2VideoClipsGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)"></div>
         </div>
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back</button>
@@ -1309,7 +1488,7 @@
             <div class="deliverable-card">
               <span class="deliverable-title">👄 Mouth Synchronization (Lip-Sync)</span>
               <p class="deliverable-desc" id="v2PolishLipDesc">Checking dialogue tracks &amp; rendered video clips…</p>
-              <select id="v2PolishLipMode" style="width:100%;padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);margin-top:6px">
+              <select id="v2PolishLipMode" aria-label="Lip-sync mode" style="width:100%;padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);margin-top:6px">
                 <option value="gemini_native">Gemini Omni 1.2 Flash Native Audio Lip-Sync</option>
                 <option value="liveportrait">LivePortrait Post-Process Lip-Sync (Dialogue WAVs)</option>
                 <option value="off">Off (Keep Raw Motion)</option>
@@ -1318,7 +1497,7 @@
             <div class="deliverable-card">
               <span class="deliverable-title">✨ Super-Resolution Upscaling &amp; Polish</span>
               <p class="deliverable-desc" id="v2PolishUpDesc">Choose final resolution target and temporal de-flickering.</p>
-              <select id="v2PolishUpscale" style="width:100%;padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);margin-top:6px">
+              <select id="v2PolishUpscale" aria-label="Upscale resolution target" style="width:100%;padding:6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);margin-top:6px">
                 <option value="1080p">1080p Full HD (Recommended)</option>
                 <option value="4k">4K Ultra HD (Real-ESRGAN x2)</option>
                 <option value="none">Keep Native Clip Resolution</option>
@@ -1355,12 +1534,19 @@
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
               <div id="v2TlSummary" style="font-size:var(--text-sm);color:#cbd5e1">Loading timeline tracks for this book…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                <select id="v2TlCrossfade" style="padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                <select id="v2TlRuntime" aria-label="Composer runtime" style="padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                  <option value="ffmpeg" selected>Runtime: FFmpeg (Local)</option>
+                  <option value="remotion">Runtime: Remotion (React)</option>
+                  <option value="hyperframes">Runtime: HyperFrames + Ink Theater</option>
+                  <option value="blender">Runtime: Blender 4.5 3D World</option>
+                </select>
+                <select id="v2TlCrossfade" aria-label="Timeline transition crossfade" style="padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
                   <option value="0">Cut: 0.0s</option>
                   <option value="0.3">Crossfade: 0.3s</option>
                   <option value="0.5" selected>Crossfade: 0.5s</option>
                   <option value="1.0">Crossfade: 1.0s</option>
                 </select>
+                <button type="button" class="btn btn--secondary" id="bV2TlQaCheck">🛡️ Pre-Render QA Check</button>
                 <button type="button" class="btn btn--primary" id="bV2TlAssemble">🎬 Assemble Timeline Cut (MP4)</button>
                 <button type="button" class="btn btn--secondary" id="bV2TlEdl">📄 Export EDL</button>
               </div>
@@ -1393,19 +1579,19 @@
             <div class="deliverable-card">
               <span class="deliverable-title">🎙️ Dialogue Stem</span>
               <p class="deliverable-desc" id="v2MixDlgDesc">Checking rendered dialogue tracks…</p>
-              <label class="f" id="v2MixDlgLbl">Volume: 0 dB</label>
+              <label class="f" id="v2MixDlgLbl" for="v2MixDlgRange">Volume: 0 dB</label>
               <input type="range" id="v2MixDlgRange" min="-12" max="6" step="1" value="0" style="width:100%">
             </div>
             <div class="deliverable-card">
               <span class="deliverable-title">🎧 Foley SFX Stem</span>
               <p class="deliverable-desc" id="v2MixFolDesc">Checking Foley track…</p>
-              <label class="f" id="v2MixFolLbl">Volume: -3 dB</label>
+              <label class="f" id="v2MixFolLbl" for="v2MixFolRange">Volume: -3 dB</label>
               <input type="range" id="v2MixFolRange" min="-18" max="6" step="1" value="-3" style="width:100%">
             </div>
             <div class="deliverable-card">
               <span class="deliverable-title">🎻 Music Score Stem</span>
               <p class="deliverable-desc" id="v2MixScoDesc">Checking Score track…</p>
-              <label class="f" id="v2MixScoLbl">Volume: -6 dB</label>
+              <label class="f" id="v2MixScoLbl" for="v2MixScoRange">Volume: -6 dB</label>
               <input type="range" id="v2MixScoRange" min="-24" max="0" step="1" value="-6" style="width:100%">
             </div>
           </div>
@@ -1452,6 +1638,14 @@
           </div>
 
           <!-- 2. ONE-CLICK DELIVERABLE CARDS -->
+          <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:8px 0">
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:var(--text-xs);color:#cbd5e1;cursor:pointer">
+              <input type="checkbox" id="v2ExpSilenceCut"> ✂️ Apply Silence Cutter (trim dead air)
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:var(--text-xs);color:#cbd5e1;cursor:pointer">
+              <input type="checkbox" id="v2ExpAutoReframe" checked> 🎯 Face-Tracked Auto-Reframe on 9:16 Shorts
+            </label>
+          </div>
           <div class="export-deliverables-grid">
             <div class="deliverable-card">
               <span class="deliverable-title">🎬 Master Cinema Film (16:9 MP4)</span>
@@ -1495,17 +1689,40 @@
 
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Audio Mix</button>
-          <button type="button" class="btn-dock-next" onclick="alert('Film generation complete! All deliverables ready.')" style="background:#10b981;color:#0b0e14">✓ Film Master Approved</button>
+          <button type="button" class="btn-dock-next" id="bApproveMaster" style="background:#10b981;color:#0b0e14">✓ Film Master Approved</button>
         </div>
       </section>
 
     </main>
 
-    <!-- CLASSIC TAB PANELS (Preserving Workbench Tabs: Prompts, Models, Compare, Library) -->
+    <!-- CLASSIC TAB PANELS (Unified 4-Workspace Shell) -->
     <div id="classicPanels" class="classic-panels">
 
-    <!-- IMPORT TAB -->
-    <div class="tab-panel active" id="panel-project" role="tabpanel" aria-labelledby="tab-project">
+    <!-- WORKSPACE 1: FILM STUDIO -->
+    <div class="tab-panel workspace-panel active" id="panel-project" data-workspace-panel="film-studio" role="tabpanel" aria-hidden="false" aria-labelledby="tab-project">
+        <div class="card" id="composerQaCard">
+            <div class="card__header">
+                <h2 class="card__title">Multi-Runtime Composer &amp; Pre-Render QA</h2>
+                <p class="card__subtitle">Choose composition runtime (FFmpeg, Remotion, HyperFrames / Ink Theater, Blender 4.5) and run pre-render QA &amp; post-production tools.</p>
+            </div>
+            <div class="card__body">
+                <div class="row" style="gap:12px;align-items:flex-end;flex-wrap:wrap">
+                    <div>
+                        <label class="f" for="composerRuntime">Composer Runtime</label>
+                        <select id="composerRuntime" name="composer_runtime">
+                            <option value="ffmpeg" selected>FFmpeg Timeline Mix (Default)</option>
+                            <option value="remotion">Remotion React Composition</option>
+                            <option value="hyperframes">HyperFrames + Ink Theater HTML5</option>
+                            <option value="blender">Blender 4.5 3D World Runtime</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn--secondary" id="bRunSlideshowQa">Slideshow Risk &amp; Validate QA</button>
+                    <button type="button" class="btn btn--secondary" id="bRunVisualCritic">Visual Critic QA</button>
+                    <button type="button" class="btn btn--secondary" id="bRunSilenceCutter">Silence Cutter</button>
+                    <button type="button" class="btn btn--secondary" id="bRunAutoReframe">Auto Reframe (9:16 / 1:1)</button>
+                </div>
+            </div>
+        </div>
         <div class="card" id="filmCard">
             <div class="card__header">
                 <h2 class="card__title">Make my film</h2>
@@ -1694,7 +1911,10 @@
                     </div>
                     <div id="riPane" role="tabpanel" tabindex="0" style="max-height:420px;overflow:auto;white-space:pre-wrap;font-family:var(--font-mono, monospace);font-size:var(--text-sm)"></div>
                     <h3 style="font-size:var(--text-sm);margin:12px 0 4px">Download the screenplay (Product A)</h3>
-                    <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn--secondary" id="riExport">Make the downloads</button><span id="riFiles"></span></div>
+                    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+                        <button type="button" class="btn btn--secondary" id="riExport">Export downloads (.fdx, .fountain, .docx, .pdf)</button>
+                        <span id="riFiles"></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2072,8 +2292,30 @@
 
     </div>
 
-    <!-- MODELS TAB -->
-    <div class="tab-panel" id="panel-models" role="tabpanel" aria-labelledby="tab-models">
+    <!-- WORKSPACE 2: APPS -->
+    <div class="tab-panel workspace-panel hidden" id="panel-apps" data-workspace-panel="apps" role="tabpanel" aria-hidden="true" aria-labelledby="tab-apps">
+        <div class="card">
+            <div class="card__header">
+                <h2 class="card__title">Apps Gallery (120 Local-GPU ComfyUI Workflows)</h2>
+                <p class="card__subtitle">Filter by category, search, inspect ComfyUI workflow JSON, run locally, and send outputs directly to book shots or takes.</p>
+            </div>
+            <div class="card__body">
+                <div id="appsGalleryHost"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- WORKSPACE 4: MODELS & HARDWARE -->
+    <div class="tab-panel workspace-panel hidden" id="panel-models" data-workspace-panel="models-hardware" role="tabpanel" aria-hidden="true" aria-labelledby="tab-models">
+        <div class="card">
+            <div class="card__header">
+                <h2 class="card__title">Local Model Packs &amp; Hardware VRAM Map</h2>
+                <p class="card__subtitle">Manage Hugging Face model packs, inspect VRAM requirements against your detected GPU profile, and verify HF tokens.</p>
+            </div>
+            <div class="card__body">
+                <div id="packsVramHost"></div>
+            </div>
+        </div>
         <div class="card">
             <div class="card__body">
                 <label class="opt"><input type="checkbox" id="adultToggle"><span>Show adult-content models<small>Off by default. Switches on the "Uncensored (adult content)" groups of picture and video models (for clearly adult, fictional work only). While it is off they are hidden here and the Studio refuses to run them.</small></span></label>
@@ -2749,7 +2991,19 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
         </div>
     </div>
 
-    <div class="tab-panel" id="panel-compare" role="tabpanel" aria-labelledby="tab-compare">
+    <!-- WORKSPACE 3: CANVAS & COMPARE -->
+    <div class="tab-panel workspace-panel hidden" id="panel-compare" data-workspace-panel="canvas-compare" role="tabpanel" aria-hidden="true" aria-labelledby="tab-compare">
+        <div class="card">
+            <div class="card__header">
+                <h2 class="card__title">Canvas Studio &amp; Inpaint Mask Painter</h2>
+                <p class="card__subtitle">Non-destructive 7-category color grading, pan/zoom, lasso/box regions, sketch &amp; text overlays, and A/B media comparison.</p>
+            </div>
+            <div class="card__body">
+                <div id="canvasStudioHost"></div>
+                <div id="paintHost" style="margin-top:16px"></div>
+                <div id="compareHost" style="margin-top:16px"></div>
+            </div>
+        </div>
         <div class="card">
             <div class="card__header"><h2 class="card__title">Compare models</h2></div>
             <div class="card__body">
@@ -2900,11 +3154,6 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
       <div class="row" style="align-items:center;gap:8px"><strong id="flowState" role="status"></strong><button type="button" id="flowStop" disabled>Stop</button></div>
       <pre id="flowLog" aria-live="polite"></pre>
     </section>
-    <div class="flow-foot" id="flowFoot">
-      <button type="button" id="flowBack">Back</button>
-      <span id="flowPos" role="status"></span>
-      <button type="button" id="flowNext" class="primary">Next</button>
-    </div>
 </main>
 </div> <!-- #classicPanels -->
 
@@ -2966,5 +3215,10 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/progress.js" defer></script>
 <script src="/static/js/setup.js" defer></script>
 <script src="/static/js/studio_v2.js" defer></script>
+<script src="/static/js/paint.js" defer></script>
+<script src="/static/js/compare.js" defer></script>
+<script src="/static/js/apps_gallery.js" defer></script>
+<script src="/static/js/packs_vram.js" defer></script>
+<script src="/static/js/canvas_studio.js" defer></script>
 </body>
 </html>

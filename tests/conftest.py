@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 os.environ.setdefault("STUDIO_NO_BUSY_CHECK", "1")        # a real run on this computer must not block the tests that start jobs
 os.environ.setdefault("STUDIO_JOB_DIR", tempfile.mkdtemp(prefix="studio-jobs-"))      # job logs and state of the tests stay out of the project
+os.environ.setdefault("STUDIO_GEN_DIR", tempfile.mkdtemp(prefix="studio-gen-"))       # generated colab_generate_*.py / Studio_*.ipynb stay out of repo root
 
 from studio_app import handler  # noqa: E402
 from studio_app.server import make_server  # noqa: E402

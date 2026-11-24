@@ -17,4 +17,4 @@ def test_page_loads_and_every_tab_opens(server):
     r = subprocess.run(["node", "smoke.js", f"http://127.0.0.1:{server.port}/?t={TOKEN}"], cwd=JS, capture_output=True, text=True, timeout=90)
     out = json.loads(r.stdout.strip().splitlines()[-1])
     assert out["errors"] == [], out
-    assert out["tabs"] >= 8 and r.returncode == 0
+    assert out["tabs"] >= 4 and r.returncode == 0

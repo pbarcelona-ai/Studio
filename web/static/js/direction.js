@@ -97,10 +97,7 @@ function renderDirResponse() {
   }
 }
 
-function escapeHtml(s) {
-  // escapes quotes too: the result is also used inside "..." attribute values
-  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
+// escapeHtml is defined globally in core.js
 
 // Load saved direction on project change
 $("proj").addEventListener("change", async () => {

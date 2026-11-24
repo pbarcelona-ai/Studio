@@ -146,6 +146,51 @@ class TestMain:
             self.run(monkeypatch, "pika_h3_flex_i2v", "1", "1")
         assert "no keyframe" in capsys.readouterr().out
 
+    def test_wan_attaches_keyframe_when_available_and_skips_when_missing(self, prompts, gradio, monkeypatch, tmp_path):
+        monkeypatch.setenv("PROJECT", "set1")
+        (prompts / "all_shots.csv").write_text("prompt\none\n")
+        monkeypatch.delenv("SHOTS_CSV", raising=False)
+        monkeypatch.setenv("KEYFRAME_MODEL", "flux")
+        clip = tmp_path / "wan.mp4"
+        clip.write_bytes(b"wanvid")
+
+        # Without keyframe: still runs and omits image arg
+        gradio.Client.results = [{"video": str(clip)}]
+        self.run(monkeypatch, "wan21_i2v_14b", "1", "1")
+        pred_no_kf = [c for c in gradio.calls if c[0] == "predict"][-1]
+        assert "image" not in pred_no_kf[2]
+        assert (prompts / "videos" / "wan21_i2v_14b" / "shot-0001.mp4").read_bytes() == b"wanvid"
+
+        # With keyframe present: attaches handle_file(keyframe)
+        (prompts / "videos" / "wan21_i2v_14b" / "shot-0001.mp4").unlink()
+        kf_dir = prompts / "images" / "flux_keyframes"
+        kf_dir.mkdir(parents=True)
+        kf = kf_dir / "image-0001.png"
+        kf.write_bytes(b"png")
+        gradio.Client.results = [{"video": str(clip)}]
+        self.run(monkeypatch, "wan21_i2v_14b", "1", "1")
+        pred_with_kf = [c for c in gradio.calls if c[0] == "predict"][-1]
+        assert pred_with_kf[2]["image"] == ("file", str(kf))
+
+    def test_audio_spaces_save_wav_in_audio_folder(self, prompts, gradio, monkeypatch, tmp_path):
+        monkeypatch.setenv("PROJECT", "set1")
+        monkeypatch.delenv("SHOTS_CSV", raising=False)
+        (prompts / "audio_shots.csv").write_text("narration,sfx\nhello world,wind blowing\n")
+        wav = tmp_path / "out.wav"
+        wav.write_bytes(b"RIFFwav")
+
+        gradio.Client.results = [str(wav)]
+        self.run(monkeypatch, "audio_mmaudio", "1", "1")
+        assert (prompts / "audio" / "mmaudio" / "sfx-0001.wav").read_bytes() == b"RIFFwav"
+        pred_mm = [c for c in gradio.calls if c[0] == "predict"][-1]
+        assert pred_mm[2]["prompt"] == "wind blowing"
+
+        gradio.Client.results = [str(wav)]
+        self.run(monkeypatch, "f5_tts", "1", "1")
+        assert (prompts / "audio" / "f5_tts" / "narration-0001.wav").read_bytes() == b"RIFFwav"
+        pred_f5 = [c for c in gradio.calls if c[0] == "predict"][-1]
+        assert pred_f5[2]["gen_text"] == "hello world"
+
     def test_argument_errors(self, prompts, monkeypatch):
         with pytest.raises(SystemExit):
             self.run(monkeypatch, "flux1_schnell")

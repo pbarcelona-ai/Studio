@@ -89,7 +89,7 @@ def screenplay_data(slug, sid: str = "") -> dict:
 
 
 def screenplay_edit(b: dict) -> dict:
-    """POST body: {project, action: save_scene {scene, heading, elements} | approve | unapprove}"""
+    """POST body: {project, action: save_scene {scene, heading, elements} | approve | unapprove | rewrite_scene {scene, instructions}}"""
     d = _book(b.get("project"))
     plan = ad.load(d)
     if not plan:
@@ -110,11 +110,70 @@ def screenplay_edit(b: dict) -> dict:
             sp.approve(d, plan)
         elif action == "unapprove":
             sp.clear_approval(d)
+        elif action == "rewrite_scene":
+            sid = str(b.get("scene", ""))
+            instructions = str(b.get("instructions", "")).strip()
+            if not sid or sid not in {s["id"] for s in ad.active_scenes(plan)}:
+                raise PlanError("that scene is not in the plan")
+            if not instructions:
+                raise PlanError("instructions required for rewrite")
+            # Rewrite the scene using AI with additional instructions
+            _rewrite_scene_with_ai(d, plan, sid, instructions)
+            feedback.resolve(d, sid)                         # the scene was updated: its red outline goes
         else:
             raise PlanError("unknown screenplay action")
     except sp.ScreenplayError as e:
         raise PlanError(str(e)) from e
     return screenplay_data(b.get("project"))
+
+
+def _rewrite_scene_with_ai(pdir, plan, sid, instructions):
+    """Rewrite a single scene using AI with additional instructions."""
+    import crew
+    from bookkit import continuity_file, llm_json, read_json
+    import screenplay as sp
+    import adaptation as ad
+
+    # Get the scene from the plan
+    scenes = ad.active_scenes(plan)
+    s = next((sc for sc in scenes if sc["id"] == sid), None)
+    if not s:
+        raise PlanError("scene not found in plan")
+
+    # Load existing screenplay
+    existing = sp.load_scene(pdir, sid)
+    current_text = ""
+    if existing and existing.get("elements"):
+        current_text = sp.to_text(pdir, plan, [sid])
+
+    # Load continuity for character names
+    continuity = read_json(continuity_file(pdir), {})
+    names = [c["name"] for c in continuity.get("characters", [])]
+
+    # Build the AI prompt
+    LOGLINE = plan["logline"]
+    SYSTEM = crew.system("screenwriter", pdir, "screenplay", "Adapt the book into a screenplay, one scene at a time.")
+
+    prompt = f"""Film: {LOGLINE}
+Act: {s['act']}. Scene {sid} "{s['title']}" (about {s['seconds']:g} seconds on screen).
+What happens: {s['summary']}
+Place: {s.get('location') or 'unknown'}. Time: {s.get('time_of_day') or 'unknown'}. People: {', '.join(s.get('characters', [])) or 'unknown'}.
+{('Recurring characters: ' + ', '.join(names)) if names else ''}
+
+CURRENT SCREENPLAY:
+{current_text if current_text else "(no screenplay yet)"}
+
+ADDITIONAL INSTRUCTIONS FROM USER:
+{instructions}
+
+Rewrite the scene as a screenplay incorporating the additional instructions. Return ONE JSON object: {{"heading": "INT. PLACE - TIME", "elements": [
+ {{"type": "action", "text": "what we SEE and HEAR, present tense, concrete and filmable"}},
+ {{"type": "dialogue", "character": "NAME", "note": "optional: how it is said", "text": "the spoken line"}},
+ {{"type": "transition", "text": "CUT TO:"}} ]}}
+Rules: show, do not tell (thoughts become behaviour); keep to the book's events and, where you can, its own words for dialogue; all dialogue together at most about {max(10, round(s['seconds'] * 2.5 * 0.8))} words so the scene fits {s['seconds']:g} seconds; 2 to 12 elements; nothing out of place for the book's era and world; no camera angles."""
+
+    d = llm_json(prompt, SYSTEM, validate=sp.check_scene)
+    sp.save_scene(pdir, sid, d, edited=True)
 
 
 def budget_data(b: dict) -> dict:

@@ -5,7 +5,7 @@
 (function () {
   const start = $("riStart");
   if (!start) return;
-  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&", "<": "<", ">": ">", '"': """, "'": "'" }[c]));
   let slug = "", R = null, tab = "script", timer = null;
 
   const pane = {
@@ -54,6 +54,41 @@
   $("riExport").addEventListener("click", async () => {
     try { const j = await api("/api/readin_export", { project: slug }); R.exports = j.exports; draw(); } catch (e) { $("riProgress").textContent = e.message; }
   });
+  // Import screenplay (.fdx or .fountain)
+  const importFile = $("riImportFile");
+  if (importFile) {
+    importFile.addEventListener("change", async () => {
+      const file = importFile.files[0];
+      if (!file) return;
+      if (!slug) return ($("riProgress").textContent = "Pick a book first.");
+      if (!confirm("Import will replace the current screenplay. Continue?")) {
+        importFile.value = "";
+        return;
+      }
+      try {
+        $("riProgress").textContent = `Importing ${file.name}…`;
+        const base64 = await fileToBase64(file);
+        const result = await api("/api/readin_import", {
+          project: slug,
+          file: { name: file.name, content_base64: base64 }
+        });
+        $("riProgress").textContent = `Imported ${result.imported} of ${result.total_plan_scenes} scenes. Refreshing…`;
+        importFile.value = "";
+        await load();
+      } catch (e) {
+        $("riProgress").textContent = e.message || "Import failed";
+        importFile.value = "";
+      }
+    });
+  }
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(",")[1] || "");
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
   async function cost() {
     if (!slug) return;
     try {

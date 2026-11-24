@@ -1,47 +1,126 @@
 // studio/shell.js - tab navigation, stepper, command palette, settings, shortcuts, drag and drop, initialisation
 // Classic script: shares globals with the other studio/*.js files; load order is set in index.html.
-// ===== TAB NAVIGATION =====
+// ===== TAB & UNIFIED 4-WORKSPACE NAVIGATION =====
+const WORKSPACE_TO_TAB = {
+    'film-studio': 'project',
+    'project': 'project',
+    'apps': 'apps',
+    'canvas-compare': 'compare',
+    'compare': 'compare',
+    'models-hardware': 'models',
+    'models': 'models',
+};
+
+const TAB_TO_WORKSPACE = {
+    'project': 'film-studio',
+    'apps': 'apps',
+    'compare': 'canvas-compare',
+    'models': 'models-hardware',
+};
+
+let _appsMounted = false;
+let _canvasMounted = false;
+let _packsMounted = false;
+let _suppressHashChange = false;
+
+function activateWorkspaceTab(rawKey, updateHash = true) {
+    const cleanKey = String(rawKey || '').replace(/^#/, '').trim().toLowerCase();
+    const tabName = WORKSPACE_TO_TAB[cleanKey] || 'project';
+    const wsName = TAB_TO_WORKSPACE[tabName] || 'film-studio';
+
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const wsPanels = document.querySelectorAll('[data-workspace-panel], .workspace-panel');
+
+    tabBtns.forEach(b => {
+        const isMatch = b.dataset.tab === tabName || b.dataset.workspace === wsName;
+        b.classList.toggle('active', isMatch);
+        b.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    });
+
+    wsPanels.forEach(panel => {
+        const isMatch = panel.id === ('panel-' + tabName) || panel.dataset.workspacePanel === wsName;
+        panel.classList.toggle('active', isMatch);
+        panel.classList.toggle('hidden', !isMatch);
+        panel.setAttribute('aria-hidden', isMatch ? 'false' : 'true');
+    });
+
+    document.body.classList.toggle('workspace-non-film', tabName !== 'project');
+
+    // Save to localStorage and URL hash
+    try {
+        localStorage.setItem('activeTab', tabName);
+        localStorage.setItem('activeWorkspace', wsName);
+    } catch (e) { /* private window */ }
+
+    if (updateHash) {
+        try {
+            _suppressHashChange = true;
+            window.location.hash = '#' + wsName;
+        } catch (e) { /* ignore */ }
+        setTimeout(() => { _suppressHashChange = false; }, 0);
+    }
+
+    // Lazily mount workspace widgets when their tab opens
+    if (tabName === 'apps' && !_appsMounted && typeof window.initAppsGallery === 'function') {
+        const host = document.getElementById('appsGalleryHost');
+        if (host) {
+            _appsMounted = true;
+            Promise.resolve(window.initAppsGallery(host)).catch(() => {});
+        }
+    } else if (tabName === 'compare' && !_canvasMounted && typeof window.mountCanvasStudio === 'function') {
+        const host = document.getElementById('canvasStudioHost');
+        if (host) {
+            _canvasMounted = true;
+            try { window.mountCanvasStudio(host, {}); } catch (e) {}
+        }
+    } else if (tabName === 'models' && !_packsMounted && typeof window.initPacksVram === 'function') {
+        const host = document.getElementById('packsVramHost');
+        if (host) {
+            _packsMounted = true;
+            Promise.resolve(window.initPacksVram(host)).catch(() => {});
+        }
+    }
+}
+
 function initTabs() {
     const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabPanels = document.querySelectorAll('.tab-panel');
-    
+    const subBtns = document.querySelectorAll('#legacySubTabs [data-tab]');
+
     tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            const tabName = btn.dataset.tab;
-            
-            // Update buttons
-            tabBtns.forEach(b => {
-                b.classList.remove('active');
-                b.setAttribute('aria-selected', 'false');
-            });
-            btn.classList.add('active');
-            btn.setAttribute('aria-selected', 'true');
-            
-            // Update panels
-            tabPanels.forEach(panel => {
-                panel.classList.remove('active');
-                panel.setAttribute('aria-hidden', 'true');
-            });
-            const activePanel = document.getElementById('panel-' + tabName);
-            if (activePanel) {
-                activePanel.classList.add('active');
-                activePanel.setAttribute('aria-hidden', 'false');
-            }
-            
-            // The book-to-film rail is about the chosen book; Single Prompts has nothing to do with it
-            const offBook = tabName === 'prompts';
-            document.getElementById('pipelineStepper')?.classList.toggle('hidden', offBook);
-            document.getElementById('stepperHint')?.classList.toggle('hidden', offBook);
-
-            // Save to localStorage
-            try { localStorage.setItem('activeTab', tabName); } catch (e) { /* private window: the tab is just not remembered */ }
+            activateWorkspaceTab(btn.dataset.workspace || btn.dataset.tab, true);
         });
     });
-    
-    // Restore active tab
-    const savedTab = localStorage.getItem('activeTab') || 'project';
-    const savedBtn = document.querySelector('.tab-btn[data-tab="' + savedTab + '"]');
-    if (savedBtn) savedBtn.click();
+
+    subBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabName = btn.dataset.tab;
+            if (WORKSPACE_TO_TAB[tabName]) {
+                activateWorkspaceTab(tabName, true);
+            }
+        });
+    });
+
+    window.addEventListener('hashchange', () => {
+        if (_suppressHashChange) return;
+        const hashKey = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
+        activateWorkspaceTab(WORKSPACE_TO_TAB[hashKey] ? hashKey : 'project', false);
+    });
+
+    // Restore active workspace from hash or localStorage with safe fallback to 'project'
+    const hashKey = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
+    let initialKey = 'project';
+    if (hashKey && WORKSPACE_TO_TAB[hashKey]) {
+        initialKey = hashKey;
+    } else {
+        try {
+            const savedWs = (localStorage.getItem('activeWorkspace') || '').trim().toLowerCase();
+            const savedTab = (localStorage.getItem('activeTab') || '').trim().toLowerCase();
+            if (savedWs && WORKSPACE_TO_TAB[savedWs]) initialKey = savedWs;
+            else if (savedTab && WORKSPACE_TO_TAB[savedTab]) initialKey = savedTab;
+        } catch (e) {}
+    }
+    activateWorkspaceTab(initialKey, false);
 }
 
 // ===== no autofill anywhere =====
@@ -484,10 +563,10 @@ function initSettingsModal() {
 // ===== KEYBOARD SHORTCUTS FOR TABS =====
 function initTabShortcuts() {
     document.addEventListener('keydown', (e) => {
-        // Number keys 1-6 for the 6 tabs (when not in input)
-        if (e.key >= '1' && e.key <= '6' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
-            const tabs = document.querySelectorAll('.tab-btn');
-            const idx = parseInt(e.key) - 1;
+        // Number keys 1-4 for the 4 unified workspaces (when not in input)
+        if (e.key >= '1' && e.key <= '4' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+            const tabs = document.querySelectorAll('nav.tab-nav .tab-btn');
+            const idx = parseInt(e.key, 10) - 1;
             if (tabs[idx]) tabs[idx].click();
         }
     });
@@ -582,13 +661,13 @@ document.addEventListener('DOMContentLoaded', () => {
     initTabShortcuts();
     initDropZone();
     initCopyButtons();
-    
+
     // Hook into loadStatus to update stepper
     const originalLoadStatus = loadStatus;
     loadStatus = async function(applyDef) {
         await originalLoadStatus(applyDef);
         updateStepper(cur());
-        
+
         // Update status badge
         const badge = $('statusBadge');
         if (badge) {
@@ -596,7 +675,21 @@ document.addEventListener('DOMContentLoaded', () => {
             badge.querySelector('span:last-child').textContent = 'Connected';
         }
     };
-    
+
+    // If initial loadStatus already completed (it runs in direction.js before this script loads),
+    // update the badge now. The 'loaded' flag is set in core.js after loadStatus completes.
+    // Also check if the tools element doesn't show an error (loadStatus shows "Cannot reach studio.py: ..." on failure).
+    const toolsEl = $('tools');
+    const loadSucceeded = (typeof loaded !== "undefined" && loaded) ||
+                           (toolsEl && !toolsEl.textContent.includes("Cannot reach studio.py"));
+    if (loadSucceeded) {
+        const badge = $('statusBadge');
+        if (badge && badge.querySelector('span:last-child')?.textContent === 'Connecting…') {
+            badge.className = 'status-badge ok';
+            badge.querySelector('span:last-child').textContent = 'Connected';
+        }
+    }
+
     // The rail shows the chosen book, so redraw it when another book is picked
     $('proj').addEventListener('change', () => updateStepper(cur()));
 });

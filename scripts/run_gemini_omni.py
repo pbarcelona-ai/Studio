@@ -145,7 +145,7 @@ def _upload_and_wait(client: Any, file_path: str | Path, strip_audio: bool = Fal
             temp_stripped = p.parent / f".tmp_noaudio_{uuid.uuid4().hex}{p.suffix}"
             proc = subprocess.run(
                 ["ffmpeg", "-y", "-i", str(p), "-c:v", "copy", "-an", str(temp_stripped)],
-                capture_output=True, text=True
+                stdin=subprocess.DEVNULL, capture_output=True, text=True
             )
             if proc.returncode != 0:
                 raise RuntimeError(f"ffmpeg strip-audio failed: {sanitize_error(proc.stderr)}")

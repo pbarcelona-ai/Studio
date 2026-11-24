@@ -49,14 +49,21 @@ def keyframe_folder(pd):
 def build_call(model, spec, row):
     """(api_name, kwargs) for this model and CSV row."""
     d = spec["defaults"]
-    prompt = row["prompt"]
+    style = spec["style"]
+    if "prompt" in row and (row.get("prompt") or "").strip():
+        prompt = row["prompt"]
+    elif style == "mmaudio":
+        prompt = row.get("sfx") or ""
+    elif style == "f5_tts":
+        prompt = row.get("narration") or ""
+    else:
+        prompt = row["prompt"]
     seed = num(row, "seed", None, int)
     base_seed = {"seed": seed if seed is not None else random.randint(0, 2**31 - 1), "randomize_seed": False}
     w = snap(num(row, "width", d.get("width", 1024), int), 32, 256, 2048) if d.get("width") else None
     h = snap(num(row, "height", d.get("height", 1024), int), 32, 256, 2048) if d.get("height") else None
     steps = num(row, "steps", d.get("steps"), int) if d.get("steps") else None
     guid = num(row, "guidance", d.get("guidance"), float) if d.get("guidance") is not None else None
-    style = spec["style"]
     if style == "flux":
         kw = {"prompt": prompt, **base_seed, "width": w, "height": h, "num_inference_steps": steps}
         if guid is not None:
@@ -81,6 +88,19 @@ def build_call(model, spec, row):
                              "seconds": num(row, "seconds", d["seconds"], float), "seed": base_seed["seed"], "randomize": False}
     if style == "cogvideox":
         return spec["api"], {"prompt": prompt, "seed_value": base_seed["seed"], "scale_status": False, "rife_status": False}
+    if style == "wan":
+        from gradio_client import handle_file
+        kw = {"prompt": prompt, "seconds": num(row, "seconds", d.get("seconds", 5), float),
+              "resolution": d.get("resolution", "720p"), **base_seed}
+        if row.get("_keyframe"):
+            kw["image"] = handle_file(row["_keyframe"])
+        return spec["api"], kw
+    if style == "ltx":
+        return spec["api"], {"prompt": prompt, "seconds": num(row, "seconds", d.get("seconds", 5), float), **base_seed}
+    if style == "mmaudio":
+        return spec["api"], {"prompt": prompt, "duration": num(row, "seconds", d.get("seconds", 5), float), "seed": base_seed["seed"]}
+    if style == "f5_tts":
+        return spec["api"], {"gen_text": row.get("narration") or prompt, "prompt": prompt}
     raise SystemExit(f"no call style {style!r} for {model}")
 
 
@@ -99,20 +119,23 @@ def as_path(x):
 def main():
     if len(sys.argv) != 4:
         sys.exit(__doc__)
-    model, start, end = sys.argv[1].removeprefix("image_"), int(sys.argv[2]), int(sys.argv[3])
+    model, start, end = sys.argv[1].removeprefix("image_").removeprefix("audio_"), int(sys.argv[2]), int(sys.argv[3])
     spec = hf_spaces.SPACES.get(model)
     if not spec:
         sys.exit(f"!! {model} has no Hugging Face Space in hf_spaces.py")
+    kind = str(spec["kind"])
     project = os.environ.get("PROJECT") or sys.exit("!! set PROJECT to the prompt set name")
-    csv_name = os.environ.get("SHOTS_CSV") or ("all_images.csv" if spec["kind"] == "image" else "all_shots.csv")
+    csv_name = os.environ.get("SHOTS_CSV") or {"image": "all_images.csv", "audio": "audio_shots.csv"}.get(kind, "all_shots.csv")
     pd = layout.find_dir(project)
     if not pd:
         sys.exit(f"!! no such project: {project}")
     rows = list(csv.DictReader(open(pd / csv_name, newline="")))
-    sub = "images" if spec["kind"] == "image" else "videos"
+    sub = {"image": "images", "audio": "audio"}.get(kind, "videos")
     out = pd / sub / model
     if "chapters" in csv_name:
         out = Path(str(out) + "_chapters")
+    elif "scenes" in csv_name:
+        out = Path(str(out) + "_scenes")
     out.mkdir(parents=True, exist_ok=True)
 
     from gradio_client import Client
@@ -126,20 +149,30 @@ def main():
     made = failed = 0
     for i in range(start, min(end, len(rows)) + 1):
         row = rows[i - 1]
-        dest = out / (f"image-{i:04d}.png" if spec["kind"] == "image" else f"shot-{i:04d}.mp4")
+        if kind == "image":
+            dest_name = f"image-{i:04d}.png"
+        elif kind == "audio":
+            prefix = "sfx" if spec["style"] == "mmaudio" else "narration" if spec["style"] == "f5_tts" else "audio"
+            dest_name = f"{prefix}-{i:04d}.wav"
+        else:
+            dest_name = f"shot-{i:04d}.mp4"
+        dest = out / dest_name
         if dest.exists():
             print(f"[{i}/{end}] already there: {dest.name}", flush=True)
             continue
         t0 = time.time()
         try:
+            kf_path = keyframe_folder(pd) / f"image-{i:04d}.png"
             if spec["style"] == "pika":
-                row = dict(row, _keyframe=str(keyframe_folder(pd) / f"image-{i:04d}.png"))
-                if not Path(row["_keyframe"]).is_file():
-                    raise FileNotFoundError(f"no keyframe {row['_keyframe']}: make keyframes for this row first")
+                if not kf_path.is_file():
+                    raise FileNotFoundError(f"no keyframe {kf_path}: make keyframes for this row first")
+                row = dict(row, _keyframe=str(kf_path))
+            elif spec["style"] == "wan" and kf_path.is_file():
+                row = dict(row, _keyframe=str(kf_path))
             api, kwargs = build_call(model, spec, row)
             res = client.predict(**kwargs, api_name=api)
             src = as_path(res[0] if isinstance(res, (list, tuple)) else res)
-            if spec["kind"] == "image":
+            if kind == "image":
                 from PIL import Image
                 Image.open(src).convert("RGB").save(dest, "PNG")
             else:
@@ -155,7 +188,8 @@ def main():
                 print("!! The Hugging Face GPU quota is used up" + (f"; it comes back in {wait.group(1)}" if wait else " for now") + ". "
                       + ("A paid Hugging Face PRO account has a larger daily quota." if token else "Set HF_TOKEN to use your own account's quota.") + " Rows already made are kept.", flush=True)
                 break
-    print(f"✅ {len(list(out.glob('*.png' if spec['kind'] == 'image' else '*.mp4')))} files now in {out}", flush=True)
+    glob_pat = {"image": "*.png", "audio": "*.wav"}.get(kind, "*.mp4")
+    print(f"✅ {len(list(out.glob(glob_pat)))} files now in {out}", flush=True)
     if made == 0 and failed:
         sys.exit(1)
 

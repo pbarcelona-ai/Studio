@@ -198,15 +198,20 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
         model = ""
     if engine == "claude" and not model:
         model = "sonnet"
+    image_data_uri = None
     if image and family in ("hf", "local"):
-        raise RuntimeError("pictures go to the hf and local engines through hf_json, not llm_json")
+        import base64
+        import mimetypes
+        mime = mimetypes.guess_type(str(image))[0] or "image/jpeg"
+        b64 = base64.b64encode(Path(image).read_bytes()).decode("ascii")
+        image_data_uri = f"data:{mime};base64,{b64}"
     feedback = ""
     last: Exception | None = None
     refused = False
-    img_dir = tempfile.TemporaryDirectory() if image else None
+    img_dir = tempfile.TemporaryDirectory() if (image and family not in ("hf", "local")) else None
     img_path = Path(img_dir.name) if img_dir else Path()
     img_name = ""
-    if image:
+    if image and img_dir:
         img_name = "picture" + (Path(image).suffix.lower() or ".jpg")
         shutil.copyfile(image, img_path / img_name)
         if family == "claude":
@@ -229,8 +234,11 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
             text = outer.get("result", "")
         elif family in ("hf", "local"):
             chat = hf_chat if family == "hf" else local_chat
+            user_content: object = ([{"type": "text", "text": prompt + feedback},
+                                     {"type": "image_url", "image_url": {"url": image_data_uri}}]
+                                    if image_data_uri else (prompt + feedback))
             try:
-                text = chat([{"role": "system", "content": system}, {"role": "user", "content": prompt + feedback}], model or (HF_DEFAULT_MODEL if family == "hf" else ""))
+                text = chat([{"role": "system", "content": system}, {"role": "user", "content": user_content}], model or (HF_DEFAULT_MODEL if family == "hf" else ""))
             except RuntimeError as e:
                 if "HF_TOKEN is not set" in str(e) or "choose a local model" in str(e) or "could not reach" in str(e) or "refused" in str(e):
                     raise                                    # retrying cannot fix a missing token, a missing model name or a server that is not there

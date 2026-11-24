@@ -1,8 +1,7 @@
 """Tests for direct Cloud API execution (scripts/run_cloud_api.py)."""
-import json
-from pathlib import Path
 import pytest
 
+import layout
 import run_cloud_api as rca
 from runner_common import RunError
 
@@ -43,7 +42,7 @@ def test_generate_image_row_success(tmp_path, monkeypatch):
 
     # Mock API call and download
     monkeypatch.setattr(rca, "call_fal_api", lambda ep, payload, key: {"images": [{"url": "https://example.com/test.png"}]})
-    
+
     def fake_download(url, dest):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text("fake_png_data")
@@ -90,7 +89,7 @@ def test_main_cli_execution(tmp_path, monkeypatch):
     csv_path.write_text("prompt,seed,width,height\nfirst image,1,512,512\nsecond image,2,512,512\n", encoding="utf-8")
 
     monkeypatch.setenv("PROJECT", "demo_book")
-    monkeypatch.setattr(rca.layout, "project_dir", lambda p: book_dir)
+    monkeypatch.setattr(layout, "project_dir", lambda p: book_dir)
     monkeypatch.setattr(rca, "load_api_keys", lambda: {"fal": "mock_key"})
     monkeypatch.setattr(rca, "call_fal_api", lambda ep, payload, key: {"images": [{"url": "https://example.com/mock.png"}]})
     monkeypatch.setattr(rca, "download_file", lambda url, dest: dest.write_text("mock") or dest)

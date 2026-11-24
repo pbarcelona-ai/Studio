@@ -1,0 +1,19 @@
+┌───────────────────────────────────────────────┬────────────┬──────────────────────────────────────────────────────────────────┐
+│                     Risk                      │ Likelihood │                            Mitigation                            │
+├───────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────┤
+│ Scope creep (trying to do all phases at once) │ High       │ Strict phase gates; demo mode must ship first                    │
+├───────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────┤
+│ Frontend rewrite breaks Flow                  │ Medium     │ Keep Flow as separate HTML/JS; rewrite incrementally             │
+├───────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────┤
+│ Model API changes break notebooks             │ High       │ Pin diffusers/transformers versions in catalog.json; test weekly │
+├───────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────┤
+│ Kaggle/Colab policy changes                   │ Medium     │ Local GPU path is the long-term fallback; invest there           │
+├───────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────┤
+│ User abandonment at Setup                     │ Very High  │ Demo mode without credentials is the single highest-impact fix   │
+└───────────────────────────────────────────────┴────────────┴──────────────────────────────────────────────────────────────────┘
+
+---
+
+Verdict
+
+Studio is a remarkable engineering achievement — a complete film pipeline in ~50K lines of Python/JS with serious architectural discipline. But it's a tool for the author, not for users yet.

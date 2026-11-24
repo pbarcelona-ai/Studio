@@ -1,0 +1,149 @@
+{
+  "$schema": "../../schema/app.schema.json",
+  "id": "face-swap",
+  "name": "Face Swap",
+  "section": "image",
+  "summary": "Puts the face from a second photo onto the first; for faces you own or have permission to use.",
+  "higgsfield_feature": "Face Swap",
+  "pack": "image-flux3",
+  "status": "ready",
+  "workflow": "workflow.api.json",
+  "source": {
+    "template": "image_flux3_klein_distilled_image_edit.json",
+    "comfyui": "0.42.0",
+    "notes": "Template app written by tools/template_apps.py: the workflow is apps/edit's (built by tools/build_apps.py) plus a second LoadImage on ReferenceMultiLatent's images.image1; the sampler starts from the first image (scaled to 1 MP, encoded) with a noise mask on the face oval that the native MediaPipe nodes find, so only the face is redrawn, and the second image is Klein's only reference; the prompt below is fixed and \"Extra direction\" is appended to it."
+  },
+  "inputs": [
+    {
+      "id": "image",
+      "type": "image",
+      "label": "Photo to edit",
+      "required": true,
+      "limits": {
+        "max_mb": 20
+      },
+      "help": "Only faces you own or have permission to use.",
+      "bind": [
+        {
+          "node": "11",
+          "field": "image"
+        }
+      ]
+    },
+    {
+      "id": "image2",
+      "type": "image",
+      "label": "Photo of the face",
+      "required": true,
+      "limits": {
+        "max_mb": 20
+      },
+      "bind": [
+        {
+          "node": "12",
+          "field": "image"
+        }
+      ]
+    },
+    {
+      "id": "details",
+      "type": "textarea",
+      "label": "Extra direction",
+      "default": "",
+      "help": "Added at the end of the app's prompt.",
+      "bind": [
+        {
+          "node": "4",
+          "field": "text",
+          "template": "Give this person exactly the face of the person in image 1: the same eyes, nose, mouth, brows and face shape as image 1. Keep this photo's own hairline and hair; match its head angle, expression, lighting and skin tone. {details}"
+        }
+      ]
+    },
+    {
+      "id": "steps",
+      "type": "slider",
+      "label": "Steps",
+      "min": 8,
+      "max": 32,
+      "step": 1,
+      "default": 16,
+      "bind": [
+        {
+          "node": "7",
+          "field": "steps"
+        }
+      ]
+    },
+    {
+      "id": "seed",
+      "type": "seed",
+      "label": "Seed",
+      "default": -1,
+      "help": "-1 picks a random seed",
+      "bind": [
+        {
+          "node": "7",
+          "field": "seed"
+        }
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "node": "9",
+      "type": "image",
+      "label": "Result"
+    }
+  ],
+  "models": [
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "diffusion_models/flux3-image-klein-int8-convrot.safetensors",
+      "dir": "diffusion_models",
+      "gb": 5.83,
+      "phase": "denoise",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    },
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "text_encoders/qwen3vl_4b_int8_convrot.safetensors",
+      "dir": "text_encoders",
+      "gb": 4.86,
+      "phase": "encode",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    },
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "vae/flux2-vae.safetensors",
+      "dir": "vae",
+      "gb": 0.34,
+      "phase": "decode",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    },
+    {
+      "repo": "Comfy-Org/mediapipe",
+      "file": "detection/mediapipe_face_fp32.safetensors",
+      "dir": "detection",
+      "gb": 0.01,
+      "phase": "encode",
+      "license": "Apache-2.0"
+    }
+  ],
+  "credits": [
+    "FLUX 3 Image Klein by Black Forest Labs (FLUX Kommunity License)",
+    "MediaPipe Face Landmarker (Google, Apache-2.0), ComfyUI port: Comfy-Org/mediapipe"
+  ],
+  "test": {
+    "image": "test/portrait.png",
+    "image2": "test/second.png"
+  },
+  "min_vram_gb": 5.83,
+  "platforms": [
+    "win_cuda",
+    "linux_cuda",
+    "mac_metal"
+  ]
+}

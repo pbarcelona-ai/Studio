@@ -40,7 +40,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import NoReturn
+from typing import Any, NoReturn
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import layout  # noqa: E402  (project-local: finds projects/books/<book>)
@@ -90,19 +90,23 @@ def is_blackwell_gpu(gpu_name: str, compute_cap: str) -> bool:
                                     "gb202", "gb203", "gb205", "gb206", "gb207")))
 
 
-def gpu_optimizations(gpu_name: str, compute_cap: str, vram_gb: float) -> dict:
+def gpu_optimizations(gpu_name: str, compute_cap: str, vram_gb: float | None) -> dict[str, Any]:
     """Return optimization settings for the detected GPU."""
-    opts = {
+    opts: dict[str, Any] = {
         "use_bf16": False,
         "use_flash_attn": False,
         "use_torch_compile": False,
         "compile_mode": "default",
         "attn_implementation": "auto",
         "memory_fraction": 0.95,
+        "allow_cpu_offload": not (vram_gb is not None and vram_gb >= 40),
     }
 
     is_blackwell = is_blackwell_gpu(gpu_name, compute_cap)
-    is_ampere_or_newer = compute_cap and float(compute_cap) >= 8.0  # Ampere (RTX 30) = 8.0
+    try:
+        is_ampere_or_newer = bool(compute_cap) and float(compute_cap) >= 8.0  # Ampere (RTX 30) = 8.0
+    except ValueError:
+        is_ampere_or_newer = False
 
     if is_blackwell:
         # RTX 5090 / Blackwell: full optimization stack
@@ -111,7 +115,8 @@ def gpu_optimizations(gpu_name: str, compute_cap: str, vram_gb: float) -> dict:
         opts["use_torch_compile"] = True           # torch.compile with Triton
         opts["compile_mode"] = "max-autotune"      # Best for inference on fixed shapes
         opts["attn_implementation"] = "flash_attention_2"
-        opts["memory_fraction"] = 0.98             # 24 GB VRAM, can use almost all
+        opts["memory_fraction"] = 0.98             # High VRAM (24-48 GB), can use almost all
+        opts["allow_cpu_offload"] = not (vram_gb is not None and vram_gb >= 40)
     elif is_ampere_or_newer:
         # RTX 30/40 / Ampere/Ada: partial optimizations
         opts["use_bf16"] = True                    # BF16 supported
@@ -130,7 +135,7 @@ def gpu_optimizations(gpu_name: str, compute_cap: str, vram_gb: float) -> dict:
 
     # Adjust for VRAM
     if vram_gb and vram_gb < 16:
-        opts["memory_fraction"] = min(opts["memory_fraction"], 0.80)
+        opts["memory_fraction"] = min(float(opts["memory_fraction"]), 0.80)
     if vram_gb and vram_gb < 12:
         opts["use_torch_compile"] = False  # Compilation needs extra memory
 
@@ -164,6 +169,7 @@ def rocm_info():
 
 
 ROCM_TORCH_INDEX = "https://download.pytorch.org/whl/rocm6.4"     # PyTorch's ROCm build for AMD GPUs (override with STUDIO_TORCH_INDEX)
+BLACKWELL_TORCH_INDEX = "https://download.pytorch.org/whl/cu128"  # PyTorch CUDA 12.8 build for RTX 50-series / Blackwell (sm_120)
 # Models that need NVIDIA-only parts: refused on an AMD GPU (the others run on ROCm's CUDA-compatible PyTorch, untested so far).
 NVIDIA_ONLY = {"hunyuan_video_15": "it loads its weights in 4-bit with bitsandbytes, which is set up here for NVIDIA only",
                "upscale_flashvsr": "it builds a CUDA attention kernel with NVIDIA's compiler",
@@ -244,9 +250,11 @@ def gpu_problem(gpus, platform=None):
     platform = platform or sys.platform
     ready = usable(gpus)
     if ready:
-        if platform.startswith("linux") or (platform == "darwin" and any(g.get("mps_ready") for g in ready)):
+        if (platform.startswith("linux")
+                or (platform == "win32" and any(g.get("nvidia_ready") for g in ready))
+                or (platform == "darwin" and any(g.get("mps_ready") for g in ready))):
             return None
-        return f"{gpu_text(ready[0])} found; the Studio runs models on it only under Linux or Windows WSL 2 (this is {'macOS' if platform == 'darwin' else platform})"
+        return f"{gpu_text(ready[0])} found; the Studio runs models on it only under Linux, Windows (NVIDIA), or macOS (Apple Silicon) (this is {'macOS' if platform == 'darwin' else platform})"
     if not gpus:
         return "no graphics processor found on this computer"
     g = gpus[0]
@@ -279,6 +287,10 @@ def find_notebook(model, tmp):
 def to_script(nb_path, start, end, csv_name, inp, work, gpu_opts=None):
     """(script text, pip lines): the notebook's code cells as one script for this computer, and its "!pip ..." commands.
     gpu_opts: dict with optimization settings from gpu_optimizations()."""
+    if gpu_opts is None:
+        gpu_opts = {}
+    allow_cpu_offload = bool(gpu_opts.get("allow_cpu_offload", True))
+
     nb = json.loads(Path(nb_path).read_text(encoding="utf-8"))
     pip, lines = [], []
     for cell in nb.get("cells", []):
@@ -305,13 +317,12 @@ def to_script(nb_path, start, end, csv_name, inp, work, gpu_opts=None):
             raw = raw.replace("/kaggle/input", inp.as_posix()).replace("/kaggle/working", work.as_posix())
             raw = re.sub(r"""\bsh\((f?["'])apt-get""", r"_studio_apt(\1apt-get", raw)
             raw = raw.replace('.to("cuda")', '.to(_device)').replace("Generator('cuda')", "Generator(_device)").replace('Generator("cuda")', "Generator(_device)")
+            if not allow_cpu_offload and not stripped.startswith("#"):
+                raw = re.sub(r"\.enable_(?:model|sequential)_cpu_offload\(\s*\)", ".to(_device)", raw)
             lines.append(raw)
         lines.append("")
 
     # Build GPU optimization prelude
-    if gpu_opts is None:
-        gpu_opts = {}
-
     use_bf16 = gpu_opts.get("use_bf16", False)
     use_flash_attn = gpu_opts.get("use_flash_attn", False)
     use_torch_compile = gpu_opts.get("use_torch_compile", False)
@@ -384,13 +395,14 @@ except Exception as e:
     print(f"!! Flash Attention SDPA override failed: {{e}}", flush=True)
 '''
 
-    # Memory fraction setting
+    # Memory fraction setting (CUDA only — never emit on Apple Silicon MPS)
     mem_setting = ""
     if mem_frac < 1.0:
         mem_setting = f'''
-# Limit GPU memory allocation
-torch.cuda.set_per_process_memory_fraction({mem_frac})
-print(f"== GPU memory fraction set to {mem_frac:.0%}", flush=True)
+# Limit GPU memory allocation (CUDA only)
+if _device == "cuda":
+    _torch.cuda.set_per_process_memory_fraction({mem_frac})
+    print(f"== GPU memory fraction set to {mem_frac:.0%}", flush=True)
 '''
 
     prelude = f'''# Generated by run_local_model.py from {Path(nb_path).name}: runs on this computer's GPU.
@@ -418,6 +430,7 @@ _has_mps = hasattr(_torch.backends, "mps") and _torch.backends.mps.is_available(
 if not _torch.cuda.is_available() and not _has_mps:
     raise SystemExit("PyTorch in this environment cannot see the GPU (check the NVIDIA driver, ROCm, or Apple Metal MPS, or set STUDIO_TORCH_INDEX to the PyTorch build for your CUDA / ROCm version)")
 _device = "mps" if _has_mps and not _torch.cuda.is_available() else "cuda"
+_ALLOW_CPU_OFFLOAD = {allow_cpu_offload!r}
 
 {autocast_ctx}
 {mem_setting}
@@ -491,7 +504,7 @@ def make_env(pip_lines, log, gpu_opts=None):
     key = hashlib.sha1(recipe.encode()).hexdigest()[:12]
     envs = Path(os.environ.get("STUDIO_GPU_ENVS") or ROOT / ".gpu_envs")
     env = envs / key
-    py = env / "bin" / "python"
+    py = env / ("Scripts" if sys.platform == "win32" else "bin") / ("python.exe" if sys.platform == "win32" else "python")
     if (env / ".studio_ready").is_file() and py.is_file():
         print(f"== Python environment {env} (made earlier)", flush=True)
         return py
@@ -558,12 +571,17 @@ def main(argv=None):
     gpus = usable(found)
     if not gpus or gpu_problem(found):
         die(gpu_problem(found) or "no usable GPU found on this computer")
-    amd = not gpus[0]["nvidia_ready"]
+    amd = bool(gpus[0].get("rocm_ready")) and not gpus[0].get("nvidia_ready")
+    mps = bool(gpus[0].get("mps_ready")) and not gpus[0].get("nvidia_ready")
     print("== GPU: " + "; ".join(gpu_text(g) for g in gpus), flush=True)
-    if amd and model in NVIDIA_ONLY:
-        die(f"{model} cannot run on an AMD GPU: {NVIDIA_ONLY[model]}")
+    if (amd or mps) and model in NVIDIA_ONLY:
+        who = "an AMD GPU" if amd else "Apple Silicon (MPS)"
+        die(f"{model} cannot run on {who}: {NVIDIA_ONLY[model]}")
     if amd and not os.environ.get("STUDIO_TORCH_INDEX"):
         os.environ["STUDIO_TORCH_INDEX"] = ROCM_TORCH_INDEX          # PyTorch's ROCm build; it answers to torch.cuda like CUDA does
+    is_blackwell = bool(gpus[0].get("nvidia_ready")) and is_blackwell_gpu(gpus[0]["name"], gpus[0].get("cap", ""))
+    if is_blackwell and not amd and not os.environ.get("STUDIO_TORCH_INDEX"):
+        os.environ["STUDIO_TORCH_INDEX"] = BLACKWELL_TORCH_INDEX     # PyTorch CUDA 12.8 build for Blackwell (sm_120)
 
     # Compute GPU optimizations for the primary GPU
     gpu_opts = {}

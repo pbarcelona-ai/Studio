@@ -1,0 +1,566 @@
+{
+  "$schema": "../../schema/app.schema.json",
+  "id": "cinema-studio",
+  "name": "Cinema Studio",
+  "section": "image",
+  "pack": "image-flux3",
+  "status": "ready",
+  "higgsfield_feature": "Cinematic Cameras",
+  "modes": [
+    "cinema-studio",
+    "cinema-video"
+  ],
+  "summary": "Pick genre, era, camera body, lens, focal length, aperture, lighting and color palette; they become part of the prompt.",
+  "workflow": "workflow.api.json",
+  "source": {
+    "template": "image_flux3_klein_distilled_t2i.json",
+    "comfyui": "0.42.0",
+    "notes": "Camera and lens vocabulary from open-higgsfield-ai (MIT), src/lib/promptUtils.js. Camera, lens and focal options write the look they give, not the gear: with \"shot on a <camera>\" Z-Image drew the camera into the picture (run 20261020-133620-l40s), and \"no camera in the frame\" did not stop it (run 20261024-172353-h100). Since 25 Oct the still is drawn by FLUX 3 Image Klein (16:9, 1344x768) instead of Z-Image Turbo, without the prompt upsampler: the app writes the whole prompt. Since 26 Oct genre, era, lighting and color palette are selects too (Higgsfield's Cinema Studio 4.0 has film settings, lighting setups and palettes), and aspect ratio and resolution come from create-image's latent and its LatentUpscaleBy node."
+  },
+  "inputs": [
+    {
+      "id": "prompt",
+      "type": "textarea",
+      "label": "Scene",
+      "required": true,
+      "default": "A detective in a trench coat lights a cigarette under a streetlamp on a rainy night",
+      "bind": [
+        {
+          "node": "18:17",
+          "field": "value",
+          "template": "A cinematic film still{genre}{era}: {prompt}. The look: {camera}; {lens}; {focal}; {aperture}. Lighting: {lighting}. Color: {palette}. High dynamic range, ultra-detailed"
+        }
+      ]
+    },
+    {
+      "id": "genre",
+      "type": "select",
+      "label": "Genre",
+      "default": "",
+      "options": [
+        {
+          "value": "",
+          "label": "General"
+        },
+        {
+          "value": " from a drama",
+          "label": "Drama"
+        },
+        {
+          "value": " from a film noir",
+          "label": "Noir"
+        },
+        {
+          "value": " from a comedy",
+          "label": "Comedy"
+        },
+        {
+          "value": " from a horror film",
+          "label": "Horror"
+        },
+        {
+          "value": " from an action film",
+          "label": "Action"
+        },
+        {
+          "value": " from an epic",
+          "label": "Epic"
+        },
+        {
+          "value": " from a science-fiction film",
+          "label": "Sci-fi"
+        },
+        {
+          "value": " from a western",
+          "label": "Western"
+        }
+      ],
+      "bind": [],
+      "help": "The kind of film the still comes from."
+    },
+    {
+      "id": "era",
+      "type": "select",
+      "label": "Era",
+      "default": "",
+      "options": [
+        {
+          "value": "",
+          "label": "Any"
+        },
+        {
+          "value": " set in the 1920s",
+          "label": "1920s"
+        },
+        {
+          "value": " set in the 1950s",
+          "label": "1950s"
+        },
+        {
+          "value": " set in the 1960s",
+          "label": "1960s"
+        },
+        {
+          "value": " set in the 1970s",
+          "label": "1970s"
+        },
+        {
+          "value": " set in the 1980s",
+          "label": "1980s"
+        },
+        {
+          "value": " set in the 1990s",
+          "label": "1990s"
+        },
+        {
+          "value": " set in the 2000s",
+          "label": "2000s"
+        },
+        {
+          "value": " set in the present day",
+          "label": "Present day"
+        },
+        {
+          "value": " set in the near future",
+          "label": "Future"
+        }
+      ],
+      "bind": []
+    },
+    {
+      "id": "camera",
+      "type": "select",
+      "label": "Camera",
+      "default": "the full-frame digital cinema look, natural and smooth",
+      "options": [
+        {
+          "value": "the crisp, clean detail of 8K digital cinema",
+          "label": "Modular 8K Digital"
+        },
+        {
+          "value": "the full-frame digital cinema look, natural and smooth",
+          "label": "Full-Frame Cine Digital"
+        },
+        {
+          "value": "the rich detail and fine grain of large-format 70mm film",
+          "label": "Grand Format 70mm Film"
+        },
+        {
+          "value": "the polished Super 35 digital studio look",
+          "label": "Studio Digital S35"
+        },
+        {
+          "value": "the soft, grainy texture of 16mm film",
+          "label": "Classic 16mm Film"
+        },
+        {
+          "value": "the smooth, wide-latitude large-format digital look",
+          "label": "Premium Large Format Digital"
+        }
+      ]
+    },
+    {
+      "id": "lens",
+      "type": "select",
+      "label": "Lens",
+      "default": "a classic anamorphic widescreen look with oval bokeh and blue streak flares",
+      "options": [
+        {
+          "value": "tilt-shift selective focus",
+          "label": "Creative Tilt Lens"
+        },
+        {
+          "value": "subtle anamorphic oval bokeh and horizontal flares",
+          "label": "Compact Anamorphic"
+        },
+        {
+          "value": "extreme macro detail",
+          "label": "Extreme Macro"
+        },
+        {
+          "value": "the warm, slightly soft rendering of 1970s cinema glass",
+          "label": "70s Cinema Prime"
+        },
+        {
+          "value": "a classic anamorphic widescreen look with oval bokeh and blue streak flares",
+          "label": "Classic Anamorphic"
+        },
+        {
+          "value": "clean, sharp modern rendering",
+          "label": "Premium Modern Prime"
+        },
+        {
+          "value": "warm-toned cinematic rendering",
+          "label": "Warm Cinema Prime"
+        },
+        {
+          "value": "swirling vintage bokeh",
+          "label": "Swirl Bokeh Portrait"
+        },
+        {
+          "value": "soft vintage rendering with gentle flare",
+          "label": "Vintage Prime"
+        },
+        {
+          "value": "a halation glow around the highlights",
+          "label": "Halation Diffusion"
+        },
+        {
+          "value": "ultra-sharp clinical detail",
+          "label": "Clinical Sharp Prime"
+        }
+      ]
+    },
+    {
+      "id": "focal",
+      "type": "select",
+      "label": "Focal length",
+      "default": "a natural 35mm perspective",
+      "options": [
+        {
+          "value": "an ultra-wide 8mm perspective",
+          "label": "8 mm"
+        },
+        {
+          "value": "a wide-angle 14mm perspective",
+          "label": "14 mm"
+        },
+        {
+          "value": "a dynamic wide 24mm perspective",
+          "label": "24 mm"
+        },
+        {
+          "value": "a natural 35mm perspective",
+          "label": "35 mm"
+        },
+        {
+          "value": "a standard 50mm perspective",
+          "label": "50 mm"
+        },
+        {
+          "value": "a classic 85mm portrait perspective",
+          "label": "85 mm"
+        }
+      ]
+    },
+    {
+      "id": "aperture",
+      "type": "select",
+      "label": "Aperture",
+      "default": "aperture f/1.4, shallow depth of field, creamy bokeh",
+      "options": [
+        {
+          "value": "aperture f/1.4, shallow depth of field, creamy bokeh",
+          "label": "f/1.4"
+        },
+        {
+          "value": "aperture f/4, balanced depth of field",
+          "label": "f/4"
+        },
+        {
+          "value": "aperture f/11, deep focus clarity, sharp foreground to background",
+          "label": "f/11"
+        }
+      ]
+    },
+    {
+      "id": "lighting",
+      "type": "select",
+      "label": "Lighting",
+      "default": "cinematic lighting",
+      "options": [
+        {
+          "value": "cinematic lighting",
+          "label": "Auto"
+        },
+        {
+          "value": "the subject in silhouette against a bright background",
+          "label": "Silhouette"
+        },
+        {
+          "value": "lit only by practical lamps visible in the scene",
+          "label": "Practicals"
+        },
+        {
+          "value": "soft daylight from a single window at the side",
+          "label": "Window"
+        },
+        {
+          "value": "a hard light falling from straight above, deep shadows under the brow",
+          "label": "Overhead"
+        },
+        {
+          "value": "a strong light behind the subject, a glowing rim and flare",
+          "label": "Backlight"
+        },
+        {
+          "value": "two soft lights crossing from opposite sides",
+          "label": "Soft cross"
+        },
+        {
+          "value": "low-key lighting, mostly shadow, one small key light",
+          "label": "Low key"
+        },
+        {
+          "value": "colored light from neon signs, magenta and cyan",
+          "label": "Neon"
+        }
+      ],
+      "bind": []
+    },
+    {
+      "id": "palette",
+      "type": "select",
+      "label": "Color palette",
+      "default": "natural color science",
+      "options": [
+        {
+          "value": "natural color science",
+          "label": "Auto"
+        },
+        {
+          "value": "teal shadows and warm orange skin tones",
+          "label": "Teal and orange"
+        },
+        {
+          "value": "desaturated, high-contrast bleach-bypass color",
+          "label": "Bleach bypass"
+        },
+        {
+          "value": "warm amber and brown tones",
+          "label": "Warm amber"
+        },
+        {
+          "value": "cold blue and steel-gray tones",
+          "label": "Cold blue"
+        },
+        {
+          "value": "deep emerald greens with gold highlights",
+          "label": "Emerald and gold"
+        },
+        {
+          "value": "soft pastel colors, low contrast",
+          "label": "Pastel"
+        },
+        {
+          "value": "saturated magenta, cyan and violet",
+          "label": "Neon night"
+        },
+        {
+          "value": "faded film colors with lifted blacks",
+          "label": "Faded film"
+        },
+        {
+          "value": "black and white",
+          "label": "Monochrome"
+        },
+        {
+          "value": "sepia-toned",
+          "label": "Sepia"
+        },
+        {
+          "value": "deep crimson reds against black",
+          "label": "Crimson"
+        },
+        {
+          "value": "earthy ochre, olive and rust tones",
+          "label": "Earth tones"
+        }
+      ],
+      "bind": []
+    },
+    {
+      "id": "aspect",
+      "type": "select",
+      "label": "Aspect ratio",
+      "default": "16:9",
+      "options": [
+        {
+          "value": "16:9",
+          "label": "16:9",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 1344
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 768
+            }
+          ]
+        },
+        {
+          "value": "21:9",
+          "label": "21:9",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 1536
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 640
+            }
+          ]
+        },
+        {
+          "value": "4:3",
+          "label": "4:3",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 1152
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 864
+            }
+          ]
+        },
+        {
+          "value": "1:1",
+          "label": "1:1",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 1024
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 1024
+            }
+          ]
+        },
+        {
+          "value": "4:5",
+          "label": "4:5",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 896
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 1120
+            }
+          ]
+        },
+        {
+          "value": "9:16",
+          "label": "9:16",
+          "sets": [
+            {
+              "node": "18:6",
+              "field": "width",
+              "value": 768
+            },
+            {
+              "node": "18:6",
+              "field": "height",
+              "value": 1344
+            }
+          ]
+        }
+      ],
+      "bind": []
+    },
+    {
+      "id": "resolution",
+      "type": "select",
+      "label": "Resolution",
+      "default": 1,
+      "options": [
+        {
+          "value": 1,
+          "label": "1K"
+        },
+        {
+          "value": 1.5,
+          "label": "1.5K"
+        },
+        {
+          "value": 2,
+          "label": "2K"
+        }
+      ],
+      "bind": [
+        {
+          "node": "ff_res",
+          "field": "scale_by"
+        }
+      ]
+    },
+    {
+      "id": "seed",
+      "type": "seed",
+      "label": "Seed",
+      "default": -1,
+      "help": "-1 picks a random seed",
+      "bind": [
+        {
+          "node": "18:7",
+          "field": "seed"
+        }
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "node": "9",
+      "type": "image",
+      "label": "Still"
+    }
+  ],
+  "models": [
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "diffusion_models/flux3-image-klein-int8-convrot.safetensors",
+      "dir": "diffusion_models",
+      "gb": 5.83,
+      "phase": "denoise",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    },
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "text_encoders/qwen3vl_4b_int8_convrot.safetensors",
+      "dir": "text_encoders",
+      "gb": 4.86,
+      "phase": "encode",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    },
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "vae/flux2-vae.safetensors",
+      "dir": "vae",
+      "gb": 0.34,
+      "phase": "decode",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    }
+  ],
+  "credits": [
+    "FLUX 3 Image Klein by Black Forest Labs (FLUX Kommunity License)",
+    "Camera presets from open-higgsfield-ai (MIT)"
+  ],
+  "test": {
+    "prompt": "a lighthouse in a storm"
+  },
+  "min_vram_gb": 5.83,
+  "platforms": [
+    "win_cuda",
+    "linux_cuda",
+    "mac_metal"
+  ]
+}

@@ -18,7 +18,7 @@ from bookkit import COST, WORDS_PER_SECOND, cost_note, continuity_file, llm_json
 
 ap = argparse.ArgumentParser()
 ap.add_argument("project")
-ap.add_argument("--engine", default="claude", choices=["claude", "fcc-claude", "codex", "fcc-codex"])
+ap.add_argument("--engine", default="claude", choices=["claude", "fcc-claude", "codex", "fcc-codex", "hf", "local"])
 ap.add_argument("--model", default=None)
 ap.add_argument("--workers", type=int, default=2)
 ap.add_argument("--force", action="store_true", help="rewrite scenes that already have a screenplay (except ones you edited)")

@@ -35,7 +35,7 @@ ap.add_argument("--words-per-shot", type=int, default=None, help="default 60 (co
 ap.add_argument("--min-shots", type=int, default=1)
 ap.add_argument("--max-shots", type=int, default=12)
 ap.add_argument("--chapters", default="all", help="'all' or a range like 3-12")
-ap.add_argument("--engine", default="claude", choices=["claude", "fcc-claude", "codex", "fcc-codex"],
+ap.add_argument("--engine", default="claude", choices=["claude", "fcc-claude", "codex", "fcc-codex", "hf", "local"],
                 help="which CLI writes the prompts (fcc-* route through your Free Claude Code proxy)")
 ap.add_argument("--model", default=None, help="model name for that engine; blank = the engine's default (sonnet for claude)")
 ap.add_argument("--workers", type=int, default=2)

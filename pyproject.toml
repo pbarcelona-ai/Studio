@@ -25,7 +25,7 @@ addopts = "-q"
 [tool.ruff]
 line-length = 160          # the code base uses long lines; tighten gradually
 target-version = "py311"
-extend-exclude = [".venv", ".venv-dev", "projects", "books", "my_downloads", "graphify-out"]
+extend-exclude = [".venv", ".venv-dev", "projects", "books", "my_downloads", "graphify-out", "colab_generate_*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "S", "UP", "C4", "SIM", "PTH"]
@@ -45,3 +45,28 @@ ignore_missing_imports = true
 check_untyped_defs = true         # every function body is checked, typed or not
 warn_unused_ignores = true
 files = ["scripts"]
+
+[tool.coverage.run]
+source = ["scripts"]
+omit = [
+    "scripts/composers/templates/*",
+    "scripts/continuity_book.py",
+    "scripts/detect_scene_changes.py",
+    "scripts/fetch_kaggle_run.py",
+    "scripts/install_studio.py",
+    "scripts/redo_audio.py",
+    "scripts/run_cloud_api.py",
+    "scripts/run_colab_model.py",
+    "scripts/run_gemini_omni.py",
+    "scripts/run_kaggle_model.py",
+    "scripts/run_step.py",
+    "scripts/studio_app/collab_routes.py",
+    "scripts/studio_app/library_routes.py",
+    "scripts/studio_app/media_routes.py",
+    "scripts/studio_app/pictures_routes.py",
+    "scripts/studio_app/procs.py",
+    "scripts/studio_app/routes_get.py",
+    "scripts/studio_app/routes_post.py",
+    "scripts/studio_app/series_routes.py",
+    "scripts/studio_app/sources_routes.py",
+]

@@ -25,7 +25,7 @@ class TestGenerationValidation:
         ({"steps": {"video": True}, "video_models": ["ltx_video"], "batch": -1}, "batch"),
         ({"steps": {"video": True}, "video_models": ["ltx_video"], "movies": {"mode": "ids", "ids": []}}, "tick at least one movie"),
         ({"steps": {"keyframes": True}, "keyframe_model": "flux2_klein_4b", "granularity": "chapters"}, "Every shot"),
-        ({"steps": {"keyframes": True}, "keyframe_model": "flux2_klein_4b", "service": "colab", "gpu": "T4"}, "Kaggle or this computer"),
+        ({"steps": {"keyframes": True}, "keyframe_model": "flux2_klein_4b", "service": "colab", "gpu": "T4"}, "Kaggle, this computer"),
     ])
     def test_refused(self, book, patch, msg):
         base = {"steps": {"video": True}, "video_models": ["ltx_video"], "movies": {"mode": "all"}}
@@ -57,7 +57,7 @@ class TestGenerationSteps:
 
     def test_character_pictures_need_a_series(self, book):
         with pytest.raises(PlanError, match="character pictures steer only"):
-            plan(book, steps={"keyframes": True}, keyframe_model="sd35_large", keyframe_refs=True, movies={"mode": "all"})
+            plan(book, steps={"keyframes": True}, keyframe_model="moss_image_base", keyframe_refs=True, movies={"mode": "all"})
         with pytest.raises(PlanError, match="no character series"):
             plan(book, steps={"keyframes": True}, keyframe_model="flux2_klein_4b", keyframe_refs=True, keyframe_series="ghosts", movies={"mode": "all"})
 
@@ -77,6 +77,11 @@ class TestGenerationSteps:
         (book / "movies.json").write_text('{"shots": [{"id": 1, "rows": [1, 4], "first_chapter": "1", "last_chapter": "1"}]}')
         steps = plan(book, steps={"audio": True}, audio=["musicgen"], music_bed=True, movies={"mode": "all"})
         assert [s["label"] for s in steps][-1].startswith("Movie 1 music, one cue per chapter")
+
+    def test_legacy_kaggle_plan_still_builds_in_gated_mode(self, book, monkeypatch):
+        monkeypatch.delenv("STUDIO_LEGACY_CLOUD", raising=False)
+        steps = plan(book, steps={"video": True}, video_models=["ltx_video"], movies={"mode": "all"})
+        assert any(s["argv"][0].endswith("run_kaggle_model.sh") for s in steps)
 
 
 class TestFilm:
@@ -109,7 +114,7 @@ class TestFilm:
         out = generation.film_video_steps(self.OPT, "demo")
         assert [s["label"].split(": ")[1] for s in out] == ["rows 1-1", "rows 3-4"]
 
-    @pytest.mark.parametrize("patch,msg", [({"service": "colab"}, "Kaggle or this computer"), ({"gpu": "bad"}, "not an option"), ({"kaggle_user": ""}, "Kaggle username")])
+    @pytest.mark.parametrize("patch,msg", [({"service": "colab"}, "Kaggle, this computer"), ({"gpu": "bad"}, "not an option"), ({"kaggle_user": ""}, "Kaggle username")])
     def test_refusals(self, book, patch, msg):
         with pytest.raises(PlanError, match=msg):
             generation.film_steps({**self.OPT, "sync": "gentle", **patch}, "demo")

@@ -12,7 +12,15 @@ from studio_app.providers import providers_data
 JS = Path(__file__).resolve().parent / "js"
 
 
-def test_providers_are_grouped_and_paid_ones_are_unproven():
+def test_providers_are_grouped_and_paid_ones_are_unproven(monkeypatch):
+    monkeypatch.delenv("STUDIO_LEGACY_CLOUD", raising=False)
+    gated = providers_data()
+    assert [p["id"] for p in gated["computer"]] == ["computer"]
+    assert gated["free"] == [] and gated["paid"] == []
+    assert gated["legacy_cloud"] is False
+    assert isinstance(gated["gpu_profile"], dict) and "tier" in gated["gpu_profile"]
+
+    monkeypatch.setenv("STUDIO_LEGACY_CLOUD", "1")
     d = providers_data()
     assert [p["id"] for p in d["computer"]] == ["computer"]
     assert {p["id"] for p in d["free"]} == {"kaggle", "colab", "huggingface"}
@@ -21,17 +29,47 @@ def test_providers_are_grouped_and_paid_ones_are_unproven():
     assert all(not p["proven"] and not p["selectable"] and p["url"].startswith("https://") for p in d["paid"])
     assert len({p["id"] for p in d["paid"]}) == len(d["paid"])
     assert not {p["id"] for p in d["paid"]} & {p["id"] for p in d["free"] + d["computer"]}
+    assert d["legacy_cloud"] is True
 
 
-def test_providers_route(server):
+def test_providers_route(server, monkeypatch):
     import urllib.request
+    monkeypatch.delenv("STUDIO_LEGACY_CLOUD", raising=False)
     r = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{server.port}/api/providers", headers={"X-Studio-Token": TOKEN}))
     data = json.loads(r.read())
-    assert set(data) == {"computer", "free", "paid"}
+    assert set(data) == {"computer", "free", "paid", "legacy_cloud", "gpu_profile"}
+    assert data["free"] == [] and data["paid"] == [] and data["legacy_cloud"] is False
+
+    monkeypatch.setenv("STUDIO_LEGACY_CLOUD", "1")
+    r2 = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{server.port}/api/providers", headers={"X-Studio-Token": TOKEN}))
+    data2 = json.loads(r2.read())
+    assert data2["legacy_cloud"] is True
+    assert {p["id"] for p in data2["free"]} == {"kaggle", "colab", "huggingface"}
+    assert len(data2["paid"]) >= 10
+
+
+def test_status_legacy_cloud_gating(server, monkeypatch):
+    monkeypatch.delenv("STUDIO_LEGACY_CLOUD", raising=False)
+    code, st = server.api("GET", "/api/status")
+    assert code == 200
+    assert st["legacy_cloud"] is False
+    assert isinstance(st["gpu_profile"], dict) and "ram_gb" in st["gpu_profile"]
+    assert set(st["gpus"]) == {"computer"}
+    assert not ({"kaggle", "colab", "huggingface", "cloud_api"} & set(st["gpus"]))
+    assert not ({"kaggle", "colab", "huggingface", "cloud_api"} & set(st["gpu_blockers"]))
+    assert not ({"kaggle", "colab", "hf", "huggingface"} & set(st["tools"]))
+
+    monkeypatch.setenv("STUDIO_LEGACY_CLOUD", "1")
+    code2, st2 = server.api("GET", "/api/status")
+    assert code2 == 200
+    assert st2["legacy_cloud"] is True
+    assert {"computer", "kaggle", "colab", "huggingface", "cloud_api"} <= set(st2["gpus"])
+    assert {"kaggle", "colab", "hf", "huggingface"} <= set(st2["tools"])
 
 
 @pytest.mark.skipif(not shutil.which("node") or not (JS / "node_modules" / "jsdom").is_dir(), reason="node or jsdom is not installed (cd tests/js && npm install)")
-def test_film_path_in_the_page(server, film):
+def test_film_path_in_the_page(server, film, monkeypatch):
+    monkeypatch.setenv("STUDIO_LEGACY_CLOUD", "1")
     (film / "chapters").mkdir(exist_ok=True)
     for n in range(1, 7):
         (film / "chapters" / f"chapter-{n:03d}.txt").write_text("It was a long day and the story goes on.")
@@ -57,3 +95,53 @@ def test_film_path_in_the_page(server, film):
     assert out["flaggedAfterKeep"] == 0 and out["afterConfirm"] == "Make the story notes" and out["againAfter"][0] == "continuity"
     assert out["restored"] and out["backInFlow"]
     assert out["groups"][0].startswith("On this computer") and out["paid"] >= 10
+
+
+@pytest.mark.skipif(not shutil.which("node") or not (JS / "node_modules" / "jsdom").is_dir(), reason="node or jsdom is not installed (cd tests/js && npm install)")
+def test_core_fill_gpus_handles_null_st():
+    root = JS.parent.parent
+    script = r"""
+const fs = require("fs");
+const path = require("path");
+const { JSDOM } = require("jsdom");
+const root = process.argv[1];
+const html = fs.readFileSync(path.join(root, "web", "index.html"), "utf8");
+const coreJs = fs.readFileSync(path.join(root, "web", "static", "js", "core.js"), "utf8");
+const dom = new JSDOM(html, { url: "http://127.0.0.1:8775/", runScripts: "dangerously" });
+const errors = [];
+dom.window.addEventListener("error", e => errors.push(String(e.error || e.message)));
+const sc = dom.window.document.createElement("script");
+sc.textContent = coreJs;
+dom.window.document.head.appendChild(sc);
+// ST starts null: fillGpus() must return cleanly without throwing
+dom.window.eval("fillGpus()");
+const compRadio = dom.window.document.querySelector('input[name="svc"][value="computer"]');
+const kagRadio = dom.window.document.querySelector('input[name="svc"][value="kaggle"]');
+if (compRadio) {
+  compRadio.checked = true;
+  compRadio.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+}
+dom.window.eval("fillGpus()");
+if (kagRadio) kagRadio.checked = true;
+// Once ST is populated in gated mode, fillGpus() switches svc to computer and populates #gpu
+const sc2 = dom.window.document.createElement("script");
+sc2.textContent = `
+  ST = {
+    gpus: { computer: [["local", "Apple M2 (8 GB)"]] },
+    gpu_blockers: { computer: {} },
+    auto_cleanup: true,
+    legacy_cloud: false
+  };
+  fillGpus();
+`;
+dom.window.document.head.appendChild(sc2);
+const svcChecked = (dom.window.document.querySelector('input[name="svc"]:checked') || {}).value;
+const gpuVal = dom.window.document.getElementById("gpu").value;
+console.log(JSON.stringify({ errors, svcChecked, gpuVal }));
+"""
+    r = subprocess.run(["node", "-e", script, str(root)], cwd=JS, capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout.strip().splitlines()[-1])
+    assert out["errors"] == []
+    assert out["svcChecked"] == "computer"
+    assert out["gpuVal"] == "local"

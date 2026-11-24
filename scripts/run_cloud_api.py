@@ -15,7 +15,6 @@ from __future__ import annotations
 import csv
 import json
 import os
-import re
 import sys
 import time
 import urllib.error
@@ -24,8 +23,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import layout  # noqa: E402
-from runner_common import RunError, base_dir, default_csv, mode_of, project_folder  # noqa: E402
+from runner_common import RunError, default_csv, mode_of, project_folder  # noqa: E402
 
 CLOUD_KEYS_FILE = Path.home() / ".pistachios_studio" / "cloud_keys.json"
 
@@ -76,7 +74,7 @@ def load_api_keys() -> dict[str, str]:
 
 def save_api_keys(fal_key: str = "", replicate_token: str = "") -> None:
     CLOUD_KEYS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    current = {}
+    current: dict[str, Any] = {}
     if CLOUD_KEYS_FILE.is_file():
         try:
             current = json.loads(CLOUD_KEYS_FILE.read_text(encoding="utf-8")) or {}
@@ -186,15 +184,10 @@ def generate_row(
             payload["image_url"] = file_to_data_uri(ref_path)
             payload["strength"] = float(row.get("strength") or 0.65)
             # Switch to image-to-image variant for models that support it
-            if not endpoint.endswith("/image-to-image"):
-                if "flux" in endpoint:
-                    endpoint = f"{endpoint}/image-to-image"
-                elif "fast-sdxl" in endpoint:
-                    endpoint = f"{endpoint}/image-to-image"
-                elif "stable-diffusion-v35" in endpoint:
-                    endpoint = f"{endpoint}/image-to-image"
-                elif "qwen-image" in endpoint:
-                    endpoint = f"{endpoint}/image-to-image"
+            if not endpoint.endswith("/image-to-image") and any(
+                k in endpoint for k in ("flux", "fast-sdxl", "stable-diffusion-v35", "qwen-image")
+            ):
+                endpoint = f"{endpoint}/image-to-image"
 
         res = call_fal_api(endpoint, payload, keys["fal"])
         images = res.get("images") or []
@@ -214,7 +207,7 @@ def generate_row(
         if not keys.get("fal"):
             raise RunError("Fal.ai API key is missing. Set FAL_KEY in your environment or ~/.pistachios_studio/cloud_keys.json")
 
-        payload: dict[str, Any] = {"prompt": prompt, "seed": seed}
+        payload = {"prompt": prompt, "seed": seed}
         if is_i2v:
             if not keyframe_dir:
                 raise RunError(f"Keyframe directory required for image-to-video model {clean_model}")

@@ -14,13 +14,14 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import layout
 import screenplay
 
 
-def detect_changed_scenes(pdir: Path) -> dict[str, any]:
+def detect_changed_scenes(pdir: Path) -> dict[str, Any]:
     """Detect which scenes have changed since the shots were built.
 
     Returns a dict with:
@@ -57,10 +58,11 @@ def detect_changed_scenes(pdir: Path) -> dict[str, any]:
         }
 
     if stamp_fp == current_fp:
+        plan = screenplay.ad.load(pdir)
         return {
             "changed": False,
             "changed_scene_ids": [],
-            "all_scene_ids": [s["id"] for s in screenplay._active(screenplay.ad.load(pdir))],
+            "all_scene_ids": [s["id"] for s in (screenplay._active(plan) if plan else [])],
             "fingerprint": current_fp,
             "stamp_fingerprint": stamp_fp
         }
@@ -79,7 +81,6 @@ def detect_changed_scenes(pdir: Path) -> dict[str, any]:
         scene_id = scene["id"]
         scene_content = screenplay.load_scene(pdir, scene_id)
         if scene_content:
-            scene_hash = screenplay.content_hash(scene_content)
             # We can't easily tell which specific scenes changed without
             # storing per-scene hashes in the stamp file
             # For now, we'll mark all active scenes as potentially changed
@@ -133,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if result["changed"]:
-        print(f"== Storyline Changes Detected ==")
+        print("== Storyline Changes Detected ==")
         print(f"Project:              {pdir.name}")
         print(f"Current fingerprint:  {result['fingerprint']}")
         print(f"Stamp fingerprint:    {result['stamp_fingerprint']}")
@@ -162,11 +163,11 @@ def main(argv: list[str] | None = None) -> int:
             print("Please use the standard pipeline to rebuild.")
             return 1
     else:
-        print(f"== No Storyline Changes ==")
+        print("== No Storyline Changes ==")
         print(f"Project:              {pdir.name}")
         print(f"Current fingerprint:  {result['fingerprint']}")
         print(f"Stamp fingerprint:    {result['stamp_fingerprint']}")
-        print(f"All scenes match the version used to build shots.")
+        print("All scenes match the version used to build shots.")
 
     return 0
 

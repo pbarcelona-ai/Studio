@@ -3,6 +3,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import character_tokens
 import detect_scene_changes
@@ -12,6 +13,9 @@ from bookkit import SLUG_RE
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
 from .api import HttpError, Request, route
+from .log import get_logger
+
+log = get_logger("routes_post")
 from .adapt import adaptation_edit, budget_data, cast_lock_edit, grading_edit, screenplay_edit
 from .chapters import chapter_edit_action
 from .export import credits_set, export_step, share_create, share_revoke
@@ -577,6 +581,7 @@ def _run_book_ingest_sync(slug: str, src_path: Path) -> dict:
     proc = subprocess.run(
         [sys.executable, str(ingest_script), slug, str(src_path)],
         cwd=str(ROOT / "scripts"),
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=120,
@@ -590,8 +595,8 @@ def _run_book_ingest_sync(slug: str, src_path: Path) -> dict:
     if cj.is_file():
         try:
             chap_count = len((json.loads(cj.read_text(encoding="utf-8")) or {}).get("chapters") or [])
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("chapters.json read failed: %s", e)
     return {"slug": slug, "chapters": chap_count, "read": cj.is_file()}
 
 
@@ -676,7 +681,7 @@ def _redo_audio(r: Request):
 
     # Load existing voice_cast.json, merge incoming cast, and apply dialect mapping
     vc_path = pd / "voice_cast.json"
-    vc_data = {}
+    vc_data: dict[str, Any] = {}
     if vc_path.is_file():
         try:
             vc_data = json.loads(vc_path.read_text(encoding="utf-8")) or {}
@@ -792,7 +797,7 @@ def _gemini_omni_generate(r: Request):
     # Persist interaction_id sidecar so conversational turn-by-turn edits work seamlessly
     if res.get("interaction_id"):
         idx_path = out_dir / "interactions.json"
-        idx = {}
+        idx: dict[str, Any] = {}
         if idx_path.is_file():
             try:
                 idx = json.loads(idx_path.read_text(encoding="utf-8")) or {}
@@ -818,13 +823,14 @@ def _v2_dialogue_save(r: Request):
     pd = pdir(slug, "book")
     pd.mkdir(parents=True, exist_ok=True)
     dl_path = pd / "dialogue_lines.json"
-    existing_doc = {}
+    existing_doc: dict[str, Any] = {}
     if dl_path.is_file():
         try:
             existing_doc = json.loads(dl_path.read_text(encoding="utf-8")) or {}
         except Exception:
             existing_doc = {}
-    existing = existing_doc.get("lines") if isinstance(existing_doc.get("lines"), dict) else {}
+    raw_existing = existing_doc.get("lines")
+    existing: dict[str, Any] = raw_existing if isinstance(raw_existing, dict) else {}
     engine = str(r.body.get("engine") or existing_doc.get("engine") or "").strip()
     incoming = r.body.get("lines")
     if isinstance(incoming, list):
@@ -832,7 +838,8 @@ def _v2_dialogue_save(r: Request):
             if not isinstance(item, dict) or not item.get("id"):
                 continue
             lid = str(item["id"]).strip()
-            prev = existing.get(lid) if isinstance(existing.get(lid), dict) else {}
+            raw_prev = existing.get(lid)
+            prev: dict[str, Any] = raw_prev if isinstance(raw_prev, dict) else {}
             existing[lid] = {
                 **prev,
                 "text": str(item.get("text") if "text" in item else prev.get("text", "")).strip(),
@@ -844,11 +851,12 @@ def _v2_dialogue_save(r: Request):
                 "macos_voice": str(item.get("macos_voice") if "macos_voice" in item else prev.get("macos_voice", "")).strip(),
                 "persona": str(item.get("persona") if "persona" in item else prev.get("persona", "")).strip(),
                 "emotion": str(item.get("emotion") if "emotion" in item else prev.get("emotion", "natural")).strip(),
-                "speed": max(0.5, min(1.8, float(item.get("speed") if "speed" in item else prev.get("speed", 1.0)))),
+                "speed": max(0.5, min(1.8, float((item.get("speed") if item.get("speed") is not None else prev.get("speed")) or 1.0))),
             }
     elif isinstance(r.body.get("id"), str) and r.body["id"].strip():
         lid = r.body["id"].strip()
-        prev = existing.get(lid) if isinstance(existing.get(lid), dict) else {}
+        raw_prev = existing.get(lid)
+        prev = raw_prev if isinstance(raw_prev, dict) else {}
         existing[lid] = {
             **prev,
             "text": str(r.body.get("text") if "text" in r.body else prev.get("text", "")).strip(),
@@ -860,7 +868,7 @@ def _v2_dialogue_save(r: Request):
             "macos_voice": str(r.body.get("macos_voice") if "macos_voice" in r.body else prev.get("macos_voice", "")).strip(),
             "persona": str(r.body.get("persona") if "persona" in r.body else prev.get("persona", "")).strip(),
             "emotion": str(r.body.get("emotion") if "emotion" in r.body else prev.get("emotion", "natural")).strip(),
-            "speed": max(0.5, min(1.8, float(r.body.get("speed") if "speed" in r.body else prev.get("speed", 1.0)))),
+            "speed": max(0.5, min(1.8, float((r.body.get("speed") if r.body.get("speed") is not None else prev.get("speed")) or 1.0))),
         }
     dl_path.write_text(json.dumps({"engine": engine, "lines": existing}, indent=2), encoding="utf-8")
     return {"status": "ok", "saved": len(existing), "engine": engine}
@@ -877,14 +885,14 @@ def _voice_library_load() -> dict:
             data = json.loads(lib_file.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 return data
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("voice library load failed: %s", e)
     return {}
 
 
 def _voice_library_save_entry(character: str, entry: dict, src_wav: Path | None = None) -> dict:
     """Persist a character's voice profile and/or baseline WAV to the global cross-film voice library."""
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     VOICE_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
     lib = _voice_library_load()
@@ -892,7 +900,7 @@ def _voice_library_save_entry(character: str, entry: dict, src_wav: Path | None 
     cur = dict(lib.get(key) or {})
     cur.update({k: v for k, v in entry.items() if v is not None})
     cur["character"] = key
-    cur["updated_at"] = datetime.now(timezone.utc).isoformat()
+    cur["updated_at"] = datetime.now(UTC).isoformat()
 
     safe_char = "".join(c if c.isalnum() else "_" for c in key.lower()).strip("_") or "speaker"
     if src_wav and src_wav.is_file() and src_wav.stat().st_size > 100:
@@ -916,17 +924,20 @@ def _v2_voice_profile_apply(r: Request):
     pd = pdir(slug, "book")
     pd.mkdir(parents=True, exist_ok=True)
     vc_path = pd / "voice_cast.json"
-    vdata = {}
+    vdata: dict[str, Any] = {}
     if vc_path.is_file():
         try:
             vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
         except Exception:
             vdata = {}
-    cast = vdata.get("cast") if isinstance(vdata.get("cast"), dict) else {}
-    profiles = vdata.get("profiles") if isinstance(vdata.get("profiles"), dict) else {}
+    raw_cast = vdata.get("cast")
+    cast: dict[str, Any] = raw_cast if isinstance(raw_cast, dict) else {}
+    raw_profiles = vdata.get("profiles")
+    profiles: dict[str, Any] = raw_profiles if isinstance(raw_profiles, dict) else {}
 
     existing_key = next((k for k in profiles if k.lower() == character.lower()), character)
-    prof = dict(profiles.get(existing_key) or {})
+    raw_prof = profiles.get(existing_key)
+    prof: dict[str, Any] = dict(raw_prof) if isinstance(raw_prof, dict) else {}
     for field in ("gemini_voice", "kokoro_voice", "kokoro_blend", "macos_voice", "persona"):
         if field in r.body and r.body[field] is not None:
             prof[field] = str(r.body[field]).strip()
@@ -943,13 +954,14 @@ def _v2_voice_profile_apply(r: Request):
 
     # Propagate profile to every dialogue line spoken by this character, WITHOUT touching each line's emotion/tone or note
     dl_path = pd / "dialogue_lines.json"
-    ddata = {}
+    ddata: dict[str, Any] = {}
     if dl_path.is_file():
         try:
             ddata = json.loads(dl_path.read_text(encoding="utf-8")) or {}
         except Exception:
             ddata = {}
-    saved_lines = ddata.get("lines") if isinstance(ddata.get("lines"), dict) else {}
+    raw_saved_lines = ddata.get("lines")
+    saved_lines: dict[str, Any] = raw_saved_lines if isinstance(raw_saved_lines, dict) else {}
 
     updated_count = 0
     sp_dir = pd / "screenplay"
@@ -957,7 +969,8 @@ def _v2_voice_profile_apply(r: Request):
         for sp_file in sorted(sp_dir.glob("scene-*.json")):
             try:
                 sc = json.loads(sp_file.read_text(encoding="utf-8")) or {}
-            except Exception:
+            except Exception as e:
+                log.debug("skipping unreadable scene %s: %s", sp_file.name, e)
                 continue
             sc_id = str(sc.get("scene") or sp_file.stem.replace("scene-", ""))
             idx = 0
@@ -968,7 +981,8 @@ def _v2_voice_profile_apply(r: Request):
                 if str(el.get("character") or "").strip().lower() != character.lower():
                     continue
                 lid = f"{sc_id}-{idx:02d}"
-                cur = dict(saved_lines.get(lid) or {})
+                raw_cur = saved_lines.get(lid)
+                cur: dict[str, Any] = dict(raw_cur) if isinstance(raw_cur, dict) else {}
                 for field in ("gemini_voice", "kokoro_voice", "kokoro_blend", "macos_voice", "persona"):
                     if field in prof:
                         cur[field] = prof[field]
@@ -1020,9 +1034,9 @@ def _v2_dialogue_upload(r: Request):
             tmp_in = Path(tf.name)
         try:
             if afconvert_bin:
-                subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@24000", str(tmp_in), str(wav_path)], check=True, timeout=30)
+                subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@24000", str(tmp_in), str(wav_path)], stdin=subprocess.DEVNULL, check=True, timeout=30)
             elif ffmpeg_bin:
-                subprocess.run([ffmpeg_bin, "-y", "-i", str(tmp_in), str(wav_path)], check=True, timeout=30)
+                subprocess.run([ffmpeg_bin, "-y", "-i", str(tmp_in), str(wav_path)], stdin=subprocess.DEVNULL, check=True, timeout=30)
             else:
                 wav_path.write_bytes(raw)
         finally:
@@ -1045,13 +1059,14 @@ def _v2_voice_baseline_set(r: Request):
     pd = pdir(slug, "book")
     pd.mkdir(parents=True, exist_ok=True)
     vc_path = pd / "voice_cast.json"
-    vdata = {}
+    vdata: dict[str, Any] = {}
     if vc_path.is_file():
         try:
             vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
         except Exception:
             vdata = {}
-    baselines = vdata.get("baselines") if isinstance(vdata.get("baselines"), dict) else {}
+    raw_baselines = vdata.get("baselines")
+    baselines: dict[str, Any] = raw_baselines if isinstance(raw_baselines, dict) else {}
     existing_key = next((k for k in baselines if k.lower() == character.lower()), character)
 
     if r.body.get("clear"):
@@ -1105,9 +1120,9 @@ def _v2_voice_baseline_set(r: Request):
                 tmp_in = Path(tf.name)
             try:
                 if afconvert_bin:
-                    subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@24000", str(tmp_in), str(dest_wav)], check=True, timeout=30)
+                    subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@24000", str(tmp_in), str(dest_wav)], stdin=subprocess.DEVNULL, check=True, timeout=30)
                 elif ffmpeg_bin:
-                    subprocess.run([ffmpeg_bin, "-y", "-i", str(tmp_in), str(dest_wav)], check=True, timeout=30)
+                    subprocess.run([ffmpeg_bin, "-y", "-i", str(tmp_in), str(dest_wav)], stdin=subprocess.DEVNULL, check=True, timeout=30)
                 else:
                     dest_wav.write_bytes(raw)
             finally:
@@ -1117,7 +1132,10 @@ def _v2_voice_baseline_set(r: Request):
         raise PlanError("Provide either from_line_id or audio_base64 to set a character voice baseline.")
 
     # Also persist this baseline WAV & metadata into the global cross-film voice library
-    prof = (vdata.get("profiles") or {}).get(existing_key) or {}
+    raw_profiles_map = vdata.get("profiles")
+    profiles_map: dict[str, Any] = raw_profiles_map if isinstance(raw_profiles_map, dict) else {}
+    raw_prof = profiles_map.get(existing_key)
+    prof: dict[str, Any] = raw_prof if isinstance(raw_prof, dict) else {}
     _voice_library_save_entry(
         existing_key,
         {
@@ -1261,7 +1279,7 @@ def _render_line_gemini_tts(text: str, voice_id: str, dialect: str, emotion: str
 
         client = genai.Client(api_key=api_key)
         # Try with inline baseline audio reference first if available, then fall back to text-only seeded call
-        content_variants = []
+        content_variants: list[Any] = []
         if has_ref and ref_bytes:
             content_variants.append([types.Part.from_bytes(data=ref_bytes, mime_type="audio/wav"), prompt])
         content_variants.append(prompt)
@@ -1395,8 +1413,8 @@ def find_kokoro_python() -> str:
                     interp = first[2:].strip().split()[0]
                     if _safe_exec(Path(interp)) and interp not in candidates:
                         candidates.append(interp)
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("kokoro entry read failed for %s: %s", kb, e)
         for pyname in ("python3", "python"):
             pyb = Path(d) / pyname
             if _safe_exec(pyb) and str(pyb) not in candidates:
@@ -1412,13 +1430,15 @@ def find_kokoro_python() -> str:
         try:
             r = subprocess.run(
                 [py, "-c", "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('kokoro') else 1)"],
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=4,
             )
             if r.returncode == 0:
                 return py
-        except Exception:
+        except Exception as e:
+            log.debug("kokoro probe failed for %s: %s", py, e)
             continue
     return ""
 
@@ -1467,6 +1487,7 @@ def _render_line_kokoro(text: str, voice_id: str, dialect: str, speed: float, wa
     )
     proc = subprocess.run(
         [py, "-c", script, lang, vid, str(speed), text, str(wav_path)],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=120,
@@ -1498,6 +1519,7 @@ def _v2_install_engine(r: Request):
 
     proc = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-U", *pkgs],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=300,
@@ -1539,13 +1561,13 @@ def _v2_dialogue_render(r: Request):
         if not say_bin:
             raise PlanError("Local scratch speech ('say') is unavailable on this machine; choose Gemini Neural TTS or Kokoro-82M.")
         try:
-            out = subprocess.check_output([say_bin, "-v", "?"], text=True, timeout=5)
+            out = subprocess.check_output([say_bin, "-v", "?"], stdin=subprocess.DEVNULL, text=True, timeout=5)
             for ln in out.splitlines():
                 parts = ln.strip().split()
                 if parts:
                     avail.add(parts[0])
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("say -v probe failed: %s", e)
 
     rendered = []
     for item in items:
@@ -1582,8 +1604,8 @@ def _v2_dialogue_render(r: Request):
                         cand_ref = pd / str(bmap[bkey]["file"])
                         if cand_ref.is_file() and cand_ref.stat().st_size > 100:
                             ref_wav = cand_ref
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("voice_cast baselines read failed: %s", e)
             if ref_wav is None and character.lower() not in cleared_set:
                 glib = _voice_library_load()
                 gkey = next((k for k in glib if k.lower() == character.lower()), "")
@@ -1596,6 +1618,7 @@ def _v2_dialogue_render(r: Request):
         elif engine == "kokoro":
             voice_used = _render_line_kokoro(text, voice_id, dialect, speed, wav_path, blend_voice=kokoro_blend)
         else:
+            assert say_bin is not None
             rate = int(round(185 * speed))
             mac_voice = explicit_macos or _macos_voice_for_kokoro(voice_id, dialect)
             if avail and mac_voice not in avail:
@@ -1612,9 +1635,9 @@ def _v2_dialogue_render(r: Request):
                 if mac_voice:
                     cmd.extend(["-v", mac_voice])
                 cmd.append(text)
-                subprocess.run(cmd, check=True, timeout=30)
+                subprocess.run(cmd, stdin=subprocess.DEVNULL, check=True, timeout=30)
                 if afconvert_bin:
-                    subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@22050", str(aiff_path), str(wav_path)], check=True, timeout=20)
+                    subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@22050", str(aiff_path), str(wav_path)], stdin=subprocess.DEVNULL, check=True, timeout=20)
                 else:
                     shutil.copyfile(aiff_path, wav_path)
             finally:
@@ -1846,19 +1869,19 @@ def _synth_score_wav(wav_path: Path, mood: str, duration: int = 12):
 
         else:
             # wonder: Lush sweeping orchestral strings + celesta sparkles in C Major
-            chords = [(130.81, 261.63, 329.63, 392.00, 493.88), (110.00, 220.00, 261.63, 329.63, 392.00), (87.31, 174.61, 220.00, 261.63, 329.63), (98.00, 196.00, 246.94, 293.66, 392.00)]
-            clen = dur / len(chords)
-            ci = min(len(chords) - 1, int(t / clen))
+            wonder_chords = [(130.81, 261.63, 329.63, 392.00, 493.88), (110.00, 220.00, 261.63, 329.63, 392.00), (87.31, 174.61, 220.00, 261.63, 329.63), (98.00, 196.00, 246.94, 293.66, 392.00)]
+            clen = dur / len(wonder_chords)
+            ci = min(len(wonder_chords) - 1, int(t / clen))
             ct = t - ci * clen
             c_env = min(1.0, ct / 0.45) * min(1.0, (clen - ct) / 0.45)
-            ch = chords[ci]
-            for idx, f in enumerate(ch):
+            ch5 = wonder_chords[ci]
+            for idx, f in enumerate(ch5):
                 w = 0.14 if idx == 0 else 0.085
                 sig_l += w * c_env * math.sin(2 * math.pi * f * t)
                 sig_r += w * c_env * math.sin(2 * math.pi * (f * 1.003) * t)
             arp_step = int(t * 2.5)
             arp_t = (t * 2.5) - arp_step
-            arp_f = ch[1 + (arp_step % (len(ch) - 1))] * 2.0
+            arp_f = ch5[1 + (arp_step % (len(ch5) - 1))] * 2.0
             arp = 0.09 * math.exp(-arp_t * 5.0) * math.sin(2 * math.pi * arp_f * t)
             sig_l += arp * 0.85
             sig_r += arp * 1.15
@@ -1883,7 +1906,7 @@ def _v2_sound_design_save(r: Request):
     pd = pdir(slug, "book")
     pd.mkdir(parents=True, exist_ok=True)
     sd_path = pd / "sound_design_v2.json"
-    cur = {}
+    cur: dict[str, Any] = {}
     if sd_path.is_file():
         try:
             cur = json.loads(sd_path.read_text(encoding="utf-8")) or {}
@@ -1892,14 +1915,18 @@ def _v2_sound_design_save(r: Request):
     if r.body.get("sfx_mode"):
         cur["sfx_mode"] = str(r.body["sfx_mode"]).strip()
     if isinstance(r.body.get("foley"), dict):
-        cur["foley"] = {**(cur.get("foley") or {}), **r.body["foley"]}
+        raw_foley = cur.get("foley")
+        cur["foley"] = {**(raw_foley if isinstance(raw_foley, dict) else {}), **r.body["foley"]}
     if isinstance(r.body.get("score"), dict):
-        cur["score"] = {**(cur.get("score") or {}), **r.body["score"]}
+        raw_score = cur.get("score")
+        cur["score"] = {**(raw_score if isinstance(raw_score, dict) else {}), **r.body["score"]}
     if isinstance(r.body.get("scenes"), dict):
-        sc_map = dict(cur.get("scenes") or {})
+        raw_sc = cur.get("scenes")
+        sc_map: dict[str, Any] = dict(raw_sc) if isinstance(raw_sc, dict) else {}
         for sid, sinfo in r.body["scenes"].items():
             if isinstance(sinfo, dict):
-                sc_map[str(sid)] = {**(sc_map.get(str(sid)) or {}), **sinfo}
+                raw_s = sc_map.get(str(sid))
+                sc_map[str(sid)] = {**(raw_s if isinstance(raw_s, dict) else {}), **sinfo}
         cur["scenes"] = sc_map
     sd_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
     return {"status": "ok", "saved": cur}
@@ -1944,9 +1971,9 @@ def _v2_sound_design_render(r: Request):
                 tmp_in = Path(tf.name)
             try:
                 if afconvert_bin:
-                    subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@22050", str(tmp_in), str(wav_path)], check=True, timeout=30)
+                    subprocess.run([afconvert_bin, "-f", "WAVE", "-d", "LEI16@22050", str(tmp_in), str(wav_path)], stdin=subprocess.DEVNULL, check=True, timeout=30)
                 elif ffmpeg_bin:
-                    subprocess.run([ffmpeg_bin, "-y", "-i", str(tmp_in), str(wav_path)], check=True, timeout=30)
+                    subprocess.run([ffmpeg_bin, "-y", "-i", str(tmp_in), str(wav_path)], stdin=subprocess.DEVNULL, check=True, timeout=30)
                 else:
                     wav_path.write_bytes(raw)
             finally:
@@ -1964,7 +1991,7 @@ def _v2_sound_design_render(r: Request):
 
     # Save settings alongside render
     sd_path = pd / "sound_design_v2.json"
-    cur = {}
+    cur: dict[str, Any] = {}
     if sd_path.is_file():
         try:
             cur = json.loads(sd_path.read_text(encoding="utf-8")) or {}
@@ -2036,9 +2063,113 @@ def _inspect_keyframe_physics(png_path: Path, shot_prompt: str, api_key: str) ->
                         parsed = json.loads(txt)
                         issues = [str(x).strip() for x in (parsed.get("issues") or []) if str(x).strip()]
                         return {"passed": bool(parsed.get("passed", not issues)), "issues": issues}
-        except Exception:
+        except Exception as e:
+            log.debug("keyframe physics check failed on %s: %s", model_name, e)
             continue
     return {"passed": True, "issues": []}
+
+
+def _inspect_keyframe_local_qa(png_path: Path) -> dict[str, Any]:
+    """Local visual QA fallback checking black frame / corrupt image when running offline without Gemini Vision."""
+    from qa.visual_qa import _is_frame_black
+
+    if not png_path.is_file() or png_path.stat().st_size < 100:
+        return {"passed": False, "issues": ["Generated image file is missing or empty"]}
+    if _is_frame_black(png_path):
+        return {"passed": False, "issues": ["Black frame detected in generated keyframe"]}
+    return {"passed": True, "issues": []}
+
+
+def _synthesize_local_preview_png(prompt: str, out_png: Path, aspect_ratio: str = "16:9", ref_images: list[Path] | None = None) -> str:
+    """Deterministic local PIL storyboard frame synthesizer when sd-cli/ComfyUI binaries are not running on the host."""
+    import hashlib
+    from PIL import Image, ImageDraw
+
+    w, h = (768, 768) if aspect_ratio == "1:1" else ((576, 1024) if aspect_ratio == "9:16" else (1024, 576))
+    digest = hashlib.sha256(prompt.encode("utf-8")).digest()
+    c1 = (30 + digest[0] % 80, 45 + digest[1] % 80, 75 + digest[2] % 95)
+    c2 = (80 + digest[3] % 90, 60 + digest[4] % 90, 110 + digest[5] % 90)
+    img = Image.new("RGB", (w, h), c1)
+    draw = ImageDraw.Draw(img)
+    for y in range(0, h, 4):
+        t = y / float(max(1, h - 1))
+        r_c = int(c1[0] * (1 - t) + c2[0] * t)
+        g_c = int(c1[1] * (1 - t) + c2[1] * t)
+        b_c = int(c1[2] * (1 - t) + c2[2] * t)
+        draw.rectangle([0, y, w, min(h, y + 4)], fill=(r_c, g_c, b_c))
+
+    # Overlay reference thumbnail if provided
+    for idx, rp in enumerate((ref_images or [])[:2]):
+        try:
+            if rp and rp.is_file():
+                with Image.open(rp) as rim:
+                    thumb = rim.convert("RGB").resize((96, 96))
+                    img.paste(thumb, (24 + idx * 108, 24))
+        except (OSError, ValueError):
+            continue
+
+    draw.rectangle([24, h - 110, w - 24, h - 24], fill=(15, 23, 42))
+    short = " ".join(prompt.split())[:110]
+    draw.text((38, h - 85), f"LOCAL GPU STORYBOARD · {aspect_ratio}", fill=(245, 158, 11))
+    draw.text((38, h - 60), short, fill=(248, 250, 252))
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_png, format="PNG")
+    return "local_storyboard_synth"
+
+
+def _render_keyframe_local_or_gemini(
+    prompt: str,
+    out_png: Path,
+    aspect_ratio: str = "16:9",
+    ref_images: list[Path] | None = None,
+    engine: str = "auto",
+) -> str:
+    """Route Step 10/17 image generation through AssetCache, Local-GPU runners (sd-cli / ComfyUI), or Gemini API."""
+    from local_runners.asset_cache import asset_cache_enabled, compute_cache_key, get_default_asset_cache
+    from local_runners.router import select_runner
+    import run_gemini_omni
+
+    eng = str(engine or "auto").strip().lower()
+    cache_inputs = {
+        "prompt": prompt,
+        "aspect_ratio": aspect_ratio,
+        "engine": eng,
+        "refs": [str(p) for p in (ref_images or []) if p and p.is_file()],
+    }
+    if asset_cache_enabled():
+        cache = get_default_asset_cache()
+        ckey = compute_cache_key("v2_image_render", "1.0", cache_inputs, output_path=str(out_png))
+        hit = cache.try_restore(ckey, out_png)
+        if hit and out_png.is_file():
+            return f"cache:{hit.get('model') or eng}"
+
+    api_key = run_gemini_omni.get_gemini_api_key()
+    prefer_local = eng in ("local", "computer", "sd_cli", "comfyui") or (eng == "auto" and not api_key)
+
+    model_used = ""
+    if prefer_local:
+        try:
+            runner = select_runner("image", model_id=("sd_cli:z-image-turbo" if eng == "sd_cli" else None))
+            if runner.is_installed():
+                res = runner.run({"prompt": prompt, "aspect_ratio": aspect_ratio, "output_path": str(out_png)})
+                if out_png.is_file() and out_png.stat().st_size > 100:
+                    model_used = str(res.get("model") or runner.name)
+        except Exception as e:
+            log.debug("local image runner fallback: %s", e)
+
+        if not model_used:
+            if api_key and eng == "auto":
+                model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio=aspect_ratio, ref_images=ref_images)
+            else:
+                model_used = _synthesize_local_preview_png(prompt, out_png, aspect_ratio=aspect_ratio, ref_images=ref_images)
+    else:
+        model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio=aspect_ratio, ref_images=ref_images)
+
+    if asset_cache_enabled() and out_png.is_file():
+        cache = get_default_asset_cache()
+        ckey = compute_cache_key("v2_image_render", "1.0", cache_inputs, output_path=str(out_png))
+        cache.store(ckey, out_png, tool_name="v2_image_render", model=model_used)
+    return model_used
 
 
 def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:9", ref_images: list[Path] | None = None) -> str:
@@ -2084,7 +2215,7 @@ def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:
         from google.genai import types
 
         client = genai.Client(api_key=api_key)
-        variants = []
+        variants: list[tuple[int, Any]] = []
         if valid_refs:
             parts = [types.Part.from_bytes(data=b, mime_type="image/png") for b in valid_refs]
             parts.append(full_prompt)
@@ -2116,7 +2247,7 @@ def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:
 
     rest_variants = []
     if valid_refs:
-        rparts = [{"inlineData": {"mimeType": "image/png", "data": base64.b64encode(b).decode("ascii")}} for b in valid_refs]
+        rparts: list[dict[str, Any]] = [{"inlineData": {"mimeType": "image/png", "data": base64.b64encode(b).decode("ascii")}} for b in valid_refs]
         rparts.append({"text": full_prompt})
         rest_variants.append((len(valid_refs), rparts))
     rest_variants.append((0, [{"text": full_prompt}]))
@@ -2216,7 +2347,7 @@ def _v2_keyframe_render(r: Request):
 
     # Refuse to overwrite a locked keyframe
     meta_path = pd / "keyframes_v2.json"
-    meta = {}
+    meta: dict[str, Any] = {}
     if meta_path.is_file():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
@@ -2257,21 +2388,21 @@ def _v2_keyframe_render(r: Request):
     sc_id = shot_id.split("-")[0] if "-" in shot_id else ""
     sh_num = int(shot_id.split("-")[1]) if ("-" in shot_id and shot_id.split("-")[1].isdigit()) else 0
 
-    saved_prompts_map = {}
+    saved_prompts_map: dict[str, Any] = {}
     meta_path = pd / "keyframes_v2.json"
     if meta_path.is_file():
         try:
             saved_prompts_map = (json.loads(meta_path.read_text(encoding="utf-8")) or {}).get("prompts") or {}
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("keyframes_v2.json read failed: %s", e)
 
-    sl_data = {}
+    sl_data: dict[str, Any] = {}
     sl_path = pd / "shots" / "shotlist.json"
     if sl_path.is_file():
         try:
             sl_data = json.loads(sl_path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("shotlist.json read failed: %s", e)
 
     if sc_id and sh_num > 1:
         # Walk backwards within the same scene to find the closest rendered previous keyframe
@@ -2325,16 +2456,23 @@ def _v2_keyframe_render(r: Request):
                                     ref_imgs.extend(_find_character_turnaround_refs(pd, str(ch), limit=1))
                             break
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("turnaround ref lookup failed: %s", e)
 
     final_prompt = continuity_prefix + prompt if continuity_prefix else prompt
-    model_used = _render_keyframe_gemini(final_prompt, out_png, aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"), ref_images=ref_imgs)
+    req_engine = str(r.body.get("engine") or "auto").strip().lower()
+    model_used = _render_keyframe_local_or_gemini(
+        final_prompt,
+        out_png,
+        aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"),
+        ref_images=ref_imgs,
+        engine=req_engine,
+    )
 
     # Active Physics & Solid-Object Clipping QA + automatic 1-pass repair if any violation is detected
     import run_gemini_omni
     api_key = run_gemini_omni.get_gemini_api_key()
-    qa = _inspect_keyframe_physics(out_png, prompt, api_key)
+    qa = _inspect_keyframe_physics(out_png, prompt, api_key) if (api_key and req_engine not in ("local", "computer", "sd_cli", "comfyui")) else _inspect_keyframe_local_qa(out_png)
     physics_repaired = False
     if not qa.get("passed") and qa.get("issues"):
         issues_str = "; ".join(qa["issues"][:4])
@@ -2347,11 +2485,17 @@ def _v2_keyframe_render(r: Request):
         )
         try:
             repair_refs = [out_png] + [p for p in ref_imgs if p != out_png][:3]
-            model_used = _render_keyframe_gemini(repair_prompt, out_png, aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"), ref_images=repair_refs)
+            model_used = _render_keyframe_local_or_gemini(
+                repair_prompt,
+                out_png,
+                aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"),
+                ref_images=repair_refs,
+                engine=req_engine,
+            )
             physics_repaired = True
-            qa = _inspect_keyframe_physics(out_png, prompt, api_key)
-        except Exception:
-            pass
+            qa = _inspect_keyframe_physics(out_png, prompt, api_key) if (api_key and req_engine not in ("local", "computer", "sd_cli", "comfyui")) else _inspect_keyframe_local_qa(out_png)
+        except Exception as e:
+            log.debug("physics repair pass failed: %s", e)
 
     return {
         "status": "ok",
@@ -2377,7 +2521,7 @@ def _v2_keyframe_prompts_save(r: Request):
     pd = pdir(slug, "book")
     pd.mkdir(parents=True, exist_ok=True)
     meta_path = pd / "keyframes_v2.json"
-    meta = {}
+    meta: dict[str, Any] = {}
     if meta_path.is_file():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
@@ -2416,7 +2560,7 @@ def _v2_keyframe_edit(r: Request):
         raise PlanError(f"Keyframe {shot_id} has not been generated yet. Generate it first before modifying.")
 
     meta_path = pd / "keyframes_v2.json"
-    meta = {}
+    meta: dict[str, Any] = {}
     if meta_path.is_file():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
@@ -2433,12 +2577,13 @@ def _v2_keyframe_edit(r: Request):
         f"and apply ONLY these ordered modifications:\n{cascade_lines}\n\n"
         f"Original shot context: {base_prompt}"
     )
-    model_used = _render_keyframe_gemini(edit_prompt, out_png, aspect_ratio="16:9", ref_images=[out_png])
+    req_engine = str(r.body.get("engine") or "auto").strip().lower()
+    model_used = _render_keyframe_local_or_gemini(edit_prompt, out_png, aspect_ratio="16:9", ref_images=[out_png], engine=req_engine)
 
     # Run Physics QA on the edited image
     import run_gemini_omni
     api_key = run_gemini_omni.get_gemini_api_key()
-    qa = _inspect_keyframe_physics(out_png, f"{base_prompt}. {'; '.join(edits)}", api_key)
+    qa = _inspect_keyframe_physics(out_png, f"{base_prompt}. {'; '.join(edits)}", api_key) if (api_key and req_engine not in ("local", "computer", "sd_cli", "comfyui")) else _inspect_keyframe_local_qa(out_png)
 
     # Persist the ordered cascade of modification boxes until the user clicks Lock
     pending = dict(meta.get("pending_edits") or {})
@@ -2495,7 +2640,8 @@ def _merge_edits_into_prompt(base_prompt: str, edits: list[str]) -> str:
                         txt = (part.get("text") or "").strip()
                         if txt and len(txt) > 20:
                             return txt
-            except Exception:
+            except Exception as e:
+                log.debug("prompt edit merge failed on %s: %s", m, e)
                 continue
     # Clean deterministic fallback if API call unavailable
     return (base_prompt.rstrip(". ") + ". Refinements: " + "; ".join(edits) + ".").strip()
@@ -2513,7 +2659,7 @@ def _v2_keyframe_lock(r: Request):
     pd = pdir(slug, "book")
     pd.mkdir(parents=True, exist_ok=True)
     meta_path = pd / "keyframes_v2.json"
-    meta = {}
+    meta: dict[str, Any] = {}
     if meta_path.is_file():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
@@ -2555,8 +2701,8 @@ def _v2_keyframe_delete(r: Request):
                 raise PlanError(f"Keyframe {shot_id} is locked. Unlock it first before deleting.")
         except PlanError:
             raise
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("keyframes_v2.json lock check failed: %s", e)
     png = pd / "keyframes" / f"{shot_id}.png"
     removed = False
     if png.is_file():
@@ -2576,7 +2722,7 @@ def _v2_wardrobe_states_save(r: Request):
     pd = pdir(slug, "book")
     pd.mkdir(parents=True, exist_ok=True)
     ws_path = pd / "wardrobe_states.json"
-    cur = {}
+    cur: dict[str, Any] = {}
     if ws_path.is_file():
         try:
             cur = json.loads(ws_path.read_text(encoding="utf-8")) or {}
@@ -2608,7 +2754,7 @@ def _v2_wardrobe_state_delete(r: Request):
 
     pd = pdir(slug, "book")
     ws_path = pd / "wardrobe_states.json"
-    cur = {}
+    cur: dict[str, Any] = {}
     if ws_path.is_file():
         try:
             cur = json.loads(ws_path.read_text(encoding="utf-8")) or {}
@@ -2675,7 +2821,8 @@ def _v2_sync_upstream(r: Request):
                 continue
             try:
                 sc = json.loads(sp_file.read_text(encoding="utf-8")) or {}
-            except Exception:
+            except Exception as e:
+                log.debug("skipping unreadable scene %s: %s", sp_file.name, e)
                 continue
             dlg_idx = 0
             changed = False
@@ -2811,7 +2958,8 @@ def _v2_turnaround_render(r: Request):
         f"ONLY ONE single character centered in frame — NO multi-view grid, NO turnaround sheet, NO side-by-side poses, NO duplicate figures. "
         f"{desc}.{ref_note}{wardrobe_clause} Style: {look}. Clean neutral studio backdrop, clearly showing the exact outfit and face, consistent lighting."
     )
-    model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio="1:1", ref_images=ref_imgs)
+    req_engine = str(r.body.get("engine") or "auto").strip().lower()
+    model_used = _render_keyframe_local_or_gemini(prompt, out_png, aspect_ratio="1:1", ref_images=ref_imgs, engine=req_engine)
     return {"status": "ok", "character": char_name, "outfit_id": outfit_id, "view": view, "image_url": rel_url, "model": model_used, "refs_used": len(ref_imgs)}
 
 
@@ -2848,7 +2996,7 @@ def _v2_postprod_save(r: Request):
     pd = pdir(slug, "book")
     pd.mkdir(parents=True, exist_ok=True)
     pp_path = pd / "postprod_v2.json"
-    cur = {}
+    cur: dict[str, Any] = {}
     if pp_path.is_file():
         try:
             cur = json.loads(pp_path.read_text(encoding="utf-8")) or {}
@@ -2864,7 +3012,6 @@ def _v2_postprod_save(r: Request):
 @route("POST", "/api/v2_audio_mix_render")
 def _v2_audio_mix_render(r: Request):
     """Mix Dialogue + Foley + Score WAV stems into audio/mix/master_mix.wav using saved dB levels."""
-    import math
     import struct
     import wave
 
@@ -2879,7 +3026,7 @@ def _v2_audio_mix_render(r: Request):
 
     # Save mix settings
     pp_path = pd / "postprod_v2.json"
-    cur = {}
+    cur: dict[str, Any] = {}
     if pp_path.is_file():
         try:
             cur = json.loads(pp_path.read_text(encoding="utf-8")) or {}
@@ -2913,11 +3060,12 @@ def _v2_audio_mix_render(r: Request):
 
     dlg_track: list[float] = []
     gap = [0.0] * int(22050 * 0.35)
-    for f in dlg_files[:20]:
+    for dlg_file in dlg_files[:20]:
         try:
-            dlg_track.extend(_read_mono_22k(f))
+            dlg_track.extend(_read_mono_22k(dlg_file))
             dlg_track.extend(gap)
-        except Exception:
+        except Exception as e:
+            log.debug("skipping dialogue file %s: %s", dlg_file.name, e)
             continue
 
     foley_track = _read_mono_22k(foley_file) if foley_file.is_file() else []
@@ -2976,7 +3124,8 @@ def _v2_export_make(r: Request):
             for sf in sorted(sp_dir.glob("scene-*.json")):
                 try:
                     sc = json.loads(sf.read_text(encoding="utf-8")) or {}
-                except Exception:
+                except Exception as e:
+                    log.debug("skipping unreadable scene %s: %s", sf.name, e)
                     continue
                 if sc.get("heading"):
                     lines.append(str(sc["heading"]).upper())
@@ -3052,7 +3201,7 @@ def _v2_export_make(r: Request):
             if mix_wav.is_file():
                 cmd.extend(["-i", str(mix_wav), "-map", "0:v:0", "-map", "1:a:0", "-shortest"])
             cmd.extend(["-vf", vf, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(out_mp4)])
-            subprocess.run(cmd, check=True, timeout=180)
+            subprocess.run(cmd, stdin=subprocess.DEVNULL, check=True, timeout=180)
         elif kf_files:
             # Assemble a real animatic MP4 from rendered Step 17 keyframes + Step 21 audio mix
             concat_txt = films_dir / "_kf_concat.txt"
@@ -3067,9 +3216,25 @@ def _v2_export_make(r: Request):
             if mix_wav.is_file():
                 cmd.extend(["-i", str(mix_wav), "-shortest"])
             cmd.extend(["-vf", vf, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "24", "-c:a", "aac", str(out_mp4)])
-            subprocess.run(cmd, check=True, timeout=180)
+            subprocess.run(cmd, stdin=subprocess.DEVNULL, check=True, timeout=180)
         else:
             raise PlanError("No video clips (Step 18) or storyboard keyframes (Step 17) rendered yet to assemble.")
+
+        import post_tools
+        if target == "shorts_9x16" and bool(r.body.get("auto_reframe")):
+            master_cand = films_dir / "master_cut.mp4"
+            if master_cand.is_file():
+                rf_res = post_tools.auto_reframe({"input_path": str(master_cand), "output_path": str(out_mp4), "target_aspect": "portrait"})
+                if not rf_res.get("success", False):
+                    log.debug("auto_reframe fallback: %s", rf_res.get("error"))
+
+        if bool(r.body.get("silence_cut")) and out_mp4.is_file():
+            sc_tmp = films_dir / f".tmp_sc_{out_mp4.name}"
+            sc_res = post_tools.silence_cutter({"input_path": str(out_mp4), "output_path": str(sc_tmp), "mode": "remove"})
+            if sc_res.get("success") and sc_tmp.is_file() and sc_tmp.stat().st_size > 0:
+                sc_tmp.replace(out_mp4)
+            else:
+                sc_tmp.unlink(missing_ok=True)
 
         return {
             "status": "ok",
@@ -3079,5 +3244,101 @@ def _v2_export_make(r: Request):
         }
 
     raise PlanError(f"Unknown export target: {target}")
+
+
+@route("POST", "/api/v2_video_render")
+def _v2_video_render(r: Request):
+    """Synthesize a Step 18 shot video clip using WanDiffusersRunner, Wan2GPRunner, ComfyUIRunner, or local FFmpeg motion animatic."""
+    from local_runners.wan2gp_runner import Wan2GPRunner
+    from local_runners.wan_diffusers_runner import WanDiffusersRunner
+    import post_tools
+    from .gpus import gpu_profile
+
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = "".join(c for c in str(r.body.get("id") or "S001-01").strip() if c.isalnum() or c in "-_")
+    if not slug or not shot_id:
+        raise PlanError("project and shot id are required")
+
+    pd = pdir(slug, "book")
+    vid_dir = pd / "videos"
+    vid_dir.mkdir(parents=True, exist_ok=True)
+    out_mp4 = vid_dir / f"{shot_id}.mp4"
+    rel_url = f"/file/{slug}/videos/{shot_id}.mp4"
+
+    kf_png = pd / "keyframes" / f"{shot_id}.png"
+    prompt = str(r.body.get("prompt") or f"Cinematic shot {shot_id}").strip()
+    duration = max(2, min(30, int(r.body.get("duration") or 4)))
+    engine = str(r.body.get("engine") or "auto").strip().lower()
+    prof = gpu_profile()
+
+    if engine in ("wan_diffusers", "wan2gp") and prof.get("tier") == "mac_8g_lite":
+        raise PlanError(
+            f"Local video engine '{engine}' is gated off on 8 GB Apple Silicon Mac (mac_8g_lite). "
+            "Select 'Local FFmpeg Motion Animatic' or run on the 48 GB Windows RTX 5090 PC."
+        )
+
+    runner_used = ""
+    if engine == "wan_diffusers":
+        w_runner = WanDiffusersRunner()
+        if w_runner.is_installed():
+            op = "image_to_video" if kf_png.is_file() else "text_to_video"
+            w_runner.run({
+                "operation": op,
+                "prompt": prompt,
+                "reference_image_path": str(kf_png) if kf_png.is_file() else None,
+                "duration_seconds": float(duration),
+                "output_path": str(out_mp4),
+                "profile": prof,
+            })
+            runner_used = "wan_diffusers"
+    elif engine == "wan2gp":
+        wgp = Wan2GPRunner()
+        if wgp.is_installed():
+            wgp.run({
+                "model_id": "wan2gp:wan22-i2v" if kf_png.is_file() else "wan2gp:wan21-t2v-1.3b",
+                "prompt": prompt,
+                "image_start": str(kf_png) if kf_png.is_file() else None,
+                "output_dir": str(vid_dir),
+                "profile": prof,
+            })
+            runner_used = "wan2gp"
+
+    if not runner_used or not out_mp4.is_file():
+        if not kf_png.is_file():
+            _synthesize_local_preview_png(prompt, kf_png, aspect_ratio="16:9")
+        ffmpeg = post_tools._ffmpeg_bin()
+        cmd = [
+            ffmpeg,
+            "-v",
+            "error",
+            "-y",
+            "-loop",
+            "1",
+            "-i",
+            str(kf_png),
+            "-t",
+            str(duration),
+            "-vf",
+            "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-r",
+            "24",
+            str(out_mp4),
+        ]
+        proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            raise PlanError(f"Local motion clip synthesis failed: {proc.stderr[-250:]}")
+        runner_used = "local_animatic"
+
+    return {
+        "status": "ok",
+        "id": shot_id,
+        "video_url": rel_url,
+        "engine": runner_used,
+        "duration": duration,
+    }
 
 

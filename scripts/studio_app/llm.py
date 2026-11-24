@@ -59,9 +59,11 @@ def local_llm_status(force=False):
             gb = _windows_memory_gb()
     except (OSError, ValueError, subprocess.SubprocessError):
         gb = 0
+    is_apple_silicon = platform.system() == "Darwin" and platform.machine() == "arm64"
+    min_gb = 8 if is_apple_silicon else 16
     if os.environ.get("STUDIO_LOCAL_LLM") != "1":
-        if gb and gb < 16:
-            reasons.append(f"this computer has {gb:.0f} GB of memory and a useful language model needs 16 GB or more")
+        if gb and gb < min_gb:
+            reasons.append(f"this computer has {gb:.0f} GB of memory and a useful language model needs {min_gb} GB or more")
         if platform.system() == "Darwin" and platform.machine() != "arm64":
             reasons.append("this is an Intel Mac; local models need Apple Silicon (M-series)")
         elif platform.system() != "Darwin" and not shutil.which("nvidia-smi"):
@@ -75,7 +77,10 @@ def local_llm_status(force=False):
                 reasons.append("the local model server has no models yet (for Ollama: ollama pull <model>)")
         except (OSError, ValueError, AttributeError):
             reasons.append(f"no local model server answered at {LOCAL_LLM_URL.rsplit('/chat/completions', 1)[0]} (install Ollama or LM Studio and start it)")
-    value = {"ready": not reasons, "reason": "; ".join(reasons), "url": LOCAL_LLM_URL, "models": models, "memory_gb": round(gb)}
+    tier = "lite" if (gb and gb < 16) else "full"
+    recommended = ["qwen2.5:3b", "gemma3:4b", "llama3.2:3b"] if tier == "lite" else ["qwen2.5:32b", "qwen2.5-vl:7b", "llama3.1:8b"]
+    value = {"ready": not reasons, "reason": "; ".join(reasons), "url": LOCAL_LLM_URL, "models": models,
+             "memory_gb": round(gb), "tier": tier, "recommended_models": recommended}
     _LOCAL_CACHE.update(at=time.time(), value=value)
     return value
 

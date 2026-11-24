@@ -146,7 +146,8 @@ def film_steps(opt, slug):
                               "argv": ["scripts/run_hf_space.sh", FILM_SPACE, str(s), str(e)]})
     steps.append({"label": "clips still missing", "expand": "film_video"})
     scene_music = bool(opt.get("music_scenes")) and (d / "audio_scenes.csv").exists()
-    if opt.get("local_audio"):
+    use_local_audio = opt["local_audio"] if "local_audio" in opt else (service == "computer")
+    if use_local_audio:
         steps += [local_audio_step(slug, "kokoro"), local_audio_step(slug, "musicgen_scenes" if scene_music else "musicgen")]
     else:
         narr, cue = d / "audio" / "kokoro" / "narration-{:04d}.wav", d / "audio" / ("musicgen_scenes" if scene_music else "musicgen_chapters") / "music-{:04d}.wav"
@@ -221,6 +222,10 @@ def generation_steps(opt, slug):
     i2v = [m for m in vmodels if m in I2V_MODELS] if st.get("video") else []
     if (st.get("keyframes") or i2v) and chapters_mode:
         raise PlanError("keyframes and the 'from keyframes' video models work per shot: choose 'Every shot'")
+    if service == "computer" and st.get("video") and vmodels and isinstance(opt.get("profile"), dict):
+        from local_runners.router import select_runner
+        for vm in vmodels:
+            select_runner("video", model_id=vm, profile=opt["profile"])
     check_models(service, gpu, (vmodels if st.get("video") else []) + (akinds if st.get("audio") else []) + ([kmodel] if st.get("keyframes") else []))
     batch = num(opt, "batch", 0, int, 0, 100000)
     sync = opt.get("sync", "stretch")
@@ -240,7 +245,7 @@ def generation_steps(opt, slug):
     if not movies:
         raise PlanError("no movies planned yet for this book and mode: run the 'Build CSVs and plan movies' step first")
     sel = opt.get("movies", {})
-    if sel.get("mode") == "all":
+    if sel.get("mode") == "all" or ("movies" not in opt and service == "computer"):
         chosen = movies
     elif sel.get("mode") == "first":
         chosen = movies[: num(sel, "n", 1, int, 1, 1000)]

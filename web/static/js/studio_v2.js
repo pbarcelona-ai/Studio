@@ -315,6 +315,10 @@
     const inputFn = $("storyFilename");
     const inputText = $("storyInputText");
     const statusMsg = $("storySaveStatus");
+    const btnClear = $("bClearStory");
+    if (btnClear && inputText) btnClear.addEventListener("click", () => { inputText.value = ""; });
+    const btnApproveMaster = $("bApproveMaster");
+    if (btnApproveMaster) btnApproveMaster.addEventListener("click", () => { alert("Film generation complete! All deliverables ready."); });
 
     if (!btnSave || !inputFn || !inputText) return;
 
@@ -463,6 +467,109 @@
     if (btnAuto) {
       btnAuto.addEventListener("click", () => launchV2AutopilotFilm());
     }
+
+    // Step 01: Firecrawl MCP Research Buttons
+    const btnResearch = $("bStep1Research");
+    const btnResearchGenre = $("bStep1ResearchGenre");
+    const btnResearchScreenplay = $("bStep1ResearchScreenplay");
+    const researchInput = $("step1ResearchQuery");
+    const researchResults = $("step1ResearchResults");
+
+    if (btnResearch && researchInput && researchResults) {
+      btnResearch.addEventListener("click", async () => {
+        const query = researchInput.value.trim();
+        if (!query) { alert("Enter a research query first."); return; }
+        try {
+          btnResearch.disabled = true;
+          btnResearch.textContent = "🔍 Searching…";
+          researchResults.style.display = "block";
+          researchResults.textContent = "Searching…";
+          const result = await callApi("/api/mcp/firecrawl/search", { query, limit: 10 });
+          if (result.error) throw new Error(result.error);
+          researchResults.innerHTML = formatFirecrawlResults(result);
+        } catch (err) {
+          console.error("Firecrawl search failed:", err);
+          researchResults.textContent = "Error: " + err.message;
+        } finally {
+          btnResearch.disabled = false;
+          btnResearch.textContent = "🔍 Search";
+        }
+      });
+    }
+
+    if (btnResearchGenre && researchResults) {
+      btnResearchGenre.addEventListener("click", async () => {
+        const genre = prompt("Enter film genre (e.g., sci-fi, thriller, romance, action):", "sci-fi");
+        if (!genre) return;
+        const year = prompt("Enter year (optional):", "");
+        try {
+          btnResearchGenre.disabled = true;
+          btnResearchGenre.textContent = "🎬 Loading…";
+          researchResults.style.display = "block";
+          researchResults.textContent = "Researching comparable films…";
+          const result = await callApi("/api/mcp/firecrawl/research_comparables", { genre, year: year ? parseInt(year) : null });
+          if (result.error) throw new Error(result.error);
+          researchResults.innerHTML = formatFirecrawlResults(result);
+        } catch (err) {
+          console.error("Firecrawl genre research failed:", err);
+          researchResults.textContent = "Error: " + err.message;
+        } finally {
+          btnResearchGenre.disabled = false;
+          btnResearchGenre.textContent = "🎬 Film Comparables";
+        }
+      });
+    }
+
+    if (btnResearchScreenplay && researchResults) {
+      btnResearchScreenplay.addEventListener("click", async () => {
+        const title = prompt("Enter film title for screenplay analysis:", "");
+        if (!title) return;
+        try {
+          btnResearchScreenplay.disabled = true;
+          btnResearchScreenplay.textContent = "📝 Analyzing…";
+          researchResults.style.display = "block";
+          researchResults.textContent = "Analyzing screenplay structure…";
+          const result = await callApi("/api/mcp/firecrawl/research_screenplay", { title });
+          if (result.error) throw new Error(result.error);
+          researchResults.innerHTML = formatFirecrawlResults(result);
+        } catch (err) {
+          console.error("Firecrawl screenplay research failed:", err);
+          researchResults.textContent = "Error: " + err.message;
+        } finally {
+          btnResearchScreenplay.disabled = false;
+          btnResearchScreenplay.textContent = "📝 Screenplay Analysis";
+        }
+      });
+    }
+
+    function formatFirecrawlResults(result) {
+      // Firecrawl returns different formats depending on the tool
+      if (result.data && Array.isArray(result.data)) {
+        return result.data.map(item => `
+          <div style="margin-bottom:12px;padding:10px;background:#0a0d14;border:1px solid #1e293b;border-radius:6px">
+            <div style="font-weight:600;color:#f59e0b;margin-bottom:4px">${escapeHtml(item.title || item.url || "Result")}</div>
+            <div style="font-size:var(--text-xs);color:#94a3b8;margin-bottom:4px">${escapeHtml(item.url || "")}</div>
+            <div style="color:#cbd5e1;font-size:var(--text-sm)">${escapeHtml(item.description || item.content || item.markdown || JSON.stringify(item)).slice(0, 500)}</div>
+          </div>
+        `).join("");
+      }
+      if (result.results && Array.isArray(result.results)) {
+        return result.results.map(item => `
+          <div style="margin-bottom:12px;padding:10px;background:#0a0d14;border:1px solid #1e293b;border-radius:6px">
+            <div style="font-weight:600;color:#f59e0b;margin-bottom:4px">${escapeHtml(item.title || item.url || "Result")}</div>
+            <div style="font-size:var(--text-xs);color:#94a3b8;margin-bottom:4px">${escapeHtml(item.url || "")}</div>
+            <div style="color:#cbd5e1;font-size:var(--text-sm)">${escapeHtml(item.description || item.content || item.snippet || JSON.stringify(item)).slice(0, 500)}</div>
+          </div>
+        `).join("");
+      }
+      return `<pre style="color:#cbd5e1;font-size:var(--text-xs);white-space:pre-wrap">${escapeHtml(JSON.stringify(result, null, 2))}</pre>`;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
   }
 
   // ===== ONE-CLICK AUTOPILOT: FULL FILM CREATION (STEPS 01 -> 22) =====
@@ -513,11 +620,20 @@
             <div>
               <label class="f" for="v2AutoVoiceEng">Voice Engine</label>
               <select id="v2AutoVoiceEng" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
-                <option value="gemini-tts" selected>✨ Gemini Neural TTS (Studio Final)</option>
-                <option value="kokoro">🎙️ Kokoro-82M Local Neural</option>
+                <option value="kokoro" selected>🎙️ Kokoro-82M Local Neural (Default)</option>
+                <option value="gemini-tts">✨ Gemini Neural TTS (Cloud)</option>
                 <option value="macos-say">⚡ Fast Scratch Preview (macOS)</option>
               </select>
             </div>
+            <div>
+              <label class="f" for="v2AutoVisualEng">Visual &amp; Keyframe Engine</label>
+              <select id="v2AutoVisualEng" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
+                <option value="local" selected>💻 Local GPU (ComfyUI / sd-cli)</option>
+                <option value="gemini">✨ Google Gemini API</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
               <label class="f" for="v2AutoDialect">Voice Dialect</label>
               <select id="v2AutoDialect" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
@@ -525,8 +641,6 @@
                 <option value="british">🇬🇧 British RP</option>
               </select>
             </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div>
               <label class="f" for="v2AutoScoreMood">Musical Score Mood</label>
               <select id="v2AutoScoreMood" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
@@ -537,14 +651,14 @@
                 <option value="playful">Playful &amp; Whimsical</option>
               </select>
             </div>
-            <div>
-              <label class="f" for="v2AutoKfLimit">Keyframes to Generate</label>
-              <select id="v2AutoKfLimit" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
-                <option value="12" selected>First 12 Shots (Fast Film Cut)</option>
-                <option value="30">First 30 Shots (Extended Cut)</option>
-                <option value="9999">All Shots in Film</option>
-              </select>
-            </div>
+          </div>
+          <div>
+            <label class="f" for="v2AutoKfLimit">Keyframes to Generate</label>
+            <select id="v2AutoKfLimit" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:13px">
+              <option value="12" selected>First 12 Shots (Fast Film Cut)</option>
+              <option value="30">First 30 Shots (Extended Cut)</option>
+              <option value="9999">All Shots in Film</option>
+            </select>
           </div>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:10px">
@@ -563,6 +677,7 @@
           look: box.querySelector("#v2AutoLook").value,
           lengthMin: parseInt(box.querySelector("#v2AutoLength").value, 10) || 0,
           voiceEngine: box.querySelector("#v2AutoVoiceEng").value,
+          visualEngine: box.querySelector("#v2AutoVisualEng")?.value || "local",
           dialect: box.querySelector("#v2AutoDialect").value,
           scoreMood: box.querySelector("#v2AutoScoreMood").value,
           kfLimit: parseInt(box.querySelector("#v2AutoKfLimit").value, 10) || 12,
@@ -683,14 +798,14 @@
 
     let canDismiss = false;
     const closeOverlay = () => {
-      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", handleKeyDown);
       overlay.remove();
       try { activateStep(currentStep); } catch (e) {}
     };
-    const onKeyDown = (e) => {
+    const handleKeyDown = (e) => {
       if (e.key === "Escape" && canDismiss) closeOverlay();
     };
-    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay && canDismiss) closeOverlay();
     });
@@ -837,8 +952,14 @@
       for (let i = 0; i < todoShots.length; i++) {
         checkCancelled();
         const sh = todoShots[i];
-        log(`  Rendering keyframe ${sh.id} (${i + 1}/${todoShots.length})…`);
-        await autoApi("/api/v2_keyframe_render", { project: slug, id: sh.id, prompt: sh.prompt, aspect_ratio: "16:9" });
+        log(`  Rendering keyframe ${sh.id} (${i + 1}/${todoShots.length}) via ${cfg.visualEngine || "local"}…`);
+        await autoApi("/api/v2_keyframe_render", {
+          project: slug,
+          id: sh.id,
+          prompt: sh.prompt,
+          aspect_ratio: "16:9",
+          engine: cfg.visualEngine || "local",
+        });
       }
       log(`  ✓ Keyframes ready.`);
       checkCancelled();
@@ -1001,6 +1122,7 @@
     // If entering Step 13 (Hardware) or Step 18 (Video), refresh Gemini & hardware status
     if (currentStep === 13 || currentStep === 18) {
       loadV2GeminiStatus();
+      if (currentStep === 18) loadV2VideoClips();
     }
 
     // If entering Step 14 (Voice Casting & Dialects), load all story characters' voices
@@ -1709,10 +1831,17 @@
   let spActiveIdx = 0;
   let spViewMode = "single"; // "single" | "all"
   let spSourceKind = "adaptation"; // "adaptation" | "readin" | "chapters"
+  let spFilter = "D"; // "A" | "D" | "T" | "AD" | "AT" | "DT" | "ADT" - default to Dialogue only
 
-  function spElementsToText(els) {
+  function spElementsToText(els, filter) {
     if (!Array.isArray(els)) return "";
-    return els.map(e => {
+    const f = (filter || spFilter).toUpperCase();
+    // Parse filter: can be single letters (A, D, T) or combinations (AD, AT, DT, ADT)
+    const allowed = new Set(f.split(""));
+    return els.filter(e => {
+      const typeChar = e.type === "dialogue" ? "D" : (e.type === "transition" ? "T" : "A");
+      return allowed.has(typeChar);
+    }).map(e => {
       if (e.type === "dialogue") {
         return `D ${e.character}${e.note ? ` (${e.note})` : ""}: ${e.text}`;
       }
@@ -1818,7 +1947,7 @@
       }
       if (body) {
         body.value = s.screenplay
-          ? spElementsToText(s.screenplay.elements)
+          ? spElementsToText(s.screenplay.elements, spFilter)
           : (s.text || "");
       }
       if (saveBtn) {
@@ -1862,7 +1991,7 @@
           const pre = document.createElement("pre");
           pre.style.cssText = "margin:0;white-space:pre-wrap;font-family:var(--font-mono);font-size:var(--text-xs);color:#e2e8f0;line-height:1.5;max-height:180px;overflow:auto;";
           pre.textContent = s.screenplay
-            ? spElementsToText(s.screenplay.elements)
+            ? spElementsToText(s.screenplay.elements, spFilter)
             : (s.text || s.summary || "(Not written yet)");
           card.appendChild(pre);
           allBox.appendChild(card);
@@ -1945,12 +2074,236 @@
     const btnAll = $("v2SpViewAll");
     const btnRefresh = $("v2SpRefresh");
     const btnSave = $("v2SpSave");
+    const btnExport = $("spExport");
+    const btnImportFile = $("spImportFile");
+    const filesSpan = $("spFiles");
+    const filterSelect = $("v2SpFilter");
+    const btnRewrite = $("v2SpRewrite");
+    const btnClearInstructions = $("v2SpClearInstructions");
+    const instructionsArea = $("v2SpInstructions");
 
     if (prevBtn) prevBtn.addEventListener("click", () => { if (spActiveIdx > 0) { spActiveIdx--; spViewMode = "single"; renderV2Screenplay(); } });
     if (nextBtn) nextBtn.addEventListener("click", () => { if (spActiveIdx < spScenesData.length - 1) { spActiveIdx++; spViewMode = "single"; renderV2Screenplay(); } });
     if (btnSingle) btnSingle.addEventListener("click", () => { spViewMode = "single"; renderV2Screenplay(); });
     if (btnAll) btnAll.addEventListener("click", () => { spViewMode = "all"; renderV2Screenplay(); });
     if (btnRefresh) btnRefresh.addEventListener("click", () => loadV2Screenplay());
+
+    // Filter dropdown: element type filter
+    if (filterSelect) {
+      filterSelect.addEventListener("change", () => {
+        spFilter = filterSelect.value;
+        renderV2Screenplay();
+      });
+    }
+
+    // Clear instructions button
+    if (btnClearInstructions && instructionsArea) {
+      btnClearInstructions.addEventListener("click", () => {
+        instructionsArea.value = "";
+        instructionsArea.focus();
+      });
+    }
+
+    // Update Scene (AI Rewrite) button
+    if (btnRewrite && instructionsArea) {
+      btnRewrite.addEventListener("click", async () => {
+        const instructions = instructionsArea.value.trim();
+        if (!instructions) {
+          alert("Please enter additional instructions for the AI rewrite.");
+          return;
+        }
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) {
+          alert("Pick a book first.");
+          return;
+        }
+        const s = spScenesData[spActiveIdx];
+        if (!s) {
+          alert("No scene selected.");
+          return;
+        }
+
+        btnRewrite.disabled = true;
+        btnRewrite.textContent = "✨ Rewriting…";
+        const saveMsg = $("v2SpSaveMsg");
+        if (saveMsg) saveMsg.textContent = "AI rewriting scene…";
+
+        try {
+          await callApi("/api/screenplay_edit", {
+            project: slug,
+            action: "rewrite_scene",
+            scene: s.id,
+            instructions: instructions
+          });
+          if (saveMsg) saveMsg.textContent = `✓ Scene ${s.id} rewritten. Refreshing…`;
+          instructionsArea.value = ""; // Clear instructions after successful rewrite
+          await loadV2Screenplay();
+          await checkStepStorylineDrift();
+        } catch (err) {
+          console.error("Rewrite failed:", err);
+          if (saveMsg) saveMsg.textContent = "Error: " + err.message;
+        } finally {
+          btnRewrite.disabled = false;
+          btnRewrite.textContent = "✨ Update Scene (AI)";
+        }
+      });
+    }
+
+    // Export screenplay (creates .fdx, .fountain, .docx, .pdf)
+    if (btnExport) {
+      btnExport.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) return;
+        try {
+          btnExport.disabled = true;
+          btnExport.textContent = "Exporting…";
+          const result = await callApi("/api/readin_export", { project: slug, formats: ["fdx", "fountain", "docx", "pdf"] });
+          if (result && result.exports) {
+            filesSpan.innerHTML = result.exports.map(f => `<a class="btn btn--ghost" href="${f.url}" download>${f.name}</a>`).join(" ");
+          }
+          btnExport.textContent = "Export downloads (.fdx, .fountain, .docx, .pdf)";
+        } catch (err) {
+          console.error("Export failed:", err);
+          btnExport.textContent = "Export downloads (.fdx, .fountain, .docx, .pdf)";
+        } finally {
+          btnExport.disabled = false;
+        }
+      });
+    }
+
+    // Import screenplay (.fdx or .fountain)
+    if (btnImportFile) {
+      btnImportFile.addEventListener("change", async () => {
+        const file = btnImportFile.files[0];
+        if (!file) return;
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) {
+          alert("Pick a book first.");
+          btnImportFile.value = "";
+          return;
+        }
+        if (!confirm("Import will replace the current screenplay. Continue?")) {
+          btnImportFile.value = "";
+          return;
+        }
+        try {
+          btnImportFile.disabled = true;
+          const progressEl = $("riProgress") || $("v2SpSaveMsg");
+          if (progressEl) progressEl.textContent = `Importing ${file.name}…`;
+          const base64 = await fileToBase64(file);
+          const result = await callApi("/api/readin_import", {
+            project: slug,
+            file: { name: file.name, content_base64: base64 }
+          });
+          if (progressEl) progressEl.textContent = `Imported ${result.imported} of ${result.total_plan_scenes} scenes. Refreshing…`;
+          btnImportFile.value = "";
+          await loadV2Screenplay();
+          await checkStepStorylineDrift();
+        } catch (err) {
+          console.error("Import failed:", err);
+          const progressEl = $("riProgress") || $("v2SpSaveMsg");
+          if (progressEl) progressEl.textContent = err.message || "Import failed";
+          btnImportFile.value = "";
+        } finally {
+          btnImportFile.disabled = false;
+        }
+      });
+    }
+
+    // MCP Integration: Send to Premiere Pro
+    const btnMcpPremiere = $("spMcpPremiere");
+    const btnMcpBlender = $("spMcpBlender");
+    const btnMcpFinalDraft = $("spMcpFinalDraft");
+    const mcpStatus = $("spMcpStatus");
+
+    if (btnMcpPremiere) {
+      btnMcpPremiere.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick a book first."); return; }
+        if (!confirm("This will export the screenplay to FDX and send it to Premiere Pro via MCP. Continue?")) return;
+        try {
+          btnMcpPremiere.disabled = true;
+          btnMcpPremiere.textContent = "🎬 Sending to Premiere…";
+          if (mcpStatus) mcpStatus.textContent = "Connecting to Premiere Pro MCP…";
+          const result = await callApi("/api/mcp/premiere/import_fdx", { project: slug });
+          if (result.error) throw new Error(result.error);
+          if (mcpStatus) mcpStatus.textContent = "✓ Sent to Premiere Pro successfully";
+          setTimeout(() => { if (mcpStatus) mcpStatus.textContent = ""; }, 5000);
+        } catch (err) {
+          console.error("Premiere MCP failed:", err);
+          if (mcpStatus) mcpStatus.textContent = "Error: " + err.message;
+        } finally {
+          btnMcpPremiere.disabled = false;
+          btnMcpPremiere.textContent = "🎬 Send to Premiere Pro";
+        }
+      });
+    }
+
+    // MCP Integration: Generate Previs with Blender
+    if (btnMcpBlender) {
+      btnMcpBlender.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick a book first."); return; }
+        const s = spScenesData[spActiveIdx];
+        if (!s) { alert("Select a scene first."); return; }
+        if (!confirm(`Generate 3D previs for scene ${s.id} via Blender MCP? This may take a minute.`)) return;
+        try {
+          btnMcpBlender.disabled = true;
+          btnMcpBlender.textContent = "🎯 Generating…";
+          if (mcpStatus) mcpStatus.textContent = "Generating previs with Blender MCP…";
+          const result = await callApi("/api/mcp/blender/generate_previs", { project: slug, scene_id: s.id });
+          if (result.error) throw new Error(result.error);
+          if (mcpStatus) mcpStatus.textContent = "✓ Previs generated";
+          setTimeout(() => { if (mcpStatus) mcpStatus.textContent = ""; }, 5000);
+        } catch (err) {
+          console.error("Blender MCP failed:", err);
+          if (mcpStatus) mcpStatus.textContent = "Error: " + err.message;
+        } finally {
+          btnMcpBlender.disabled = false;
+          btnMcpBlender.textContent = "🎯 Generate Previs (Blender)";
+        }
+      });
+    }
+
+    // MCP Integration: Open in Final Draft Web via Playwright
+    if (btnMcpFinalDraft) {
+      btnMcpFinalDraft.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick a book first."); return; }
+        if (!confirm("This will export the screenplay to FDX and open it in Final Draft Web via Playwright MCP. Continue?")) return;
+        try {
+          btnMcpFinalDraft.disabled = true;
+          btnMcpFinalDraft.textContent = "📝 Opening Final Draft…";
+          if (mcpStatus) mcpStatus.textContent = "Launching Final Draft Web via Playwright MCP…";
+          const result = await callApi("/api/mcp/playwright/finaldraft_import", { project: slug, project_title: slug });
+          if (result.error) throw new Error(result.error);
+          if (mcpStatus) mcpStatus.textContent = "✓ Opened in Final Draft Web";
+          setTimeout(() => { if (mcpStatus) mcpStatus.textContent = ""; }, 5000);
+        } catch (err) {
+          console.error("Playwright MCP failed:", err);
+          if (mcpStatus) mcpStatus.textContent = "Error: " + err.message;
+        } finally {
+          btnMcpFinalDraft.disabled = false;
+          btnMcpFinalDraft.textContent = "📝 Open in Final Draft Web";
+        }
+      });
+    }
+
+    // Helper: convert File to base64
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1] || "");
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
 
     if (btnSave) {
       btnSave.addEventListener("click", async () => {
@@ -2154,11 +2507,18 @@
         const returnBtn = $("bReturnToPipeline");
         if (returnBtn) returnBtn.textContent = `🎬 Return to Guided Film Pipeline (Step ${currentStep})`;
 
-        // Show the workbench tab panel
-        document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+        // Show the workbench tab panel (and mount lazy workspace widgets if needed)
+        const wsMap = { "panel-apps": "apps", "panel-compare": "canvas-compare", "panel-models": "models-hardware" };
+        if (wsMap[targetId] && typeof window.activateWorkspaceTab === "function") {
+          window.activateWorkspaceTab(wsMap[targetId], true);
+        }
+        document.querySelectorAll(".tab-panel").forEach(p => {
+          const isMatch = p.id === targetId;
+          p.classList.toggle("active", isMatch);
+          if (isMatch) p.classList.remove("hidden");
+        });
         const targetPanel = $(targetId);
         if (targetPanel) {
-          targetPanel.classList.add("active");
           targetPanel.scrollIntoView({ behavior: "smooth", block: "start" });
         }
         dropdown.classList.add("hidden");
@@ -2511,11 +2871,12 @@
     kaggle: "Kaggle Dual T4 / Colab",
     computer: "Local Computer GPU",
   };
-  let v2SelectedHardware = "gemini";
+  let v2SelectedHardware = "computer";
+  let v2GpuProfile = null;
   let v2OmniInteractions = {};
 
   function selectV2Hardware(hwKey) {
-    const key = V2_HW_LABELS[hwKey] ? hwKey : "gemini";
+    const key = V2_HW_LABELS[hwKey] ? hwKey : "computer";
     v2SelectedHardware = key;
 
     document.querySelectorAll(".v2-hw-card").forEach(card => {
@@ -2550,8 +2911,35 @@
   async function loadV2GeminiStatus() {
     const badge = $("v2GeminiKeyBadge");
     const omniBadge = $("v2OmniBadge");
+    const localGpuBadge = $("v2LocalGpuBadge");
+    const localVideoBadge = $("v2LocalVideoBadge");
     const selProj = $("proj");
     const slug = (selProj && selProj.value) || activeProject || "";
+
+    try {
+      const prof = await callApi("/api/gpu_profile");
+      if (prof && typeof prof === "object") {
+        v2GpuProfile = prof;
+        const legacyOn = Boolean(prof.legacy_cloud);
+        document.querySelectorAll('.v2-hw-card[data-legacy-cloud="1"]').forEach(card => {
+          card.style.display = legacyOn ? "" : "none";
+        });
+        if (localGpuBadge) {
+          localGpuBadge.textContent = `✓ ${prof.name || "Local GPU"} (${prof.vram_gb || 0} GB · ${prof.tier || "local"})`;
+          localGpuBadge.className = "status-badge status-badge--synced";
+        }
+        if (localVideoBadge) {
+          if (prof.tier === "mac_8g_lite" || prof.supports_local_video === false) {
+            localVideoBadge.textContent = `${prof.vram_gb || 8} GB Mac · Motion Animatic Active (Heavy Wan 14B Gated)`;
+            localVideoBadge.className = "status-badge status-badge--working";
+          } else {
+            localVideoBadge.textContent = `✓ ${prof.name || "GPU"} (${prof.vram_gb || 48} GB · Wan 2.2 + ComfyUI Ready)`;
+            localVideoBadge.className = "status-badge status-badge--synced";
+          }
+        }
+      }
+    } catch (e) {}
+
     try {
       const st = await callApi(`/api/gemini_omni_status?project=${encodeURIComponent(slug)}`);
       v2OmniInteractions = (st && st.interactions) || {};
@@ -2619,9 +3007,64 @@
         selectV2Hardware(btn.dataset.hw);
       });
     });
-    let savedHw = "gemini";
-    try { savedHw = localStorage.getItem("studio_v2_hardware") || "gemini"; } catch (e) {}
+    let savedHw = "computer";
+    try { savedHw = localStorage.getItem("studio_v2_hardware") || "computer"; } catch (e) {}
     selectV2Hardware(savedHw);
+
+    const btnLocalVid = $("bV2RunLocalVideo");
+    const btnLocalVidBatch = $("bV2RunLocalVideoBatch");
+    const btnReloadVid = $("bV2ReloadVideos");
+    if (btnReloadVid) btnReloadVid.addEventListener("click", () => loadV2VideoClips());
+    if (btnLocalVid) {
+      btnLocalVid.addEventListener("click", async () => {
+        const slug = ($("proj")?.value || activeProject || "").trim();
+        if (!slug) return;
+        const shotId = $("v2LocalVideoShotSelect")?.value || "S001-01";
+        const eng = $("v2LocalVideoEngine")?.value || "auto";
+        const dur = parseInt($("v2LocalVideoDuration")?.value || "4", 10) || 4;
+        const st = $("v2LocalVideoStatus");
+        const stopBusy = startBusyFeedback(btnLocalVid, $("v2LocalVideoCard"), `Synthesizing ${shotId} video locally…`);
+        if (st) { st.style.color = "#34d399"; st.textContent = `Synthesizing ${shotId} (${dur}s) via ${eng}…`; }
+        try {
+          const res = await callApi("/api/v2_video_render", { project: slug, id: shotId, engine: eng, duration: dur });
+          if (st) st.textContent = `✓ Rendered ${shotId} (${res.engine}) -> ${res.video_url}`;
+          await loadV2VideoClips();
+        } catch (err) {
+          if (st) { st.style.color = "#f87171"; st.textContent = "Local video synthesis failed: " + (err.message || err); }
+        } finally {
+          stopBusy();
+        }
+      });
+    }
+    if (btnLocalVidBatch) {
+      btnLocalVidBatch.addEventListener("click", async () => {
+        const slug = ($("proj")?.value || activeProject || "").trim();
+        if (!slug) return;
+        const eng = $("v2LocalVideoEngine")?.value || "auto";
+        const dur = parseInt($("v2LocalVideoDuration")?.value || "4", 10) || 4;
+        const st = $("v2LocalVideoStatus");
+        const stopBusy = startBusyFeedback(btnLocalVidBatch, $("v2LocalVideoCard"), "Synthesizing all keyframed shots…");
+        try {
+          const kf = await callApi(`/api/v2_keyframes?project=${encodeURIComponent(slug)}`);
+          const shots = (kf.scenes || []).flatMap(sc => sc.shots || []).filter(s => s.has_image);
+          if (!shots.length) {
+            if (st) { st.style.color = "#f87171"; st.textContent = "No rendered keyframes found yet. Generate keyframes in Step 17 first."; }
+            return;
+          }
+          for (let i = 0; i < shots.length; i++) {
+            const s = shots[i];
+            if (st) { st.style.color = "#34d399"; st.textContent = `Synthesizing ${s.id} (${i + 1}/${shots.length})…`; }
+            await callApi("/api/v2_video_render", { project: slug, id: s.id, prompt: s.prompt, engine: eng, duration: dur });
+          }
+          if (st) st.textContent = `✓ Rendered ${shots.length} shot video clip(s)!`;
+          await loadV2VideoClips();
+        } catch (err) {
+          if (st) { st.style.color = "#f87171"; st.textContent = "Batch video synthesis stopped: " + (err.message || err); }
+        } finally {
+          stopBusy();
+        }
+      });
+    }
 
     const btnKey = $("bSaveGeminiKey");
     const keyInput = $("v2GeminiKeyInput");
@@ -5280,15 +5723,66 @@
     });
   }
 
+  function _currentV2VisualEngine() {
+    return v2SelectedHardware === "computer" ? "local" : v2SelectedHardware;
+  }
+
+  async function loadV2VideoClips() {
+    const slug = ($("proj")?.value || activeProject || "").trim();
+    const grid = $("v2VideoClipsGrid");
+    const selShot = $("v2LocalVideoShotSelect");
+    if (!grid || !slug) return;
+    try {
+      const kf = await callApi(`/api/v2_keyframes?project=${encodeURIComponent(slug)}`);
+      const shots = (kf.scenes || []).flatMap(sc => sc.shots || []);
+      if (selShot && shots.length) {
+        const prev = selShot.value;
+        selShot.innerHTML = shots.map(s => `<option value="${s.id}">${s.id} · ${s.type || "Shot"} (${s.seconds || 4}s)${s.has_image ? " ✓KF" : ""}</option>`).join("");
+        if (shots.some(s => s.id === prev)) selShot.value = prev;
+      }
+      grid.innerHTML = "";
+      const displayShots = shots.filter(s => s.has_image).slice(0, 12);
+      if (!displayShots.length) {
+        const empty = document.createElement("div");
+        empty.className = "direct-story-card";
+        empty.style.cssText = "grid-column:1/-1;color:#94a3b8;font-size:var(--text-sm)";
+        empty.textContent = "Render keyframes in Step 17 or select a shot above and click 🎬 Synthesize Shot Video Locally.";
+        grid.appendChild(empty);
+        return;
+      }
+      displayShots.forEach(s => {
+        const card = document.createElement("div");
+        card.className = "deliverable-card";
+        const vidUrl = `/file/${slug}/videos/${s.id}.mp4`;
+        card.innerHTML = `
+          <div style="background:#000;aspect-ratio:16/9;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#38bdf8;position:relative">
+            <video src="${vidUrl}" poster="${s.image_url || ""}" controls preload="metadata" style="width:100%;height:100%;object-fit:cover"></video>
+          </div>
+          <strong style="color:#f59e0b;margin-top:6px">${s.id} &middot; ${s.type || "Shot"} (${s.seconds || 4}s)</strong>
+          <button type="button" class="btn btn--secondary v2-redo-clip-btn" data-shot-id="${s.id}" style="margin-top:4px;font-size:var(--text-xs)">🎬 Synthesize / Redo Clip</button>
+        `;
+        const btn = card.querySelector(".v2-redo-clip-btn");
+        if (btn) {
+          btn.addEventListener("click", async () => {
+            if (selShot) selShot.value = s.id;
+            $("bV2RunLocalVideo")?.click();
+          });
+        }
+        grid.appendChild(card);
+      });
+    } catch (e) {}
+  }
+
   async function renderSingleKeyframe(shot, promptText, triggerBtn, cardEl) {
     const stopBusy = startBusyFeedback(triggerBtn, cardEl, `Generating keyframe ${shot.id}…`);
-    setV2KfStatus(`Generating 16:9 keyframe for ${shot.id}…`);
+    setV2KfStatus(`Generating 16:9 keyframe for ${shot.id} (${_currentV2VisualEngine()})…`);
     try {
       const res = await callApi("/api/v2_keyframe_render", {
         project: v2KfState.project,
         id: shot.id,
         prompt: promptText,
         aspect_ratio: "16:9",
+        engine: _currentV2VisualEngine(),
       });
       shot.prompt = promptText;
       if (!shot.has_image) v2KfState.rendered_shots++;
@@ -5451,6 +5945,22 @@
       row.appendChild(btnUp);
 
       if (shot.has_image) {
+        const btnCanvas = document.createElement("button");
+        btnCanvas.type = "button";
+        btnCanvas.className = "btn btn--ghost";
+        btnCanvas.style.cssText = "padding:4px 8px;font-size:var(--text-xs);color:#38bdf8";
+        btnCanvas.textContent = "🎨 Canvas";
+        btnCanvas.title = `Open ${shot.id} in Canvas & Compare Studio for brush/mask inpainting`;
+        btnCanvas.addEventListener("click", () => {
+          const wbCompareBtn = document.querySelector('#workbenchDropdown .wb-tab-btn[data-target="panel-compare"]');
+          if (wbCompareBtn) wbCompareBtn.click();
+          else if (typeof window.activateWorkspaceTab === "function") window.activateWorkspaceTab("canvas-compare", true);
+          const shotNum = parseInt(String(shot.id).split("-").pop() || "1", 10) || 1;
+          const shotIn = document.querySelector('#canvasStudioHost [data-role="export-shot"]');
+          if (shotIn) shotIn.value = String(shotNum);
+        });
+        row.appendChild(btnCanvas);
+
         const btnLock = document.createElement("button");
         btnLock.type = "button";
         btnLock.className = "btn " + (shot.locked ? "btn--primary" : "btn--ghost");
@@ -5621,6 +6131,7 @@
               id: shot.id,
               edits,
               prompt: ta.value.trim(),
+              engine: _currentV2VisualEngine(),
             });
             shot.image_url = res.image_url + "?t=" + Date.now();
             shot.pending_edits = res.pending_edits || edits;
@@ -5770,6 +6281,7 @@
                 id: shot.id,
                 prompt: promptText,
                 aspect_ratio: "16:9",
+                engine: _currentV2VisualEngine(),
               });
               shot.prompt = promptText;
               if (!shot.has_image) v2KfState.rendered_shots++;
@@ -5946,6 +6458,7 @@
                 desc: c.desc,
                 wardrobe: of.wardrobe || "",
                 look: v2TurnState.look,
+                engine: _currentV2VisualEngine(),
               });
               of.views[vk] = { has_image: true, image_url: res.image_url + "?t=" + Date.now() };
               renderV2Turnarounds();
@@ -6225,10 +6738,19 @@
       const slug = getSlug();
       if (!slug) return;
       const st = $(statusId);
-      const stopBusy = startBusyFeedback(btn, null, `Building ${target}…`);
-      if (st) { st.style.color = "#34d399"; st.textContent = `Building ${target} for "${slug}"…`; }
+      const runtime = $("v2TlRuntime")?.value || "ffmpeg";
+      const silenceCut = Boolean($("v2ExpSilenceCut")?.checked);
+      const autoReframe = Boolean($("v2ExpAutoReframe")?.checked);
+      const stopBusy = startBusyFeedback(btn, null, `Building ${target} (${runtime})…`);
+      if (st) { st.style.color = "#34d399"; st.textContent = `Building ${target} for "${slug}" (runtime: ${runtime})…`; }
       try {
-        const res = await callApi("/api/v2_export_make", { project: slug, target });
+        const res = await callApi("/api/v2_export_make", {
+          project: slug,
+          target,
+          runtime,
+          silence_cut: silenceCut,
+          auto_reframe: autoReframe,
+        });
         if (st) st.textContent = `✓ Ready: ${target}`;
         if (res.video_url) await loadV2PostProd();
         if (res.download_url) window.open(res.download_url, "_blank");
@@ -6238,6 +6760,37 @@
         stopBusy();
       }
     };
+
+    const btnTlQa = $("bV2TlQaCheck");
+    if (btnTlQa) {
+      btnTlQa.addEventListener("click", async () => {
+        const slug = getSlug();
+        const st = $("v2TlStatus");
+        if (!slug) return;
+        const runtime = $("v2TlRuntime")?.value || "ffmpeg";
+        if (st) { st.style.color = "#34d399"; st.textContent = `Running Pre-Render QA Check (runtime: ${runtime})…`; }
+        try {
+          const tlScenes = (v2PostState && v2PostState.timeline && v2PostState.timeline.scenes) || [];
+          const scenesPayload = tlScenes.length
+            ? tlScenes.map((s, idx) => ({
+                id: s.id || `S${idx + 1}`,
+                visual_source: (v2PostState?.counts?.videos || 0) > 0 ? "ai_video" : "static_image",
+                motion: idx % 2 === 0 ? "pan_left" : "zoom_in",
+                duration_seconds: Number(s.seconds) || 4,
+              }))
+            : [{ id: "S001", visual_source: "ai_video", motion: "pan_left", duration_seconds: 4 }];
+          const qa = await callApi("/api/qa/check", { scenes: scenesPayload, render_runtime: runtime });
+          const verdict = (qa.verdict || "pass").toUpperCase();
+          const avg = qa.average !== undefined ? ` (avg score: ${qa.average}/5)` : "";
+          if (st) {
+            st.style.color = verdict === "FAIL" ? "#f87171" : "#34d399";
+            st.textContent = `🛡️ Pre-Render QA Verdict: ${verdict}${avg} · Runtime: ${runtime}`;
+          }
+        } catch (err) {
+          if (st) { st.style.color = "#f87171"; st.textContent = "Pre-Render QA failed: " + (err.message || err); }
+        }
+      });
+    }
 
     const bindExp = (id, target, stId) => {
       const b = $(id);
@@ -6272,9 +6825,20 @@
     }
   }
 
+  // ===== SPLASH SCREEN =====
+  function hideSplashScreen() {
+    const splash = $("splashScreen");
+    if (splash) {
+      splash.classList.add("hidden");
+      // Remove from DOM after transition to free memory
+      setTimeout(() => splash.remove(), 500);
+    }
+  }
+
   // ===== INITIALIZATION & BINDING =====
   window.addEventListener("DOMContentLoaded", () => {
     // Pipeline mode is the default: hide all classic panels below
+    document.body.classList.remove("mode-unified");
     document.body.classList.add("mode-pipeline");
 
     initDirectStoryInput();
@@ -6356,6 +6920,9 @@
       if (currentStep === 16) loadV2SoundDesign();
       if (currentStep === 17) loadV2Keyframes();
       if (currentStep >= 19 && currentStep <= 22) loadV2PostProd();
+
+      // Hide splash screen after app initialization
+      hideSplashScreen();
     }, 1200);
   });
 

@@ -1567,7 +1567,9 @@
     display: none !important;
   }
 
-  body.mode-pipeline .pipeline-phases-bar,
+  body.mode-pipeline .pipeline-phases-bar {
+    display: flex !important;
+  }
   body.mode-pipeline .studio-pipeline-viewport {
     display: block !important;
   }

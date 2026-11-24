@@ -1,4 +1,5 @@
 """GET routes of the JSON API."""
+from typing import Any
 import character_tokens
 import detect_scene_changes
 import model_advisor
@@ -6,6 +7,9 @@ from layout import project_dir as pdir
 from bookkit import SLUG_RE
 
 from .api import HttpError, Request, route
+from .log import get_logger
+
+log = get_logger("routes_get")
 from .adapt import adaptation_data, cast_lock_data, grading_data, screenplay_data
 from .chapters import chapter_list, chapter_text
 from .export import credits_get, exports_data, shares_data
@@ -14,7 +18,7 @@ from .common import num
 from .config import ROOT
 from .gallery import compare_data, library, showcase
 from .generation import film_status
-from .gpus import suggestions
+from .gpus import gpu_profile, suggestions
 from .jobs import JOB
 from .kaggle_cleanup import kaggle_cleanup_scan
 from .kaggle_runs import kaggle_runs, kernel_ref, kernel_status
@@ -112,6 +116,11 @@ def _film_status(r: Request):
 @route("GET", "/api/suggest")
 def _suggest(r: Request):
     return suggestions(r.q("look"), r.q("service"), r.q("gpu"))
+
+
+@route("GET", "/api/gpu_profile")
+def _gpu_profile(_r: Request):
+    return gpu_profile()
 
 
 @route("GET", "/api/media")
@@ -298,7 +307,7 @@ def _storyline_changes(r: Request):
     try:
         pd = pdir(slug, "book")
     except Exception as e:
-        raise HttpError(400, str(e))
+        raise HttpError(400, str(e)) from e
     return detect_scene_changes.detect_changed_scenes(pd)
 
 
@@ -317,7 +326,7 @@ def _gemini_omni_status(r: Request):
     import run_gemini_omni
 
     slug = r.q("project")
-    interactions = {}
+    interactions: dict[str, Any] = {}
     if slug:
         try:
             idx_path = pdir(slug, "book") / "videos" / "gemini_omni_12_flash" / "interactions.json"
@@ -349,8 +358,8 @@ def _v2_voice_cast(r: Request):
                 "dialect": data.get("dialect") or "american",
                 "mode": data.get("mode") or "dialogue",
             }
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("v2_voice_cast read failed: %s", e)
     return {"cast": {}, "dialect": "american", "mode": "dialogue"}
 
 
@@ -363,13 +372,13 @@ def _v2_dialogue(r: Request):
     if not slug:
         return {"lines": [], "scenes": [], "dialect": "american", "cast": {}}
     pd = pdir(slug, "book")
-    vc = {}
-    profiles = {}
-    baselines_raw = {}
+    vc: dict[str, Any] = {}
+    profiles: dict[str, Any] = {}
+    baselines_raw: dict[str, Any] = {}
     cleared_baselines = set()
     dialect = "american"
     vc_path = pd / "voice_cast.json"
-    vdata = {}
+    vdata: dict[str, Any] = {}
     if vc_path.is_file():
         try:
             vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
@@ -378,8 +387,8 @@ def _v2_dialogue(r: Request):
             baselines_raw = vdata.get("baselines") or {}
             cleared_baselines = {str(c).lower() for c in (vdata.get("cleared_baselines") or [])}
             dialect = vdata.get("dialect") or "american"
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("voice_cast.json read failed: %s", e)
 
     from .routes_post import VOICE_LIBRARY_DIR, _voice_library_load, find_kokoro_python
     global_lib = _voice_library_load()
@@ -402,7 +411,7 @@ def _v2_dialogue(r: Request):
                 "audio_url": f"/file/{slug}/{binfo['file']}",
             }
 
-    saved = {}
+    saved: dict[str, Any] = {}
     saved_engine = ""
     dl_path = pd / "dialogue_lines.json"
     if dl_path.is_file():
@@ -410,8 +419,8 @@ def _v2_dialogue(r: Request):
             ddata = json.loads(dl_path.read_text(encoding="utf-8")) or {}
             saved = ddata.get("lines") or {}
             saved_engine = str(ddata.get("engine") or "").strip()
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("dialogue_lines.json read failed: %s", e)
 
     import shutil
     import subprocess
@@ -420,13 +429,13 @@ def _v2_dialogue(r: Request):
     try:
         import run_gemini_omni
         gemini_ready = bool(run_gemini_omni.get_gemini_api_key())
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("gemini_omni probe failed: %s", e)
     kokoro_py = find_kokoro_python()
     kokoro_ready = bool(kokoro_py)
     say_bin = shutil.which("say")
     macos_ready = bool(say_bin)
-    macos_voices = []
+    macos_voices: list[dict[str, str]] = []
     if say_bin:
         try:
             out = subprocess.check_output([say_bin, "-v", "?"], text=True, timeout=5)
@@ -437,8 +446,8 @@ def _v2_dialogue(r: Request):
                     locale = parts[1]
                     if vname not in [x["id"] for x in macos_voices]:
                         macos_voices.append({"id": vname, "label": f"{vname} ({locale})"})
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("say -v probe failed: %s", e)
     if not saved_engine:
         saved_engine = "gemini-tts" if gemini_ready else ("kokoro" if kokoro_ready else "macos-say")
 
@@ -449,7 +458,8 @@ def _v2_dialogue(r: Request):
         for sp_file in sorted(sp_dir.glob("scene-*.json")):
             try:
                 sc = json.loads(sp_file.read_text(encoding="utf-8")) or {}
-            except Exception:
+            except Exception as e:
+                log.debug("skipping unreadable scene %s: %s", sp_file.name, e)
                 continue
             sc_id = str(sc.get("scene") or sp_file.stem.replace("scene-", ""))
             heading = str(sc.get("heading") or "")
@@ -462,7 +472,8 @@ def _v2_dialogue(r: Request):
                 char = str(el.get("character") or "SPEAKER").strip()
                 text = str(el.get("text") or "").strip()
                 note = str(el.get("note") or "").strip()
-                ov = saved.get(lid) if isinstance(saved.get(lid), dict) else {}
+                raw_ov = saved.get(lid)
+                ov: dict[str, Any] = raw_ov if isinstance(raw_ov, dict) else {}
                 g_entry = global_lib_lc.get(char.lower()) or {}
                 cp = prof_lc.get(char.lower()) or g_entry or {}
                 # Auto-inherit baseline WAV from global cross-film library for new films if not cleared/set yet
@@ -540,7 +551,7 @@ def _v2_sound_design(r: Request):
         return {"foley": {}, "score": {}, "scenes": []}
     pd = pdir(slug, "book")
     sd_path = pd / "sound_design_v2.json"
-    saved = {}
+    saved: dict[str, Any] = {}
     if sd_path.is_file():
         try:
             saved = json.loads(sd_path.read_text(encoding="utf-8")) or {}
@@ -548,13 +559,15 @@ def _v2_sound_design(r: Request):
             saved = {}
 
     scenes = []
-    saved_scenes = saved.get("scenes") if isinstance(saved.get("scenes"), dict) else {}
+    raw_saved_scenes = saved.get("scenes")
+    saved_scenes: dict[str, Any] = raw_saved_scenes if isinstance(raw_saved_scenes, dict) else {}
     sp_dir = pd / "screenplay"
     if sp_dir.is_dir():
         for sp_file in sorted(sp_dir.glob("scene-*.json")):
             try:
                 sc = json.loads(sp_file.read_text(encoding="utf-8")) or {}
-            except Exception:
+            except Exception as e:
+                log.debug("skipping unreadable scene %s: %s", sp_file.name, e)
                 continue
             sc_id = str(sc.get("scene") or sp_file.stem.replace("scene-", ""))
             heading = str(sc.get("heading") or "")
@@ -577,7 +590,8 @@ def _v2_sound_design(r: Request):
                 auto_preset, auto_cue = "space_adventure", "Starship bridge hum, cockpit console chimes, space ambiance"
                 auto_mood = "wonder"
 
-            ov = saved_scenes.get(sc_id) if isinstance(saved_scenes.get(sc_id), dict) else {}
+            raw_ov = saved_scenes.get(sc_id)
+            ov: dict[str, Any] = raw_ov if isinstance(raw_ov, dict) else {}
             sc_wav = pd / "audio" / "foley" / f"scene_{sc_id}.wav"
             has_sc_wav = sc_wav.is_file() and sc_wav.stat().st_size > 100
             scenes.append({
@@ -632,8 +646,8 @@ def _v2_keyframes(r: Request):
         try:
             gp = json.loads(gp_path.read_text(encoding="utf-8")) or {}
             look = str(gp.get("look") or look)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("global_params.json read failed: %s", e)
 
     # Character visual/wardrobe tokens (prefer Step 08 saved dossiers, fallback to continuity book)
     char_tokens = {}
@@ -649,8 +663,8 @@ def _v2_keyframes(r: Request):
                     if isinstance(loc, dict) and loc.get("name") and loc.get("token"):
                         loc_tokens[str(loc["name"]).lower()] = str(loc["token"]).strip()
                 break
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("continuity book %s read failed: %s", cb_file.name, e)
     try:
         for ch in character_tokens.list_characters(slug) or []:
             if isinstance(ch, dict) and ch.get("name"):
@@ -658,8 +672,8 @@ def _v2_keyframes(r: Request):
                 desc = str(ch.get("description") or "").strip()
                 if vt or desc:
                     char_tokens[str(ch["name"]).lower()] = vt or desc
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("character_tokens read failed: %s", e)
 
     def _match_location_token(heading_text: str) -> str:
         low_h = heading_text.lower()
@@ -675,8 +689,8 @@ def _v2_keyframes(r: Request):
         try:
             raw_ws = json.loads(ws_path.read_text(encoding="utf-8")) or {}
             wardrobe_states = {str(k).lower(): v for k, v in raw_ws.items() if isinstance(v, list)}
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("wardrobe_states.json read failed: %s", e)
 
     def _scene_num(sid: str) -> int:
         digits = "".join(c for c in str(sid or "") if c.isdigit())
@@ -714,9 +728,9 @@ def _v2_keyframes(r: Request):
                 return str(st["wardrobe"]).strip()
         return ""
 
-    saved_prompts = {}
+    saved_prompts: dict[str, Any] = {}
     locked_ids = set()
-    pending_edits_map = {}
+    pending_edits_map: dict[str, Any] = {}
     kf_meta = pd / "keyframes_v2.json"
     if kf_meta.is_file():
         try:
@@ -724,16 +738,16 @@ def _v2_keyframes(r: Request):
             saved_prompts = kf_doc.get("prompts") or {}
             locked_ids = {str(x) for x in (kf_doc.get("locked") or [])}
             pending_edits_map = kf_doc.get("pending_edits") or {}
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("keyframes_v2.json read failed: %s", e)
 
     sl_path = pd / "shots" / "shotlist.json"
-    raw_scenes = []
+    raw_scenes: list[Any] = []
     if sl_path.is_file():
         try:
             raw_scenes = (json.loads(sl_path.read_text(encoding="utf-8")) or {}).get("scenes") or []
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("shotlist.json read failed: %s", e)
 
     look_labels = {
         "live_action": "cinematic live-action film still, photorealistic, 35mm film grain",
@@ -830,8 +844,8 @@ def _v2_keyframes(r: Request):
     try:
         import run_gemini_omni
         gemini_ready = bool(run_gemini_omni.get_gemini_api_key())
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("gemini_omni probe failed: %s", e)
 
     return {
         "scenes": scenes,
@@ -857,8 +871,8 @@ def _v2_turnarounds(r: Request):
     if gp_path.is_file():
         try:
             look = str((json.loads(gp_path.read_text(encoding="utf-8")) or {}).get("look") or look)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("global_params.json read failed: %s", e)
 
     chars = {}
     def _add(name, desc="", prefer=False):
@@ -879,8 +893,8 @@ def _v2_turnarounds(r: Request):
                     if isinstance(c, dict):
                         _add(c.get("name"), c.get("token") or c.get("description") or "")
                 break
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("continuity book %s read failed: %s", cb_file.name, e)
     cov_path = pd / "readin" / "coverage.json"
     if cov_path.is_file():
         try:
@@ -890,8 +904,8 @@ def _v2_turnarounds(r: Request):
                     _add(c.get("name"), c.get("description") or c.get("role") or "")
                 elif isinstance(c, str):
                     _add(c)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("coverage.json read failed: %s", e)
     sp_dir = pd / "screenplay"
     if sp_dir.is_dir():
         for sf in sorted(sp_dir.glob("scene-*.json")):
@@ -900,7 +914,8 @@ def _v2_turnarounds(r: Request):
                 for el in sc.get("elements") or []:
                     if isinstance(el, dict) and el.get("type") == "dialogue" and el.get("character"):
                         _add(el["character"])
-            except Exception:
+            except Exception as e:
+                log.debug("skipping unreadable scene %s: %s", sf.name, e)
                 continue
 
     # Always prefer latest Step 08 saved character dossiers
@@ -911,8 +926,8 @@ def _v2_turnarounds(r: Request):
                 desc = str(ch.get("description") or "").strip()
                 combined = f"{vt}. {desc}".strip(". ") if (vt and desc and vt.lower() not in desc.lower()) else (desc or vt)
                 _add(ch["name"], combined, prefer=True)
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("character_tokens read failed: %s", e)
 
     # Load Step 08 per-scene/location wardrobe states
     ws_map = {}
@@ -921,8 +936,8 @@ def _v2_turnarounds(r: Request):
         try:
             raw_ws = json.loads(ws_path.read_text(encoding="utf-8")) or {}
             ws_map = {str(k).lower(): v for k, v in raw_ws.items() if isinstance(v, list)}
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("wardrobe_states.json read failed: %s", e)
 
     out = []
     for item in chars.values():
@@ -989,8 +1004,8 @@ def _v2_postprod(r: Request):
             cov = json.loads(cov_path.read_text(encoding="utf-8")) or {}
             if cov.get("title"):
                 title = str(cov["title"])
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("coverage.json read failed: %s", e)
 
     # Discover rendered media dynamically for this book
     kf_files = sorted((pd / "keyframes").glob("*.png")) if (pd / "keyframes").is_dir() else []
@@ -1010,7 +1025,7 @@ def _v2_postprod(r: Request):
 
     # Load saved polish / timeline / mix settings
     pp_path = pd / "postprod_v2.json"
-    saved = {}
+    saved: dict[str, Any] = {}
     if pp_path.is_file():
         try:
             saved = json.loads(pp_path.read_text(encoding="utf-8")) or {}
@@ -1031,8 +1046,8 @@ def _v2_postprod(r: Request):
                 total_shots += len(shs)
                 total_sec += sc_sec
                 tl_scenes.append({"id": str(sc.get("id") or ""), "heading": str(sc.get("heading") or ""), "shots": len(shs), "seconds": round(sc_sec, 1)})
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("shotlist.json read failed: %s", e)
 
     def _furl(p, kind: str = "file") -> str:
         if not (p.is_file() and p.stat().st_size > 64):
@@ -1103,8 +1118,8 @@ def _v2_wardrobe_states(r: Request):
             data = json.loads(ws_path.read_text(encoding="utf-8")) or {}
             if isinstance(data, dict):
                 return {"states": data}
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("wardrobe_states.json read failed: %s", e)
     return {"states": {}}
 
 

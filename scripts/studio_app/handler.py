@@ -1,6 +1,8 @@
 """HTTP transport: host/origin check, token authentication, security headers, body limits, media streaming and the web page.
 The JSON API itself lives in api.py + routes_get.py / routes_post.py."""
 import hashlib
+import importlib
+import importlib.util
 import json
 import mimetypes
 import os
@@ -8,14 +10,76 @@ import re
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import threading
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import shares
 from bookkit import SLUG_RE, slugify
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
-from . import breakdown_routes, clips_routes, collab_routes, crew_routes, edit_routes, library_routes, media_routes, pictures_routes, readin_routes, routes_get, routes_post, series_routes, setup_install, sound_routes, sources_routes, styles_routes, v1_routes  # noqa: F401  (importing them registers the routes)
-from .api import ROUTES, Request, dispatch
+from . import breakdown_routes, clips_routes, collab_routes, crew_routes, edit_routes, library_routes, media_routes, mcp_routes, pictures_routes, readin_routes, routes_get, routes_post, series_routes, setup_install, sound_routes, sources_routes, styles_routes, v1_routes  # noqa: F401  (importing them registers the routes)
+from .api import ROUTES, Request, dispatch, has_route  # noqa: F401  (ROUTES kept for legacy callers/tests)
+
+OPTIONAL_ROUTE_MODULES = ("apps_routes", "compose_routes")
+
+_PREVIEW_LOCK = threading.Lock()
+_PREVIEW_SEQ = 0
+_PREVIEW_HISTORY: list[tuple[int, dict[str, str]]] = []
+
+
+def clear_previews() -> None:
+    """Clear in-memory SSE preview frames when starting a fresh session/workspace."""
+    global _PREVIEW_SEQ
+    with _PREVIEW_LOCK:
+        _PREVIEW_SEQ = 0
+        _PREVIEW_HISTORY.clear()
+
+
+def publish_preview(payload: dict[str, Any]) -> dict[str, str] | None:
+    """Publish a validated `{content_type, data_base64}` preview event to connected SSE `/api/v1/events` streams."""
+    global _PREVIEW_SEQ
+    if not isinstance(payload, dict):
+        return None
+    ctype = str(payload.get("content_type") or "").strip()
+    b64 = str(payload.get("data_base64") or "").strip()
+    if ctype not in ("image/jpeg", "image/png") or not b64:
+        return None
+    clean = {"content_type": ctype, "data_base64": b64}
+    with _PREVIEW_LOCK:
+        _PREVIEW_SEQ += 1
+        _PREVIEW_HISTORY.append((_PREVIEW_SEQ, clean))
+        if len(_PREVIEW_HISTORY) > 32:
+            del _PREVIEW_HISTORY[:-32]
+    return clean
+
+
+broadcast_preview = publish_preview
+
+
+def relay_ws_preview_frame(frame: bytes) -> dict[str, str] | None:
+    """Decode a binary ComfyUI WebSocket preview frame (>II header + JPEG/PNG bytes) and publish to SSE."""
+    from local_runners.comfyui_runner import parse_ws_preview_frame
+
+    parsed = parse_ws_preview_frame(frame)
+    if parsed is None:
+        return None
+    return publish_preview(parsed)
+
+
+def load_optional_routes(package: str = __package__ or "studio_app") -> list[str]:
+    """Import optional route modules (M3 compose_routes, M4 apps_routes) when present on disk."""
+    importlib.invalidate_caches()
+    loaded: list[str] = []
+    for mod_name in OPTIONAL_ROUTE_MODULES:
+        full_name = f"{package}.{mod_name}"
+        if importlib.util.find_spec(full_name) is not None:
+            importlib.import_module(full_name)
+            loaded.append(full_name)
+    return loaded
+
+
+load_optional_routes()
 from .config import BOOK_EXTS, LIBRARY, MAX_JSON_BODY, MAX_UPLOAD, WEB
 from .gallery import make_depth, make_thumb
 from .log import get_logger
@@ -150,6 +214,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.wfile.write(b"retry: 3000\n\n")
             last = ""
+            preview_cursor = 0
             while _time.monotonic() < end:
                 lines = list(JOB.lines)
                 if since > len(lines):
@@ -157,12 +222,17 @@ class Handler(BaseHTTPRequestHandler):
                 for i in range(since, len(lines)):
                     self.wfile.write(f"id: {i + 1}\nevent: log\ndata: {json.dumps(lines[i])}\n\n".encode())
                 since = len(lines)
+                with _PREVIEW_LOCK:
+                    pending_previews = [(seq, item) for seq, item in _PREVIEW_HISTORY if seq > preview_cursor]
+                for seq, item in pending_previews:
+                    self.wfile.write(f"event: preview\ndata: {json.dumps(item)}\n\n".encode())
+                    preview_cursor = seq
                 state = json.dumps({"running": JOB.running, "step": JOB.current})
                 if state != last:
                     self.wfile.write(f"event: status\ndata: {state}\n\n".encode())
                     last = state
                 self.wfile.flush()
-                _time.sleep(0.5)
+                _time.sleep(0.05)
         except (BrokenPipeError, ConnectionResetError):
             return
 
@@ -319,7 +389,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._upload(url)
         if url.path == "/api/source_upload":
             return self._source_upload(url)
-        if url.path not in ROUTES["POST"]:
+        if not has_route("POST", url.path):
             return self._json(404, {"error": "not found"})
         size = self._content_length()
         if size is None:

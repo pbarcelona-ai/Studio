@@ -139,3 +139,57 @@ def test_session_file_is_private_and_reloads(tmp_path, monkeypatch):
 
 def test_session_matches(server):
     assert SESSION.matches(TOKEN) and not SESSION.matches("") and not SESSION.matches(TOKEN + "x")
+
+
+def test_api_router_rejects_traversal_and_unquotes_before_exact_routes(server, monkeypatch):
+    from studio_app import api
+
+    monkeypatch.setattr(api, "ROUTES", {m: dict(r) for m, r in api.ROUTES.items()})
+    monkeypatch.setattr(api, "PATTERN_ROUTES", {m: list(p) for m, p in api.PATTERN_ROUTES.items()})
+
+    @api.route("GET", "/api/sec_apps/status")
+    def _exact(_r: api.Request):
+        return {"exact": True}
+
+    @api.route("GET", "/api/sec_apps/<id>")
+    def _param(r: api.Request):
+        return {"exact": False, "id": r.p("id")}
+
+    @api.route("POST", "/api/sec_apps/<id>/run")
+    def _post_param(r: api.Request):
+        return {"ran": r.p("id")}
+
+    # Traversal and dangerous encoded/decoded segments must be rejected (404)
+    for bad_path in (
+        "/api/sec_apps/foo%2Fbar",
+        "/api/sec_apps/foo%2fbar",
+        "/api/sec_apps/..%2F..%2Fetc%2Fpasswd",
+        "/api/sec_apps/..%5C..%5Cwin",
+        "/api/sec_apps/..%5cwin",
+        "/api/sec_apps/..",
+        "/api/sec_apps/.",
+        "/api/sec_apps/%2e%2e",
+        "/api/sec_apps/foo%00bar",
+        "/api/sec_apps/foo\x00bar",
+        "/api/sec_apps/foo\\bar",
+    ):
+        assert api.resolve("GET", bad_path) == (None, {})
+        assert api.has_route("GET", bad_path) is False
+        assert api.dispatch("GET", bad_path, api.Request()) == (404, {"error": "not found"})
+
+    assert api.has_route("POST", "/api/sec_apps/foo%2Fbar/run") is False
+    assert server.api("GET", "/api/sec_apps/..%2F..%2Fetc%2Fpasswd")[0] == 404
+    assert server.api("POST", "/api/sec_apps/foo%2Fbar/run", {})[0] == 404
+
+    # Percent-encoded exact route must still match the exact handler rather than <id>
+    assert api.dispatch("GET", "/api/sec_apps/st%61tus", api.Request()) == (200, {"exact": True})
+    assert server.api("GET", "/api/sec_apps/st%61tus") == (200, {"exact": True})
+
+    # Safe URL-encoded parameter values still decode properly
+    assert api.dispatch("GET", "/api/sec_apps/my%20app", api.Request()) == (200, {"exact": False, "id": "my app"})
+    assert api.dispatch("GET", "/api/sec_apps/a%2Bb%3Fc%23d%C3%A9", api.Request()) == (
+        200,
+        {"exact": False, "id": "a+b?c#dé"},
+    )
+    assert server.api("GET", "/api/sec_apps/my%20app") == (200, {"exact": False, "id": "my app"})
+    assert server.api("POST", "/api/sec_apps/my%20app/run", {}) == (200, {"ran": "my app"})

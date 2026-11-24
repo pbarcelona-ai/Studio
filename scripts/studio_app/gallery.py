@@ -6,7 +6,10 @@ from layout import project_dir as pdir     # a name -> its folder (books/, chara
 
 from .common import PlanError
 from .config import PROJECTS, ROOT
+from .log import get_logger
 from .projects import read_csv_rows
+
+log = get_logger("gallery")
 
 
 # ---------------------------------------------------------------- Compare wall, showcase art and the prompt library
@@ -57,12 +60,12 @@ def get_depth_device() -> str:
             try:
                 torch.zeros(1, device="mps")
                 return "mps"
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("MPS probe failed: %s", e)
         if torch.cuda.is_available():
             return "cuda"
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("Torch device probe failed: %s", e)
     return "cpu"
 
 
@@ -95,8 +98,8 @@ def make_depth(src, dest):
                     try:
                         import huggingface_hub.constants
                         huggingface_hub.constants.HF_HUB_OFFLINE = True
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug("Could not set HF_HUB_OFFLINE: %s", e)
                 _DEPTH["pipe"] = pipeline("depth-estimation", model=DEPTH_MODEL, device=dev)
             except Exception as e:
                 _DEPTH["failed"] = str(e)

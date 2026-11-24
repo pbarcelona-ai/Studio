@@ -27,7 +27,7 @@
     ["storyboard", "Check every picture", "Say yes or no to every picture. You can change a shot's words, move shots, or make everything again from the screenplay.", ["Storyboard (optional)"], [], ["approveRest", "getPictures"]],
     ["video", "Make the video", "Now every picture you said yes to is turned into a moving clip.", ["Video & Audio Models"], ["Video and Audio", "Make the Movie"], ["video", "getVideo"]],
     ["audio", "Make the sound", "The voices, sounds and music are made.", ["Voices, sound and music"], ["Video and Audio", "Video & Audio Models"], ["audio", "getSound"]],
-    ["cut", "Put the film together", "The clips and the sound are joined into your film.", ["Clips in every style", "Timeline editor", "Final film"], ["Kaggle Runs", "Execution Log", "Notes and history", "Episodes, queue and marketing"], ["cut"]],
+    ["cut", "Put the film together", "The clips and the sound are joined into your film.", ["Clips in every style", "Timeline editor", "Final film"], ["Kaggle Runs", "Execution Log", "Notes and history", "Episodes, queue and marketing", "Multi-Runtime Composer & Pre-Render QA"], ["cut"]],
     ["premiere", "Share your film", "Watch it, save a copy for YouTube or a friend, and add the credits.", ["Export and credits"], ["Results Gallery", "What Exists for This Book", "Cleanup"], []],
   ];
   const ID = STEPS.map(s => s[0]);
@@ -35,7 +35,12 @@
   const list = document.getElementById("flowList"), toggle = document.getElementById("flowToggle");
   if (!list || !toggle) return;
   let current = 0, on = true, data = null;
-  try { on = localStorage.getItem("flowMode") !== "off"; current = Math.max(0, Math.min(STEPS.length - 1, parseInt(localStorage.getItem("pathStep") || "0", 10) || 0)); } catch (e) { /* private window */ }
+  try {
+    const h = (window.location.hash || "").replace(/^#/, "").trim().toLowerCase();
+    const nonFlowHashes = ["apps", "canvas-compare", "compare", "models-hardware", "models"];
+    on = nonFlowHashes.includes(h) ? false : localStorage.getItem("flowMode") !== "off";
+    current = Math.max(0, Math.min(STEPS.length - 1, parseInt(localStorage.getItem("pathStep") || "0", 10) || 0));
+  } catch (e) { /* private window */ }
 
   // ---- find every card once, before anything is moved
   const titleOf = card => { const h = card.querySelector(".card__title"); return h ? h.textContent.trim() : ""; };

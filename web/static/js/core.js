@@ -1,8 +1,43 @@
 // studio/core.js - page basics: token, api(), $ helper, form helpers, autofill guard
 // Classic script: shares globals with the other studio/*.js files; load order is set in index.html.
 // The server puts the access token into <meta name="studio-token"> of index.html (the JS files themselves are static).
-const TOKEN = (document.querySelector('meta[name="studio-token"]') || {}).content || "__TOKEN__";
-const $ = id => document.getElementById(id);
+const TOKEN = (typeof document !== "undefined" && document.querySelector('meta[name="studio-token"]') || {}).content || "__TOKEN__";
+const _EMPTY_EL = {
+  value: "",
+  textContent: "",
+  innerHTML: "",
+  checked: false,
+  disabled: false,
+  hidden: false,
+  style: {},
+  dataset: {},
+  children: [],
+  options: [],
+  classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+  setAttribute() {},
+  getAttribute() { return null; },
+  removeAttribute() {},
+  addEventListener() {},
+  removeEventListener() {},
+  dispatchEvent() { return false; },
+  appendChild() {},
+  append() {},
+  prepend() {},
+  remove() {},
+  focus() {},
+  blur() {},
+  click() {},
+  close() {},
+  scrollIntoView() {},
+  querySelector() { return _EMPTY_EL; },
+  querySelectorAll() { return []; },
+  closest() { return _EMPTY_EL; },
+};
+const $ = id => (typeof document !== "undefined" && document && document.getElementById(id)) || _EMPTY_EL;
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+window.escapeHtml = escapeHtml;
 
 // Check if running via file:// protocol (token not replaced by server)
 if (TOKEN === "__TOKEN__" && window.location.protocol === "file:") {
@@ -30,8 +65,8 @@ async function deleteNotebooks() {
     console.warn("Could not delete notebooks:", e.message);
   }
 }
-const checked = name => [...document.querySelectorAll(`input[name=${name}]:checked`)].map(e => e.value);
-const radio = name => (document.querySelector(`input[name=${name}]:checked`) || {}).value;
+const checked = name => (typeof document !== "undefined" && document) ? [...document.querySelectorAll(`input[name=${name}]:checked`)].map(e => e.value) : [];
+const radio = name => ((typeof document !== "undefined" && document && document.querySelector(`input[name=${name}]:checked`)) || {}).value;
 
 // ---------- keep the browsers' own autofill and suggestion lists out of our text boxes ----------
 // Chrome ignores autocomplete="off" on boxes it takes for a name/address/login (an unknown value such as "nope" works there); Safari and Firefox
@@ -107,10 +142,32 @@ function options() {
 }
 
 function fillGpus() {
-  const svc = radio("svc");
+  if (!ST || typeof document === "undefined" || !document) return;
+  const legacyOn = Boolean(ST.legacy_cloud);
+  document.querySelectorAll('input[name="svc"]').forEach(inp => {
+    const isCloud = inp.value === "kaggle" || inp.value === "colab" || inp.value === "huggingface";
+    if (!isCloud) return;
+    const grp = inp.closest(".svc-group");
+    if (grp) grp.classList.toggle("hidden", !legacyOn);
+    const lbl = inp.closest("label");
+    if (lbl) lbl.classList.toggle("hidden", !legacyOn);
+  });
+  const paidList = $("paidProviders");
+  if (paidList) {
+    const paidGrp = paidList.closest(".svc-group");
+    if (paidGrp) paidGrp.classList.toggle("hidden", !legacyOn);
+    paidList.classList.toggle("hidden", !legacyOn);
+  }
+  let svc = radio("svc");
+  if ((ST.gpus && !ST.gpus[svc] && ST.gpus.computer) || (!legacyOn && svc !== "computer")) {
+    svc = "computer";
+    const compRadio = document.querySelector('input[name="svc"][value="computer"]');
+    if (compRadio) compRadio.checked = true;
+  }
   const gb = (ST.gpu_blockers || {})[svc] || {};
-  $("gpu").innerHTML = ST.gpus[svc].map(([v, t]) => `<option value="${v}" ${gb[v] ? "disabled" : ""} title="${(gb[v] || "").replace(/"/g, "&quot;")}">${t}${gb[v] ? " - unavailable" : ""}</option>`).join("");
-  const firstOk = [...$("gpu").options].find(o => !o.disabled); if (firstOk) $("gpu").value = firstOk.value;
+  const gpus = (ST.gpus && (ST.gpus[svc] || ST.gpus.computer)) || [];
+  $("gpu").innerHTML = gpus.map(([v, t]) => `<option value="${v}" ${gb[v] ? "disabled" : ""} title="${(gb[v] || "").replace(/"/g, "&quot;")}">${t}${gb[v] ? " - unavailable" : ""}</option>`).join("");
+  const firstOk = [...$("gpu").options].find(o => !o.disabled) || $("gpu").options[0]; if (firstOk) $("gpu").value = firstOk.value;
   $("userbox").style.display = svc === "kaggle" ? "" : "none";
   $("gpuhint").textContent = svc === "kaggle" ? "Only the T4 is free for everyone; the others may be refused." : svc === "huggingface" ? "Hugging Face picks the GPU (ZeroGPU). Set HF_TOKEN in the environment to use your own account's daily quota."
     : svc === "computer" ? (ST.computer_why ? "Unavailable here: " + ST.computer_why : "Runs on the GPU listed above with scripts/run_local_model.py. The first run of each kind of model sets up its Python environment (a few GB, a few minutes).") : "Anything above T4 needs a paid Colab plan.";
@@ -259,10 +316,12 @@ function renderMovies() {
 }
 
 async function loadStatus(applyDef) {
+  if (typeof document === "undefined" || !document) return;
   const prev = $("proj").value;
   ST = await api("/api/status");
+  if (typeof document === "undefined" || !document) return;
   $("tools").innerHTML = Object.entries(ST.tools).map(([t, ok]) => `<span class="${ok ? "ok" : "bad"}">${ok ? "✓" : "✗"} ${t}</span>`).join("") +
-    `<span class="warn">${ST.tools.claude ? "" : "Claude Code missing (the default prompt writer). "}${ST.tools.colab ? "" : "Colab CLI missing. "}${ST.tools.kaggle ? "" : "Kaggle CLI missing. "}${ST.tools.uv ? "" : "uv missing (needed to read books and merge)."}</span>`;
+    `<span class="warn">${ST.tools.claude ? "" : "Claude Code missing (the default prompt writer). "}${ST.legacy_cloud && !ST.tools.colab ? "Colab CLI missing. " : ""}${ST.legacy_cloud && !ST.tools.kaggle ? "Kaggle CLI missing. " : ""}${ST.tools.uv ? "" : "uv missing (needed to read books and merge)."}</span>`;
   $("proj").innerHTML = '<option value="">Pick one…</option>' + ST.projects.map(p => `<option value="${p.slug}">${p.slug}${p.legacy ? " (imported)" : p.not_started ? " (new, from books/)" : ""}</option>`).join("");
   $("libcount").textContent = `· ${ST.library.length} book file(s) in books/`;
   if (prev && [...$("proj").options].some(o => o.value === prev)) $("proj").value = prev;
@@ -304,10 +363,111 @@ async function run() {
   if (!(await preview(o))) return false;
   await deleteNotebooks();
   building = true;
-  try { await api("/api/run", o); since = 0; $("log").textContent = ""; poll(); return true; } catch (e) { $("msg").textContent = e.message; $("msg").className = "err"; return false; }
+  try { await api("/api/run", o); since = 0; $("log").textContent = ""; startLogStream(); return true; } catch (e) { $("msg").textContent = e.message; $("msg").className = "err"; return false; }
 }
 
-async function poll() {
+let _logEventSource = null;
+
+function startLogStream() {
+  if (typeof window.EventSource !== "function") {
+    return pollOnce();
+  }
+  if (_logEventSource && !_logEventSource.closed) {
+    try { _logEventSource.close(); } catch (_e) {}
+  }
+  let es;
+  try {
+    es = new window.EventSource(`/api/v1/events?since=${since}`);
+  } catch (_e) {
+    return pollOnce();
+  }
+  _logEventSource = es;
+
+  es.addEventListener("log", ev => {
+    let line;
+    const raw = String(ev.data ?? "");
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith('"')) {
+      try {
+        line = JSON.parse(raw);
+      } catch (_e) {
+        return;
+      }
+    } else if (trimmed) {
+      line = raw;
+    } else {
+      return;
+    }
+    if (typeof line !== "string") line = String(line ?? "");
+    const l = $("log");
+    if (l) {
+      const stick = l.scrollTop + l.clientHeight >= l.scrollHeight - 20;
+      l.textContent += (l.textContent ? "\n" : "") + line;
+      if (stick) l.scrollTop = l.scrollHeight;
+    }
+    const ml = $("mLog");
+    if (ml && l) {
+      ml.textContent = l.textContent;
+      ml.scrollTop = ml.scrollHeight;
+    }
+    if (ev.lastEventId) {
+      const n = parseInt(ev.lastEventId, 10);
+      if (Number.isFinite(n) && n > since) since = n;
+    } else {
+      since += 1;
+    }
+  });
+
+  es.addEventListener("preview", ev => {
+    let payload;
+    try {
+      payload = JSON.parse(ev.data);
+    } catch (_e) {
+      return;
+    }
+    if (!payload || typeof payload !== "object") return;
+    const ct = payload.content_type;
+    const b64 = payload.data_base64;
+    if (typeof ct !== "string" || !ct.startsWith("image/") || typeof b64 !== "string" || !b64.trim()) return;
+    const img = document.querySelector("#livePreview, #previewImg, img[data-live-preview], .live-preview img");
+    if (img) {
+      img.setAttribute("src", `data:${ct};base64,${b64}`);
+      img.classList.remove("hidden");
+    }
+  });
+
+  es.addEventListener("status", ev => {
+    let st;
+    try {
+      st = JSON.parse(ev.data);
+    } catch (_e) {
+      return;
+    }
+    if (!st || typeof st !== "object") return;
+    const running = Boolean(st.running);
+    const step = String(st.step || "");
+    if ($("cur")) $("cur").textContent = running ? "· " + step : "";
+    if ($("bRun")) $("bRun").disabled = running;
+    if ($("bStop")) $("bStop").disabled = !running;
+    document.querySelectorAll(".fetchbtn").forEach(b => { b.disabled = running; });
+    if (typeof jobRunning !== "undefined") jobRunning = running;
+    if (typeof updateFilmSummary === "function") updateFilmSummary();
+    if (!running) {
+      building = false;
+      try { es.close(); } catch (_e) {}
+      es.closed = true;
+    }
+  });
+
+  es.onerror = () => {
+    try { es.close(); } catch (_e) {}
+    es.closed = true;
+  };
+  return es;
+}
+window.startLogStream = startLogStream;
+
+async function pollOnce() {
   try {
     const j = await api(`/api/log?since=${since}`);
     if (j.lines.length) { const l = $("log"); const stick = l.scrollTop + l.clientHeight >= l.scrollHeight - 20; l.textContent += (l.textContent ? "\n" : "") + j.lines.join("\n"); if (stick) l.scrollTop = l.scrollHeight; }
@@ -315,10 +475,20 @@ async function poll() {
     { const ml = $("mLog"); if (ml) { ml.textContent = $("log").textContent; ml.scrollTop = ml.scrollHeight; } }   // same log, shown in the Make the Movie card
     $("bRun").disabled = j.running; $("bStop").disabled = !j.running;
     document.querySelectorAll(".fetchbtn").forEach(b => { b.disabled = j.running; });
-    jobRunning = j.running; updateFilmSummary();
-    if (j.running) setTimeout(poll, 1500); else { building = false; loadStatus(true); loadGallery(); if (runsLoaded) loadRuns(false); }
+    if (typeof jobRunning !== "undefined") jobRunning = j.running;
+    if (typeof updateFilmSummary === "function") updateFilmSummary();
+    if (j.running) setTimeout(pollOnce, 1500); else { building = false; loadStatus(true); if (typeof loadGallery === "function") loadGallery(); if (typeof runsLoaded !== "undefined" && runsLoaded && typeof loadRuns === "function") loadRuns(false); }
   } catch (e) { $("msg").textContent = "lost connection to studio.py"; $("msg").className = "err"; }
 }
+
+async function poll() {
+  if (typeof window.EventSource === "function") {
+    startLogStream();
+    return;
+  }
+  return pollOnce();
+}
+window.poll = poll;
 
 async function estimate() {
   const pre = $("estimate"); pre.classList.remove("hidden"); pre.textContent = "working…";

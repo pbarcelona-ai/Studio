@@ -1,0 +1,255 @@
+{
+  "$schema": "../../schema/app.schema.json",
+  "id": "cloud-surf",
+  "name": "Cloud Surf",
+  "section": "video",
+  "summary": "You surfing across pink clouds at sunset, same face.",
+  "higgsfield_feature": "Cloud Surf",
+  "pack": "video-ltx25",
+  "status": "ready",
+  "workflow": "workflow.api.json",
+  "source": {
+    "template": "comfyui_workflow_templates video_ltx2_5_flf2v.json (0.1.115) + image_flux3_klein_distilled_image_edit.json",
+    "comfyui": "0.42.0",
+    "notes": "Template app written by tools/template_apps.py: the workflow is apps/morph's (built by tools/build_apps.py) with a fixed Klein instruction for the last frame (node edit:4: \"Put this exact person standing on a surfboard riding across fluffy pink clouds at sunset, knees bent, arms out for balance, cloud mist spraying around the board, seen from a low dynamic angle, the face large and clear. Keep the face identical.\"); the prompt below is fixed and \"Extra direction\" is appended to it."
+  },
+  "inputs": [
+    {
+      "id": "image",
+      "type": "image",
+      "label": "Your photo",
+      "required": true,
+      "limits": {
+        "max_mb": 20
+      },
+      "bind": [
+        {
+          "node": "31",
+          "field": "image"
+        }
+      ]
+    },
+    {
+      "id": "details",
+      "type": "textarea",
+      "label": "Extra direction",
+      "default": "",
+      "help": "Added at the end of the app's prompt.",
+      "bind": [
+        {
+          "node": "251:252",
+          "field": "value",
+          "template": "The scene turns into a ride across pink clouds at sunset: the person carves over the cloud tops on the surfboard, mist spraying, a dynamic tracking shot staying close to them; wind and a cheerful whoosh. {details}"
+        }
+      ]
+    },
+    {
+      "id": "aspect",
+      "type": "select",
+      "label": "Format",
+      "default": "portrait",
+      "options": [
+        {
+          "value": "portrait",
+          "label": "9:16",
+          "sets": [
+            {
+              "node": "251:215",
+              "field": "value",
+              "value": 720
+            },
+            {
+              "node": "251:216",
+              "field": "value",
+              "value": 1280
+            }
+          ]
+        },
+        {
+          "value": "landscape",
+          "label": "16:9",
+          "sets": [
+            {
+              "node": "251:215",
+              "field": "value",
+              "value": 1280
+            },
+            {
+              "node": "251:216",
+              "field": "value",
+              "value": 720
+            }
+          ]
+        },
+        {
+          "value": "square",
+          "label": "1:1",
+          "sets": [
+            {
+              "node": "251:215",
+              "field": "value",
+              "value": 960
+            },
+            {
+              "node": "251:216",
+              "field": "value",
+              "value": 960
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "duration",
+      "type": "slider",
+      "label": "Seconds",
+      "min": 2,
+      "max": 6,
+      "step": 1,
+      "default": 4,
+      "bind": [
+        {
+          "node": "251:198",
+          "field": "value"
+        }
+      ]
+    },
+    {
+      "id": "strength",
+      "type": "slider",
+      "label": "Transition strength",
+      "min": 0,
+      "max": 1.5,
+      "step": 0.05,
+      "default": 1.0,
+      "bind": [
+        {
+          "node": "ff_lora",
+          "field": "strength_model"
+        }
+      ]
+    },
+    {
+      "id": "seed",
+      "type": "seed",
+      "label": "Seed",
+      "default": -1,
+      "help": "-1 picks a random seed",
+      "bind": [
+        {
+          "node": "251:196",
+          "field": "noise_seed"
+        },
+        {
+          "node": "edit:7",
+          "field": "seed"
+        }
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "node": "68",
+      "type": "video",
+      "label": "Result"
+    }
+  ],
+  "models": [
+    {
+      "repo": "Lightricks/LTX-2.5",
+      "file": "diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+      "dir": "diffusion_models",
+      "gb": 21.5,
+      "phase": "denoise",
+      "gated": true,
+      "license": "LTX-2.x Community License"
+    },
+    {
+      "repo": "Lightricks/LTX-2.5",
+      "file": "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+      "dir": "text_encoders",
+      "gb": 15.37,
+      "phase": "encode",
+      "gated": true,
+      "license": "LTX-2.x Community License"
+    },
+    {
+      "repo": "Lightricks/LTX-2.5",
+      "file": "vae/ltx-2.5-video-vae-bf16.safetensors",
+      "dir": "vae",
+      "gb": 1.47,
+      "phase": "decode",
+      "gated": true,
+      "license": "LTX-2.x Community License"
+    },
+    {
+      "repo": "Lightricks/LTX-2.5",
+      "file": "vae/ltx-2.5-audio-vae-bf16.safetensors",
+      "dir": "vae",
+      "gb": 0.36,
+      "phase": "decode",
+      "gated": true,
+      "license": "LTX-2.x Community License"
+    },
+    {
+      "repo": "Comfy-Org/gemma-4",
+      "file": "text_encoders/gemma4_e2b_it_int8_convrot.safetensors",
+      "dir": "text_encoders",
+      "gb": 5.2,
+      "phase": "encode",
+      "license": "Apache-2.0",
+      "optional": true
+    },
+    {
+      "repo": "joyfox/LTX-2.3-Transition-LORA",
+      "file": "ltx2.3-transition.safetensors",
+      "dir": "loras",
+      "gb": 0.39,
+      "phase": "denoise",
+      "license": "Apache-2.0"
+    },
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "diffusion_models/flux3-image-klein-int8-convrot.safetensors",
+      "dir": "diffusion_models",
+      "gb": 5.83,
+      "phase": "aux",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    },
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "text_encoders/qwen3vl_4b_int8_convrot.safetensors",
+      "dir": "text_encoders",
+      "gb": 4.86,
+      "phase": "aux",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    },
+    {
+      "repo": "black-forest-labs/flux-3-image-klein-comfy",
+      "file": "vae/flux2-vae.safetensors",
+      "dir": "vae",
+      "gb": 0.34,
+      "phase": "aux",
+      "gated": true,
+      "license": "FLUX Kommunity License"
+    }
+  ],
+  "credits": [
+    "LTX-2.5 by Lightricks",
+    "FLUX 3 Image Klein by Black Forest Labs",
+    "Transition LoRA by joyfox (Apache-2.0)",
+    "Workflow adapted from ComfyUI's official LTX-2.5 and FLUX 3 Klein templates"
+  ],
+  "test": {
+    "image": "test/portrait.png",
+    "duration": 4,
+    "aspect": "portrait"
+  },
+  "min_vram_gb": 21.89,
+  "platforms": [
+    "win_cuda",
+    "linux_cuda"
+  ]
+}

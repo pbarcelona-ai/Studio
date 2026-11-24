@@ -185,6 +185,7 @@ class TestMakeEnv:
 
     def test_a_ready_environment_is_reused(self, tmp_path, monkeypatch):
         monkeypatch.delenv("STUDIO_GPU_PYTHON", raising=False)
+        monkeypatch.delenv("STUDIO_TORCH_INDEX", raising=False)
         monkeypatch.setenv("STUDIO_GPU_ENVS", str(tmp_path / "envs"))
         monkeypatch.setattr(rl, "run_logged", lambda *a, **k: pytest.fail("should not install"))
         # find the folder make_env will look for by letting it fail once without uv

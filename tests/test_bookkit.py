@@ -234,11 +234,23 @@ class TestLlmJson:
         monkeypatch.setattr(bk, "local_chat", lambda msgs, model: '{"x": 1}')
         assert bk.llm_json("p", "s", engine="local") == {"x": 1}
 
-    def test_pictures_cannot_go_through_the_chat_engines(self, tmp_path):
+    def test_pictures_go_inline_through_hf_and_local_engines(self, tmp_path, monkeypatch):
         img = tmp_path / "a.jpg"
         img.write_bytes(b"j")
-        with pytest.raises(RuntimeError, match="hf_json"):
-            bk.llm_json("p", "s", engine="hf", image=str(img))
+        seen = []
+
+        def fake_chat(msgs, model):
+            seen.append(msgs)
+            return '{"ok": true}'
+
+        monkeypatch.setattr(bk, "hf_chat", fake_chat)
+        monkeypatch.setattr(bk, "local_chat", fake_chat)
+        assert bk.llm_json("p", "s", engine="hf", image=str(img)) == {"ok": True}
+        assert bk.llm_json("p", "s", engine="local", image=str(img)) == {"ok": True}
+        assert len(seen) == 2
+        for msgs in seen:
+            parts = msgs[1]["content"]
+            assert isinstance(parts, list) and parts[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
     def test_codex_reads_the_reply_file(self, monkeypatch):
         def run(cmd, **kw):
