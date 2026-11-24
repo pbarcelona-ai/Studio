@@ -14,7 +14,6 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import screenplay  # noqa: E402
@@ -34,8 +33,10 @@ def parse_fdx(fdx_path: Path) -> list[dict]:
     """Parse a Final Draft .fdx file into a list of scenes matching the Studio's format.
     Returns: [{"heading": str, "elements": [...]}]
     """
-    tree = ET.parse(fdx_path)
-    root = tree.getroot()
+    raw = fdx_path.read_bytes()
+    if b"<!ENTITY" in raw.upper():
+        raise ValueError("The .fdx file contains XML entity declarations, which are not accepted.")
+    root = ET.fromstring(raw)  # noqa: S314  (entity declarations were refused above)
 
     # Handle potential XML namespaces in Final Draft XML
     # Register namespace if present, or use namespace-agnostic search
@@ -300,7 +301,7 @@ def import_fountain(pdir: Path, fountain_path: Path) -> dict:
 
         # Empty lines just reset expect_dialogue
         elif not line:
-            if expect_dialogue and current_character:
+            if current_scene and expect_dialogue and current_character:
                 # Character with no dialogue - treat as action
                 if current_scene["elements"] and current_scene["elements"][-1]["type"] == "dialogue" and current_scene["elements"][-1]["character"] == current_character:
                     # Convert the empty dialogue to action

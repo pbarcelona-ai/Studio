@@ -7,8 +7,6 @@ from __future__ import annotations
 import json
 import subprocess
 import asyncio
-from pathlib import Path
-from typing import Any, Optional
 
 
 class MCPClient:
@@ -51,7 +49,7 @@ class MCPClient:
             if proc.returncode != 0:
                 return {"error": stderr.decode().strip() or f"MCP call failed with code {proc.returncode}"}
             return json.loads(stdout.decode())
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": f"MCP call to {server}.{tool} timed out after {self.timeout}s"}
         except json.JSONDecodeError:
             return {"error": "Invalid JSON response from MCP server"}
@@ -78,7 +76,7 @@ class MCPClient:
 class FirecrawlMCP:
     """Integration with firecrawl-mcp-server for web research."""
 
-    def __init__(self, client: Optional[MCPClient] = None):
+    def __init__(self, client: MCPClient | None = None):
         self.client = client or MCPClient(timeout=60)
 
     def scrape(self, url: str, formats: list[str] = None) -> dict:
@@ -116,7 +114,7 @@ class FirecrawlMCP:
 class PremiereMCP:
     """Integration with premiere-pro-mcp for Adobe Premiere Pro automation."""
 
-    def __init__(self, client: Optional[MCPClient] = None):
+    def __init__(self, client: MCPClient | None = None):
         self.client = client or MCPClient(timeout=60)
 
     def connect(self) -> dict:
@@ -159,7 +157,7 @@ class PremiereMCP:
 class BlenderMCP:
     """Integration with blender-mcp for 3D previs/asset generation."""
 
-    def __init__(self, client: Optional[MCPClient] = None):
+    def __init__(self, client: MCPClient | None = None):
         self.client = client or MCPClient(timeout=120)
 
     def create_scene(self, prompt: str, output_format: str = "glb") -> dict:
@@ -201,7 +199,7 @@ class BlenderMCP:
 class PlaywrightMCP:
     """Integration with playwright-mcp for browser automation."""
 
-    def __init__(self, client: Optional[MCPClient] = None):
+    def __init__(self, client: MCPClient | None = None):
         self.client = client or MCPClient(timeout=120)
 
     def run_script(self, script: str, args: dict = None) -> dict:
@@ -261,7 +259,7 @@ class PlaywrightMCP:
 class PostgresMCP:
     """Integration with postgres-mcp for database operations."""
 
-    def __init__(self, client: Optional[MCPClient] = None):
+    def __init__(self, client: MCPClient | None = None):
         self.client = client or MCPClient(timeout=30)
 
     def connect(self, connection_string: str = None) -> dict:

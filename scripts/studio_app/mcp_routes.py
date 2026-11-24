@@ -1,12 +1,8 @@
 """MCP Integration API Routes for Pistachio's Studio."""
-import json
-import tempfile
 from pathlib import Path
-from typing import Any
 
 from .api import HttpError, Request, route
 from .log import get_logger
-from .session import SESSION
 
 log = get_logger("mcp_routes")
 
@@ -224,7 +220,7 @@ def mcp_blender_generate_previs(r: Request):
     # Build previs prompt from scene
     elements = scene_data.get("elements", [])
     action_text = " ".join([e["text"] for e in elements if e["type"] == "action"])
-    characters = list(set(e["character"] for e in elements if e["type"] == "dialogue" and e.get("character")))
+    characters = list({e["character"] for e in elements if e["type"] == "dialogue" and e.get("character")})
 
     previs_data = {
         "heading": scene_data.get("heading", ""),
