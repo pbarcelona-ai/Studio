@@ -43,6 +43,12 @@ STYLES = {
     "comic_ink": ("Comic ink", "comic book art: bold ink lines, flat colours, halftone shading, dynamic framing"),
     "felt": ("Stop-motion felt", "felt and fabric stop-motion: wool textures, stitched seams, miniature sets, warm practical light"),
     "noir": ("Noir black-and-white", "film noir: black-and-white, hard shadows, venetian-blind light, high contrast, smoky air"),
+    "glazed_ceramic": ("Glazed ceramic miniature", "hand-painted glazed ceramic miniature: glossy crackle-glazed surfaces, subtle handmade imperfections, warm specular highlights, shallow depth of field"),
+    "painted_sign": ("Hand-painted vintage sign", "vintage hand-painted 2D sign illustration: bold dark outlines, visible directional brushstrokes, weathered flat pigments, warm painted highlights, no 3D render"),
+    "scratchboard": ("Scratchboard engraving", "handcrafted scratchboard engraving: deep midnight ground, fine ivory and muted-ochre scratched lines, delicate cross-hatching, large preserved dark areas, no smooth gradients"),
+    "tin_toy": ("Vintage tin-toy macro", "vintage wind-up tin-toy macro photography: chipped enamel paint, stamped metal panels, rivets, brass winding keys, directional studio light, shallow macro depth of field"),
+    "ukiyo_e": ("Ukiyo-e woodblock print", "Japanese Ukiyo-e woodblock print: fine dark ink outlines, carved hatching, flat faded indigo, vermilion and ochre pigments, aged washi-paper grain, subtle print imperfections"),
+    "midcentury_2d": ("Mid-century 2D cartoon", "hand-painted mid-century 2D cartoon: stylized geometric shapes, dry-gouache textures, simplified elongated anatomy, muted earthy palette, subtle paper grain"),
 }
 ASPECTS = ("16:9", "9:16", "1:1", "4:3")
 RATINGS = {"all": "All ages", "8": "8+", "13": "13+", "adult": "Adult"}

@@ -24,6 +24,18 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _STEP_RE = re.compile(r"(?:step\s+(\d+)\s*/\s*(\d+)|(?<!\d)(\d+)\s*/\s*(\d+)\s*-\s*[\d.]+(?:s/it|it/s))", re.IGNORECASE)
 
 MODEL_CATALOG: dict[str, dict[str, Any]] = {
+    "flux2-klein-4b": {
+        "kind": "flux2",
+        "file": "flux-2-klein-4b-Q8_0.gguf",
+        "llm": "Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf",
+        "vae": "flux2_ae.safetensors",
+        "base_size": 1024,
+        "steps": 4,
+        "cfg_scale": 1.0,
+        "sampling_method": "euler",
+        "vram_gb": 8.0,
+        "supports_ref_images": True,
+    },
     "z-image-turbo": {
         "kind": "z-image",
         "file": "z_image_turbo-Q4_K.gguf",
@@ -189,6 +201,28 @@ class SdCliRunner(LocalRunner):
         exe = self._exe_path()
         return exe.is_file()
 
+    def ready_models(self, *, require_ref_support: bool = False) -> list[str]:
+        """Return catalog model IDs whose required weight files exist in `self.models_dir`, ordered best-first."""
+        order: tuple[str, ...] = (
+            ("flux2-klein-4b",)
+            if require_ref_support
+            else ("z-image-turbo", "flux2-klein-4b", "z-image-base", "stable-diffusion-xl-base", "dreamshaper-8", "realistic-vision-v51", "anything-v5")
+        )
+        ready: list[str] = []
+        for mid in order:
+            entry = MODEL_CATALOG.get(mid)
+            if not entry:
+                continue
+            if require_ref_support and not entry.get("supports_ref_images"):
+                continue
+            if not (self.models_dir / entry["file"]).is_file():
+                continue
+            if entry["kind"] in ("z-image", "flux2"):
+                if not (self.models_dir / entry["llm"]).is_file() or not (self.models_dir / entry["vae"]).is_file():
+                    continue
+            ready.append(mid)
+        return ready
+
     def install(
         self,
         on_progress: ProgressCallback | None = None,
@@ -288,7 +322,7 @@ class SdCliRunner(LocalRunner):
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         argv: list[str] = [str(exe)]
-        if entry["kind"] == "z-image":
+        if entry["kind"] in ("z-image", "flux2"):
             llm_file = self.models_dir / entry["llm"]
             vae_file = self.models_dir / entry["vae"]
             if not llm_file.is_file():
@@ -299,8 +333,13 @@ class SdCliRunner(LocalRunner):
                 "--diffusion-model", str(model_file),
                 "--llm", str(llm_file),
                 "--vae", str(vae_file),
-                "--scheduler", str(entry.get("scheduler", "discrete")),
             ])
+            if entry.get("scheduler"):
+                argv.extend(["--scheduler", str(entry["scheduler"])])
+            if entry.get("sampling_method"):
+                argv.extend(["--sampling-method", str(entry["sampling_method"])])
+            if entry["kind"] == "flux2":
+                argv.extend(["--flash-attn", "on"])
         else:
             argv.extend(["-m", str(model_file)])
 
@@ -317,9 +356,18 @@ class SdCliRunner(LocalRunner):
         neg = str(spec.get("negative_prompt") or "").strip()
         if neg:
             argv.extend(["-n", neg])
+        init_img = str(spec.get("init_image") or "").strip()
+        if init_img and Path(init_img).is_file():
+            argv.extend(["-i", init_img, "--strength", str(float(spec.get("strength", 0.72)))])
+        if entry.get("supports_ref_images"):
+            for ref_p in spec.get("ref_images") or []:
+                if ref_p and Path(str(ref_p)).is_file():
+                    argv.extend(["-r", str(ref_p)])
 
         env = dict(os.environ)
         bin_str = str(self.bin_dir)
+        if sys.platform == "win32":
+            env["PATH"] = f"{bin_str};{env.get('PATH', '')}".rstrip(";")
         env["DYLD_LIBRARY_PATH"] = f"{bin_str}:{env.get('DYLD_LIBRARY_PATH', '')}".rstrip(":")
         env["LD_LIBRARY_PATH"] = f"{bin_str}:{env.get('LD_LIBRARY_PATH', '')}".rstrip(":")
 

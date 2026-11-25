@@ -1,4 +1,5 @@
 """GET routes of the JSON API."""
+import re
 from typing import Any
 import character_tokens
 import detect_scene_changes
@@ -181,9 +182,66 @@ def _status(r: Request):
 
 @route("GET", "/api/log")
 def _log(r: Request):
+    from datetime import datetime
+    from pathlib import Path
+
     since = max(num({"since": r.q("since", "0")}, "since", 0, int, 0), 0)
     with JOB.lock:
-        return {"lines": JOB.lines[since:], "next": len(JOB.lines), "running": JOB.running, "current": JOB.current, "queued": len(JOB.queue)}
+        lines = list(JOB.lines[since:])
+        nxt = len(JOB.lines)
+        running = JOB.running
+        current = JOB.current
+        queued = len(JOB.queue)
+        st = dict(getattr(JOB, "state", None) or {})
+
+    raw_steps = st.get("steps")
+    steps: list[Any] = raw_steps if isinstance(raw_steps, list) else []
+    idx = int(st.get("index") or 0)
+    script = ""
+    if steps:
+        active_step = steps[min(max(0, idx), len(steps) - 1)]
+        if isinstance(active_step, dict):
+            argv = active_step.get("argv") or []
+            for tok in argv:
+                s_tok = str(tok)
+                if s_tok.endswith(".py"):
+                    script = Path(s_tok).name
+                    break
+
+    started = str(st.get("started") or "")
+    ended = str(st.get("ended") or "")
+    elapsed_sec = 0.0
+    if started:
+        try:
+            t0 = datetime.strptime(started, "%Y-%m-%d %H:%M:%S")
+            t1 = datetime.strptime(ended, "%Y-%m-%d %H:%M:%S") if (ended and not running) else datetime.now()
+            elapsed_sec = max(0.0, round((t1 - t0).total_seconds(), 1))
+        except ValueError:
+            elapsed_sec = 0.0
+
+    exit_code: int | None = None
+    exit_path = str(st.get("exit") or "")
+    if exit_path and not running:
+        try:
+            exit_code = int(Path(exit_path).read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            exit_code = None
+
+    return {
+        "lines": lines,
+        "next": nxt,
+        "running": running,
+        "current": current,
+        "queued": queued,
+        "project": str(st.get("project") or ""),
+        "status": str(st.get("status") or ("running" if running else "idle")),
+        "started": started,
+        "elapsed_sec": elapsed_sec,
+        "step_index": idx,
+        "step_total": len(steps),
+        "script": script,
+        "exit_code": exit_code,
+    }
 
 
 @route("GET", "/api/old_pictures")
@@ -918,13 +976,29 @@ def _v2_turnarounds(r: Request):
                 log.debug("skipping unreadable scene %s: %s", sf.name, e)
                 continue
 
-    # Always prefer latest Step 08 saved character dossiers
+    # Always prefer latest Step 08 saved character dossiers (load full per-character JSON, never truncated index preview)
     try:
         for ch in character_tokens.list_characters(slug) or []:
             if isinstance(ch, dict) and ch.get("name"):
-                vt = str(ch.get("visual_token") or ch.get("token") or "").strip()
-                desc = str(ch.get("description") or "").strip()
-                combined = f"{vt}. {desc}".strip(". ") if (vt and desc and vt.lower() not in desc.lower()) else (desc or vt)
+                full_ch = character_tokens.load_character(slug, str(ch["name"])) or ch
+                vt = str(full_ch.get("visual_token") or full_ch.get("token") or "").strip()
+                clothing = str(full_ch.get("clothing") or "").strip()
+                desc = str(full_ch.get("description") or "").strip()
+                notes = str(full_ch.get("consistency_notes") or "").strip()
+                parts: list[str] = []
+                # Ignore bare name-only visual_token (e.g. "mom") when richer description/notes exist
+                if vt and (vt.lower() != str(ch["name"]).strip().lower() or not (desc or notes or clothing)):
+                    parts.append(vt)
+                if clothing and clothing.lower() not in " ".join(parts).lower():
+                    parts.append(f"wearing {clothing}")
+                extra = desc or notes
+                if extra:
+                    joined_words = set(re.findall(r"[a-z0-9]+", " ".join(parts).lower()))
+                    extra_words = set(re.findall(r"[a-z0-9]+", extra.lower()))
+                    overlap = (len(joined_words & extra_words) / max(1, len(extra_words))) if joined_words else 0.0
+                    if overlap < 0.65:
+                        parts.append(extra)
+                combined = ". ".join(p.rstrip(". ") for p in parts if p)
                 _add(ch["name"], combined, prefer=True)
     except Exception as e:
         log.debug("character_tokens read failed: %s", e)
@@ -939,7 +1013,7 @@ def _v2_turnarounds(r: Request):
         except Exception as e:
             log.debug("wardrobe_states.json read failed: %s", e)
 
-    out = []
+    out: list[dict[str, Any]] = []
     for item in chars.values():
         safe = "".join(c if c.isalnum() else "_" for c in item["name"].lower()).strip("_") or "char"
         states = [st for st in (ws_map.get(item["name"].lower()) or []) if isinstance(st, dict) and str(st.get("wardrobe") or "").strip()]
@@ -985,6 +1059,16 @@ def _v2_turnarounds(r: Request):
             })
 
         out.append({"name": item["name"], "slug": safe, "desc": item["desc"], "outfits": outfits, "views": outfits[0]["views"]})
+
+    import character_identity
+    t_dir = pd / "assets" / "turnarounds"
+    overrides = character_identity.load_identity_overrides(pd)
+    id_map = character_identity.build_cast_identity_map(out, t_dir, overrides=overrides)
+    for entry in out:
+        ident = dict(id_map.get(entry["name"].lower()) or {})
+        ref_file = ident.pop("ref_source_file", "")
+        ident["ref_source_url"] = f"/file/{slug}/assets/turnarounds/{ref_file}" if ref_file else ""
+        entry["identity"] = ident
     return {"characters": out, "look": look}
 
 
@@ -1121,6 +1205,42 @@ def _v2_wardrobe_states(r: Request):
         except Exception as e:
             log.debug("wardrobe_states.json read failed: %s", e)
     return {"states": {}}
+
+
+@route("GET", "/api/v2_sets_hidden")
+def _v2_sets_hidden(r: Request):
+    """Return Step 11 deleted/hidden location set names and custom set ordering."""
+    import json
+
+    slug = r.q("project")
+    if not slug:
+        return {"deleted": [], "order": []}
+    pd = pdir(slug, "book")
+    deleted: list[str] = []
+    order: list[str] = []
+    for fname in ("sets_deleted.json", "sets_state.json"):
+        p = pd / fname
+        if not p.is_file():
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf-8")) or {}
+            if not isinstance(data, dict):
+                continue
+            raw_del = data.get("deleted")
+            if isinstance(raw_del, list):
+                for x in raw_del:
+                    k = str(x).strip().lower()
+                    if k and k not in deleted:
+                        deleted.append(k)
+            raw_ord = data.get("order")
+            if isinstance(raw_ord, list):
+                order = [str(x).strip().lower() for x in raw_ord if str(x).strip()]
+        except Exception as e:
+            log.debug("%s read failed: %s", fname, e)
+    # Remove any deleted set from order so numbering stays contiguous
+    del_set = set(deleted)
+    order = [x for x in order if x not in del_set]
+    return {"deleted": deleted, "order": order}
 
 
 

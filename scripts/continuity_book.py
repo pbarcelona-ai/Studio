@@ -148,6 +148,62 @@ def edit(pdir: Path, kind: str, name: str, fields: dict) -> dict:
     return new
 
 
+def remove(pdir: Path, kind: str, name: str) -> bool:
+    """Remove a character / location / prop entry by name (case-insensitive) from the continuity book."""
+    if kind not in ("characters", "locations", "props"):
+        raise ValueError("kind is characters, locations or props")
+    book = load(pdir)
+    if not book:
+        return False
+    items = book.get(kind)
+    if not isinstance(items, list):
+        return False
+    target = str(name or "").strip().lower()
+    if not target:
+        return False
+    kept = []
+    removed = False
+    for entry in items:
+        ename = entry if isinstance(entry, str) else (entry.get("name") or entry.get("location") or "") if isinstance(entry, dict) else ""
+        if str(ename).strip().lower() == target:
+            removed = True
+            continue
+        kept.append(entry)
+    if removed:
+        book[kind] = kept
+        continuity_file(pdir).write_text(json.dumps(book, indent=1, ensure_ascii=False), encoding="utf-8")
+    return removed
+
+
+def reorder(pdir: Path, kind: str, order_names: list[str]) -> bool:
+    """Reorder a continuity book section (`characters`, `locations`, `props`) to match `order_names`."""
+    if kind not in ("characters", "locations", "props"):
+        raise ValueError("kind is characters, locations or props")
+    book = load(pdir)
+    if not book:
+        return False
+    items = book.get(kind)
+    if not isinstance(items, list) or len(items) < 2:
+        return False
+    rank = {str(n).strip().lower(): i for i, n in enumerate(order_names) if str(n).strip()}
+    if not rank:
+        return False
+    fallback_base = len(rank)
+
+    def _entry_key(idx_entry: tuple[int, Any]) -> tuple[int, int]:
+        idx, entry = idx_entry
+        ename = entry if isinstance(entry, str) else (entry.get("name") or entry.get("location") or "") if isinstance(entry, dict) else ""
+        k = str(ename).strip().lower()
+        return (rank.get(k, fallback_base + idx), idx)
+
+    ordered = [e for _i, e in sorted(enumerate(items), key=_entry_key)]
+    if ordered == items:
+        return False
+    book[kind] = ordered
+    continuity_file(pdir).write_text(json.dumps(book, indent=1, ensure_ascii=False), encoding="utf-8")
+    return True
+
+
 def _dummy() -> dict:
     return {"name": "x", "token": "x", "voice": "narrator", "personality": dict.fromkeys(PERSONALITY, "x")}
 

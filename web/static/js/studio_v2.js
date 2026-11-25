@@ -214,6 +214,336 @@
     };
   }
 
+  // ===== LIVE INLINE AI JOB PROGRESS WIDGET (REUSABLE ACROSS STEPS 03, 05, 07, 11, 12) =====
+  const _v2JobWatchers = new Map();
+
+  function _ensureV2JobProgressStyles() {
+    if (document.getElementById("v2JobProgressStyles")) return;
+    const st = document.createElement("style");
+    st.id = "v2JobProgressStyles";
+    st.textContent = `
+      @keyframes v2JobPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.85); } }
+      @keyframes v2JobShimmer { 0% { background-position: 0% 0%; } 100% { background-position: 40px 0%; } }
+      .v2-job-panel { margin-top: 10px; padding: 10px 12px; background: #070b12; border: 1px solid #263248; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; }
+      .v2-job-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+      .v2-job-dot { width: 8px; height: 8px; border-radius: 999px; background: #f59e0b; flex: 0 0 auto; animation: v2JobPulse 1.3s ease-in-out infinite; }
+      .v2-job-dot.done { background: #10b981; animation: none; }
+      .v2-job-dot.err { background: #ef4444; animation: none; }
+      .v2-job-dot.stopped { background: #94a3b8; animation: none; }
+      .v2-job-title { font-weight: 600; color: #f8fafc; flex: 1; min-width: 180px; }
+      .v2-job-meta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #fbbf24; background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.32); padding: 2px 7px; border-radius: 999px; }
+      .v2-job-meta.done { color: #6ee7b7; background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.32); }
+      .v2-job-meta.err { color: #fca5a5; background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.35); }
+      .v2-job-track { width: 100%; height: 8px; background: #111827; border-radius: 999px; overflow: hidden; border: 1px solid #1f2937; }
+      .v2-job-fill { height: 100%; width: 10%; border-radius: 999px; transition: width 0.5s ease, background 0.3s ease; background: repeating-linear-gradient(-45deg, #f59e0b 0px, #f59e0b 10px, #fbbf24 10px, #fbbf24 20px); background-size: 40px 40px; animation: v2JobShimmer 1.1s linear infinite; }
+      .v2-job-fill.done { background: #10b981; animation: none; }
+      .v2-job-fill.err { background: #ef4444; animation: none; }
+      .v2-job-fill.stopped { background: #64748b; animation: none; }
+      .v2-job-log { margin: 0; padding: 8px 10px; background: #020617; color: #cbd5e1; border: 1px solid #1e293b; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.45; max-height: 180px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+    `;
+    document.head.appendChild(st);
+  }
+
+  function _fmtElapsed(sec) {
+    const s = Math.max(0, Math.floor(sec || 0));
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    return `${String(m).padStart(2, "0")}:${String(rem).padStart(2, "0")}`;
+  }
+
+  function _inferJobProgressPct(logText, elapsedSec, stepIdx, stepTotal) {
+    const txt = String(logText || "");
+    // Explicit percentage in log (e.g. "45%")
+    const pctMatches = [...txt.matchAll(/(\d{1,3})\s*%/g)];
+    if (pctMatches.length) {
+      const last = parseInt(pctMatches[pctMatches.length - 1][1], 10);
+      if (Number.isFinite(last) && last > 0 && last <= 99) return last;
+    }
+    // Explicit fraction (e.g. "scene 3/12", "round 2 of 3", "4 / 10")
+    const fracMatches = [...txt.matchAll(/(?:scene|chapter|round|step|shot|pass|part)?\s*(\d{1,3})\s*(?:\/|of)\s*(\d{1,3})/gi)];
+    for (let i = fracMatches.length - 1; i >= 0; i--) {
+      const a = parseInt(fracMatches[i][1], 10);
+      const b = parseInt(fracMatches[i][2], 10);
+      if (b > 1 && a >= 0 && a <= b) {
+        return Math.max(8, Math.min(95, Math.round((a / b) * 95)));
+      }
+    }
+    if (stepTotal > 1 && stepIdx > 0) {
+      return Math.max(10, Math.min(92, Math.round((stepIdx / stepTotal) * 90)));
+    }
+    // Smooth asymptotic estimate while AI is thinking (12% -> 92%)
+    return Math.min(92, Math.max(10, Math.round(12 + 80 * (1 - Math.exp(-(elapsedSec || 0) / 50)))));
+  }
+
+  function watchV2JobProgress(cfg) {
+    const key = cfg.key;
+    const anchor = cfg.anchorEl || (cfg.buttonEl && cfg.buttonEl.closest(".direct-story-card"));
+    if (!key || !anchor) return;
+    _ensureV2JobProgressStyles();
+
+    // Stop any previous watcher on this step key
+    const prev = _v2JobWatchers.get(key);
+    if (prev) {
+      clearInterval(prev.tickTimer);
+      clearTimeout(prev.pollTimer);
+    }
+
+    let panel = anchor.querySelector(`.v2-job-panel[data-job-key="${key}"]`);
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.className = "v2-job-panel";
+      panel.dataset.jobKey = key;
+      panel.innerHTML = `
+        <div class="v2-job-head">
+          <span class="v2-job-dot"></span>
+          <span class="v2-job-title"></span>
+          <span class="v2-job-meta">⏱ 00:00 · 10%</span>
+          <button type="button" class="btn btn--ghost v2-job-stop" style="padding:2px 8px;font-size:11px;color:#f87171">⏹ Stop</button>
+          <button type="button" class="btn btn--ghost v2-job-toggle" style="padding:2px 8px;font-size:11px">Hide Log</button>
+          <button type="button" class="btn btn--ghost v2-job-close hidden" style="padding:2px 7px;font-size:11px" title="Dismiss">✕</button>
+        </div>
+        <div class="v2-job-track"><div class="v2-job-fill"></div></div>
+        <pre class="v2-job-log">Starting AI worker…</pre>
+      `;
+      anchor.appendChild(panel);
+    }
+    panel.classList.remove("hidden");
+
+    const dotEl = panel.querySelector(".v2-job-dot");
+    const titleEl = panel.querySelector(".v2-job-title");
+    const metaEl = panel.querySelector(".v2-job-meta");
+    const fillEl = panel.querySelector(".v2-job-fill");
+    const logEl = panel.querySelector(".v2-job-log");
+    const btnStop = panel.querySelector(".v2-job-stop");
+    const btnToggle = panel.querySelector(".v2-job-toggle");
+    const btnClose = panel.querySelector(".v2-job-close");
+
+    dotEl.className = "v2-job-dot";
+    metaEl.className = "v2-job-meta";
+    fillEl.className = "v2-job-fill";
+    fillEl.style.width = "10%";
+    titleEl.textContent = cfg.title || "Running AI job…";
+    if (cfg.fresh !== false) logEl.textContent = "Starting AI worker…";
+    logEl.classList.remove("hidden");
+    btnToggle.textContent = "Hide Log";
+    btnStop.classList.remove("hidden");
+    btnStop.disabled = false;
+    btnClose.classList.add("hidden");
+
+    if (cfg.buttonEl) cfg.buttonEl.disabled = true;
+    if (cfg.badgeEl) {
+      cfg.badgeEl.textContent = "⏳ AI Working…";
+      cfg.badgeEl.className = "status-badge status-badge--working";
+    }
+
+    const state = {
+      active: true,
+      since: 0,
+      startedMs: Date.now(),
+      lastStepIdx: 0,
+      lastStepTotal: 1,
+      hasLines: false,
+      tickTimer: null,
+      pollTimer: null,
+    };
+    _v2JobWatchers.set(key, state);
+
+    btnToggle.onclick = () => {
+      const hidden = logEl.classList.toggle("hidden");
+      btnToggle.textContent = hidden ? "Show Log" : "Hide Log";
+    };
+    btnClose.onclick = () => { panel.classList.add("hidden"); };
+    btnStop.onclick = async () => {
+      btnStop.disabled = true;
+      titleEl.textContent = "Stopping AI job…";
+      try { await callApi("/api/stop", {}); } catch (e) {}
+    };
+
+    const renderTimer = () => {
+      if (!state.active) return;
+      const elapsed = Math.max(0, (Date.now() - state.startedMs) / 1000);
+      const pct = _inferJobProgressPct(state.hasLines ? logEl.textContent : "", elapsed, state.lastStepIdx, state.lastStepTotal);
+      metaEl.textContent = `⏱ ${_fmtElapsed(elapsed)} · ${pct}%`;
+      fillEl.style.width = `${pct}%`;
+    };
+    renderTimer();
+    state.tickTimer = setInterval(renderTimer, 1000);
+
+    const poll = async () => {
+      if (!state.active) return;
+      try {
+        const r = await callApi(`/api/log?since=${state.since}`);
+        if (!state.active) return;
+        if (typeof r.elapsed_sec === "number" && r.elapsed_sec > 0) {
+          state.startedMs = Date.now() - r.elapsed_sec * 1000;
+        }
+        state.lastStepIdx = Number(r.step_index || 0);
+        state.lastStepTotal = Number(r.step_total || 1);
+        if (r.current) {
+          titleEl.textContent = r.current;
+          if (cfg.statusEl) cfg.statusEl.textContent = `⏳ ${r.current}…`;
+        }
+        const newLines = Array.isArray(r.lines) ? r.lines.filter(x => x !== null && x !== undefined) : [];
+        if (newLines.length) {
+          const stick = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 24;
+          const chunk = newLines.join("\n");
+          logEl.textContent = state.hasLines ? `${logEl.textContent}\n${chunk}` : chunk;
+          state.hasLines = true;
+          if (stick) logEl.scrollTop = logEl.scrollHeight;
+        }
+        if (typeof r.next === "number" && r.next > state.since) {
+          state.since = r.next;
+        }
+
+        if (r.running) {
+          renderTimer();
+          state.pollTimer = setTimeout(poll, 1500);
+          return;
+        }
+
+        // Job finished (or stopped / failed)
+        state.active = false;
+        clearInterval(state.tickTimer);
+        clearTimeout(state.pollTimer);
+        _v2JobWatchers.delete(key);
+
+        const elapsed = typeof r.elapsed_sec === "number" && r.elapsed_sec > 0
+          ? r.elapsed_sec
+          : Math.max(0, (Date.now() - state.startedMs) / 1000);
+        const stopped = String(r.status || "").toLowerCase() === "stopped" || logEl.textContent.includes("(stopped)");
+        const failed = !stopped && ((typeof r.exit_code === "number" && r.exit_code !== 0) || /\n!!\s|^!!\s/.test(logEl.textContent));
+
+        btnStop.classList.add("hidden");
+        btnClose.classList.remove("hidden");
+        if (cfg.buttonEl) cfg.buttonEl.disabled = false;
+
+        if (stopped) {
+          dotEl.className = "v2-job-dot stopped";
+          metaEl.className = "v2-job-meta";
+          metaEl.textContent = `⏹ Stopped · ${_fmtElapsed(elapsed)}`;
+          fillEl.className = "v2-job-fill stopped";
+          fillEl.style.width = "100%";
+          titleEl.textContent = "Job stopped";
+          if (cfg.statusEl) cfg.statusEl.textContent = `⏹ Stopped after ${_fmtElapsed(elapsed)}.`;
+          if (cfg.badgeEl) {
+            cfg.badgeEl.textContent = "Stopped";
+            cfg.badgeEl.className = "status-badge status-badge--drift";
+          }
+        } else if (failed) {
+          dotEl.className = "v2-job-dot err";
+          metaEl.className = "v2-job-meta err";
+          metaEl.textContent = `✗ Error · ${_fmtElapsed(elapsed)}`;
+          fillEl.className = "v2-job-fill err";
+          fillEl.style.width = "100%";
+          titleEl.textContent = typeof r.exit_code === "number" ? `AI job exited with code ${r.exit_code}` : "AI job encountered an error";
+          if (cfg.statusEl) cfg.statusEl.textContent = "✗ AI job failed — check live log below.";
+          if (cfg.badgeEl) {
+            cfg.badgeEl.textContent = "Error";
+            cfg.badgeEl.className = "status-badge status-badge--drift";
+          }
+        } else {
+          dotEl.className = "v2-job-dot done";
+          metaEl.className = "v2-job-meta done";
+          metaEl.textContent = `✓ Done · ${_fmtElapsed(elapsed)} · 100%`;
+          fillEl.className = "v2-job-fill done";
+          fillEl.style.width = "100%";
+          titleEl.textContent = `${cfg.doneTitle || "AI generation complete"} — reloaded automatically`;
+          if (typeof cfg.onComplete === "function") {
+            try { await cfg.onComplete(); } catch (e) {}
+          }
+        }
+      } catch (e) {
+        if (state.active) {
+          state.pollTimer = setTimeout(poll, 2500);
+        }
+      }
+    };
+    poll();
+  }
+
+  function _v2JobConfigForStep(stepNum) {
+    if (stepNum === 3) {
+      return {
+        key: "step3_coverage",
+        anchorEl: $("v2CovBuild") && $("v2CovBuild").closest(".direct-story-card"),
+        buttonEl: $("v2CovBuild"),
+        statusEl: $("v2CovMeta"),
+        badgeEl: $("v2CovBadge"),
+        title: "Analyzing book & generating coverage…",
+        doneTitle: "Coverage & logline ready",
+        scripts: ["read_it_in.py"],
+        onComplete: () => loadV2Coverage(),
+      };
+    }
+    if (stepNum === 5) {
+      return {
+        key: "step5_beats",
+        anchorEl: $("v2BeatsBuild") && $("v2BeatsBuild").closest(".direct-story-card"),
+        buttonEl: $("v2BeatsBuild"),
+        statusEl: $("v2BeatsSummary"),
+        badgeEl: $("v2BeatsBadge"),
+        title: "Generating story breakdown & beat sheet…",
+        doneTitle: "Story breakdown ready",
+        scripts: ["read_it_in.py"],
+        onComplete: () => loadV2StoryBreakdown(),
+      };
+    }
+    if (stepNum === 7) {
+      return {
+        key: "step7_continuity",
+        anchorEl: $("bV2ContGenerate") && $("bV2ContGenerate").closest(".direct-story-card"),
+        buttonEl: $("bV2ContGenerate"),
+        statusEl: $("v2ContBookStatus"),
+        badgeEl: $("v2ContBadge"),
+        title: "Writing continuity book from screenplay…",
+        doneTitle: "Continuity book ready",
+        scripts: ["continuity_book.py"],
+        onComplete: () => loadV2Continuity(),
+      };
+    }
+    if (stepNum === 11) {
+      return {
+        key: "step11_sets",
+        anchorEl: $("bV2LocBuild") && $("bV2LocBuild").closest(".direct-story-card"),
+        buttonEl: $("bV2LocBuild"),
+        statusEl: $("v2LocSummary"),
+        badgeEl: $("v2LocBadge"),
+        title: "Extracting locations & sets from script…",
+        doneTitle: "Locations & sets extracted",
+        scripts: ["continuity_book.py"],
+        onComplete: () => loadV2Locations(),
+      };
+    }
+    if (stepNum === 12) {
+      return {
+        key: "step12_shots",
+        anchorEl: $("bV2ShotsBuild") && $("bV2ShotsBuild").closest(".direct-story-card"),
+        buttonEl: $("bV2ShotsBuild"),
+        statusEl: $("v2ShotsSummary"),
+        badgeEl: $("v2ShotsBadge"),
+        title: "Writing director's breakdown & shot list…",
+        doneTitle: "Shot list ready",
+        scripts: ["shot_list.py"],
+        onComplete: () => loadV2ShotList(),
+      };
+    }
+    return null;
+  }
+
+  async function resumeV2JobIfRunning(cfg) {
+    if (!cfg || !cfg.key || _v2JobWatchers.has(cfg.key)) return;
+    try {
+      const r = await callApi("/api/log?since=0");
+      if (!r || !r.running) return;
+      const selProj = $("proj");
+      const slug = (selProj && selProj.value) || activeProject || "";
+      if (r.project && slug && r.project !== slug) return;
+      const allowed = Array.isArray(cfg.scripts) ? cfg.scripts : [];
+      if (allowed.length && r.script && !allowed.includes(r.script)) return;
+      watchV2JobProgress({ ...cfg, fresh: false, title: r.current || cfg.title });
+    } catch (e) {}
+  }
+
   // ===== APP-WIDE "NEEDS ATTENTION" FLASHING ALERT HELPER (ANY STEP) =====
   function flagNeedsAttention(cardEl, reason) {
     if (!cardEl) return;
@@ -1077,6 +1407,7 @@
     // If entering Step 3 (Coverage & Logline), load active book's coverage
     if (currentStep === 3) {
       loadV2Coverage();
+      resumeV2JobIfRunning(_v2JobConfigForStep(3));
     }
 
     // If entering Step 4 (Format & Runtime Scope), load dynamic book-based scope options
@@ -1087,6 +1418,7 @@
     // If entering Step 5 (Story Structure & Beats), load full beat sheet & scene breakdown
     if (currentStep === 5) {
       loadV2StoryBreakdown();
+      resumeV2JobIfRunning(_v2JobConfigForStep(5));
     }
 
     // If entering Step 6 (Screenplay), load all screenplay scenes
@@ -1097,6 +1429,7 @@
     // If entering Step 7 (Continuity & World Rules), load rules, lighting/palette, and scene locks
     if (currentStep === 7) {
       loadV2Continuity();
+      resumeV2JobIfRunning(_v2JobConfigForStep(7));
     }
 
     // If entering Step 8 (Cast & Characters), load all story characters
@@ -1112,11 +1445,13 @@
     // If entering Step 11 (Locations & Sets), load all story locations/sets
     if (currentStep === 11) {
       loadV2Locations();
+      resumeV2JobIfRunning(_v2JobConfigForStep(11));
     }
 
     // If entering Step 12 (Shot List & Cinematography), load live shot list
     if (currentStep === 12) {
       loadV2ShotList();
+      resumeV2JobIfRunning(_v2JobConfigForStep(12));
     }
 
     // If entering Step 13 (Hardware) or Step 18 (Video), refresh Gemini & hardware status
@@ -1274,15 +1609,19 @@
         if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
         btnBuild.disabled = true;
         const metaEl = $("v2CovMeta");
+        const cfg = _v2JobConfigForStep(3);
         if (metaEl) metaEl.textContent = `Starting coverage analysis for "${slug}"…`;
         try {
           const o = typeof window.options === "function" ? window.options() : {};
           await callApi("/api/read_it_in", { project: slug, engine: o.engine || "claude", claude_model: o.claude_model });
-          if (metaEl) metaEl.textContent = `✓ Coverage job started for "${slug}". Click ↻ Reload in a moment to view results.`;
+          watchV2JobProgress({ ...cfg, fresh: true });
         } catch (err) {
-          if (metaEl) metaEl.textContent = "Could not start coverage: " + err.message;
-        } finally {
-          btnBuild.disabled = false;
+          if (/already running/i.test(String(err.message || ""))) {
+            watchV2JobProgress({ ...cfg, fresh: false });
+          } else {
+            if (metaEl) metaEl.textContent = "Could not start coverage: " + err.message;
+            btnBuild.disabled = false;
+          }
         }
       });
     }
@@ -1804,15 +2143,19 @@
         if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
         btnBuild.disabled = true;
         const summaryEl = $("v2BeatsSummary");
+        const cfg = _v2JobConfigForStep(5);
         if (summaryEl) summaryEl.textContent = "Starting story breakdown & beat sheet generation…";
         try {
           const o = typeof window.options === "function" ? window.options() : {};
           await callApi("/api/read_it_in", { project: slug, engine: o.engine || "claude", claude_model: o.claude_model });
-          if (summaryEl) summaryEl.textContent = "✓ Story breakdown job started! Reload in a moment to view updated beats and scenes.";
+          watchV2JobProgress({ ...cfg, fresh: true });
         } catch (err) {
-          if (summaryEl) summaryEl.textContent = "Could not start breakdown: " + err.message;
-        } finally {
-          btnBuild.disabled = false;
+          if (/already running/i.test(String(err.message || ""))) {
+            watchV2JobProgress({ ...cfg, fresh: false });
+          } else {
+            if (summaryEl) summaryEl.textContent = "Could not start breakdown: " + err.message;
+            btnBuild.disabled = false;
+          }
         }
       });
     }
@@ -2648,29 +2991,222 @@
       negEl.value = (gp && gp.negatives) || "";
     } catch (e) {}
 
-    // 3. Load scene-by-scene cast & location locks
-    try {
-      const lk = await callApi(`/api/cast_lock?project=${encodeURIComponent(slug)}`);
-      const sm = (lk && lk.summary) || {};
-      const scenes = (lk && Array.isArray(lk.scenes)) ? lk.scenes : [];
+    // 3. Load & render interactive scene-by-scene cast & location continuity locks
+    const renderV2ContLocks = (lkData) => {
+      const sm = (lkData && lkData.summary) || {};
+      const scenes = (lkData && Array.isArray(lkData.scenes)) ? lkData.scenes : [];
+      const allChars = (lkData && Array.isArray(lkData.all_characters)) ? lkData.all_characters : [];
       if (locksSum) {
         locksSum.textContent = scenes.length
           ? `${scenes.length} scene(s) · ${sm.characters || 0} costume lock(s), ${sm.locations || 0} location lock(s)`
           : "No planned scenes yet for per-scene locks.";
       }
-      if (locksList) {
-        locksList.textContent = "";
-        scenes.forEach(s => {
-          const row = document.createElement("div");
-          row.style.cssText = "padding:8px 10px;background:#0a0d14;border:1px solid #1e293b;border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;";
-          const chars = (s.characters || []).map(c => c.name).join(", ") || "No characters listed";
-          const place = (s.place && s.place.name) ? s.place.name : "Unspecified set";
-          const locked = (s.characters || []).some(c => c.locked && (c.locked.token || c.locked.reference)) || (s.place && s.place.locked && s.place.locked.reference);
-          row.innerHTML = `<div><strong style="color:#f59e0b">${s.id}</strong> <strong style="color:#f8fafc">${s.title || ""}</strong> &mdash; <span>Cast: ${chars}</span> · <span>Set: ${place}</span></div>` +
-            `<span class="status-badge ${locked ? "status-badge--synced" : ""}" style="font-size:0.7rem">${locked ? "✓ Locked" : "Unlocked"}</span>`;
-          locksList.appendChild(row);
+      if (!locksList) return;
+      const wasOpen = new Set([...locksList.querySelectorAll("details[open]")].map(d => d.dataset.sceneId));
+      locksList.textContent = "";
+
+      const refToPreviewUrl = (refPath) => {
+        const clean = String(refPath || "").replace(/^\/+/, "");
+        const prefix = `projects/books/${slug}/`;
+        if (clean.startsWith(prefix)) return `/file/${slug}/${clean.slice(prefix.length)}`;
+        return "";
+      };
+
+      scenes.forEach(s => {
+        const det = document.createElement("details");
+        det.dataset.sceneId = s.id;
+        det.open = wasOpen.has(s.id);
+        det.style.cssText = "background:#0a0d14;border:1px solid #1e293b;border-radius:8px;padding:8px 10px;";
+
+        const charsTxt = (s.characters || []).map(c => c.name).join(", ") || "No characters listed";
+        const placeName = s.location || (s.place && s.place.name) || "Unspecified set";
+        const lockedCharCount = (s.characters || []).filter(c => c.locked && (c.locked.token || c.locked.reference)).length;
+        const placeLocked = Boolean(s.place && s.place.locked && s.place.locked.reference);
+        const anyLocked = lockedCharCount > 0 || placeLocked;
+
+        const sum = document.createElement("summary");
+        sum.style.cssText = "cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;list-style:none;";
+        const sumLeft = document.createElement("div");
+        sumLeft.innerHTML = `<strong style="color:#f59e0b">${s.id}</strong> <strong style="color:#f8fafc">${s.title || ""}</strong> &mdash; <span style="color:#cbd5e1">Cast: ${charsTxt}</span> · <span style="color:#94a3b8">Set: ${placeName}</span>`;
+        const sumBadge = document.createElement("span");
+        sumBadge.className = "status-badge " + (anyLocked ? "status-badge--synced" : "");
+        sumBadge.style.fontSize = "0.7rem";
+        sumBadge.textContent = anyLocked
+          ? `🔒 Locked (${lockedCharCount + (placeLocked ? 1 : 0)})`
+          : "Unlocked (click to edit)";
+        sum.appendChild(sumLeft);
+        sum.appendChild(sumBadge);
+        det.appendChild(sum);
+
+        const body = document.createElement("div");
+        body.style.cssText = "margin-top:10px;padding-top:10px;border-top:1px solid #1e293b;display:flex;flex-direction:column;gap:10px;";
+        const sceneMsg = document.createElement("div");
+        sceneMsg.style.cssText = "font-size:11px;color:#34d399;min-height:14px;";
+
+        const sendLock = async (payload, okMsg) => {
+          sceneMsg.style.color = "#fbbf24";
+          sceneMsg.textContent = "Saving lock…";
+          try {
+            const updated = await callApi("/api/cast_lock", { project: slug, scene: s.id, ...payload });
+            renderV2ContLocks(updated);
+            const reopened = locksList.querySelector(`details[data-scene-id="${s.id}"]`);
+            if (reopened) {
+              reopened.open = true;
+              const m = reopened.querySelector(".v2-cont-lock-msg");
+              if (m) { m.style.color = "#34d399"; m.textContent = okMsg; }
+            }
+          } catch (err) {
+            sceneMsg.style.color = "#f87171";
+            sceneMsg.textContent = "Could not save lock: " + (err.message || err);
+          }
+        };
+
+        const addCharEditor = (c) => {
+          const isLocked = Boolean(c.locked && (c.locked.token || c.locked.reference));
+          const card = document.createElement("div");
+          card.style.cssText = "padding:8px 10px;background:#111827;border:1px solid " + (isLocked ? "rgba(16,185,129,0.45)" : "#263248") + ";border-radius:6px;display:flex;flex-direction:column;gap:6px;";
+
+          const hdr = document.createElement("div");
+          hdr.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;";
+          const nm = document.createElement("strong");
+          nm.style.color = "#f8fafc";
+          nm.textContent = c.name;
+          const pill = document.createElement("span");
+          pill.style.cssText = isLocked
+            ? "padding:1px 7px;border-radius:999px;background:rgba(16,185,129,0.16);border:1px solid rgba(16,185,129,0.4);color:#6ee7b7;font-size:10px;font-weight:600;"
+            : "padding:1px 7px;border-radius:999px;background:rgba(148,163,184,0.12);color:#94a3b8;font-size:10px;";
+          pill.textContent = isLocked ? "🔒 Scene Lock Active" : "Using Default Look";
+          hdr.appendChild(nm);
+          hdr.appendChild(pill);
+          card.appendChild(hdr);
+
+          const ta = document.createElement("textarea");
+          ta.rows = 2;
+          ta.maxLength = 400;
+          ta.value = (c.locked && c.locked.token) || c.current || "";
+          ta.placeholder = `Scene-specific costume, prop, or appearance for ${c.name} in ${s.id} (max 400 chars)…`;
+          ta.style.cssText = "width:100%;padding:6px 8px;background:#070b12;color:#f8fafc;border:1px solid #334155;border-radius:5px;font:inherit;font-size:11px;";
+          card.appendChild(ta);
+
+          const ctrlRow = document.createElement("div");
+          ctrlRow.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
+
+          const thumb = document.createElement("img");
+          thumb.style.cssText = "width:34px;height:34px;border-radius:4px;object-fit:cover;border:1px solid #334155;display:none;";
+          const sel = document.createElement("select");
+          sel.style.cssText = "flex:1;min-width:180px;background:#070b12;color:#e2e8f0;border:1px solid #334155;border-radius:5px;padding:4px 6px;font-size:11px;";
+          sel.appendChild(new Option("(Use default character picture)", ""));
+          (c.references || []).forEach(ref => {
+            sel.appendChild(new Option(ref.split("/").slice(-2).join("/"), ref));
+          });
+          sel.value = (c.locked && c.locked.reference) || "";
+          const syncThumb = () => {
+            const u = refToPreviewUrl(sel.value);
+            if (u) { thumb.src = u; thumb.style.display = "block"; } else { thumb.style.display = "none"; }
+          };
+          syncThumb();
+          sel.addEventListener("change", syncThumb);
+
+          const btnLock = document.createElement("button");
+          btnLock.type = "button";
+          btnLock.className = "btn btn--primary";
+          btnLock.style.cssText = "padding:4px 10px;font-size:11px;";
+          btnLock.textContent = "🔒 Lock";
+          btnLock.addEventListener("click", () => {
+            const rawTok = ta.value.trim();
+            const tok = (rawTok === (c.current || "").trim() && !(c.locked && c.locked.token) && sel.value) ? "" : rawTok;
+            if (!tok && !sel.value) {
+              sceneMsg.style.color = "#fbbf24";
+              sceneMsg.textContent = `Edit ${c.name}'s costume description or pick a reference image to lock ${s.id}.`;
+              return;
+            }
+            sendLock({ kind: "character", name: c.name, token: tok, reference: sel.value }, `✓ Locked ${c.name} for ${s.id}.`);
+          });
+
+          const btnUnlock = document.createElement("button");
+          btnUnlock.type = "button";
+          btnUnlock.className = "btn btn--ghost";
+          btnUnlock.style.cssText = "padding:4px 10px;font-size:11px;color:#f87171;";
+          btnUnlock.textContent = "🔓 Unlock";
+          btnUnlock.disabled = !isLocked;
+          btnUnlock.addEventListener("click", () => {
+            sendLock({ kind: "character", name: c.name, token: "", reference: "" }, `✓ Unlocked ${c.name} in ${s.id}.`);
+          });
+
+          ctrlRow.appendChild(thumb);
+          ctrlRow.appendChild(sel);
+          ctrlRow.appendChild(btnLock);
+          ctrlRow.appendChild(btnUnlock);
+          card.appendChild(ctrlRow);
+          body.appendChild(card);
+        };
+
+        if ((s.characters || []).length) {
+          s.characters.forEach(addCharEditor);
+        } else {
+          const noneMsg = document.createElement("div");
+          noneMsg.style.cssText = "color:#94a3b8;font-size:11px;";
+          noneMsg.textContent = "No characters listed in this scene yet — use 'Add character lock' below to lock one.";
+          body.appendChild(noneMsg);
+        }
+
+        // Allow locking another continuity-book character into this scene
+        const presentSet = new Set((s.characters || []).map(c => String(c.name || "").toLowerCase()));
+        const extraChars = allChars.filter(c => c.name && !presentSet.has(c.name.toLowerCase()));
+        if (extraChars.length) {
+          const addRow = document.createElement("div");
+          addRow.style.cssText = "display:flex;align-items:center;gap:6px;flex-wrap:wrap;";
+          const addSel = document.createElement("select");
+          addSel.style.cssText = "background:#070b12;color:#cbd5e1;border:1px solid #334155;border-radius:5px;padding:3px 6px;font-size:11px;";
+          addSel.appendChild(new Option("➕ Add character lock to this scene…", ""));
+          extraChars.forEach(ec => addSel.appendChild(new Option(ec.name, ec.name)));
+          addSel.addEventListener("change", () => {
+            const pick = extraChars.find(ec => ec.name === addSel.value);
+            if (!pick) return;
+            addCharEditor({ name: pick.name, current: pick.token || "", locked: {}, references: pick.references || [] });
+            addSel.value = "";
+          });
+          addRow.appendChild(addSel);
+          body.appendChild(addRow);
+        }
+
+        // Location / Set Reference Lock row
+        const locCard = document.createElement("div");
+        locCard.style.cssText = "padding:8px 10px;background:#111827;border:1px solid " + (placeLocked ? "rgba(16,185,129,0.45)" : "#263248") + ";border-radius:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
+        const locLbl = document.createElement("strong");
+        locLbl.style.color = "#f59e0b";
+        locLbl.textContent = `🏛️ Set: ${placeName}`;
+        const locSel = document.createElement("select");
+        locSel.style.cssText = "flex:1;min-width:180px;background:#070b12;color:#e2e8f0;border:1px solid #334155;border-radius:5px;padding:4px 6px;font-size:11px;";
+        locSel.appendChild(new Option("(Use default set look)", ""));
+        ((s.place && s.place.references) || []).forEach(ref => {
+          locSel.appendChild(new Option(ref.split("/").slice(-2).join("/"), ref));
         });
-      }
+        locSel.value = (s.place && s.place.locked && s.place.locked.reference) || "";
+        const btnLocLock = document.createElement("button");
+        btnLocLock.type = "button";
+        btnLocLock.className = "btn btn--secondary";
+        btnLocLock.style.cssText = "padding:4px 10px;font-size:11px;";
+        btnLocLock.textContent = locSel.value ? "🔒 Lock Set" : "🔓 Unlock Set";
+        locSel.addEventListener("change", () => { btnLocLock.textContent = locSel.value ? "🔒 Lock Set" : "🔓 Unlock Set"; });
+        btnLocLock.addEventListener("click", () => {
+          sendLock({ kind: "location", reference: locSel.value }, locSel.value ? `✓ Locked set reference for ${s.id}.` : `✓ Unlocked set reference for ${s.id}.`);
+        });
+        locCard.appendChild(locLbl);
+        locCard.appendChild(locSel);
+        locCard.appendChild(btnLocLock);
+        body.appendChild(locCard);
+
+        sceneMsg.className = "v2-cont-lock-msg";
+        body.appendChild(sceneMsg);
+        det.appendChild(body);
+        locksList.appendChild(det);
+      });
+    };
+
+    try {
+      const lk = await callApi(`/api/cast_lock?project=${encodeURIComponent(slug)}`);
+      renderV2ContLocks(lk);
     } catch (e) {
       if (locksSum) locksSum.textContent = "Run Story Breakdown (Step 05) to populate per-scene locks.";
     }
@@ -2748,8 +3284,9 @@
         btnGenCb.disabled = true;
         const statusEl = $("v2ContBookStatus");
         const logEl = $("v2ContLog");
+        const cfg = _v2JobConfigForStep(7);
         if (statusEl) statusEl.textContent = `Starting continuity book generation for "${slug}"…`;
-        if (logEl) { logEl.textContent = ""; logEl.classList.remove("hidden"); }
+        if (logEl) logEl.classList.add("hidden");
         try {
           const o = typeof window.options === "function" ? window.options() : {};
           await callApi("/api/continuity_book", {
@@ -2757,11 +3294,14 @@
             engine: o.engine || "claude",
             claude_model: o.claude_model,
           });
-          pollV2ContLog(0);
+          watchV2JobProgress({ ...cfg, fresh: true });
         } catch (err) {
-          if (statusEl) statusEl.textContent = "Error: " + err.message;
-        } finally {
-          btnGenCb.disabled = false;
+          if (/already running/i.test(String(err.message || ""))) {
+            watchV2JobProgress({ ...cfg, fresh: false });
+          } else {
+            if (statusEl) statusEl.textContent = "Error: " + err.message;
+            btnGenCb.disabled = false;
+          }
         }
       });
     }
@@ -3689,6 +4229,8 @@
   }
 
   // ===== STEP 11: LOCATIONS & SETS =====
+  let v2LocCurrentList = [];
+
   function getCustomSets(slug) {
     try {
       const raw = localStorage.getItem(`studio_v2_sets_${slug}`);
@@ -3704,6 +4246,56 @@
     } catch (e) {}
   }
 
+  function deleteCustomSet(slug, setName) {
+    try {
+      const key = String(setName || "").trim().toLowerCase();
+      const list = getCustomSets(slug).filter(x => String(x.name || "").trim().toLowerCase() !== key);
+      localStorage.setItem(`studio_v2_sets_${slug}`, JSON.stringify(list));
+    } catch (e) {}
+  }
+
+  function updateV2LocInsertHint() {
+    const numIn = $("v2LocNewNumber");
+    const hint = $("v2LocInsertHint");
+    if (!numIn || !hint) return;
+    const total = v2LocCurrentList.length;
+    const maxPos = total + 1;
+    numIn.min = "1";
+    numIn.max = String(maxPos);
+    let pos = parseInt(numIn.value, 10);
+    if (!Number.isFinite(pos) || pos < 1) pos = maxPos;
+    if (pos > maxPos) pos = maxPos;
+    if (total === 0) {
+      hint.textContent = "Will be added as Set 1.";
+    } else if (pos === 1) {
+      hint.textContent = `Will insert as Set 1 (before "${v2LocCurrentList[0].name}") — existing sets will automatically renumber to Set 2–${maxPos}.`;
+    } else if (pos > total) {
+      hint.textContent = `Will append at the end as Set ${maxPos}.`;
+    } else {
+      const prev = v2LocCurrentList[pos - 2].name;
+      const next = v2LocCurrentList[pos - 1].name;
+      hint.textContent = `Will insert as Set ${pos} (between Set ${pos - 1}: "${prev}" and Set ${pos}: "${next}") — sets from Set ${pos} onward will automatically renumber.`;
+    }
+  }
+
+  function openV2LocAddFormAt(position) {
+    const form = $("v2LocAddForm");
+    const numIn = $("v2LocNewNumber");
+    if (!form) return;
+    form.classList.remove("hidden");
+    form.style.display = "flex";
+    const maxPos = v2LocCurrentList.length + 1;
+    const pos = Math.max(1, Math.min(maxPos, parseInt(position, 10) || maxPos));
+    if (numIn) {
+      numIn.min = "1";
+      numIn.max = String(maxPos);
+      numIn.value = String(pos);
+    }
+    updateV2LocInsertHint();
+    form.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if ($("v2LocNewName")) $("v2LocNewName").focus();
+  }
+
   async function loadV2Locations() {
     const selProj = $("proj");
     const slug = (selProj && selProj.value) || activeProject || "";
@@ -3714,6 +4306,7 @@
     if (!grid) return;
 
     if (!slug) {
+      v2LocCurrentList = [];
       grid.textContent = "";
       if (summaryEl) summaryEl.textContent = "Pick or save a book in Step 01 first.";
       if (badgeEl) {
@@ -3737,10 +4330,25 @@
     const merged = new Map();
     let hasContinuityBook = false;
 
+    // 0. Load deleted/hidden sets and custom set order so numbering stays consistent across reloads
+    const deletedSets = new Set();
+    let savedOrder = [];
+    try {
+      const hid = await callApi(`/api/v2_sets_hidden?project=${encodeURIComponent(slug)}`);
+      ((hid && Array.isArray(hid.deleted)) ? hid.deleted : []).forEach(n => {
+        const k = String(n || "").trim().toLowerCase();
+        if (k) deletedSets.add(k);
+      });
+      if (hid && Array.isArray(hid.order)) {
+        savedOrder = hid.order.map(n => String(n || "").trim().toLowerCase()).filter(Boolean);
+      }
+    } catch (e) {}
+
     const upsert = (name, info, sourceLabel) => {
       const clean = String(name || "").trim();
       if (!clean) return;
       const key = clean.toLowerCase();
+      if (deletedSets.has(key)) return;
       const existing = merged.get(key) || {
         name: clean,
         description: "",
@@ -3802,10 +4410,31 @@
       upsert(cs.name, { description: cs.description || "", lighting: cs.lighting || "" }, "Custom");
     });
 
-    const allLocs = [...merged.values()];
+    // Apply persisted set order and automatically assign contiguous Set 1..N numbering
+    const rawLocs = [...merged.values()];
+    let allLocs = rawLocs;
+    if (savedOrder.length) {
+      const rank = new Map(savedOrder.map((k, i) => [k, i]));
+      const fallbackBase = savedOrder.length;
+      allLocs = rawLocs
+        .map((loc, origIdx) => ({ loc, origIdx, key: loc.name.toLowerCase() }))
+        .sort((a, b) => {
+          const ra = rank.has(a.key) ? rank.get(a.key) : (fallbackBase + a.origIdx);
+          const rb = rank.has(b.key) ? rank.get(b.key) : (fallbackBase + b.origIdx);
+          return ra - rb || a.origIdx - b.origIdx;
+        })
+        .map(x => x.loc);
+    }
+    v2LocCurrentList = allLocs.map(l => ({ name: l.name, key: l.name.toLowerCase() }));
+    const numIn = $("v2LocNewNumber");
+    if (numIn && $("v2LocAddForm") && $("v2LocAddForm").classList.contains("hidden")) {
+      numIn.value = String(allLocs.length + 1);
+    }
+    updateV2LocInsertHint();
+
     if (summaryEl) {
       summaryEl.innerHTML = `<strong style="color:#f59e0b">${allLocs.length} location(s) / set(s)</strong> found for <strong>${slug}</strong>` +
-        (allLocs.length ? " — edit any set's details or lighting below, or add new sets." : " — click <strong>➕ Add Set</strong> or <strong>✨ Extract Sets from Script</strong> to populate your locations.");
+        (allLocs.length ? " — drag cards to reorder, reassign set numbers, insert between sets, or delete (sets auto-renumber)." : " — click <strong>➕ Add Set</strong> or <strong>✨ Extract Sets from Script</strong> to populate your locations.");
     }
     if (badgeEl) {
       badgeEl.textContent = allLocs.length ? `✓ ${allLocs.length} Sets` : "No Sets Yet";
@@ -3830,23 +4459,134 @@
       return;
     }
 
+    const currentOrderKeys = allLocs.map(l => l.name.toLowerCase());
+    let draggedLocKey = "";
+
+    const clearDropHighlights = () => {
+      grid.querySelectorAll(".v2-loc-drop-target").forEach(el => {
+        el.classList.remove("v2-loc-drop-target");
+        el.style.outline = "";
+        el.style.outlineOffset = "";
+      });
+    };
+
     allLocs.forEach((loc, idx) => {
+      const setNum = idx + 1;
+      const locKey = loc.name.toLowerCase();
       const card = document.createElement("div");
       card.className = "direct-story-card";
+      card.dataset.locKey = locKey;
+      card.draggable = true;
+      card.addEventListener("pointerdown", e => {
+        const interactive = e.target && e.target.closest("input, textarea, select, button");
+        card.draggable = !interactive;
+      });
+      card.addEventListener("pointerup", () => { card.draggable = true; });
+      card.addEventListener("dragstart", e => {
+        if (e.target && e.target.closest("input, textarea, select, button")) {
+          e.preventDefault();
+          return;
+        }
+        draggedLocKey = locKey;
+        card.style.opacity = "0.45";
+        if (e.dataTransfer) {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", locKey);
+        }
+      });
+      card.addEventListener("dragend", () => {
+        draggedLocKey = "";
+        card.style.opacity = "";
+        card.draggable = true;
+        clearDropHighlights();
+      });
+      card.addEventListener("dragover", e => {
+        const srcKey = draggedLocKey || (e.dataTransfer && e.dataTransfer.getData("text/plain")) || "";
+        if (!srcKey || srcKey === locKey) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        if (!card.classList.contains("v2-loc-drop-target")) {
+          clearDropHighlights();
+          card.classList.add("v2-loc-drop-target");
+          card.style.outline = "2px dashed #f59e0b";
+          card.style.outlineOffset = "2px";
+        }
+      });
+      card.addEventListener("dragleave", e => {
+        if (!card.contains(e.relatedTarget)) {
+          card.classList.remove("v2-loc-drop-target");
+          card.style.outline = "";
+          card.style.outlineOffset = "";
+        }
+      });
+      card.addEventListener("drop", async e => {
+        e.preventDefault();
+        const srcKey = draggedLocKey || (e.dataTransfer && e.dataTransfer.getData("text/plain")) || "";
+        clearDropHighlights();
+        draggedLocKey = "";
+        if (!srcKey || srcKey === locKey) return;
+        const targetIdx = currentOrderKeys.indexOf(locKey);
+        if (targetIdx < 0) return;
+        const reordered = currentOrderKeys.filter(k => k !== srcKey);
+        reordered.splice(targetIdx, 0, srcKey);
+        try {
+          await callApi("/api/v2_set_order", { project: slug, order: reordered });
+          await loadV2Locations();
+        } catch (err) {
+          if (summaryEl) summaryEl.textContent = "Could not reorder sets: " + (err.message || err);
+        }
+      });
       if (!loc.description || loc.description.trim().length < 15) {
         flagNeedsAttention(card, "Add specific set details, colors & layout so shots stay consistent in this location");
       }
 
       const head = document.createElement("div");
       head.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;";
+      const titleGroup = document.createElement("div");
+      titleGroup.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
+
+      const dragHandle = document.createElement("span");
+      dragHandle.textContent = "⋮⋮";
+      dragHandle.title = `Drag to reorder Set ${setNum} ("${loc.name}") — sets auto-renumber`;
+      dragHandle.style.cssText = "cursor:grab;color:#64748b;font-weight:700;font-size:14px;letter-spacing:-1px;user-select:none;padding:0 2px;";
+      titleGroup.appendChild(dragHandle);
+
+      const numSel = document.createElement("select");
+      numSel.title = `Assign set number for "${loc.name}" (all other sets automatically renumber)`;
+      numSel.style.cssText = "background:#0f172a;color:#f59e0b;font-weight:700;border:1px solid #334155;border-radius:6px;padding:2px 6px;font-size:12px;";
+      for (let n = 1; n <= allLocs.length; n++) {
+        const opt = document.createElement("option");
+        opt.value = String(n);
+        opt.textContent = `Set ${n}`;
+        if (n === setNum) opt.selected = true;
+        numSel.appendChild(opt);
+      }
+      numSel.addEventListener("change", async () => {
+        const targetPos = Math.max(1, Math.min(allLocs.length, parseInt(numSel.value, 10) || setNum));
+        if (targetPos === setNum) return;
+        const reordered = currentOrderKeys.filter(k => k !== loc.name.toLowerCase());
+        reordered.splice(targetPos - 1, 0, loc.name.toLowerCase());
+        numSel.disabled = true;
+        try {
+          await callApi("/api/v2_set_order", { project: slug, order: reordered });
+          await loadV2Locations();
+        } catch (err) {
+          numSel.disabled = false;
+          numSel.value = String(setNum);
+        }
+      });
+
       const title = document.createElement("strong");
       title.style.cssText = "font-size:var(--text-base);color:#f8fafc;";
-      title.textContent = `Set ${idx + 1}: ${loc.name}`;
+      title.textContent = loc.name;
+      titleGroup.appendChild(numSel);
+      titleGroup.appendChild(title);
+
       const srcBadge = document.createElement("span");
       srcBadge.className = "status-badge " + (loc.inContinuity ? "status-badge--synced" : "status-badge--working");
       srcBadge.style.fontSize = "0.7rem";
       srcBadge.textContent = loc.inContinuity ? "✓ Continuity Book" : `From ${[...loc.sources].join(" / ")}`;
-      head.appendChild(title);
+      head.appendChild(titleGroup);
       head.appendChild(srcBadge);
       card.appendChild(head);
 
@@ -3879,6 +4619,14 @@
       btnSave.className = "btn btn--primary";
       btnSave.style.cssText = "padding:5px 12px;font-size:var(--text-xs);";
       btnSave.textContent = "💾 Save Set";
+      const btnInsertAfter = document.createElement("button");
+      btnInsertAfter.type = "button";
+      btnInsertAfter.className = "btn btn--ghost";
+      btnInsertAfter.style.cssText = "padding:5px 10px;font-size:var(--text-xs);color:#93c5fd;";
+      btnInsertAfter.textContent = `➕ Insert After Set ${setNum}`;
+      btnInsertAfter.title = `Insert a new set as Set ${setNum + 1} right after "${loc.name}" (subsequent sets auto-renumber)`;
+      btnInsertAfter.addEventListener("click", () => openV2LocAddFormAt(setNum + 1));
+
       const msg = document.createElement("span");
       msg.style.cssText = "font-size:var(--text-xs);color:#94a3b8;";
 
@@ -3906,8 +4654,36 @@
         }
       });
 
+      const btnDelete = document.createElement("button");
+      btnDelete.type = "button";
+      btnDelete.className = "btn btn--ghost";
+      btnDelete.style.cssText = "padding:5px 10px;font-size:var(--text-xs);color:#f87171;margin-left:auto;";
+      btnDelete.textContent = "🗑️ Delete Set";
+      btnDelete.title = `Delete Set ${setNum} ("${loc.name}") and automatically renumber remaining sets`;
+      btnDelete.addEventListener("click", async () => {
+        const ok = await showInstallApprovalModal(
+          `Delete Set ${setNum}: "${loc.name}"?`,
+          `This removes Set ${setNum} ("${loc.name}") from Step 11 (Locations & Sets)` +
+            (loc.inContinuity ? " and from the Continuity Book (Step 07)" : "") +
+            `, and automatically renumbers the remaining sets.\n\nClick OK to delete, or Cancel to keep it.`
+        );
+        if (!ok) return;
+        btnDelete.disabled = true;
+        msg.textContent = "Deleting…";
+        deleteCustomSet(slug, loc.name);
+        try {
+          await callApi("/api/v2_set_delete", { project: slug, name: loc.name, order: currentOrderKeys });
+          await loadV2Locations();
+        } catch (err) {
+          msg.textContent = "Delete failed: " + (err.message || err);
+          btnDelete.disabled = false;
+        }
+      });
+
       foot.appendChild(btnSave);
+      foot.appendChild(btnInsertAfter);
       foot.appendChild(msg);
+      foot.appendChild(btnDelete);
       card.appendChild(foot);
       grid.appendChild(card);
     });
@@ -3920,13 +4696,22 @@
     const btnCreate = $("bV2LocCreate");
     const btnBuild = $("bV2LocBuild");
     const btnReload = $("bV2LocReload");
+    const numIn = $("v2LocNewNumber");
+
+    if (numIn) {
+      numIn.addEventListener("input", updateV2LocInsertHint);
+      numIn.addEventListener("change", updateV2LocInsertHint);
+    }
 
     if (btnToggle && form) {
       btnToggle.addEventListener("click", () => {
         const show = form.classList.contains("hidden");
-        form.classList.toggle("hidden", !show);
-        form.style.display = show ? "flex" : "none";
-        if (show && $("v2LocNewName")) $("v2LocNewName").focus();
+        if (show) {
+          openV2LocAddFormAt(v2LocCurrentList.length + 1);
+        } else {
+          form.classList.add("hidden");
+          form.style.display = "none";
+        }
       });
     }
     if (btnCancel && form) {
@@ -3944,9 +4729,20 @@
         const name = ($("v2LocNewName") || {}).value ? $("v2LocNewName").value.trim() : "";
         const lighting = ($("v2LocNewLight") || {}).value ? $("v2LocNewLight").value.trim() : "";
         const description = ($("v2LocNewDesc") || {}).value ? $("v2LocNewDesc").value.trim() : "";
+        const maxPos = v2LocCurrentList.length + 1;
+        const rawPos = parseInt(($("v2LocNewNumber") || {}).value, 10);
+        const position = Math.max(1, Math.min(maxPos, Number.isFinite(rawPos) ? rawPos : maxPos));
         if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
         if (!name) { alert("Enter a location / set name first."); return; }
         saveCustomSet(slug, { name, lighting, description });
+        try {
+          await callApi("/api/v2_set_order", {
+            project: slug,
+            order: v2LocCurrentList.map(x => x.key),
+            insert_name: name,
+            position,
+          });
+        } catch (e) {}
         if ($("v2LocNewName")) $("v2LocNewName").value = "";
         if ($("v2LocNewLight")) $("v2LocNewLight").value = "";
         if ($("v2LocNewDesc")) $("v2LocNewDesc").value = "";
@@ -3962,15 +4758,19 @@
         if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
         btnBuild.disabled = true;
         const summaryEl = $("v2LocSummary");
+        const cfg = _v2JobConfigForStep(11);
         if (summaryEl) summaryEl.textContent = `Starting continuity book & set extraction for "${slug}"…`;
         try {
           const o = typeof window.options === "function" ? window.options() : {};
           await callApi("/api/continuity_book", { project: slug, engine: o.engine || "claude", claude_model: o.claude_model });
-          if (summaryEl) summaryEl.textContent = `✓ Set extraction job started for "${slug}". Click ↻ Reload in a moment to view all sets.`;
+          watchV2JobProgress({ ...cfg, fresh: true });
         } catch (err) {
-          if (summaryEl) summaryEl.textContent = "Could not start extraction: " + err.message;
-        } finally {
-          btnBuild.disabled = false;
+          if (/already running/i.test(String(err.message || ""))) {
+            watchV2JobProgress({ ...cfg, fresh: false });
+          } else {
+            if (summaryEl) summaryEl.textContent = "Could not start extraction: " + err.message;
+            btnBuild.disabled = false;
+          }
         }
       });
     }
@@ -4199,15 +4999,19 @@
         if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
         btnBuild.disabled = true;
         const summaryEl = $("v2ShotsSummary");
+        const cfg = _v2JobConfigForStep(12);
         if (summaryEl) summaryEl.textContent = `Starting director's shot list generation for "${slug}"…`;
         try {
           const o = typeof window.options === "function" ? window.options() : {};
           await callApi("/api/shot_list", { project: slug, engine: o.engine || "claude", claude_model: o.claude_model });
-          if (summaryEl) summaryEl.textContent = `✓ Shot list generation started for "${slug}". Click ↻ Reload in a moment.`;
+          watchV2JobProgress({ ...cfg, fresh: true });
         } catch (err) {
-          if (summaryEl) summaryEl.textContent = "Could not start shot list: " + err.message;
-        } finally {
-          btnBuild.disabled = false;
+          if (/already running/i.test(String(err.message || ""))) {
+            watchV2JobProgress({ ...cfg, fresh: false });
+          } else {
+            if (summaryEl) summaryEl.textContent = "Could not start shot list: " + err.message;
+            btnBuild.disabled = false;
+          }
         }
       });
     }
@@ -6359,15 +7163,75 @@
       const outfits = (c.outfits && c.outfits.length) ? c.outfits : [{ id: "default", scenes: "All Scenes", location: "", wardrobe: c.desc || "", views: c.views || {} }];
 
       const hdr = document.createElement("div");
-      hdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px";
+      hdr.style.cssText = "display:flex;flex-direction:column;gap:6px;margin-bottom:10px";
+      const titleRow = document.createElement("div");
+      titleRow.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:8px";
       const title = document.createElement("strong");
       title.style.color = "#f59e0b";
       title.textContent = c.name.toUpperCase() + (outfits.length > 1 ? ` · ${outfits.length} Wardrobe Changes` : "");
-      hdr.appendChild(title);
+      titleRow.appendChild(title);
+
+      const ident = c.identity || {};
+      const badge = document.createElement("span");
+      if (ident.linked_variants && ident.linked_variants.length) {
+        if (ident.has_canonical_ref && ident.ref_source_name) {
+          badge.style.cssText = "padding:2px 8px;border-radius:999px;background:rgba(16,185,129,0.14);border:1px solid rgba(16,185,129,0.45);color:#a7f3d0;font-size:11px;font-weight:600";
+          badge.textContent = `🔗 Same character (${ident.canonical_label}) · Ref: ${ident.ref_source_name}`;
+          badge.title = `Costume & scene changes for ${c.name} automatically use ${ident.ref_source_name}'s generated picture as visual reference.`;
+        } else {
+          badge.style.cssText = "padding:2px 8px;border-radius:999px;background:rgba(56,189,248,0.14);border:1px solid rgba(56,189,248,0.45);color:#bae6fd;font-size:11px;font-weight:600";
+          badge.textContent = `🔗 Shared identity: ${ident.canonical_label} (${ident.linked_variants.join(", ")})`;
+          badge.title = `First Front View generated for ${ident.canonical_label} will automatically be used as the visual reference for all linked costumes/variants.`;
+        }
+      } else if (ident.is_twin) {
+        badge.style.cssText = "padding:2px 8px;border-radius:999px;background:rgba(168,85,247,0.16);border:1px solid rgba(168,85,247,0.45);color:#e9d5ff;font-size:11px;font-weight:600";
+        badge.textContent = `👯 Explicit Twin (${(ident.twin_with || []).join(", ")})`;
+      } else {
+        badge.style.cssText = "padding:2px 8px;border-radius:999px;background:rgba(148,163,184,0.12);border:1px solid rgba(148,163,184,0.32);color:#cbd5e1;font-size:11px";
+        badge.textContent = "🎭 Distinct Character (non-twin)";
+        badge.title = "Enforced as visually distinct from other cast members unless explicitly described as twins.";
+      }
+      titleRow.appendChild(badge);
+
+      const idSel = document.createElement("select");
+      idSel.style.cssText = "margin-left:auto;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:6px;padding:2px 6px;font-size:11px;max-width:240px";
+      idSel.title = "Character identity control: link costume/scene variants so they share the same face & reference image, or keep independent.";
+      const optAuto = document.createElement("option");
+      optAuto.value = "";
+      optAuto.textContent = `Identity: Auto (${ident.canonical_label || c.name.toUpperCase()})`;
+      idSel.appendChild(optAuto);
+      const optSelf = document.createElement("option");
+      optSelf.value = "__self__";
+      optSelf.textContent = "Keep Independent (distinct character)";
+      idSel.appendChild(optSelf);
+      chars.forEach(other => {
+        if (!other.name || other.name.toLowerCase() === c.name.toLowerCase()) return;
+        const opt = document.createElement("option");
+        opt.value = other.name;
+        opt.textContent = `Same character as ${other.name}`;
+        idSel.appendChild(opt);
+      });
+      idSel.value = ident.override || "";
+      idSel.addEventListener("change", async () => {
+        try {
+          await callApi("/api/v2_character_identity_link", {
+            project: v2TurnState.project,
+            character: c.name,
+            target_base: idSel.value,
+          });
+          await loadV2Turnarounds();
+          setV2TurnStatus(`✓ Updated character identity control for ${c.name}.`);
+        } catch (err) {
+          setV2TurnStatus("Could not update character identity: " + (err.message || err), true);
+        }
+      });
+      titleRow.appendChild(idSel);
+      hdr.appendChild(titleRow);
+
       if (c.desc) {
-        const desc = document.createElement("span");
-        desc.style.cssText = "color:#94a3b8;font-size:var(--text-xs)";
-        desc.textContent = c.desc.slice(0, 140);
+        const desc = document.createElement("div");
+        desc.style.cssText = "color:#cbd5e1;font-size:var(--text-xs);line-height:1.45;white-space:normal;word-break:break-word";
+        desc.textContent = c.desc;
         hdr.appendChild(desc);
       }
       card.appendChild(hdr);
@@ -6377,15 +7241,22 @@
         if (ofIdx > 0) sec.style.cssText = "margin-top:12px;padding-top:12px;border-top:1px solid #232d3f;";
 
         const ofHdr = document.createElement("div");
-        ofHdr.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;font-size:12px;";
+        ofHdr.style.cssText = "display:flex;align-items:flex-start;flex-wrap:wrap;gap:6px;margin-bottom:8px;font-size:12px;";
         const pill = document.createElement("span");
         pill.style.cssText = "padding:2px 8px;border-radius:999px;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.45);color:#fde68a;font-weight:600;font-size:11px;";
         pill.textContent = `👗 ${of.scenes || "All Scenes"}` + (of.location ? ` · ${of.location}` : "");
         ofHdr.appendChild(pill);
-        const wTxt = document.createElement("span");
-        wTxt.style.cssText = "color:#e2e8f0;font-size:11px;flex:1;";
-        wTxt.textContent = of.wardrobe || "No specific wardrobe set in Step 08 yet";
-        ofHdr.appendChild(wTxt);
+        if (of.wardrobe && of.wardrobe !== c.desc) {
+          const wTxt = document.createElement("span");
+          wTxt.style.cssText = "color:#e2e8f0;font-size:11px;line-height:1.45;flex:1;min-width:200px;white-space:normal;word-break:break-word;";
+          wTxt.textContent = of.wardrobe;
+          ofHdr.appendChild(wTxt);
+        } else if (!of.wardrobe && !c.desc) {
+          const wTxt = document.createElement("span");
+          wTxt.style.cssText = "color:#94a3b8;font-size:11px;flex:1;";
+          wTxt.textContent = "No specific wardrobe set in Step 08 yet";
+          ofHdr.appendChild(wTxt);
+        }
 
         if (of.id && of.id !== "default") {
           const btnDelOf = document.createElement("button");
@@ -6420,8 +7291,13 @@
         const grid = document.createElement("div");
         grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:10px";
 
+        const hasOutfitFront = Boolean(of.views && of.views.front && of.views.front.has_image);
+        const hasBaseFront = Boolean(outfits[0] && outfits[0].views && outfits[0].views.front && outfits[0].views.front.has_image);
+        const hasFrontRef = hasOutfitFront || hasBaseFront;
+
         VIEWS.forEach(([vk, vlabel]) => {
           const vinfo = (of.views && of.views[vk]) || {};
+          const needsFront = vk !== "front" && !hasFrontRef;
           const box = document.createElement("div");
           box.style.cssText = "background:#0a0d14;border:1px solid #232d3f;border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px";
 
@@ -6435,7 +7311,9 @@
             img.addEventListener("click", () => window.open(vinfo.image_url, "_blank"));
             imgBox.appendChild(img);
           } else {
-            imgBox.textContent = `${c.name} · ${of.scenes} · ${vlabel}`;
+            imgBox.textContent = needsFront
+              ? `${vlabel} · Generate Front View first (used as reference)`
+              : `${c.name} · ${of.scenes} · ${vlabel}`;
           }
           box.appendChild(imgBox);
 
@@ -6445,10 +7323,21 @@
           btnGen.type = "button";
           btnGen.className = "btn " + (vinfo.has_image ? "btn--secondary" : "btn--primary");
           btnGen.style.cssText = "flex:1;padding:4px 8px;font-size:11px";
-          btnGen.textContent = vinfo.has_image ? `↺ Re-roll` : `✨ Generate ${vlabel}`;
+          btnGen.textContent = vinfo.has_image
+            ? `↺ Re-roll`
+            : (needsFront ? `🔒 Front View First` : `✨ Generate ${vlabel}`);
+          if (needsFront) {
+            btnGen.disabled = true;
+            btnGen.title = `Generate or upload the Front View of ${c.name} first — ${vlabel} uses the Front View as its visual reference.`;
+          } else if (vk !== "front") {
+            btnGen.title = `Uses ${c.name}'s Front View as the visual reference to preserve face, clothing, and proportions.`;
+          }
           btnGen.addEventListener("click", async () => {
             const stopBusy = startBusyFeedback(btnGen, box, `Generating ${c.name} (${of.scenes} · ${vlabel})…`);
-            setV2TurnStatus(`Generating ${vlabel} for ${c.name} (${of.scenes})…`);
+            const refHint = vk !== "front"
+              ? " using Front View reference"
+              : (ident.has_canonical_ref && ident.ref_source_name ? ` using ${ident.ref_source_name} reference` : "");
+            setV2TurnStatus(`Generating ${vlabel} for ${c.name} (${of.scenes})${refHint}…`);
             try {
               const res = await callApi("/api/v2_turnaround_render", {
                 project: v2TurnState.project,
@@ -6461,8 +7350,23 @@
                 engine: _currentV2VisualEngine(),
               });
               of.views[vk] = { has_image: true, image_url: res.image_url + "?t=" + Date.now() };
-              renderV2Turnarounds();
-              setV2TurnStatus(`✓ Generated ${vlabel} for ${c.name} (${of.scenes})!`);
+              if (vk === "front") {
+                await loadV2Turnarounds();
+              } else {
+                renderV2Turnarounds();
+              }
+              const cc = res.character_control || {};
+              let refTag = res.model ? ` (${res.model})` : "";
+              if (cc.reference_reason === "same_character_costume_change" && cc.reference_source) {
+                refTag = ` using ${cc.reference_source} as character reference (${res.model || "local"})`;
+              } else if (cc.reference_reason === "front_view_angle_rotation") {
+                refTag = ` using Front View reference (${res.model || "local"})`;
+              } else if (cc.reference_reason === "explicit_twin" && cc.reference_source) {
+                refTag = ` using explicit twin reference ${cc.reference_source} (${res.model || "local"})`;
+              } else if (cc.distinctness && cc.distinctness.diversified_retry) {
+                refTag = ` (distinct non-twin, auto-diversified via ${res.model || "local"})`;
+              }
+              setV2TurnStatus(`✓ Generated ${vlabel} for ${c.name} (${of.scenes})${refTag}!`);
             } catch (err) {
               setV2TurnStatus("Turnaround failed: " + (err.message || err), true);
             } finally {

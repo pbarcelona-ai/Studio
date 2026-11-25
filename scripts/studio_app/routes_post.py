@@ -2117,45 +2117,197 @@ def _synthesize_local_preview_png(prompt: str, out_png: Path, aspect_ratio: str 
     return "local_storyboard_synth"
 
 
+def _try_comfyui_image(
+    prompt: str,
+    out_png: Path,
+    aspect_ratio: str = "16:9",
+    ref_images: list[Path] | None = None,
+    view: str = "",
+) -> str:
+    """Run ComfyUI apps locally: `apps/angles` (Qwen-Image-Edit) when rotating a character ref, else `apps/z-image` (Z-Image Turbo)."""
+    import shutil
+    import tempfile
+    from local_runners.comfyui_runner import ComfyUIRunner
+    from local_runners.sd_cli_runner import compute_dimensions
+
+    runner = ComfyUIRunner()
+    if not runner.is_installed():
+        return ""
+    models_root = ROOT / "models"
+
+    def _app_ready(app_name: str) -> tuple[Path, dict[str, Any]] | None:
+        ad = ROOT / "apps" / app_name
+        if not (ad / "app.json").is_file():
+            return None
+        mf = json.loads((ad / "app.json").read_text(encoding="utf-8"))
+        for m in mf.get("models") or []:
+            fname = Path(str(m.get("file") or "")).name
+            mdir = str(m.get("dir") or "")
+            if fname and not (models_root / mdir / fname).is_file():
+                return None
+        return ad, mf
+
+    # Identity-locked multi-angle rotation via Qwen-Image-Edit when a reference image is provided
+    valid_refs = [p for p in (ref_images or []) if p and p.is_file() and p.stat().st_size > 100]
+    if valid_refs and view in ("three_quarter", "profile"):
+        ready = _app_ready("angles")
+        if ready is not None:
+            ad, _ = ready
+            move_val = (
+                "\u5c06\u955c\u5934\u5411\u5de6\u65cb\u8f6c45\u5ea6 Rotate the camera 45 degrees to the left."
+                if view == "three_quarter"
+                else "\u5c06\u955c\u5934\u5411\u5de6\u65cb\u8f6c45\u5ea6 Rotate the camera 90 degrees to a strict side profile."
+            )
+            with tempfile.TemporaryDirectory(prefix="studio-comfy-angle-") as tmp_:
+                res = runner.run({
+                    "app_dir": str(ad),
+                    "values": {"image": str(valid_refs[0]), "move": move_val, "details": prompt[:300], "seed": -1},
+                    "output_dir": tmp_,
+                })
+                produced = Path(str(res.get("output_path") or ""))
+                if produced.is_file() and produced.stat().st_size > 100:
+                    out_png.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(produced, out_png)
+                    return "comfyui:angles"
+
+    ready_z = _app_ready("z-image")
+    if ready_z is None:
+        return ""
+    app_dir, _ = ready_z
+    w, h = compute_dimensions(1024, aspect_ratio)
+    with tempfile.TemporaryDirectory(prefix="studio-comfy-") as tmp_:
+        res = runner.run({
+            "app_dir": str(app_dir),
+            "values": {"prompt": prompt, "width": w, "height": h, "steps": 8, "seed": -1},
+            "output_dir": tmp_,
+        })
+        produced = Path(str(res.get("output_path") or ""))
+        if produced.is_file() and produced.stat().st_size > 100:
+            out_png.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(produced, out_png)
+            return "comfyui:z-image"
+    return ""
+
+
+def _try_sd_cli_image(
+    prompt: str,
+    out_png: Path,
+    aspect_ratio: str = "16:9",
+    model_id: str | None = None,
+    ref_images: list[Path] | None = None,
+    seed: int = -1,
+    init_strength: float | None = None,
+    require_ref: bool = False,
+    extra_negative: str = "",
+) -> str:
+    """Run local `sd-cli` with the best installed model on disk."""
+    from local_runners.sd_cli_runner import SdCliRunner
+
+    runner = SdCliRunner()
+    if not runner.is_installed():
+        return ""
+    valid_refs = [p for p in (ref_images or []) if p and p.is_file() and p.stat().st_size > 100]
+    chosen = (model_id or "").removeprefix("sd_cli:").strip()
+    if not chosen:
+        # When visual reference images are provided (e.g. Front View -> 3/4 / Profile or same-character costume change), prefer a reference-capable model like FLUX.2-klein-4B
+        ref_ready = runner.ready_models(require_ref_support=True) if valid_refs else []
+        if require_ref and valid_refs and not ref_ready:
+            return ""
+        ready = ref_ready or runner.ready_models()
+        if not ready:
+            return ""
+        chosen = ready[0]
+    neg_prompt = "multiple views, turnaround sheet, character sheet, grid, collage, split screen, multiple people, duplicate figure, text, watermark"
+    if extra_negative.strip():
+        neg_prompt = f"{neg_prompt}, {extra_negative.strip()}"
+    spec: dict[str, Any] = {
+        "model": chosen,
+        "prompt": prompt,
+        "negative_prompt": neg_prompt,
+        "aspect_ratio": aspect_ratio,
+        "seed": seed,
+        "output_path": str(out_png),
+    }
+    if valid_refs:
+        spec["ref_images"] = [str(p) for p in valid_refs[:2]]
+        if init_strength is not None:
+            spec["init_image"] = str(valid_refs[0])
+            spec["strength"] = init_strength
+    res = runner.run(spec)
+    if out_png.is_file() and out_png.stat().st_size > 100:
+        return f"sd_cli:{res.get('model') or chosen}"
+    return ""
+
+
 def _render_keyframe_local_or_gemini(
     prompt: str,
     out_png: Path,
     aspect_ratio: str = "16:9",
     ref_images: list[Path] | None = None,
     engine: str = "auto",
+    *,
+    view: str = "",
+    seed: int = -1,
+    init_strength: float | None = None,
+    require_ref: bool = False,
+    bypass_cache: bool = False,
+    extra_negative: str = "",
 ) -> str:
-    """Route Step 10/17 image generation through AssetCache, Local-GPU runners (sd-cli / ComfyUI), or Gemini API."""
+    """Route Step 10/17 image generation through Local-GPU runners first (ComfyUI -> sd-cli), then Gemini API, never caching placeholders."""
+    import hashlib
     from local_runners.asset_cache import asset_cache_enabled, compute_cache_key, get_default_asset_cache
-    from local_runners.router import select_runner
     import run_gemini_omni
 
     eng = str(engine or "auto").strip().lower()
+    ref_fingerprints: list[str] = []
+    for rp in (ref_images or []):
+        if rp and rp.is_file():
+            try:
+                digest = hashlib.sha256(rp.read_bytes()).hexdigest()[:16]
+                ref_fingerprints.append(f"{rp}:{digest}")
+            except OSError:
+                ref_fingerprints.append(str(rp))
     cache_inputs = {
         "prompt": prompt,
         "aspect_ratio": aspect_ratio,
         "engine": eng,
-        "refs": [str(p) for p in (ref_images or []) if p and p.is_file()],
+        "refs": ref_fingerprints,
     }
-    if asset_cache_enabled():
+    if asset_cache_enabled() and not bypass_cache:
         cache = get_default_asset_cache()
         ckey = compute_cache_key("v2_image_render", "1.0", cache_inputs, output_path=str(out_png))
         hit = cache.try_restore(ckey, out_png)
-        if hit and out_png.is_file():
+        if hit and hit.get("model") != "local_storyboard_synth" and out_png.is_file():
             return f"cache:{hit.get('model') or eng}"
 
     api_key = run_gemini_omni.get_gemini_api_key()
-    prefer_local = eng in ("local", "computer", "sd_cli", "comfyui") or (eng == "auto" and not api_key)
+    prefer_local = eng not in ("gemini", "cloud")
 
     model_used = ""
     if prefer_local:
-        try:
-            runner = select_runner("image", model_id=("sd_cli:z-image-turbo" if eng == "sd_cli" else None))
-            if runner.is_installed():
-                res = runner.run({"prompt": prompt, "aspect_ratio": aspect_ratio, "output_path": str(out_png)})
-                if out_png.is_file() and out_png.stat().st_size > 100:
-                    model_used = str(res.get("model") or runner.name)
-        except Exception as e:
-            log.debug("local image runner fallback: %s", e)
+        def _run_comfy() -> str:
+            return _try_comfyui_image(prompt, out_png, aspect_ratio, ref_images=ref_images, view=view)
+
+        def _run_sd() -> str:
+            return _try_sd_cli_image(
+                prompt,
+                out_png,
+                aspect_ratio,
+                ref_images=ref_images,
+                seed=seed,
+                init_strength=init_strength,
+                require_ref=require_ref,
+                extra_negative=extra_negative,
+            )
+
+        attempts = (_run_sd, _run_comfy) if eng == "sd_cli" else (_run_comfy, _run_sd)
+        for fn in attempts:
+            try:
+                model_used = fn()
+                if model_used:
+                    break
+            except Exception as e:
+                log.warning("local image runner %s failed: %s", fn.__name__, e)
 
         if not model_used:
             if api_key and eng == "auto":
@@ -2165,7 +2317,7 @@ def _render_keyframe_local_or_gemini(
     else:
         model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio=aspect_ratio, ref_images=ref_images)
 
-    if asset_cache_enabled() and out_png.is_file():
+    if asset_cache_enabled() and out_png.is_file() and model_used and model_used != "local_storyboard_synth":
         cache = get_default_asset_cache()
         ckey = compute_cache_key("v2_image_render", "1.0", cache_inputs, output_path=str(out_png))
         cache.store(ckey, out_png, tool_name="v2_image_render", model=model_used)
@@ -2292,41 +2444,90 @@ def _render_keyframe_gemini(prompt: str, out_png: Path, aspect_ratio: str = "16:
     raise PlanError(f"Keyframe image generation failed: {run_gemini_omni.sanitize_error(last_err) if last_err else 'no image returned'}")
 
 
-def _find_character_turnaround_refs(pd: Path, char_name: str, prefer_outfit: str = "", exclude_path: Path | None = None, limit: int = 3) -> list[Path]:
-    """Find existing generated turnaround PNGs for a character (prioritizing front views & preferred outfit)."""
+def _load_project_cast_profiles(slug: str, pd: Path) -> list[dict[str, str]]:
+    """Collect character names and descriptions for identity grouping and twin/non-twin checks."""
+    import character_tokens
+
+    chars: dict[str, dict[str, str]] = {}
+
+    def _add(name: Any, desc: Any = "", prefer: bool = False) -> None:
+        clean = str(name or "").strip()
+        if not clean:
+            return
+        k = clean.lower()
+        d = str(desc or "").strip()
+        if k not in chars:
+            chars[k] = {"name": clean, "desc": d}
+        elif d and (prefer or not chars[k]["desc"]):
+            chars[k]["desc"] = d
+
+    for cb_file in (pd / f"{slug}.json", pd / "continuity.json"):
+        if cb_file.is_file():
+            try:
+                cb = json.loads(cb_file.read_text(encoding="utf-8")) or {}
+                for c in cb.get("characters") or []:
+                    if isinstance(c, dict):
+                        _add(c.get("name"), c.get("token") or c.get("description") or "")
+                break
+            except Exception as e:
+                log.debug("continuity cast profile read failed (%s): %s", cb_file.name, e)
+    cov_path = pd / "readin" / "coverage.json"
+    if cov_path.is_file():
+        try:
+            cov = json.loads(cov_path.read_text(encoding="utf-8")) or {}
+            for c in cov.get("characters") or []:
+                if isinstance(c, dict):
+                    _add(c.get("name"), c.get("description") or c.get("role") or "")
+                elif isinstance(c, str):
+                    _add(c)
+        except Exception as e:
+            log.debug("coverage cast profile read failed: %s", e)
+    try:
+        for ch in character_tokens.list_characters(slug) or []:
+            if isinstance(ch, dict) and ch.get("name"):
+                full_ch = character_tokens.load_character(slug, str(ch["name"])) or ch
+                combined = ". ".join(
+                    p.rstrip(". ")
+                    for p in (
+                        str(full_ch.get("visual_token") or full_ch.get("token") or "").strip(),
+                        str(full_ch.get("description") or "").strip(),
+                        str(full_ch.get("consistency_notes") or "").strip(),
+                    )
+                    if p
+                )
+                _add(ch["name"], combined, prefer=True)
+    except Exception as e:
+        log.debug("character_tokens cast profile read failed: %s", e)
+    return list(chars.values())
+
+
+def _find_character_turnaround_refs(
+    pd: Path,
+    char_name: str,
+    prefer_outfit: str = "",
+    exclude_path: Path | None = None,
+    limit: int = 3,
+    *,
+    known_names: list[str] | None = None,
+    overrides: dict[str, str] | None = None,
+) -> list[Path]:
+    """Find existing generated turnaround PNGs for a character and all same-canonical-identity variants."""
+    import character_identity
+
     t_dir = pd / "assets" / "turnarounds"
     if not t_dir.is_dir():
         return []
-    safe = "".join(c if c.isalnum() else "_" for c in char_name.lower()).strip("_")
-    if not safe:
-        return []
-    ex_res = exclude_path.resolve() if exclude_path else None
-    found: list[Path] = []
-    seen = set()
-
-    def _try(p: Path):
-        if len(found) >= limit or not p.is_file():
-            return
-        try:
-            rp = p.resolve()
-            if (ex_res and rp == ex_res) or rp in seen or p.stat().st_size <= 100:
-                return
-            seen.add(rp)
-            found.append(p)
-        except OSError:
-            pass
-
-    # 1. Preferred outfit views (front first)
-    if prefer_outfit and prefer_outfit != "default":
-        for v in ("front", "three_quarter", "profile"):
-            _try(t_dir / f"{safe}_{prefer_outfit}_{v}.png")
-    # 2. Base / outfit1 front view (anchors facial identity across outfit changes!)
-    for cand in (f"{safe}_front.png", f"{safe}_outfit1_front.png", f"{safe}_three_quarter.png", f"{safe}_outfit1_three_quarter.png"):
-        _try(t_dir / cand)
-    # 3. Any remaining generated turnarounds for this character
-    for p in sorted(t_dir.glob(f"{safe}_*.png")):
-        _try(p)
-    return found
+    ov = overrides if overrides is not None else character_identity.load_identity_overrides(pd)
+    refs = character_identity.find_canonical_character_refs(
+        t_dir,
+        char_name,
+        prefer_outfit=prefer_outfit,
+        exclude_path=exclude_path,
+        known_names=known_names,
+        overrides=ov,
+        limit=limit,
+    )
+    return [p for p, _src in refs]
 
 
 @route("POST", "/api/v2_keyframe_render")
@@ -2942,25 +3143,422 @@ def _v2_turnaround_render(r: Request):
         "profile": "strict 90-degree side profile view",
     }[view]
 
-    # Look for existing generated turnaround images for this character to lock facial & body identity across angles and wardrobe changes
-    ref_imgs = _find_character_turnaround_refs(pd, char_name, prefer_outfit=outfit_id, exclude_path=out_png, limit=2)
-    ref_note = ""
-    if ref_imgs:
-        same_outfit_ref = any(f"_{outfit_id}_" in p.name for p in ref_imgs) if outfit_id != "default" else True
-        if same_outfit_ref:
-            ref_note = f" Using the attached existing reference image(s) of {char_name}, keep the EXACT SAME face, hair, body, and clothing, rendered as ONE single figure from a {view_desc}."
-        else:
-            ref_note = f" Using the attached existing image(s) of {char_name} as the exact identity reference, preserve their EXACT SAME face, hair, eyes, skin tone, age, and proportions, and apply ONLY the new wardrobe change described below, rendered as ONE single figure from a {view_desc}."
+    import character_identity
+    import hashlib
+    import tempfile
 
-    wardrobe_clause = f" EXACT LOCKED WARDROBE (keep exact solid colors and clothing items, no unrequested patterns): {wardrobe}." if wardrobe else ""
-    prompt = (
-        f"SINGLE standalone full-body character portrait of {char_name} shown from a {view_desc}. "
-        f"ONLY ONE single character centered in frame — NO multi-view grid, NO turnaround sheet, NO side-by-side poses, NO duplicate figures. "
-        f"{desc}.{ref_note}{wardrobe_clause} Style: {look}. Clean neutral studio backdrop, clearly showing the exact outfit and face, consistent lighting."
+    cast_profiles = _load_project_cast_profiles(slug, pd)
+    cast_names = [c["name"] for c in cast_profiles]
+    if char_name not in cast_names:
+        cast_names.append(char_name)
+    overrides = character_identity.load_identity_overrides(pd)
+    canon_id = character_identity.canonical_character_key(char_name, known_names=cast_names, overrides=overrides)
+    canon_label = canon_id.replace("_", " ").upper()
+
+    # 3/4 Angle and Side Profile MUST use THIS card/outfit's Front View image as their primary visual reference
+    front_candidates = (
+        [t_dir / f"{safe}_{outfit_id}_front.png", t_dir / f"{safe}_front.png"]
+        if outfit_id != "default"
+        else [t_dir / f"{safe}_front.png", t_dir / f"{safe}_outfit1_front.png"]
     )
+    front_ref = next((p for p in front_candidates if p.is_file() and p.stat().st_size > 100), None)
+
+    ref_imgs: list[Path] = []
+    ref_source = ""
+    ref_reason = "new_distinct_character"
+    twin_allowed_with: list[str] = []
+    other_non_twin: list[dict[str, str]] = []
+    other_front_pngs: list[tuple[str, Path]] = []
+
+    if view in ("three_quarter", "profile"):
+        if front_ref is None:
+            raise PlanError(f"Generate or upload the Front View of {char_name} first — 3/4 Angle and Side Profile require the Front View as a visual reference.")
+        ref_imgs = [front_ref]
+        ref_source = f"{char_name} (Front View)"
+        ref_reason = "front_view_angle_rotation"
+    else:
+        # 1. Same-character identity lock: if ANY picture already exists for this character
+        #    (another outfit OR a costume/scene variant like CAPTAIN TOMMY <-> TOMMY, FIRST OFFICER JUDAH <-> JUDAH),
+        #    use it as the visual reference so the character keeps the exact same face/body across all costumes/scenes.
+        canon_refs = character_identity.find_canonical_character_refs(
+            t_dir,
+            char_name,
+            prefer_outfit=outfit_id,
+            exclude_path=out_png,
+            known_names=cast_names,
+            overrides=overrides,
+            limit=1,
+        )
+        if canon_refs:
+            ref_imgs = [p for p, _src in canon_refs]
+            ref_source = canon_refs[0][1]
+            ref_reason = "same_character_costume_change"
+        else:
+            # 2. Separate character with a different canonical name:
+            #    ONLY allowed to look alike if descriptions explicitly state they are twins!
+            twin_ref_path: Path | None = None
+            twin_ref_name = ""
+            seen_other_canon: set[str] = set()
+            for other in cast_profiles:
+                oname = other["name"]
+                ocanon = character_identity.canonical_character_key(oname, known_names=cast_names, overrides=overrides)
+                if ocanon == canon_id:
+                    continue
+                is_twin = character_identity.explicit_twin_relationship(char_name, desc, oname, other.get("desc", ""))
+                if is_twin:
+                    twin_allowed_with.append(oname)
+                    if twin_ref_path is None:
+                        t_refs = character_identity.find_canonical_character_refs(
+                            t_dir, oname, known_names=cast_names, overrides=overrides, limit=1,
+                        )
+                        if t_refs:
+                            twin_ref_path, twin_ref_name = t_refs[0]
+                elif ocanon not in seen_other_canon:
+                    seen_other_canon.add(ocanon)
+                    other_non_twin.append(other)
+                    o_refs = character_identity.find_canonical_character_refs(
+                        t_dir, oname, known_names=cast_names, overrides=overrides, limit=1,
+                    )
+                    if o_refs and o_refs[0][0].name.endswith("_front.png"):
+                        other_front_pngs.append((oname, o_refs[0][0]))
+
+            if twin_ref_path is not None:
+                ref_imgs = [twin_ref_path]
+                ref_source = f"{twin_ref_name} (explicit twin)"
+                ref_reason = "explicit_twin"
+
+    wardrobe_clause = f" Wearing: {wardrobe}." if wardrobe else ""
     req_engine = str(r.body.get("engine") or "auto").strip().lower()
-    model_used = _render_keyframe_local_or_gemini(prompt, out_png, aspect_ratio="1:1", ref_images=ref_imgs, engine=req_engine)
-    return {"status": "ok", "character": char_name, "outfit_id": outfit_id, "view": view, "image_url": rel_url, "model": model_used, "refs_used": len(ref_imgs)}
+    distinct_cues, distinct_neg = (
+        character_identity.build_distinct_character_cues(char_name, desc, other_non_twin, attempt=0)
+        if (view == "front" and not ref_imgs)
+        else ("", "")
+    )
+    other_names_txt = ", ".join(o["name"] for o in other_non_twin[:6])
+
+    def _build_turnaround_prompt(extra_distinct: str) -> str:
+        distinct_clause = f" Distinctive individual features: {extra_distinct}." if extra_distinct else ""
+        if req_engine in ("gemini", "cloud"):
+            if ref_imgs and view in ("three_quarter", "profile"):
+                ref_note = f" Using the attached Front View reference image of {char_name}, keep the EXACT SAME face, hair, body, and clothing, rendered as ONE single figure from a {view_desc}."
+            elif ref_imgs and ref_reason == "same_character_costume_change":
+                ref_note = (
+                    f" CHARACTER IDENTITY LOCK: The attached image shows this EXACT SAME character ({canon_label}). "
+                    f"Preserve their EXACT SAME face, head shape, eyes, nose, hair/fur, skin tone, age, and body proportions unchanged, "
+                    f"and apply ONLY the costume/outfit/scene appearance described below, rendered as ONE single figure from a {view_desc}."
+                )
+            elif ref_imgs and ref_reason == "explicit_twin":
+                ref_note = (
+                    f" EXPLICIT TWIN LIKENESS: {char_name} is explicitly described as a twin of {ref_source}. "
+                    f"Preserve the twin facial likeness from the attached reference image while applying {char_name}'s exact described outfit and details, rendered as ONE single figure from a {view_desc}."
+                )
+            elif other_names_txt:
+                ref_note = (
+                    f" DISTINCT CHARACTER IDENTITY: {char_name} is a completely separate character (NOT a twin of {other_names_txt}). "
+                    f"Give {char_name} a visibly unique face shape, eyes, nose, hairstyle, and build that does NOT resemble any other cast member.{distinct_clause}"
+                )
+            else:
+                ref_note = distinct_clause
+            return (
+                f"A single standalone full-body character portrait of {char_name} shown from a {view_desc}. "
+                f"{desc}.{ref_note}{wardrobe_clause} Style: {look}. Clean solid neutral studio backdrop, clearly showing the exact outfit and face, consistent soft studio lighting."
+            )
+
+        # Keep local positive prompts free of "turnaround sheet / grid / duplicate" words (CFG=1 models ignore "NO"!)
+        if ref_imgs and view in ("three_quarter", "profile"):
+            return (
+                f"Keep the exact same character ({char_name}) from the reference image — identical face, hair, skin, body proportions, clothing, footwear, and {look} style — "
+                f"rotated to show a solo full-body {view_desc}, standing alone centered on the same plain solid warm light-gray seamless studio backdrop, full body head to toe, soft even studio lighting. "
+                f"{desc}.{wardrobe_clause}"
+            )
+        if ref_imgs and ref_reason == "same_character_costume_change":
+            return (
+                f"Keep the exact same character ({canon_label}) from the reference image — identical face, head shape, eyes, nose, hair/fur, skin tone, age, body proportions, and {look} style — "
+                f"now shown as a solo full-body {view_desc} wearing ONLY this new costume and scene appearance, replacing the clothing and accessories from the reference image: "
+                f"{desc}.{wardrobe_clause} Standing alone centered on a plain solid warm light-gray seamless studio backdrop, full body head to toe, soft even studio lighting."
+            )
+        if ref_imgs and ref_reason == "explicit_twin":
+            return (
+                f"Show the twin character ({char_name}) keeping the same twin facial likeness and {look} style from the reference image, "
+                f"as a solo full-body {view_desc} with this exact outfit and details: {desc}.{wardrobe_clause} "
+                f"Standing alone centered on a plain solid warm light-gray seamless studio backdrop, full body head to toe, soft even studio lighting."
+            )
+        return (
+            f"A solo full-body studio photograph of one single character ({char_name}) standing centered alone in frame, {view_desc}. "
+            f"{desc}.{distinct_clause}{wardrobe_clause} Style: {look}. Plain solid warm light-gray seamless studio backdrop, full body head to toe, soft even studio lighting."
+        )
+
+    prompt = _build_turnaround_prompt(distinct_cues)
+    is_reroll = out_png.is_file() and out_png.stat().st_size > 100
+    # Use canonical identity key in base seed so same-character variants share lighting/aesthetic while distinct characters stay uncorrelated
+    char_seed = -1 if is_reroll else (int.from_bytes(hashlib.sha256(f"{slug}:{canon_id}:{safe}:{outfit_id}".encode()).digest()[:4], "little") % 2_000_000_000)
+    must_use_ref = bool(ref_imgs) and (view in ("three_quarter", "profile") or ref_reason in ("same_character_costume_change", "explicit_twin"))
+    model_used = _render_keyframe_local_or_gemini(
+        prompt, out_png, aspect_ratio="1:1", ref_images=ref_imgs, engine=req_engine,
+        view=view, seed=char_seed, init_strength=None,
+        require_ref=must_use_ref,
+        bypass_cache=is_reroll,
+        extra_negative=distinct_neg,
+    )
+
+    # Non-twin distinctness verification: if a new distinct character's Front View came out
+    # looking too similar to an existing non-twin cast member, automatically retry once with
+    # stronger facial differentiation and keep whichever render is more visually distinct.
+    distinctness: dict[str, Any] = {}
+    if view == "front" and not ref_imgs and other_front_pngs and out_png.is_file():
+        distinctness = character_identity.check_non_twin_distinctness(out_png, other_front_pngs, threshold=0.86)
+        if not distinctness.get("distinct", True):
+            first_bytes = out_png.read_bytes()
+            first_sim = float(distinctness.get("max_similarity", 1.0))
+            retry_cues, retry_neg = character_identity.build_distinct_character_cues(char_name, desc, other_non_twin, attempt=1)
+            retry_prompt = _build_turnaround_prompt(retry_cues)
+            retry_seed = (char_seed + 7919) % 2_000_000_000 if char_seed >= 0 else -1
+            with tempfile.TemporaryDirectory(prefix="neon-distinct-") as tmp_dir:
+                retry_png = Path(tmp_dir) / out_png.name
+                try:
+                    retry_model = _render_keyframe_local_or_gemini(
+                        retry_prompt, retry_png, aspect_ratio="1:1", ref_images=None, engine=req_engine,
+                        view=view, seed=retry_seed, init_strength=None,
+                        require_ref=False, bypass_cache=True, extra_negative=retry_neg,
+                    )
+                    if retry_png.is_file() and retry_png.stat().st_size > 100:
+                        retry_check = character_identity.check_non_twin_distinctness(retry_png, other_front_pngs, threshold=0.86)
+                        if float(retry_check.get("max_similarity", 1.0)) < first_sim:
+                            out_png.write_bytes(retry_png.read_bytes())
+                            model_used = retry_model
+                            distinctness = {**retry_check, "diversified_retry": True}
+                        else:
+                            out_png.write_bytes(first_bytes)
+                            distinctness["diversified_retry"] = True
+                except Exception as e:
+                    log.debug("non-twin diversify retry failed: %s", e)
+                    out_png.write_bytes(first_bytes)
+
+    return {
+        "status": "ok",
+        "character": char_name,
+        "outfit_id": outfit_id,
+        "view": view,
+        "image_url": rel_url,
+        "model": model_used,
+        "refs_used": len(ref_imgs),
+        "character_control": {
+            "canonical_id": canon_id,
+            "canonical_label": canon_label,
+            "reference_source": ref_source,
+            "reference_reason": ref_reason,
+            "twin_allowed_with": twin_allowed_with,
+            "distinctness": distinctness,
+        },
+    }
+
+
+@route("POST", "/api/v2_character_identity_link")
+def _v2_character_identity_link(r: Request):
+    """Save or clear a manual same-character identity link for Step 10/17 character control."""
+    import character_identity
+
+    slug = str(r.body.get("project") or "").strip()
+    char_name = str(r.body.get("character") or "").strip()
+    target_base = str(r.body.get("target_base") or "").strip()
+    if not slug or not char_name:
+        raise PlanError("project and character are required")
+    pd = pdir(slug, "book")
+    links = character_identity.save_identity_override(pd, char_name, target_base)
+    return {"status": "ok", "character": char_name, "target_base": target_base or "auto", "links": links}
+
+
+def _load_sets_state(pd: Path) -> tuple[list[str], list[str]]:
+    """Load Step 11 (order, deleted) lists from sets_state.json / sets_deleted.json."""
+    deleted: list[str] = []
+    order: list[str] = []
+    for fname in ("sets_deleted.json", "sets_state.json"):
+        p = pd / fname
+        if not p.is_file():
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf-8")) or {}
+            if not isinstance(data, dict):
+                continue
+            raw_del = data.get("deleted")
+            if isinstance(raw_del, list):
+                for x in raw_del:
+                    k = str(x).strip().lower()
+                    if k and k not in deleted:
+                        deleted.append(k)
+            raw_ord = data.get("order")
+            if isinstance(raw_ord, list):
+                order = [str(x).strip().lower() for x in raw_ord if str(x).strip()]
+        except Exception as e:
+            log.debug("%s read failed: %s", fname, e)
+    del_set = set(deleted)
+    order = [x for x in order if x not in del_set]
+    return order, deleted
+
+
+def _save_sets_state(pd: Path, order: list[str], deleted: list[str]) -> tuple[list[str], list[str]]:
+    """Persist Step 11 set order & deleted list cleanly (deduped, contiguous)."""
+    pd.mkdir(parents=True, exist_ok=True)
+    clean_del: list[str] = []
+    for x in deleted:
+        k = str(x).strip().lower()
+        if k and k not in clean_del:
+            clean_del.append(k)
+    del_set = set(clean_del)
+    clean_ord: list[str] = []
+    for x in order:
+        k = str(x).strip().lower()
+        if k and k not in del_set and k not in clean_ord:
+            clean_ord.append(k)
+    (pd / "sets_state.json").write_text(
+        json.dumps({"order": clean_ord, "deleted": clean_del}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (pd / "sets_deleted.json").write_text(
+        json.dumps({"deleted": clean_del}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return clean_ord, clean_del
+
+
+def _sync_continuity_location_order(pd: Path, slug: str, order: list[str]) -> None:
+    """Keep Continuity Book location order aligned with Step 11's set numbering."""
+    import continuity_book
+
+    continuity_book.reorder(pd, "locations", order)
+    legacy_cb = pd / f"{slug}.json"
+    if legacy_cb.is_file() and order:
+        try:
+            cb = json.loads(legacy_cb.read_text(encoding="utf-8")) or {}
+            locs = cb.get("locations")
+            if isinstance(locs, list) and len(locs) >= 2:
+                rank = {n: i for i, n in enumerate(order)}
+                base = len(rank)
+                ordered = [
+                    e for _i, e in sorted(
+                        enumerate(locs),
+                        key=lambda pair: (
+                            rank.get(
+                                str(pair[1] if isinstance(pair[1], str) else (pair[1].get("name") or pair[1].get("location") or "") if isinstance(pair[1], dict) else "").strip().lower(),
+                                base + pair[0],
+                            ),
+                            pair[0],
+                        ),
+                    )
+                ]
+                if ordered != locs:
+                    cb["locations"] = ordered
+                    legacy_cb.write_text(json.dumps(cb, indent=1, ensure_ascii=False), encoding="utf-8")
+        except Exception as e:
+            log.debug("legacy continuity book location reorder failed: %s", e)
+
+
+@route("POST", "/api/v2_set_delete")
+def _v2_set_delete(r: Request):
+    """Delete a location/set from Step 11, persist hidden status, remove set images, and renumber remaining sets."""
+    import continuity_book
+
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    if not slug or not name:
+        raise PlanError("project and set name are required")
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    key = name.lower()
+
+    # 1. Remove from continuity book (continuity.json / <slug>.json) if present
+    removed_from_cb = continuity_book.remove(pd, "locations", name)
+    legacy_cb = pd / f"{slug}.json"
+    if legacy_cb.is_file():
+        try:
+            cb = json.loads(legacy_cb.read_text(encoding="utf-8")) or {}
+            locs = cb.get("locations")
+            if isinstance(locs, list):
+                kept = [
+                    x for x in locs
+                    if str(x if isinstance(x, str) else (x.get("name") or x.get("location") or "") if isinstance(x, dict) else "").strip().lower() != key
+                ]
+                if len(kept) != len(locs):
+                    cb["locations"] = kept
+                    legacy_cb.write_text(json.dumps(cb, indent=1, ensure_ascii=False), encoding="utf-8")
+                    removed_from_cb = True
+        except Exception as e:
+            log.debug("legacy continuity book location delete failed: %s", e)
+
+    # 2. Persist in sets_state.json / sets_deleted.json & remove from order so remaining sets auto-renumber 1..N
+    order, deleted = _load_sets_state(pd)
+    req_order = r.body.get("order")
+    if isinstance(req_order, list) and req_order:
+        order = [str(x).strip().lower() for x in req_order if str(x).strip()]
+    if key not in deleted:
+        deleted.append(key)
+    order = [x for x in order if x != key]
+    order, deleted = _save_sets_state(pd, order, deleted)
+    _sync_continuity_location_order(pd, slug, order)
+
+    # 3. Remove any rendered set asset images matching this location slug
+    safe = "".join(c if c.isalnum() else "_" for c in key).strip("_")
+    removed_images = 0
+    sets_dir = pd / "assets" / "sets"
+    if safe and sets_dir.is_dir():
+        for p in sets_dir.glob(f"{safe}*.png"):
+            if p.is_file():
+                p.unlink(missing_ok=True)
+                removed_images += 1
+
+    return {
+        "status": "ok",
+        "name": name,
+        "removed_from_continuity": removed_from_cb,
+        "removed_images": removed_images,
+        "deleted": deleted,
+        "order": order,
+    }
+
+
+@route("POST", "/api/v2_set_order")
+def _v2_set_order(r: Request):
+    """Save Step 11 set order (supports inserting a set at a 1-based set number or reordering) and auto-renumber."""
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    order, deleted = _load_sets_state(pd)
+
+    req_order = r.body.get("order")
+    if isinstance(req_order, list):
+        order = [str(x).strip().lower() for x in req_order if str(x).strip()]
+
+    insert_name = str(r.body.get("insert_name") or "").strip()
+    raw_pos = r.body.get("position")
+    if insert_name:
+        ikey = insert_name.lower()
+        deleted = [x for x in deleted if x != ikey]
+        order = [x for x in order if x != ikey]
+        if isinstance(raw_pos, (int, float)) or (isinstance(raw_pos, str) and raw_pos.strip().isdigit()):
+            idx = max(0, min(len(order), int(raw_pos) - 1))
+        else:
+            idx = len(order)
+        order.insert(idx, ikey)
+
+    order, deleted = _save_sets_state(pd, order, deleted)
+    _sync_continuity_location_order(pd, slug, order)
+    return {"status": "ok", "order": order, "deleted": deleted}
+
+
+@route("POST", "/api/v2_set_restore")
+def _v2_set_restore(r: Request):
+    """Unhide a previously deleted Step 11 set name when the user explicitly re-adds it."""
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    if not slug or not name:
+        raise PlanError("project and set name are required")
+    pd = pdir(slug, "book")
+    order, deleted = _load_sets_state(pd)
+    key = name.lower()
+    deleted = [x for x in deleted if x != key]
+    order, deleted = _save_sets_state(pd, order, deleted)
+    return {"status": "ok", "name": name, "deleted": deleted, "order": order}
 
 
 @route("POST", "/api/v2_turnaround_delete")

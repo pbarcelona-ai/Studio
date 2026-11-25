@@ -25,7 +25,7 @@ addopts = "-q"
 [tool.ruff]
 line-length = 160          # the code base uses long lines; tighten gradually
 target-version = "py311"
-extend-exclude = [".venv", ".venv-dev", "projects", "books", "my_downloads", "graphify-out", "colab_generate_*.py"]
+extend-exclude = [".venv", ".venv-dev", ".local_ai", "models", "projects", "books", "my_downloads", "graphify-out", "colab_generate_*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "S", "UP", "C4", "SIM", "PTH"]

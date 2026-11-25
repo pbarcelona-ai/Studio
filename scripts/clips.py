@@ -66,11 +66,13 @@ def write_motion(pdir: Path, ask: Ask, say: Callable[[str], None] = print) -> di
     out: dict = {}
     for i, sc in enumerate(sl["scenes"], 1):
         say(f"Your animation supervisor is directing the motion of scene {i} of {len(sl['scenes'])}")
-        d = ask("Write the motion prompt for every shot of this scene for an image-to-video model: what moves in the frame, how the people "
-                "move (from the shot's action and the director's blocking), and the camera move. Keep it to what such a model can do well; set "
-                '"simplify" when the shot is too hard and was simplified. Reply as JSON: {"shots": [{"n": 1, "motion": "...", "simplify": false}]}\n\n'
+        d = ask("Write the motion prompt for every shot of this scene for an image-to-video model starting from the approved picture as the exact "
+                "opening frame: preserve subjects, props, materials and composition; specify what moves and what stays stationary; for shots of 4 s "
+                "or longer with multiple beats, structure timed phases scaled to the shot's seconds plus an ESSENTIAL SEQUENCE (A -> B -> C) and "
+                "guard against teleportation, duplicated objects, premature action or cuts. Keep it to what an image-to-video model can do well; "
+                'set "simplify" when the shot is too hard and was simplified. Reply as JSON: {"shots": [{"n": 1, "motion": "...", "simplify": false}]}\n\n'
                 f"{sc['heading']} | intent: {sc['breakdown']['intent']} | blocking: {sc['breakdown']['blocking']}\n"
-                + "\n".join(f"shot {s['n']}: {s['type']}, {s['movement']}; {s['action']} ({s['expression']})" for s in sc["shots"]),
+                + "\n".join(f"shot {s['n']}: {s['seconds']}s, {s['type']}, {s['movement']}; {s['action']} ({s['expression']})" for s in sc["shots"]),
                 "animation_supervisor", f"clips: motion scene {i}", check_motion)
         out[sc["id"]] = {int(s["n"]): {"motion": " ".join(str(s["motion"]).split()), "simplify": bool(s.get("simplify"))} for s in d["shots"]}
     data = {"scenes": {sid: {str(n): v for n, v in shots.items()} for sid, shots in out.items()}}

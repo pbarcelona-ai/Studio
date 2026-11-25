@@ -6,6 +6,7 @@ POST /api/sound_cast {project, name, voice?, emotion?}     change one voice by h
 POST /api/sound_approve {project}                          the REVIEW GATE of the sound
 POST /api/audiobook_render {project}                       the audiobook narration on this computer (Kokoro; a job)
 POST /api/audiobook_make {project}                         join it into exports/audiobook.m4b + one MP3 per chapter (a job)
+POST /api/sfx_render {project, mode?, license?, force?}    fetch CC0 Openverse SFX + Earshot procedural synth (zero GPU; a job)
 """
 from __future__ import annotations
 
@@ -39,8 +40,10 @@ def _view(d: Path) -> dict:
     rows = sum(1 for _ in csv.DictReader(open(d / "audiobook.csv", newline="", encoding="utf-8"))) if (d / "audiobook.csv").is_file() else 0
     done = len(list((d / "audio" / "kokoro_audiobook").glob("narration-*.wav"))) if (d / "audio" / "kokoro_audiobook").is_dir() else 0
     m4b = d / "exports" / "audiobook.m4b"
+    sfx_done = len({f.name for f in (d / "audio").glob("*/sfx-*.wav")}) if (d / "audio").is_dir() else 0
     return {"plan": sound_design.load(d) or None, "gate": gates.status(d, "sound", sound_design.gate_data(d)),
             "audiobook": {"chapters": rows, "rendered": done, "file": f"/download/{d.name}/exports/audiobook.m4b" if m4b.is_file() else ""},
+            "sfx": {"rendered": sfx_done},
             "voices": list(sound_design.KOKORO), "emotions": list(sound_design.voices.EMOTIONS)}
 
 
@@ -110,5 +113,24 @@ def _ab_make(r: Request):
     if not gates.approved(d, "sound", sound_design.gate_data(d)):
         raise PlanError("approve the voices, sound and music first (Product F is made from the approved sound)")
     ahead = JOB.start([{"label": "Join the audiobook (M4B with chapters, MP3 per chapter)", "argv": ["python3", "sound_design.py", d.name, "--audiobook"], "env": {}}],
+                      r.body, queue=bool(r.body.get("queue")))
+    return {"started": ahead == 0, "ahead": ahead}
+
+
+@route("POST", "/api/sfx_render")
+def _sfx_render(r: Request):
+    d = _book(r.body.get("project"))
+    if not (d / "audio_shots.csv").is_file() and not sound_design.load(d):
+        raise PlanError("write the sound plan first (it lists the sound effects for each shot)")
+    mode = str(r.body.get("mode") or "auto")
+    if mode not in ("auto", "openverse", "earshot"):
+        raise PlanError("mode must be auto, openverse or earshot")
+    lic = str(r.body.get("license") or "cc0")
+    if lic not in ("cc0", "commercial"):
+        raise PlanError("license must be cc0 or commercial")
+    argv = ["python3", "sfx_local.py", d.name, "--mode", mode, "--license", lic]
+    if r.body.get("force"):
+        argv.append("--force")
+    ahead = JOB.start([{"label": f"Make sound effects ({mode}: Openverse / Earshot)", "argv": argv, "env": {}}],
                       r.body, queue=bool(r.body.get("queue")))
     return {"started": ahead == 0, "ahead": ahead}

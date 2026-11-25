@@ -2,7 +2,7 @@
 
   projects/books/<book>/edit/edl.json   {"current": "main", "cuts": {"main": CUT, "short": CUT, ...}}
   CUT = {"name", "tracks": {"video": [CLIP], "voice": [ITEM], "music": [ITEM], "effects": [ITEM]}, "volumes": {track: 0-2}, "duck_db": 12}
-  CLIP = {"id", "scene", "shot", "seconds", "trim_in", "transition": {"kind": "cut" | "dissolve", "seconds"}, "volume"}
+  CLIP = {"id", "scene", "shot", "seconds", "trim_in", "transition": {"kind": "cut" | "dissolve" | "j-cut" | "l-cut", "seconds"}, "volume"}
   ITEM = {"id", "attach": clip id (voice, effects) or scene id (music), "offset", "seconds", "volume", "ref"}
 
 Three tracks as on the page (video, voice / dialogue, music + effects). Every change goes through this module and is written to the one EDL:
@@ -23,6 +23,7 @@ import shot_list
 import sound_design
 
 TRACKS = ("video", "voice", "music", "effects")
+TRANSITION_KINDS = ("cut", "dissolve", "j-cut", "l-cut")
 MIN_CLIP = 0.5
 WORDS_PER_SECOND = 2.6
 Ask = Callable[[str, str | list[str], str, Callable[[dict], None]], dict]
@@ -74,9 +75,15 @@ def assemble(pdir: Path) -> dict:
             cid = f"v{row:04d}"
             words = sum(len(x["text"].split()) for x in plan.get("lines", []) if x["scene"] == sc["id"] and x["shot"] == s["n"])
             secs = max(float(s["seconds"]), round(words / WORDS_PER_SECOND + 0.6, 1)) if words else float(s["seconds"])
-            tr = "dissolve" if s.get("transition") in ("dissolve", "fade in", "fade out") else "cut"
+            raw_tr = str(s.get("transition") or "cut").strip().lower()
+            if raw_tr in ("dissolve", "fade in", "fade out"):
+                tr, tr_s = "dissolve", 0.8
+            elif raw_tr in ("j-cut", "l-cut"):
+                tr, tr_s = raw_tr, 0.6
+            else:
+                tr, tr_s = "cut", 0.0
             video.append({"id": cid, "scene": sc["id"], "shot": s["n"], "row": row, "seconds": round(secs, 2), "trim_in": 0.0,
-                          "transition": {"kind": tr, "seconds": 0.8 if tr == "dissolve" else 0.0}, "volume": 1.0})
+                          "transition": {"kind": tr, "seconds": tr_s}, "volume": 1.0})
             if words:
                 voice.append({"id": f"a{row:04d}", "attach": cid, "offset": 0.2, "seconds": round(words / WORDS_PER_SECOND, 2), "volume": 1.0, "ref": row})
             fx = next((e for e in plan.get("effects", {}).get(sc["id"], []) if e["n"] == s["n"]), None)
@@ -96,8 +103,8 @@ def assemble(pdir: Path) -> dict:
 
 # ---------------------------------------------------------------------------------------------- the clock
 def timeline(c: dict) -> dict:
-    """Start times: clips one after another (a dissolve overlaps the next clip by its length); voice and effects at their clip's start plus
-    their offset; music from the first clip of its scene to the end of the scene's last clip."""
+    """Start times: clips one after another (a dissolve overlaps the next clip by its length; j-cut leads the next clip's audio before the
+    visual cut; l-cut extends the outgoing clip's audio past the visual cut); music spans its scene."""
     t, clips = 0.0, []
     vids = c["tracks"]["video"]
     for i, v in enumerate(vids):
@@ -106,10 +113,30 @@ def timeline(c: dict) -> dict:
         t += v["seconds"] - overlap
     total = clips[-1]["end"] if clips else 0.0
     at = {x["id"]: x for x in clips}
+    audio_lead: dict[str, float] = {}
+    audio_trail: dict[str, float] = {}
+    for i, v in enumerate(clips):
+        kind = v["transition"]["kind"]
+        sec = float(v["transition"].get("seconds") or 0.0)
+        if kind == "j-cut" and i + 1 < len(clips) and sec > 0:
+            nxt = clips[i + 1]
+            audio_lead[nxt["id"]] = min(sec, v["seconds"] * 0.5)
+        elif kind == "l-cut" and i + 1 < len(clips) and sec > 0:
+            nxt = clips[i + 1]
+            audio_trail[v["id"]] = min(sec, nxt["seconds"] * 0.5)
     out: dict = {"video": clips, "total": round(total, 3)}
     for tr in ("voice", "effects"):
-        out[tr] = [{**a, "start": round(at[a["attach"]]["start"] + a["offset"], 3), "end": round(at[a["attach"]]["start"] + a["offset"] + a["seconds"], 3)}
-                   for a in c["tracks"][tr] if a["attach"] in at]
+        items = []
+        for a in c["tracks"][tr]:
+            if a["attach"] not in at:
+                continue
+            clip = at[a["attach"]]
+            lead = audio_lead.get(clip["id"], 0.0)
+            trail = audio_trail.get(clip["id"], 0.0)
+            start = max(0.0, clip["start"] + a["offset"] - lead)
+            end = min(total, start + a["seconds"] + trail) if total > 0 else start + a["seconds"] + trail
+            items.append({**a, "start": round(start, 3), "end": round(max(start, end), 3)})
+        out[tr] = items
     scenes: dict[str, list[dict]] = {}
     for x in clips:
         scenes.setdefault(x["scene"], []).append(x)
@@ -216,10 +243,12 @@ def snap_to_beats(c: dict, scene: str = "") -> int:
 
 
 def set_transition(c: dict, cid: str, kind: str, seconds: float = 0.8) -> None:
-    if kind not in ("cut", "dissolve"):
-        raise EditError("a transition is cut or dissolve")
+    if kind not in TRANSITION_KINDS:
+        raise EditError("a transition is cut, dissolve, j-cut or l-cut")
+    if not math.isfinite(seconds) or seconds < 0 or seconds > 10:
+        raise EditError("transition length is 0-10 seconds")
     _, v = _clip(c, cid)
-    v["transition"] = {"kind": kind, "seconds": round(float(seconds), 3) if kind == "dissolve" else 0.0}
+    v["transition"] = {"kind": kind, "seconds": round(float(seconds), 3) if kind != "cut" else 0.0}
 
 
 def copy_cut(d: dict, name: str, src: str = "") -> dict:
@@ -291,7 +320,7 @@ def suggest(pdir: Path, ask: Ask, target_seconds: float | None = None) -> list[d
     listing = "\n".join(f"{v['id']} {v['scene']} shot {v['shot']}: {v['seconds']} s, {v['transition']['kind']}" for v in tl["video"])
     r = ask(f"You are cutting this film. Its runtime is {tl['total']:.0f} s" + (f", the target is {target_seconds:.0f} s" if target_seconds else "")
             + ". Suggest cuts and pacing fixes: trim a clip (new seconds), delete a clip, move a clip (to a 0-based position), or a transition "
-            '(cut or dissolve), each with why. Reply as JSON: {"notes": [{"op": "trim", "id": "v0003", "seconds": 3.2, "why": "..."}]}\n\n' + listing,
+            '(cut, dissolve, j-cut or l-cut), each with why. Reply as JSON: {"notes": [{"op": "trim", "id": "v0003", "seconds": 3.2, "why": "..."}]}\n\n' + listing,
             "editor", "edit: suggestions", check_notes)
     notes = [{**n, "nid": f"n{i + 1}"} for i, n in enumerate(r["notes"])]
     (path(pdir).parent / "notes.json").write_text(json.dumps(notes, indent=1, ensure_ascii=False), encoding="utf-8")

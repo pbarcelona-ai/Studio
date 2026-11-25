@@ -490,7 +490,7 @@ def update_index(series: str):
             index["characters"].append({
                 "name": char.get("name"),
                 "file": path.name,
-                "visual_token": char.get("visual_token", "")[:100],
+                "visual_token": char.get("visual_token", ""),
                 "has_lora": char.get("lora", {}).get("trained", False),
                 "updated": char.get("updated", "")
             })

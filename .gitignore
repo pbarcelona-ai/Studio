@@ -102,3 +102,5 @@ node_modules/
 /runtime/
 /.venv.partial/
 /dist/
+/.local_ai/
+/models/

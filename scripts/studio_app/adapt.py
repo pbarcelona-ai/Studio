@@ -188,17 +188,46 @@ def budget_data(b: dict) -> dict:
 
 
 # ------------------------------------------------------------------------------------------ locked cast, costume and location per scene
-def _reference_options(series: str, name: str) -> list[str]:
+def _reference_options(
+    series: str,
+    name: str,
+    *,
+    project_dir: Path | None = None,
+    known_names: list[str] | None = None,
+    overrides: dict[str, str] | None = None,
+) -> list[str]:
+    import character_identity
     import character_tokens as ct
+
+    out: list[str] = []
+    seen: set[str] = set()
+    if project_dir is not None:
+        t_dir = project_dir / "assets" / "turnarounds"
+        repo_root = project_dir.parent.parent.parent
+        for p, _src in character_identity.find_canonical_character_refs(
+            t_dir, name, known_names=known_names, overrides=overrides, limit=12,
+        ):
+            try:
+                rel = p.relative_to(repo_root).as_posix()
+            except ValueError:
+                continue
+            if rel not in seen:
+                seen.add(rel)
+                out.append(rel)
     try:
-        return [p["path"] for p in ct.reference_pictures(series, name) if p.get("exists")]
+        for item in ct.reference_pictures(series, name):
+            if item.get("exists") and item.get("path") and item["path"] not in seen:
+                seen.add(item["path"])
+                out.append(item["path"])
     except (OSError, ValueError, KeyError):
-        return []
+        pass
+    return out
 
 
 def cast_lock_data(slug) -> dict:
     """Per scene of the plan: the characters (with the description now used for them, the locked one if any, and the pictures to choose from) and the place."""
     from bookkit import character_token, continuity_file
+    import character_identity
     from .config import get_character_series
     d = _book(slug)
     plan = ad.load(d)
@@ -208,22 +237,64 @@ def cast_lock_data(slug) -> dict:
     cont = read_json(continuity_file(d), {}) or {}
     chars = {c["name"].lower(): c for c in cont.get("characters", []) if isinstance(c, dict) and c.get("name")}
     series = get_character_series(slug)
-    place_pics = sorted(p.relative_to(d.parent.parent.parent).as_posix() for p in (d / "location_refs").iterdir()
-                        if p.suffix.lower() in cast_lock.PICTURE) if (d / "location_refs").is_dir() else []
+    repo_root = d.parent.parent.parent
+    overrides = character_identity.load_identity_overrides(d)
+    known_names = [c["name"] for c in chars.values()]
+
+    place_pics: list[str] = []
+    seen_place: set[str] = set()
+    for pdir_cand in (d / "assets" / "sets", d / "location_refs"):
+        if pdir_cand.is_dir():
+            for p in sorted(pdir_cand.iterdir()):
+                if p.is_file() and p.suffix.lower() in cast_lock.PICTURE:
+                    rel = p.relative_to(repo_root).as_posix()
+                    if rel not in seen_place:
+                        seen_place.add(rel)
+                        place_pics.append(rel)
+
     scenes = []
     for s in ad.active_scenes(plan):
         sl = lock.get(s["id"], {})
+        locked_chars = sl.get("characters") or {}
         people = []
-        for nm in s.get("characters", []):
-            c = chars.get(str(nm).lower())
-            if not c:
+        seen_names: set[str] = set()
+        raw_scene_names = [str(nm or "").strip() for nm in s.get("characters", [])] + [str(lnm or "").strip() for lnm in locked_chars]
+        for raw_nm in raw_scene_names:
+            if not raw_nm:
                 continue
-            locked = (sl.get("characters") or {}).get(c["name"]) or {}
-            people.append({"name": c["name"], "current": locked.get("token") or character_token(c, min(s["chapters"])), "locked": locked,
-                           "references": _reference_options(series, c["name"])})
+            c = chars.get(raw_nm.lower())
+            cname = c["name"] if c else raw_nm
+            key = cname.lower()
+            if key in seen_names:
+                continue
+            seen_names.add(key)
+            locked: dict = locked_chars.get(cname) or next(
+                (v for k, v in locked_chars.items() if str(k).lower() == key),
+                {},
+            )
+            cur_tok = character_token(c, min(s["chapters"])) if (c and s.get("chapters")) else str((c or {}).get("token") or "")
+            people.append({
+                "name": cname,
+                "current": locked.get("token") or cur_tok,
+                "locked": locked,
+                "references": _reference_options(series, cname, project_dir=d, known_names=known_names, overrides=overrides),
+            })
+
         scenes.append({"id": s["id"], "title": s["title"], "location": s.get("location", ""), "characters": people,
                        "place": {"locked": sl.get("location") or {}, "references": place_pics}})
-    return {"scenes": scenes, "summary": cast_lock.summary(lock, plan), "series": series}
+    return {
+        "scenes": scenes,
+        "summary": cast_lock.summary(lock, plan),
+        "series": series,
+        "all_characters": [
+            {
+                "name": c["name"],
+                "token": str(c.get("token") or ""),
+                "references": _reference_options(series, c["name"], project_dir=d, known_names=known_names, overrides=overrides),
+            }
+            for c in chars.values()
+        ],
+    }
 
 
 def cast_lock_edit(b: dict) -> dict:

@@ -7,10 +7,12 @@
 The film is a file in the book's films/ folder. The result is films/<name>_<preset>.<ext>. Captions: the film's own .srt (same name, made by Make film) is
 muxed in as a soft subtitle track and also copied next to the export; --languages translates it with the AI engine into more subtitle tracks (checked to keep
 every cue and its timing). --audio-track adds a dubbed audio track you made yourself (language=file inside the project).
-Honest limits: a 4K master made from clips that are smaller is the same picture scaled up (use the upscalers first for real detail), and loudness is
-set in one pass (loudnorm), close to the target but not mastered to it.
+Honest limits: a 4K master made from clips that are smaller is the same picture scaled up (use the upscalers first for real detail). Loudness is
+mastered in two passes (loudnorm linear mode) with automatic fallback to single-pass when measurement is unavailable (e.g. silent audio).
 """
 import argparse
+import json
+import math
 import re
 import shutil
 import subprocess
@@ -118,7 +120,54 @@ def translate_cues(cues, language: str, llm, batch: int = 40):
     return out
 
 
-def build_command(ffmpeg, src: Path, dest: Path, preset: str, info: dict, subs: list[tuple[Path, str]], audio_tracks: list[tuple[Path, str]], title: str = "") -> list[str]:
+def parse_loudnorm_stats(stderr_text: str) -> dict[str, str] | None:
+    """Extract the JSON measurement block printed by ffmpeg's loudnorm pass 1, or None if missing/non-finite."""
+    matches = re.findall(r"\{[^{}]*\"input_i\"[^{}]*\}", stderr_text, flags=re.DOTALL)
+    if not matches:
+        return None
+    try:
+        data = json.loads(matches[-1])
+    except ValueError:
+        return None
+    keys = ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")
+    out: dict[str, str] = {}
+    for k in keys:
+        val = str(data.get(k, "")).strip()
+        try:
+            num = float(val)
+        except ValueError:
+            return None
+        if not math.isfinite(num):
+            return None
+        out[k] = val
+    return out
+
+
+def measure_loudness(ffmpeg: str, src: Path, target_lufs: float, tp: float = -1.5, lra: float = 11.0) -> dict[str, str] | None:
+    """Run loudnorm pass 1 on `src` and return measured stats for linear two-pass normalization, or None on failure/silence."""
+    cmd = [ffmpeg, "-hide_banner", "-nostats", "-i", str(src), "-vn",
+           "-af", f"loudnorm=I={target_lufs}:TP={tp}:LRA={lra}:print_format=json", "-f", "null", "-"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=180)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return parse_loudnorm_stats(r.stderr)
+
+
+def loudnorm_filter(target_lufs: float, measured: dict[str, str] | None = None, tp: float = -1.5, lra: float = 11.0) -> str:
+    """Build a two-pass linear loudnorm filter when `measured` stats are available, else single-pass fallback."""
+    base = f"loudnorm=I={target_lufs}:TP={tp}:LRA={lra}"
+    if not measured:
+        return base
+    return (f"{base}:measured_I={measured['input_i']}:measured_TP={measured['input_tp']}:"
+            f"measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}:"
+            f"offset={measured['target_offset']}:linear=true")
+
+
+def build_command(ffmpeg, src: Path, dest: Path, preset: str, info: dict, subs: list[tuple[Path, str]], audio_tracks: list[tuple[Path, str]],
+                  title: str = "", loudnorm_stats: dict[str, str] | None = None) -> list[str]:
     label, w, h, fps, vargs, aargs, lufs, container, _ = PRESETS[preset]
     cmd = [ffmpeg, "-y", "-loglevel", "error", "-i", str(src)]
     for p, _lang in subs:
@@ -134,7 +183,7 @@ def build_command(ffmpeg, src: Path, dest: Path, preset: str, info: dict, subs: 
     cmd += ["-vf", video_filter(preset, info)] + vargs
     if info["has_audio"] or n_aud:
         if lufs is not None and info["has_audio"]:
-            cmd += ["-af", f"loudnorm=I={lufs}:TP=-1.5:LRA=11"]
+            cmd += ["-af", loudnorm_filter(lufs, loudnorm_stats)]
         cmd += aargs
     if n_sub:
         cmd += ["-c:s", "mov_text" if container == "mp4" else "srt" if container == "mkv" else "mov_text"]
@@ -192,7 +241,9 @@ def export(project_dir: Path, film: str, preset: str, languages: list[str], llm=
         if Path(project_dir).resolve() not in p.parents or not p.is_file() or not LANG_RE.match(lang):
             raise ExportError(f"audio track {lang}={rel}: choose a language code and a file inside the book's folder")
         tracks.append((p, lang))
-    cmd = build_command(ffmpeg, src, dest, preset, info, subs, tracks, title)
+    lufs = PRESETS[preset][6]
+    ln_stats = measure_loudness(ffmpeg, src, lufs) if (lufs is not None and info["has_audio"]) else None
+    cmd = build_command(ffmpeg, src, dest, preset, info, subs, tracks, title, loudnorm_stats=ln_stats)
     r = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if r.returncode != 0:
         dest.unlink(missing_ok=True)
