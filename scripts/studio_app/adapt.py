@@ -61,13 +61,46 @@ def adaptation_edit(b: dict) -> dict:
     before_map = {str(s["id"]): dict(s) for s in plan["scenes"]}
     action = b.get("action")
     merged = None
-    if action == "merge":
-        merged = str(b.get("id", ""))
-    try:
-        ad.edit(plan, str(action), b)
-    except (ad.AdaptationError, ValueError, TypeError) as e:
-        raise PlanError(str(e)) from e
-    ad.save(d, plan)
+    if action == "save_all":
+        incoming = b.get("scenes")
+        if not isinstance(incoming, list):
+            raise PlanError("scenes list is required for save_all")
+        clip_sec = float(plan.get("clip_seconds") or 4.0)
+        by_id = {str(s.get("id") or ""): s for s in plan.get("scenes") or [] if isinstance(s, dict)}
+        saved_count = 0
+        for row in incoming:
+            if not isinstance(row, dict):
+                continue
+            sid = str(row.get("id") or "").strip()
+            sc = by_id.get(sid)
+            if sc is None:
+                continue
+            if "title" in row:
+                sc["title"] = str(row.get("title") or "").strip()[:100]
+            if "summary" in row:
+                sc["summary"] = str(row.get("summary") or "").strip()[:1200]
+            if "location" in row:
+                sc["location"] = str(row.get("location") or "").strip()[:120]
+            if "time_of_day" in row:
+                sc["time_of_day"] = str(row.get("time_of_day") or "").strip()[:60]
+            if "clips" in row:
+                try:
+                    cval = max(1, min(500, int(row.get("clips") or 1)))
+                except (TypeError, ValueError):
+                    cval = int(sc.get("clips") or 1)
+                sc["clips"] = cval
+                sc["seconds"] = round(cval * clip_sec, 1)
+            saved_count += 1
+        ad.save(d, plan)
+    else:
+        if action == "merge":
+            merged = str(b.get("id", ""))
+        try:
+            ad.edit(plan, str(action), b)
+        except (ad.AdaptationError, ValueError, TypeError) as e:
+            raise PlanError(str(e)) from e
+        ad.save(d, plan)
+        saved_count = 0
     _remove_scene_files(d, set(before) - {s["id"] for s in plan["scenes"]})      # scenes that are gone
     if merged:
         _remove_scene_files(d, [merged])                                         # the joined scene is a new scene: its screenplay is written again
@@ -86,6 +119,8 @@ def adaptation_edit(b: dict) -> dict:
                         sync_report[k].append(item)
     res = adaptation_data(b.get("project"))
     res["sync_report"] = sync_report
+    if action == "save_all":
+        res["saved_count"] = saved_count
     return res
 
 
@@ -127,6 +162,54 @@ def screenplay_edit(b: dict) -> dict:
                 elements=b.get("elements") if isinstance(b.get("elements"), list) else [],
                 source_step="step06",
             )
+        elif action == "save_all_scenes":
+            incoming = b.get("scenes")
+            if not isinstance(incoming, list) or not incoming:
+                raise PlanError("scenes list is required for save_all_scenes")
+            valid_ids = {s["id"] for s in ad.active_scenes(plan)}
+            import continuity_sync
+            import json as _json
+
+            saved_count = 0
+            saved_map: dict[str, list] = {}
+            for row in incoming:
+                if not isinstance(row, dict):
+                    continue
+                sid = str(row.get("scene") or row.get("id") or "").strip()
+                if not sid or sid not in valid_ids:
+                    continue
+                heading = str(row.get("heading") or "")
+                raw_els = row.get("elements")
+                elements: list = raw_els if isinstance(raw_els, list) else []
+                sp.save_scene(d, sid, {"heading": heading, "elements": elements}, edited=True)
+                feedback.resolve(d, sid)
+                saved_map[sid] = elements
+                saved_count += 1
+                r = continuity_sync.sync_scene_edit(
+                    d, slug, scene_id=sid,
+                    heading=heading,
+                    elements=elements,
+                    source_step="step06",
+                )
+                for k in ("updated_steps", "changes", "preserved"):
+                    for item in r.get(k) or []:
+                        if item not in sync_report[k]:
+                            sync_report[k].append(item)
+            # Mirror saved scenes into readin/screenplay.json if present
+            readin_sp_path = d / "readin" / "screenplay.json"
+            if saved_map and readin_sp_path.is_file():
+                try:
+                    rd_sp = _json.loads(readin_sp_path.read_text(encoding="utf-8"))
+                    if isinstance(rd_sp, dict) and isinstance(rd_sp.get("scenes"), list):
+                        for idx0, s_plan in enumerate(ad.active_scenes(plan)):
+                            sid = str(s_plan.get("id") or "")
+                            if sid in saved_map and idx0 < len(rd_sp["scenes"]) and isinstance(rd_sp["scenes"][idx0], dict):
+                                rd_sp["scenes"][idx0]["elements"] = saved_map[sid]
+                        tmp_rd = readin_sp_path.with_suffix(".json.tmp")
+                        tmp_rd.write_text(_json.dumps(rd_sp, indent=1, ensure_ascii=False), encoding="utf-8")
+                        tmp_rd.replace(readin_sp_path)
+                except (OSError, ValueError):
+                    pass
         elif action == "approve":
             flagged = feedback.open_flags(d)
             if flagged:
@@ -159,6 +242,8 @@ def screenplay_edit(b: dict) -> dict:
         raise PlanError(str(e)) from e
     res = screenplay_data(b.get("project"))
     res["sync_report"] = sync_report
+    if action == "save_all_scenes":
+        res["saved_count"] = saved_count
     return res
 
 

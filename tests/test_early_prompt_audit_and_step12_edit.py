@@ -442,3 +442,343 @@ def test_youtube_explainer_recipe_and_screenwriter_drafting_rules():
     assert "NATURAL HUMAN DIALOGUE" in read_it_in.ReadItIn.SCREEN_RULES
     assert "embarking" in read_it_in.ReadItIn.SCREEN_RULES
 
+
+def test_step6_needs_decision_includes_line_highlight_options_and_resolves(tmp_path: Path):
+    pd = _seed_project(tmp_path)
+    # Seed readin/screenplay.json to verify mirroring as well
+    (pd / "readin" / "screenplay.json").write_text(
+        json.dumps(
+            {
+                "scenes": [
+                    {
+                        "heading": "INT. LIVING ROOM - AFTERNOON",
+                        "elements": [
+                            {"type": "action", "text": "An empty coat hook sits by the door, with the rain coat hanging on it."},
+                            {"type": "action", "text": "Judah the dog fills the frame beside Mom while his dog bowl sits on the carpet."},
+                            {"type": "dialogue", "character": "TOMMY", "text": "Let's go to Saturn!"},
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rep = early_prompt_audit.audit_step(pd, "test_book", 6, use_llm=False, auto_apply=True, record_bidirectional=False)
+    assert rep["ok"] is True
+    pending = [it for it in rep["issues"] if it.get("ambiguous") or it.get("needs_user_decision")]
+    assert len(pending) >= 1
+    bowl_issue = next(it for it in pending if "dog/food bowl" in it["issue"].lower())
+    assert bowl_issue["scene_id"] == "S001"
+    assert bowl_issue["line_index"] == 1
+    assert "dog bowl" in bowl_issue["current_text"].lower()
+    assert bowl_issue["highlight"].lower() == "dog bowl"
+    assert len(bowl_issue["options"]) >= 2
+    assert all(opt.get("label") and opt.get("replacement_text") for opt in bowl_issue["options"])
+
+    # Apply the first recommended option
+    chosen = bowl_issue["options"][0]
+    res = early_prompt_audit.resolve_audit_decision(
+        pd,
+        "test_book",
+        step_num=6,
+        target=bowl_issue["target"],
+        scene_id=bowl_issue["scene_id"],
+        line_index=bowl_issue["line_index"],
+        field=bowl_issue["field"],
+        issue_text=bowl_issue["issue"],
+        replacement_text=chosen["replacement_text"],
+        option_label=chosen["label"],
+        keep_original=False,
+        record_bidirectional=False,
+    )
+    assert res["ok"] is True
+    assert res["applied_file"] == "screenplay/scene-S001.json"
+    assert res["report"]["ambiguous_count"] == 0
+
+    # Verify screenplay scene file & readin mirror both updated
+    s1 = screenplay.load_scene(pd, "S001")
+    assert s1 is not None
+    assert s1["elements"][1]["text"] == chosen["replacement_text"]
+    assert s1.get("edited") is True
+    readin_sp = json.loads((pd / "readin" / "screenplay.json").read_text(encoding="utf-8"))
+    assert readin_sp["scenes"][0]["elements"][1]["text"] == chosen["replacement_text"]
+
+    # Verify persisted report marks the exact ambiguous finding resolved
+    saved = early_prompt_audit.load_reports(pd)
+    step6_saved = saved["steps"]["6"]
+    assert step6_saved["ambiguous_count"] == 0
+    resolved_bowl = next(it for it in step6_saved["issues"] if "dog/food bowl" in it["issue"].lower())
+    assert resolved_bowl["ambiguous"] is False
+    assert resolved_bowl["fixed"] is True
+    assert resolved_bowl["resolved_by"] == "user"
+
+
+def test_step6_resolve_keep_original_dismisses_without_modifying_line(tmp_path: Path):
+    pd = _seed_project(tmp_path)
+
+    def _fake_ai_conflict(prompt: str, *, use_llm: bool = True, timeout: float = 40.0):
+        return (
+            {
+                "fixes": [
+                    {
+                        "idx": 2,
+                        "severity": "major",
+                        "issue": "Dialogue mentions Saturn while the beat sheet says Mars.",
+                        "risk": "Prop labels and narration could conflict on planet destination.",
+                        "ambiguous": True,
+                        "highlight": "Saturn",
+                        "options": [
+                            {
+                                "label": "Change destination to Mars",
+                                "summary": "Matches Step 05 beat sheet.",
+                                "replacement_text": "Let's go to Mars!",
+                            },
+                            {
+                                "label": "Keep Saturn in screenplay",
+                                "summary": "Keeps Tommy's line as written and implies updating the beat sheet.",
+                                "replacement_text": "Let's go to Saturn!",
+                            },
+                        ],
+                    }
+                ],
+                "blind_spots": [],
+            },
+            "gemini:test",
+        )
+
+    with mock.patch.object(early_prompt_audit, "_call_ai_json", side_effect=_fake_ai_conflict):
+        rep = early_prompt_audit.audit_step(pd, "test_book", 6, use_llm=True, auto_apply=True, record_bidirectional=False)
+
+    saturn_issue = next(it for it in rep["issues"] if "saturn" in it["issue"].lower())
+    assert saturn_issue["highlight"] == "Saturn"
+    assert saturn_issue["current_text"] == "Let's go to Saturn!"
+    assert saturn_issue["character"] == "TOMMY"
+    assert len(saturn_issue["options"]) == 2
+
+    res = early_prompt_audit.resolve_audit_decision(
+        pd,
+        "test_book",
+        step_num=6,
+        target=saturn_issue["target"],
+        scene_id=saturn_issue["scene_id"],
+        line_index=saturn_issue["line_index"],
+        issue_text=saturn_issue["issue"],
+        keep_original=True,
+        option_label="Kept original line",
+        record_bidirectional=False,
+    )
+    assert res["ok"] is True
+    assert res["keep_original"] is True
+    s1 = screenplay.load_scene(pd, "S001")
+    assert s1 is not None
+    assert s1["elements"][2]["text"] == "Let's go to Saturn!"
+    saved = early_prompt_audit.load_reports(pd)
+    resolved = next(it for it in saved["steps"]["6"]["issues"] if "saturn" in it["issue"].lower())
+    assert resolved["ambiguous"] is False
+    assert resolved["resolved_by"] == "user"
+
+
+def test_all_audit_steps_have_conflict_options_and_resolve_across_steps(tmp_path: Path):
+    pd = _seed_project(tmp_path)
+
+    # Step 03 Coverage: brief description "Boy" triggers [Needs Decision] with highlight + options, and resolves cleanly
+    r3 = early_prompt_audit.audit_step(pd, "test_book", 3, use_llm=False, auto_apply=True, record_bidirectional=False)
+    it3 = next(it for it in r3["issues"] if it.get("ambiguous"))
+    assert it3["current_text"] == "Boy"
+    assert it3["highlight"] == "Boy"
+    assert len(it3["options"]) >= 2
+    res3 = early_prompt_audit.resolve_audit_decision(
+        pd,
+        "test_book",
+        step_num=3,
+        target=it3["target"],
+        field=it3["field"],
+        issue_text=it3["issue"],
+        replacement_text=it3["options"][1]["replacement_text"],
+        option_label=it3["options"][1]["label"],
+        record_bidirectional=False,
+    )
+    assert res3["ok"] is True
+    assert res3["report"]["ambiguous_count"] == 0
+    cov = json.loads((pd / "readin" / "coverage.json").read_text(encoding="utf-8"))
+    assert "child" in cov["characters"][0]["description"].lower()
+
+    # Step 04 Scope: tight runtime triggers [Needs Decision] with highlight + options, and updates production.json
+    r4 = early_prompt_audit.audit_step(pd, "test_book", 4, use_llm=False, auto_apply=True, record_bidirectional=False)
+    it4 = next(it for it in r4["issues"] if it.get("ambiguous"))
+    assert it4["highlight"] in ("6", "10")
+    assert len(it4["options"]) >= 2
+    res4 = early_prompt_audit.resolve_audit_decision(
+        pd,
+        "test_book",
+        step_num=4,
+        target=it4["target"],
+        field=it4["field"],
+        issue_text=it4["issue"],
+        replacement_text=it4["options"][0]["replacement_text"],
+        option_label=it4["options"][0]["label"],
+        record_bidirectional=False,
+    )
+    assert res4["ok"] is True
+    prod = json.loads((pd / "production.json").read_text(encoding="utf-8"))
+    assert float(prod["target_minutes"]) >= 18.0
+
+    # Step 05 Beats: missing location triggers [Needs Decision] and updates adaptation.json
+    plan = adaptation.load(pd)
+    assert plan is not None
+    plan["scenes"][1]["location"] = ""
+    adaptation.save(pd, plan)
+    r5 = early_prompt_audit.audit_step(pd, "test_book", 5, use_llm=False, auto_apply=True, record_bidirectional=False)
+    it5 = next(it for it in r5["issues"] if it.get("ambiguous") and it.get("field") == "location")
+    assert it5["scene_id"] == "S002"
+    assert len(it5["options"]) >= 2
+    res5 = early_prompt_audit.resolve_audit_decision(
+        pd,
+        "test_book",
+        step_num=5,
+        target=it5["target"],
+        scene_id=it5["scene_id"],
+        field=it5["field"],
+        issue_text=it5["issue"],
+        replacement_text=it5["options"][0]["replacement_text"],
+        option_label=it5["options"][0]["label"],
+        record_bidirectional=False,
+    )
+    assert res5["ok"] is True
+    plan2 = adaptation.load(pd)
+    assert plan2 is not None
+    assert plan2["scenes"][1]["location"] == "living room"
+
+    # Step 07 Continuity Book: striped shirt triggers [Needs Decision] and updates continuity book token
+    r7 = early_prompt_audit.audit_step(pd, "test_book", 7, use_llm=False, auto_apply=True, record_bidirectional=False)
+    it7 = next(it for it in r7["issues"] if it.get("ambiguous"))
+    assert it7["highlight"].lower() == "striped"
+    res7 = early_prompt_audit.resolve_audit_decision(
+        pd,
+        "test_book",
+        step_num=7,
+        target=it7["target"],
+        field="token",
+        issue_text=it7["issue"],
+        replacement_text=it7["options"][0]["replacement_text"],
+        option_label=it7["options"][0]["label"],
+        record_bidirectional=False,
+    )
+    assert res7["ok"] is True
+    book = continuity_book.load(pd)
+    tommy_tok = next(c["token"] for c in book["characters"] if c["name"] == "TOMMY")
+    assert "solid" in tommy_tok.lower()
+
+    # Step 12 / Step 17 Shot List: mocked ambiguous shot finding resolves shotlist.json & syncs unlocked keyframes_v2.json
+    from studio_app import shot_continuity_audit
+
+    def _fake_shot_llm(prompt: str, img: object = None, timeout: float = 45.0):
+        return (
+            {
+                "fixes": [
+                    {
+                        "n": 1,
+                        "field": "composition",
+                        "severity": "major",
+                        "issue": "Unclear whether the coat hook is left or right of the front door.",
+                        "risk": "Doorway wall flips between shots.",
+                        "ambiguous": True,
+                        "highlight": "empty coat hook",
+                        "options": [
+                            {
+                                "label": "Place bare hook left of the doorway",
+                                "summary": "Matches entry hallway layout.",
+                                "replacement_text": "Wide view of the living room with the empty coat hook mounted left of the front door.",
+                            },
+                            {
+                                "label": "Place bare hook right of the doorway",
+                                "summary": "Matches staircase wall layout.",
+                                "replacement_text": "Wide view of the living room with the empty coat hook mounted right of the front door.",
+                            },
+                        ],
+                    }
+                ],
+                "blind_spots": [],
+            },
+            "gemini:test",
+        )
+
+    with mock.patch("studio_app.set_vision_sync._call_ollama_vision_json", side_effect=_fake_shot_llm):
+        r12 = early_prompt_audit.audit_step(pd, "test_book", 12, use_llm=True, auto_apply=True, record_bidirectional=False)
+    it12 = next(it for it in r12["issues"] if it.get("ambiguous"))
+    assert it12["target"] == "S001-01"
+    assert it12["highlight"] == "empty coat hook"
+    assert len(it12["options"]) == 2
+    res17 = early_prompt_audit.resolve_audit_decision(
+        pd,
+        "test_book",
+        step_num=17,  # Step 17 maps cleanly onto Step 12 shot list + Step 17 unlocked keyframes
+        target=it12["target"],
+        scene_id=it12["scene_id"],
+        line_index=it12["line_index"],
+        field=it12["field"],
+        issue_text=it12["issue"],
+        replacement_text=it12["options"][0]["replacement_text"],
+        option_label=it12["options"][0]["label"],
+        record_bidirectional=False,
+    )
+    assert res17["ok"] is True
+    assert res17["applied_file"] == "shots/shotlist.json"
+    sl = shot_list.load(pd)
+    assert "left of the front door" in sl["scenes"][0]["shots"][0]["composition"]
+    kf = json.loads((pd / "keyframes_v2.json").read_text(encoding="utf-8"))
+    assert "left of the front door" in kf["prompts"]["S001-01"]
+    _ = shot_continuity_audit
+
+
+def test_step6_save_all_scenes_and_all_resolve_buttons_present_in_html(tmp_path: Path):
+    from studio_app import adapt
+
+    pd = _seed_project(tmp_path)
+    # Seed a second scene so save_all_scenes saves multiple scripts in one call
+    screenplay.save_scene(
+        pd,
+        "S002",
+        {
+            "heading": "INT. LIVING ROOM - LATER",
+            "elements": [{"type": "dialogue", "character": "MOM", "text": "Tea is ready."}],
+        },
+        edited=False,
+    )
+    with mock.patch.object(adapt, "_book", return_value=pd):
+        res = adapt.screenplay_edit(
+            {
+                "project": "test_book",
+                "action": "save_all_scenes",
+                "scenes": [
+                    {
+                        "scene": "S001",
+                        "heading": "INT. LIVING ROOM - RAINY AFTERNOON",
+                        "elements": [{"type": "dialogue", "character": "TOMMY", "text": "Ready for launch!"}],
+                    },
+                    {
+                        "scene": "S002",
+                        "heading": "INT. LIVING ROOM - DUSK",
+                        "elements": [{"type": "dialogue", "character": "MOM", "text": "Hot cocoa is ready."}],
+                    },
+                ],
+            }
+        )
+    assert res["saved_count"] == 2
+    s1 = screenplay.load_scene(pd, "S001")
+    s2 = screenplay.load_scene(pd, "S002")
+    assert s1 is not None and s2 is not None
+    assert s1["heading"] == "INT. LIVING ROOM - RAINY AFTERNOON"
+    assert s1["elements"][0]["text"] == "Ready for launch!"
+    assert s2["heading"] == "INT. LIVING ROOM - DUSK"
+    assert s2["elements"][0]["text"] == "Hot cocoa is ready."
+
+    html = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+    assert 'id="v2SpSaveAll"' in html
+    assert 'id="v2BeatsSaveAll"' not in html
+    for step_id in ("3", "4", "5", "6", "7", "12", "17"):
+        assert f'data-resolve-step="{step_id}"' in html
+
+
+

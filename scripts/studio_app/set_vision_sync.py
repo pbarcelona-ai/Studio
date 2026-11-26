@@ -34,6 +34,180 @@ def _norm_loc(text: str) -> str:
     return _LEADING_ARTICLES_RE.sub("", s).strip()
 
 
+def find_earliest_character_inception(pd: Path, slug: str, char_name: str) -> int:
+    """Find the earliest pipeline step (3, 5, 6, 7, or 8) where `char_name` first appears."""
+    import continuity_book
+
+    target = str(char_name or "").strip().lower()
+    if not target:
+        return 7
+    word_re = re.compile(rf"\b{re.escape(target)}\b", re.IGNORECASE)
+
+    # Step 03: Coverage (`readin/coverage.json`)
+    cov_path = pd / "readin" / "coverage.json"
+    if cov_path.is_file():
+        try:
+            cov = json.loads(cov_path.read_text(encoding="utf-8")) or {}
+            for c in cov.get("characters") or []:
+                cname = str(c.get("name") if isinstance(c, dict) else c or "").strip().lower()
+                if cname == target or (len(target) >= 3 and word_re.search(cname)):
+                    return 3
+            if word_re.search(str(cov.get("logline") or "")) or any(word_re.search(str(e)) for e in (cov.get("key_events") or [])):
+                return 3
+        except (OSError, ValueError):
+            pass
+
+    # Step 05: Beats / Adaptation (`adaptation/adaptation.json`)
+    adapt_path = pd / "adaptation" / "adaptation.json"
+    if adapt_path.is_file():
+        try:
+            ad = json.loads(adapt_path.read_text(encoding="utf-8")) or {}
+            for sc in ad.get("scenes") or []:
+                if not isinstance(sc, dict):
+                    continue
+                if any(str(ch).strip().lower() == target for ch in (sc.get("characters") or [])):
+                    return 5
+                if word_re.search(str(sc.get("summary") or "")) or word_re.search(str(sc.get("title") or "")):
+                    return 5
+        except (OSError, ValueError):
+            pass
+
+    # Step 06: Screenplay (`screenplay/scene-*.json`)
+    sp_dir = pd / "screenplay"
+    if sp_dir.is_dir():
+        for sp_f in sorted(sp_dir.glob("scene-*.json")):
+            try:
+                sc = json.loads(sp_f.read_text(encoding="utf-8")) or {}
+                for el in sc.get("elements") or []:
+                    if not isinstance(el, dict):
+                        continue
+                    if str(el.get("character") or "").strip().lower() == target or word_re.search(str(el.get("text") or "")):
+                        return 6
+            except (OSError, ValueError):
+                continue
+
+    # Step 07: Continuity Book
+    for cb_p in (continuity_book.continuity_file(pd), pd / f"{slug}.json", pd / "continuity.json"):
+        if cb_p.is_file():
+            try:
+                cb = json.loads(cb_p.read_text(encoding="utf-8")) or {}
+                if any(isinstance(c, dict) and str(c.get("name") or "").strip().lower() == target for c in (cb.get("characters") or [])):
+                    return 7
+            except (OSError, ValueError):
+                continue
+
+    return 7
+
+
+def find_earliest_set_inception(pd: Path, slug: str, set_name: str) -> int:
+    """Find the earliest pipeline step (3, 5, 6, 7, or 11) where `set_name` first appears."""
+    import continuity_book
+
+    norm_target = _norm_loc(set_name)
+    if not norm_target:
+        return 7
+    word_re = re.compile(rf"\b{re.escape(norm_target)}\b", re.IGNORECASE)
+
+    # Step 03: Coverage (`readin/coverage.json`)
+    cov_path = pd / "readin" / "coverage.json"
+    if cov_path.is_file():
+        try:
+            cov = json.loads(cov_path.read_text(encoding="utf-8")) or {}
+            blob = " ".join([
+                str(cov.get("logline") or ""),
+                str(cov.get("filmable") or ""),
+                " ".join(str(e) for e in (cov.get("key_events") or [])),
+            ])
+            if word_re.search(_norm_loc(blob)):
+                return 3
+        except (OSError, ValueError):
+            pass
+
+    # Step 05: Beats / Adaptation (`adaptation/adaptation.json`)
+    adapt_path = pd / "adaptation" / "adaptation.json"
+    if adapt_path.is_file():
+        try:
+            ad = json.loads(adapt_path.read_text(encoding="utf-8")) or {}
+            for sc in ad.get("scenes") or []:
+                if not isinstance(sc, dict):
+                    continue
+                if _norm_loc(str(sc.get("location") or "")) == norm_target or word_re.search(_norm_loc(f"{sc.get('title') or ''} {sc.get('summary') or ''}")):
+                    return 5
+        except (OSError, ValueError):
+            pass
+
+    # Step 06: Screenplay (`screenplay/scene-*.json`)
+    sp_dir = pd / "screenplay"
+    if sp_dir.is_dir():
+        for sp_f in sorted(sp_dir.glob("scene-*.json")):
+            try:
+                sc = json.loads(sp_f.read_text(encoding="utf-8")) or {}
+                if _heading_matches_location(str(sc.get("heading") or ""), norm_target):
+                    return 6
+                for el in sc.get("elements") or []:
+                    if isinstance(el, dict) and word_re.search(_norm_loc(str(el.get("text") or ""))):
+                        return 6
+            except (OSError, ValueError):
+                continue
+
+    # Step 07: Continuity Book
+    for cb_p in (continuity_book.continuity_file(pd), pd / f"{slug}.json", pd / "continuity.json"):
+        if cb_p.is_file():
+            try:
+                cb = json.loads(cb_p.read_text(encoding="utf-8")) or {}
+                if any(isinstance(loc, dict) and _norm_loc(str(loc.get("name") or "")) == norm_target for loc in (cb.get("locations") or [])):
+                    return 7
+            except (OSError, ValueError):
+                continue
+
+    return 7
+
+
+def record_import_bidirectional_sync(
+    pd: Path,
+    slug: str,
+    *,
+    kind: str,
+    name: str,
+    source_step: int,
+) -> dict[str, Any]:
+    """Queue a bi-directional workflow update starting at the earliest pipeline inception of `name`."""
+    from studio_app import workflow_sync
+
+    earliest = (
+        find_earliest_character_inception(pd, slug, name)
+        if kind == "character"
+        else find_earliest_set_inception(pd, slug, name)
+    )
+    candidate_upstream = [3, 5, 6, 7] if kind == "character" else [3, 5, 6, 7]
+    upstream_steps: list[int] = []
+    for st in candidate_upstream:
+        if earliest <= st < source_step and (st == earliest or workflow_sync.step_has_existing_artifacts(pd, slug, st)):
+            upstream_steps.append(st)
+    if earliest < source_step and earliest not in upstream_steps:
+        upstream_steps.insert(0, earliest)
+
+    label = "character" if kind == "character" else "set"
+    summary = (
+        f"Imported reference photo for {label} '{name}' (Step {source_step:02d}) — "
+        f"bi-directional sync required from earliest inception (Step {earliest:02d})"
+    )
+    queue = workflow_sync.record_modification(
+        pd,
+        slug,
+        source_step=source_step,
+        summary=summary,
+        origin_step=source_step,
+        include_upstream=True,
+        explicit_upstream=upstream_steps,
+    )
+    return {
+        "earliest_inception_step": earliest,
+        "upstream_steps": upstream_steps,
+        "queue": queue,
+    }
+
+
 def _extract_json_obj(raw_text: str) -> dict[str, Any]:
     txt = str(raw_text or "").strip()
     if not txt:
@@ -366,6 +540,7 @@ def sync_baselined_set_from_image(
     name: str,
     image_path: Path,
     *,
+    view_id: str = "main",
     reconcile_shots: bool = True,
     timeout: float = 40.0,
 ) -> dict[str, Any]:
@@ -432,6 +607,13 @@ def sync_baselined_set_from_image(
                         if new_light:
                             srec["vision_lighting"] = new_light
                         srec["vision_engine"] = engine
+                        for vrec in srec.get("views") or []:
+                            if isinstance(vrec, dict) and str(vrec.get("id") or "main") == str(view_id or "main"):
+                                vrec["vision_description"] = new_desc
+                                if new_light:
+                                    vrec["vision_lighting"] = new_light
+                                if not str(vrec.get("notes") or "").strip() or str(view_id or "main") != "main":
+                                    vrec["notes"] = new_desc
                 views_path.write_text(json.dumps(vdoc, indent=2, ensure_ascii=False), encoding="utf-8")
         except (OSError, ValueError):
             pass
@@ -570,6 +752,220 @@ def sync_baselined_set_from_image(
         "layout_anchors": anchors,
         "updated_steps": updated_steps,
         "shots_reconciled": shots_reconciled,
+        "keyframes_updated": keyframes_updated,
+        "keyframes_skipped_locked": keyframes_skipped_locked,
+    }
+
+
+_STYLE_WORDS_RE = re.compile(
+    r"(?i)\b(photo-?realistic|photoreal|hyper-?realistic|photograph\w*|snapshot|camera\s+photo|"
+    r"claymation|plasticine|3d|cgi|pixar|anime|manga|cartoon\w*|watercolou?r|oil[- ]painting|illustrat\w*|render\w*|cel[- ]shad\w*)\b"
+)
+
+
+def describe_character_image(
+    image_path: Path,
+    char_name: str,
+    *,
+    existing_description: str = "",
+    timeout: float = 40.0,
+) -> dict[str, Any]:
+    """Translate an imported Step 08 character reference photo into a style-neutral visual description & consistency token."""
+    if not (image_path.is_file() and image_path.stat().st_size > 100):
+        return {"ok": False, "engine": "", "error": "Character image file not found or empty"}
+
+    prompt = (
+        f"You are a film character continuity supervisor cataloging an imported reference photo for character '{char_name}'. "
+        "Carefully inspect the attached image and describe ONLY the actual subject visible in the image (person, child, animal, toy, or object) "
+        "in completely style-neutral visual terms (NEVER use rendering words like 'photograph', 'photorealistic', '3D', 'Pixar', 'cartoon', or 'anime').\n"
+        "Respond ONLY with valid JSON in this exact schema:\n"
+        "{\n"
+        '  "description": "1 to 2 crisp sentences describing the exact visible subject: species/type, approximate age and build, '
+        'skin/fur/material tone, hair/ears/eyes/facial features, and exact visible clothing, colors, and accessories.",\n'
+        '  "token": "Compact comma-separated style-neutral visual consistency token under 210 characters covering species/age/build, face/hair/eyes, and exact solid outfit colors."\n'
+        "}"
+    )
+
+    parsed, engine = _call_ollama_vision_json(prompt, image_path, timeout=timeout)
+    if not parsed:
+        parsed, engine = _call_gemini_vision_json(prompt, image_path, timeout=timeout)
+
+    desc = re.sub(r"\s{2,}", " ", _STYLE_WORDS_RE.sub("", str(parsed.get("description") or ""))).strip(" ,;:-")
+    tok = re.sub(r"\s{2,}", " ", _STYLE_WORDS_RE.sub("", str(parsed.get("token") or ""))).strip(" ,;:-")[:240]
+    if desc and not tok:
+        tok = desc[:220]
+    if tok and not desc:
+        desc = tok
+
+    if not desc:
+        return {
+            "ok": False,
+            "engine": engine or "unavailable",
+            "error": "No vision model available (start Ollama with a vision model or configure GEMINI_API_KEY in Step 13).",
+            "description": existing_description,
+            "token": existing_description[:220],
+        }
+    return {
+        "ok": True,
+        "engine": engine,
+        "description": desc,
+        "token": tok,
+    }
+
+
+def sync_character_from_imported_image(
+    pd: Path,
+    slug: str,
+    char_name: str,
+    image_path: Path,
+    *,
+    timeout: float = 40.0,
+) -> dict[str, Any]:
+    """Run image-to-text on an imported character photo and propagate its prompt across Steps 03, 07, 08, 10, and 17."""
+    import character_tokens
+    import continuity_book
+    from studio_app import keyframe_context
+
+    existing = character_tokens.load_character(slug, char_name)
+    old_desc = str((existing or {}).get("description") or (existing or {}).get("visual_token") or "").strip() if isinstance(existing, dict) else ""
+
+    vision = describe_character_image(image_path, char_name, existing_description=old_desc, timeout=timeout)
+    if not vision.get("ok"):
+        return {
+            "ok": False,
+            "engine": vision.get("engine") or "unavailable",
+            "error": vision.get("error") or "Vision analysis unavailable",
+            "description": old_desc,
+            "token": old_desc[:220],
+            "updated_steps": [],
+            "keyframes_updated": 0,
+            "keyframes_skipped_locked": 0,
+        }
+
+    new_desc = str(vision["description"]).strip()
+    new_tok = str(vision["token"]).strip()[:240]
+    engine = str(vision.get("engine") or "")
+    updated_steps: list[str] = []
+    target_low = char_name.strip().lower()
+
+    # 1. Step 03 Coverage (`readin/coverage.json`) — update character description at earliest coverage inception
+    cov_path = pd / "readin" / "coverage.json"
+    if cov_path.is_file():
+        try:
+            cov = json.loads(cov_path.read_text(encoding="utf-8"))
+            if isinstance(cov, dict) and isinstance(cov.get("characters"), list):
+                cov_changed = False
+                for c in cov["characters"]:
+                    if isinstance(c, dict) and str(c.get("name") or "").strip().lower() == target_low:
+                        c["description"] = new_desc
+                        cov_changed = True
+                if cov_changed:
+                    cov_path.write_text(json.dumps(cov, indent=1, ensure_ascii=False), encoding="utf-8")
+                    updated_steps.append("Step 03 (Coverage)")
+        except (OSError, ValueError):
+            pass
+
+    # 2. Step 08 Character Dossier (`character_tokens`)
+    try:
+        rec = dict(existing) if isinstance(existing, dict) else {
+            "project": slug,
+            "name": char_name,
+            "role": "supporting",
+            "reference_images": [],
+        }
+        rec["description"] = new_desc
+        rec["visual_token"] = new_tok
+        rec["vision_engine"] = engine
+        rec["vision_synced_from"] = image_path.name
+        character_tokens.save_character(rec)
+        updated_steps.append("Step 08 (Cast & Characters)")
+    except Exception as e:
+        log.debug("character_tokens save failed in sync_character_from_imported_image: %s", e)
+
+    # 3. Step 07 Continuity Book (`<slug>.json` / `continuity.json`)
+    paths: list[Path] = []
+    for p in (continuity_book.continuity_file(pd), pd / f"{slug}.json", pd / "continuity.json"):
+        if p.is_file() and p.resolve() not in {x.resolve() for x in paths}:
+            paths.append(p)
+    cb_updated = False
+    for cb_path in paths:
+        try:
+            cb = json.loads(cb_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(cb, dict):
+            continue
+        chars = cb.get("characters")
+        if not isinstance(chars, list):
+            continue
+        changed = False
+        for c in chars:
+            if isinstance(c, dict) and str(c.get("name") or "").strip().lower() == target_low:
+                c["token"] = new_tok
+                if "description" in c:
+                    c["description"] = new_desc
+                c["visual_source"] = "step08_imported_vision"
+                changed = True
+        if changed:
+            cb_path.write_text(json.dumps(cb, indent=1, ensure_ascii=False), encoding="utf-8")
+            cb_updated = True
+    if cb_updated:
+        updated_steps.append("Step 07 (Continuity Book)")
+
+    # 4. Step 17 (`keyframes_v2.json`) — rebuild unlocked prompts for all shots featuring this character
+    keyframes_updated = 0
+    keyframes_skipped_locked = 0
+    sl_path = pd / "shots" / "shotlist.json"
+    if sl_path.is_file():
+        try:
+            sl_data = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+        except (OSError, ValueError):
+            sl_data = {}
+        if isinstance(sl_data, dict) and isinstance(sl_data.get("scenes"), list):
+            meta_path = pd / "keyframes_v2.json"
+            meta: dict[str, Any] = {}
+            if meta_path.is_file():
+                try:
+                    raw_m = json.loads(meta_path.read_text(encoding="utf-8"))
+                    if isinstance(raw_m, dict):
+                        meta = raw_m
+                except (OSError, ValueError):
+                    meta = {}
+            locked_ids = {str(x) for x in (meta.get("locked") or [])}
+            prompts: dict[str, Any] = dict(meta.get("prompts") or {})
+            name_re = re.compile(rf"\b{re.escape(target_low)}\b", re.IGNORECASE)
+            ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+            for sc in sl_data.get("scenes") or []:
+                if not isinstance(sc, dict):
+                    continue
+                sc_id = str(sc.get("id") or sc.get("scene") or "").strip()
+                heading = str(sc.get("heading") or "")
+                for idx, sh in enumerate(sc.get("shots") or [], start=1):
+                    if not isinstance(sh, dict):
+                        continue
+                    sh_chars = [str(x).strip().lower() for x in (sh.get("characters") or [])]
+                    sh_blob = f"{sh.get('composition') or ''} {sh.get('action') or ''} {sh.get('blocking') or ''}"
+                    if target_low not in sh_chars and not name_re.search(sh_blob):
+                        continue
+                    n = int(sh.get("n") or idx)
+                    sid = f"{sc_id}-{n:02d}"
+                    if sid in locked_ids:
+                        keyframes_skipped_locked += 1
+                        continue
+                    info = keyframe_context.build_shot_keyframe_info(sh, sc_id, heading, ctx)
+                    prompts[sid] = info["default_prompt"]
+                    keyframes_updated += 1
+            if keyframes_updated:
+                meta["prompts"] = prompts
+                meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+                updated_steps.append(f"Step 17 (Storyboard Keyframes: {keyframes_updated} prompt(s) synced)")
+
+    return {
+        "ok": True,
+        "engine": engine,
+        "description": new_desc,
+        "token": new_tok,
+        "updated_steps": updated_steps,
         "keyframes_updated": keyframes_updated,
         "keyframes_skipped_locked": keyframes_skipped_locked,
     }

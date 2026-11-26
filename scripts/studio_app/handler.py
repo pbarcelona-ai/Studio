@@ -92,6 +92,7 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' 
 MEDIA = {".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg", ".wav": "audio/wav", ".srt": "text/plain; charset=utf-8"}
 DOWNLOADS = {".pdf": "application/pdf", ".fountain": "text/plain; charset=utf-8", ".fdx": "application/xml",
              ".xml": "application/xml", ".py": "text/x-python; charset=utf-8",
+             ".blend": "application/octet-stream", ".glb": "model/gltf-binary", ".png": "image/png", ".mp4": "video/mp4",
              ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".zip": "application/zip", ".json": "application/json",
              ".epub": "application/epub+zip", ".m4b": "audio/mp4", ".mp3": "audio/mpeg"}
 

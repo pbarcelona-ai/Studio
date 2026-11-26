@@ -2508,6 +2508,7 @@
 
       scenes.forEach((s, i) => {
         const tr = document.createElement("tr");
+        tr.dataset.sceneId = s.id;
         tr.style.borderBottom = "1px solid #1e293b";
 
         const tdId = document.createElement("td");
@@ -2524,6 +2525,8 @@
         inpTitle.type = "text";
         inpTitle.value = s.title || "";
         inpTitle.maxLength = 100;
+        inpTitle.dataset.beatField = "title";
+        inpTitle.setAttribute("aria-label", `Scene ${s.id} title`);
         inpTitle.style.cssText = "width:100%;min-width:140px;padding:4px 6px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;";
         inpTitle.addEventListener("change", () => v2AdaptEdit({ action: "rename", id: s.id, title: inpTitle.value }));
         tdTitle.appendChild(inpTitle);
@@ -2539,6 +2542,8 @@
         inpClips.min = 1;
         inpClips.max = 500;
         inpClips.value = s.clips || 1;
+        inpClips.dataset.beatField = "clips";
+        inpClips.setAttribute("aria-label", `Scene ${s.id} clips`);
         inpClips.style.cssText = "width:58px;padding:4px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;";
         inpClips.addEventListener("change", () => v2AdaptEdit({ action: "set_clips", id: s.id, clips: Number(inpClips.value) }));
         tdClips.appendChild(inpClips);
@@ -2548,8 +2553,14 @@
         tdSec.textContent = `${s.seconds || 0}s`;
 
         const tdSum = document.createElement("td");
-        tdSum.style.cssText = "padding:8px;color:#e2e8f0;min-width:220px;";
-        tdSum.textContent = s.summary || "";
+        tdSum.style.cssText = "padding:8px;color:#e2e8f0;min-width:240px;";
+        const inpSum = document.createElement("textarea");
+        inpSum.rows = 2;
+        inpSum.value = s.summary || "";
+        inpSum.dataset.beatField = "summary";
+        inpSum.setAttribute("aria-label", `Scene ${s.id} story beat summary`);
+        inpSum.style.cssText = "width:100%;min-width:220px;box-sizing:border-box;padding:5px 7px;background:#0a0d14;color:#e2e8f0;border:1px solid #334155;border-radius:4px;font-family:inherit;font-size:var(--text-xs);line-height:1.4;resize:vertical;";
+        tdSum.appendChild(inpSum);
 
         const tdActs = document.createElement("td");
         tdActs.style.cssText = "padding:8px;white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap;";
@@ -2693,6 +2704,55 @@
     return els;
   }
 
+  let spDraftEdits = {};
+
+  function _spMergeFilteredElements(origElements, editedText, filterStr) {
+    const parsed = spTextToElements(editedText);
+    const f = String(filterStr || "ADT").toUpperCase();
+    if (f === "ADT" || !Array.isArray(origElements) || !origElements.length) {
+      return parsed;
+    }
+    const allowed = new Set();
+    if (f.includes("A")) allowed.add("action");
+    if (f.includes("D")) allowed.add("dialogue");
+    if (f.includes("T")) allowed.add("transition");
+    // Replace only the visible types in order, keeping hidden element types intact
+    const out = [];
+    let pIdx = 0;
+    for (const el of origElements) {
+      const typ = String((el && el.type) || "action").toLowerCase();
+      if (allowed.has(typ)) {
+        if (pIdx < parsed.length) {
+          out.push(parsed[pIdx++]);
+        }
+      } else {
+        out.push(el);
+      }
+    }
+    while (pIdx < parsed.length) {
+      out.push(parsed[pIdx++]);
+    }
+    return out;
+  }
+
+  function _spCaptureCurrentSingleDraft() {
+    if (spViewMode !== "single" || spSourceKind !== "adaptation") return;
+    const s = spScenesData[spActiveIdx];
+    if (!s) return;
+    const headingEl = $("v2SpHeading");
+    const bodyEl = $("v2SpBody");
+    if (!headingEl || !bodyEl) return;
+    const origHeading = (s.screenplay && s.screenplay.heading) || s.heading || "";
+    const origBody = s.screenplay ? spElementsToText(s.screenplay.elements, spFilter) : (s.text || "");
+    if (headingEl.value !== origHeading || bodyEl.value !== origBody) {
+      const origEls = (s.screenplay && Array.isArray(s.screenplay.elements)) ? s.screenplay.elements : [];
+      spDraftEdits[s.id] = {
+        heading: headingEl.value,
+        elements: _spMergeFilteredElements(origEls, bodyEl.value, spFilter),
+      };
+    }
+  }
+
   function renderV2Screenplay() {
     const pills = $("v2SpPills");
     const countEl = $("v2SpCount");
@@ -2730,9 +2790,11 @@
       b.type = "button";
       b.className = "step-pill" + (idx === spActiveIdx && spViewMode === "single" ? " active" : "");
       const hasFlag = spFlagsData && spFlagsData[s.id] && spFlagsData[s.id].length > 0;
-      b.textContent = `${s.id}: ${s.title || "Untitled"}${hasFlag ? " ⚠️" : ""}`;
+      const isDirty = !!spDraftEdits[s.id];
+      b.textContent = `${s.id}: ${s.title || "Untitled"}${isDirty ? " •" : ""}${hasFlag ? " ⚠️" : ""}`;
       b.title = s.summary || s.title || s.id;
       b.addEventListener("click", () => {
+        _spCaptureCurrentSingleDraft();
         spActiveIdx = idx;
         spViewMode = "single";
         renderV2Screenplay();
@@ -2747,6 +2809,10 @@
     if (btnAll) {
       btnAll.className = "btn " + (spViewMode === "all" ? "btn--primary" : "btn--ghost");
     }
+    const saveAllBtns = [ $("v2SpSaveAll"), ...Array.from(document.querySelectorAll(".v2-sp-save-all-btn")) ].filter(Boolean);
+    saveAllBtns.forEach((b) => {
+      b.disabled = spSourceKind !== "adaptation" || !spScenesData.length;
+    });
 
     if (spViewMode === "single") {
       if (singleBox) singleBox.classList.remove("hidden");
@@ -2755,6 +2821,7 @@
         allBox.style.display = "none";
       }
       const s = spScenesData[spActiveIdx];
+      const draft = spDraftEdits[s.id];
       const meta = $("v2SpSceneMeta");
       const heading = $("v2SpHeading");
       const body = $("v2SpBody");
@@ -2767,12 +2834,12 @@
         meta.innerHTML = `<strong style="color:#f59e0b">${s.id}</strong>: <strong style="color:#f8fafc">${s.title || ""}</strong>${dur}${summary}`;
       }
       if (heading) {
-        heading.value = (s.screenplay && s.screenplay.heading) || s.heading || "";
+        heading.value = draft ? draft.heading : ((s.screenplay && s.screenplay.heading) || s.heading || "");
       }
       if (body) {
-        body.value = s.screenplay
-          ? spElementsToText(s.screenplay.elements, spFilter)
-          : (s.text || "");
+        body.value = draft
+          ? spElementsToText(draft.elements, spFilter)
+          : (s.screenplay ? spElementsToText(s.screenplay.elements, spFilter) : (s.text || ""));
       }
       if (saveBtn) {
         saveBtn.disabled = spSourceKind !== "adaptation";
@@ -2786,7 +2853,9 @@
         allBox.style.display = "flex";
         allBox.textContent = "";
         spScenesData.forEach((s, idx) => {
+          const draft = spDraftEdits[s.id];
           const card = document.createElement("div");
+          card.dataset.spSceneId = s.id;
           card.style.cssText = "background:#0a0d14;border:1px solid #232d3f;border-radius:8px;padding:12px;";
           const headRow = document.createElement("div");
           headRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;";
@@ -2807,17 +2876,45 @@
           headRow.appendChild(editBtn);
           card.appendChild(headRow);
 
-          const slugLine = document.createElement("div");
-          slugLine.style.cssText = "font-family:var(--font-mono);font-size:var(--text-xs);color:#38bdf8;margin-bottom:6px;";
-          slugLine.textContent = (s.screenplay && s.screenplay.heading) || s.heading || "(No heading yet)";
-          card.appendChild(slugLine);
+          const curHeading = draft ? draft.heading : ((s.screenplay && s.screenplay.heading) || s.heading || "");
+          const curBody = draft
+            ? spElementsToText(draft.elements, spFilter)
+            : (s.screenplay ? spElementsToText(s.screenplay.elements, spFilter) : (s.text || s.summary || ""));
 
-          const pre = document.createElement("pre");
-          pre.style.cssText = "margin:0;white-space:pre-wrap;font-family:var(--font-mono);font-size:var(--text-xs);color:#e2e8f0;line-height:1.5;max-height:180px;overflow:auto;";
-          pre.textContent = s.screenplay
-            ? spElementsToText(s.screenplay.elements, spFilter)
-            : (s.text || s.summary || "(Not written yet)");
-          card.appendChild(pre);
+          if (spSourceKind === "adaptation") {
+            const hInp = document.createElement("input");
+            hInp.type = "text";
+            hInp.value = curHeading;
+            hInp.setAttribute("aria-label", `${s.id} scene heading`);
+            hInp.style.cssText = "width:100%;box-sizing:border-box;padding:5px 8px;margin-bottom:6px;background:#020617;color:#38bdf8;font-family:var(--font-mono);font-size:var(--text-xs);font-weight:700;border:1px solid #334155;border-radius:4px;";
+            const bArea = document.createElement("textarea");
+            bArea.rows = 6;
+            bArea.value = curBody;
+            bArea.spellcheck = false;
+            bArea.setAttribute("aria-label", `${s.id} scene script`);
+            bArea.style.cssText = "width:100%;box-sizing:border-box;padding:8px;background:#020617;color:#e2e8f0;font-family:var(--font-mono);font-size:var(--text-xs);line-height:1.5;border:1px solid #334155;border-radius:4px;resize:vertical;";
+            const syncAllDraft = () => {
+              const origEls = (s.screenplay && Array.isArray(s.screenplay.elements)) ? s.screenplay.elements : [];
+              spDraftEdits[s.id] = {
+                heading: hInp.value,
+                elements: _spMergeFilteredElements(origEls, bArea.value, spFilter),
+              };
+            };
+            hInp.addEventListener("input", syncAllDraft);
+            bArea.addEventListener("input", syncAllDraft);
+            card.appendChild(hInp);
+            card.appendChild(bArea);
+          } else {
+            const slugLine = document.createElement("div");
+            slugLine.style.cssText = "font-family:var(--font-mono);font-size:var(--text-xs);color:#38bdf8;margin-bottom:6px;";
+            slugLine.textContent = curHeading || "(No heading yet)";
+            card.appendChild(slugLine);
+
+            const pre = document.createElement("pre");
+            pre.style.cssText = "margin:0;white-space:pre-wrap;font-family:var(--font-mono);font-size:var(--text-xs);color:#e2e8f0;line-height:1.5;max-height:180px;overflow:auto;";
+            pre.textContent = curBody || "(Not written yet)";
+            card.appendChild(pre);
+          }
           allBox.appendChild(card);
         });
       }
@@ -2906,15 +3003,21 @@
     const btnClearInstructions = $("v2SpClearInstructions");
     const instructionsArea = $("v2SpInstructions");
 
-    if (prevBtn) prevBtn.addEventListener("click", () => { if (spActiveIdx > 0) { spActiveIdx--; spViewMode = "single"; renderV2Screenplay(); } });
-    if (nextBtn) nextBtn.addEventListener("click", () => { if (spActiveIdx < spScenesData.length - 1) { spActiveIdx++; spViewMode = "single"; renderV2Screenplay(); } });
+    if (prevBtn) prevBtn.addEventListener("click", () => { _spCaptureCurrentSingleDraft(); if (spActiveIdx > 0) { spActiveIdx--; spViewMode = "single"; renderV2Screenplay(); } });
+    if (nextBtn) nextBtn.addEventListener("click", () => { _spCaptureCurrentSingleDraft(); if (spActiveIdx < spScenesData.length - 1) { spActiveIdx++; spViewMode = "single"; renderV2Screenplay(); } });
     if (btnSingle) btnSingle.addEventListener("click", () => { spViewMode = "single"; renderV2Screenplay(); });
-    if (btnAll) btnAll.addEventListener("click", () => { spViewMode = "all"; renderV2Screenplay(); });
-    if (btnRefresh) btnRefresh.addEventListener("click", () => loadV2Screenplay());
+    if (btnAll) btnAll.addEventListener("click", () => { _spCaptureCurrentSingleDraft(); spViewMode = "all"; renderV2Screenplay(); });
+    if (btnRefresh) btnRefresh.addEventListener("click", () => { spDraftEdits = {}; loadV2Screenplay(); });
+
+    const singleHeadingEl = $("v2SpHeading");
+    const singleBodyEl = $("v2SpBody");
+    if (singleHeadingEl) singleHeadingEl.addEventListener("input", () => _spCaptureCurrentSingleDraft());
+    if (singleBodyEl) singleBodyEl.addEventListener("input", () => _spCaptureCurrentSingleDraft());
 
     // Filter dropdown: element type filter
     if (filterSelect) {
       filterSelect.addEventListener("change", () => {
+        _spCaptureCurrentSingleDraft();
         spFilter = filterSelect.value;
         renderV2Screenplay();
       });
@@ -3092,7 +3195,7 @@
       });
     }
 
-    // MCP Integration: Generate Previs with Blender
+    // MCP Integration: Generate Previs with Blender (standalone Blender 5.4 + Live MCP)
     if (btnMcpBlender) {
       btnMcpBlender.addEventListener("click", async () => {
         const selProj = $("proj");
@@ -3102,19 +3205,41 @@
         if (!s) { alert("Select a scene first."); return; }
         try {
           btnMcpBlender.disabled = true;
-          btnMcpBlender.textContent = "🎯 Generating…";
-          setSpMcpResult(`Generating 3D previs for ${s.id}…`, [], false);
+          btnMcpBlender.textContent = "🎯 Rendering 3D Previs…";
+          setSpMcpResult(`Rendering standalone Blender 3D previs for ${s.id}…`, [], false);
           const result = await callApi("/api/mcp/blender/generate_previs", { project: slug, scene_id: s.id });
           if (result.error) throw new Error(result.error);
           const links = [];
-          if (result.script_url) links.push({ label: `⬇ Download previs_${s.id}.py`, href: result.script_url });
-          setSpMcpResult(`✓ ${result.message || "Previs generated"}`, links, false);
+          if (result.overview_url) links.push({ label: "🖼 View 3D Previs", href: result.overview_url, external: true });
+          if (result.blend_url) links.push({ label: "⬇ .blend", href: result.blend_url });
+          if (result.glb_url) links.push({ label: "⬇ .glb", href: result.glb_url });
+          if (result.script_url) links.push({ label: "⬇ .py", href: result.script_url });
+          setSpMcpResult(`✓ ${result.message || "3D Previs rendered"}`, links, false);
         } catch (err) {
           console.error("Blender MCP failed:", err);
           setSpMcpResult("Error: " + (err.message || err), [], true);
         } finally {
           btnMcpBlender.disabled = false;
           btnMcpBlender.textContent = "🎯 Generate Previs (Blender)";
+        }
+      });
+    }
+
+    const btnMcpBlenderLive = $("spMcpBlenderLive");
+    if (btnMcpBlenderLive) {
+      btnMcpBlenderLive.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        const s = spScenesData[spActiveIdx];
+        try {
+          btnMcpBlenderLive.disabled = true;
+          setSpMcpResult("Launching standalone Blender GUI with Live MCP Bridge…", [], false);
+          const res = await callApi("/api/mcp/blender/launch_live", { project: slug, scene_id: s ? s.id : "" });
+          setSpMcpResult(`✓ ${res.message || "Blender Live launched"}`, [], false);
+        } catch (err) {
+          setSpMcpResult("Error: " + (err.message || err), [], true);
+        } finally {
+          btnMcpBlenderLive.disabled = false;
         }
       });
     }
@@ -3167,7 +3292,8 @@
         if (msg) msg.textContent = "Saving scene…";
         try {
           const heading = ($("v2SpHeading") || {}).value || "";
-          const elements = spTextToElements(($("v2SpBody") || {}).value || "");
+          const origEls = (s.screenplay && Array.isArray(s.screenplay.elements)) ? s.screenplay.elements : [];
+          const elements = _spMergeFilteredElements(origEls, ($("v2SpBody") || {}).value || "", spFilter);
           await callApi("/api/screenplay_edit", {
             project: slug,
             action: "save_scene",
@@ -3175,6 +3301,7 @@
             heading,
             elements
           });
+          delete spDraftEdits[s.id];
           if (msg) msg.textContent = `✓ Saved ${s.id}. Storyline drift updated.`;
           await loadV2Screenplay();
           await checkStepStorylineDrift();
@@ -3186,11 +3313,65 @@
       });
     }
 
+    const saveAllSpButtons = [ $("v2SpSaveAll"), ...Array.from(document.querySelectorAll(".v2-sp-save-all-btn")) ].filter(Boolean);
+    saveAllSpButtons.forEach((btnAllSave) => {
+      if (btnAllSave.dataset.spSaveAllBound) return;
+      btnAllSave.dataset.spSaveAllBound = "1";
+      btnAllSave.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        const msg = $("v2SpSaveMsg") || $("v2SpHumanizeStatus");
+        if (!slug || !spScenesData.length || spSourceKind !== "adaptation") return;
+
+        _spCaptureCurrentSingleDraft();
+        const scenesPayload = spScenesData.map((s) => {
+          const draft = spDraftEdits[s.id];
+          const heading = draft ? draft.heading : ((s.screenplay && s.screenplay.heading) || s.heading || "");
+          const elements = draft
+            ? draft.elements
+            : ((s.screenplay && Array.isArray(s.screenplay.elements)) ? s.screenplay.elements : spTextToElements(s.text || ""));
+          return { scene: s.id, heading, elements };
+        });
+
+        const origLabel = btnAllSave.textContent;
+        saveAllSpButtons.forEach((b) => { b.disabled = true; });
+        btnAllSave.textContent = "⏳ Saving All…";
+        if (msg) {
+          msg.style.color = "#fbbf24";
+          msg.textContent = `Saving all ${scenesPayload.length} scene script(s)…`;
+        }
+        try {
+          const res = await callApi("/api/screenplay_edit", {
+            project: slug,
+            action: "save_all_scenes",
+            scenes: scenesPayload,
+          });
+          spDraftEdits = {};
+          await loadV2Screenplay();
+          await checkStepStorylineDrift();
+          const savedN = (res && res.saved_count) || scenesPayload.length;
+          if (msg) {
+            msg.style.color = "#34d399";
+            msg.textContent = `✓ Saved all ${savedN} scene script(s) & updated storyline sync.`;
+          }
+        } catch (err) {
+          if (msg) {
+            msg.style.color = "#f87171";
+            msg.textContent = "Error saving all scenes: " + (err.message || err);
+          }
+        } finally {
+          btnAllSave.textContent = origLabel;
+          saveAllSpButtons.forEach((b) => { b.disabled = spSourceKind !== "adaptation" || !spScenesData.length; });
+        }
+      });
+    });
+
     // Reload scenes whenever the selected book changes
     const selProj = $("proj");
     if (selProj) {
       selProj.addEventListener("change", () => {
         spActiveIdx = 0;
+        spDraftEdits = {};
         if (currentStep === 6) loadV2Screenplay();
         checkStepStorylineDrift();
       });
@@ -4965,12 +5146,15 @@
         if (castImpFile) castImpFile.value = "";
         if (castImpPrev) { castImpPrev.src = ""; castImpPrev.style.display = "none"; }
         if (castImpMsg) {
+          const vSyncNote = (res && res.vision_sync && res.vision_sync.ok) ? " & updated prompt from image" : "";
+          const incNote = (res && res.earliest_inception_step) ? ` (bi-directional sync queued from Step ${String(res.earliest_inception_step).padStart(2, "0")})` : "";
           castImpMsg.textContent = convertNow
-            ? `✓ Imported & converted "${charName}" into ${res.style_name || "film style"}!`
-            : `✓ Imported reference photo for "${charName}"!`;
+            ? `✓ Imported & converted "${charName}" as-is into ${res.style_name || "film style"}${vSyncNote}${incNote}!`
+            : `✓ Imported reference photo for "${charName}"${vSyncNote}${incNote}!`;
         }
         if (window.loadPCastRefs) window.loadPCastRefs();
         await loadV2Cast();
+        if (typeof loadV2WorkflowSync === "function") await loadV2WorkflowSync(slug);
       } catch (err) {
         if (castImpMsg) castImpMsg.textContent = "Import failed: " + (err.message || err);
       } finally {
@@ -6352,7 +6536,7 @@
       const stopBusy = startBusyFeedback(trigBtn, impForm, convertNow ? `Converting photo for ${setName}…` : `Importing photo for ${setName}…`);
       if (impMsg) impMsg.textContent = convertNow ? `Importing & converting photo for "${setName}" (${viewLabel})…` : `Importing photo for "${setName}" (${viewLabel})…`;
       try {
-        await callApi("/api/v2_set_ref_upload", {
+        const res = await callApi("/api/v2_set_ref_upload", {
           project: slug,
           name: setName,
           view_id: viewId,
@@ -6368,9 +6552,16 @@
         pendingImpFilename = "";
         if (impFile) impFile.value = "";
         if (impPrev) { impPrev.src = ""; impPrev.style.display = "none"; }
-        if (impMsg) impMsg.textContent = convertNow ? `✓ Imported & converted photo for "${setName}" (${viewLabel})!` : `✓ Imported photo for "${setName}" (${viewLabel})!`;
+        if (impMsg) {
+          const vSyncNote = (res && res.vision_sync && res.vision_sync.ok) ? " & updated prompt from image" : "";
+          const incNote = (res && res.earliest_inception_step) ? ` (bi-directional sync queued from Step ${String(res.earliest_inception_step).padStart(2, "0")})` : "";
+          impMsg.textContent = convertNow
+            ? `✓ Imported & converted "${setName}" (${viewLabel}) as-is${vSyncNote}${incNote}!`
+            : `✓ Imported photo for "${setName}" (${viewLabel})${vSyncNote}${incNote}!`;
+        }
         if (window.loadPCastRefs) window.loadPCastRefs();
         await loadV2Locations();
+        if (typeof loadV2WorkflowSync === "function") await loadV2WorkflowSync(slug);
       } catch (err) {
         if (impMsg) impMsg.textContent = "Import failed: " + (err.message || err);
       } finally {
@@ -6750,9 +6941,872 @@
     }
 
     initV2EarlyPromptAudit();
+    initV2BlenderIntegrations();
+  }
+
+  function initV2BlenderIntegrations() {
+    const _slug = () => (($("proj") && $("proj").value) || activeProject || "").trim();
+
+    // 1. Step 12: Render 3D Previs PNGs & 3D Camera-Move MP4 Animatic
+    const runStep12Blender = async (renderAnimatic, btn) => {
+      const slug = _slug();
+      if (!slug) { alert("Pick a book in Step 01 first."); return; }
+      const sc = v2ShotScenes[v2ShotActiveSceneIdx];
+      const sid = (sc && sc.id) || "S001";
+      const out = $("v2ShotsBlenderOut");
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = renderAnimatic ? "⏳ Rendering Animatic…" : "⏳ Rendering Previs…";
+      if (out) {
+        out.classList.remove("hidden");
+        out.textContent = `Running standalone Blender 5.4 for ${sid}${renderAnimatic ? " (camera-move MP4 animatic)" : " (3D previs stills)"}…`;
+      }
+      try {
+        const res = await callApi("/api/v2_blender_previs", { project: slug, scene_id: sid, render_animatic: renderAnimatic });
+        if (out) {
+          out.textContent = "";
+          const hdr = document.createElement("div");
+          hdr.style.cssText = "font-weight:700;color:#34d399;margin-bottom:6px;display:flex;flex-wrap:wrap;gap:10px;align-items:center";
+          hdr.textContent = `✓ Blender rendered ${res.shots_rendered || 0} 3D previs frame(s) for ${sid}`;
+          if (res.blend_url) { const a = document.createElement("a"); a.href = res.blend_url; a.download = ""; a.textContent = "⬇ .blend"; a.style.color = "#38bdf8"; hdr.appendChild(a); }
+          if (res.glb_url) { const a = document.createElement("a"); a.href = res.glb_url; a.download = ""; a.textContent = "⬇ .glb"; a.style.color = "#38bdf8"; hdr.appendChild(a); }
+          if (res.animatic_url) { const a = document.createElement("a"); a.href = res.animatic_url; a.download = ""; a.textContent = "⬇ Animatic MP4"; a.style.color = "#f59e0b"; hdr.appendChild(a); }
+          out.appendChild(hdr);
+          if (res.animatic_file_url) {
+            const vid = document.createElement("video");
+            vid.controls = true;
+            vid.src = res.animatic_file_url + "?t=" + Date.now();
+            vid.style.cssText = "width:100%;max-width:560px;border-radius:6px;border:1px solid #334155;margin-bottom:6px;display:block";
+            out.appendChild(vid);
+          }
+          const strip = document.createElement("div");
+          strip.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill, minmax(160px, 1fr));gap:8px";
+          (res.shots || []).forEach(sh => {
+            const box = document.createElement("div");
+            box.style.cssText = "background:#020617;border:1px solid #1e293b;border-radius:6px;padding:4px";
+            const img = document.createElement("img");
+            img.src = sh.image_url + "?t=" + Date.now();
+            img.alt = sh.shot_id || "Previs";
+            img.style.cssText = "width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:4px;display:block";
+            const cap = document.createElement("div");
+            cap.style.cssText = "font-size:10px;color:#94a3b8;margin-top:3px;text-align:center";
+            cap.textContent = sh.shot_id || `Shot ${sh.n}`;
+            box.appendChild(img);
+            box.appendChild(cap);
+            strip.appendChild(box);
+          });
+          out.appendChild(strip);
+        }
+      } catch (err) {
+        if (out) { out.classList.remove("hidden"); out.style.color = "#f87171"; out.textContent = `Blender previs failed: ${err.message || err}`; }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    };
+    const bPrevis = $("bV2ShotsBlenderPrevis");
+    if (bPrevis && !bPrevis.dataset.blBound) { bPrevis.dataset.blBound = "1"; bPrevis.addEventListener("click", () => runStep12Blender(false, bPrevis)); }
+    const bAnim = $("bV2ShotsBlenderAnimatic");
+    if (bAnim && !bAnim.dataset.blBound) { bAnim.dataset.blBound = "1"; bAnim.addEventListener("click", () => runStep12Blender(true, bAnim)); }
+
+    // 2. Step 11: Multi-Angle Consistent 3D Set Plates
+    const bSetAng = $("bV2LocBlenderAngles");
+    if (bSetAng && !bSetAng.dataset.blBound) {
+      bSetAng.dataset.blBound = "1";
+      bSetAng.addEventListener("click", async () => {
+        const slug = _slug();
+        if (!slug) { alert("Pick a book in Step 01 first."); return; }
+        const selSet = $("v2LocImportSet");
+        const defaultName = (selSet && selSet.value) || "Living Room";
+        const setName = prompt("Which Set / Location should Blender render 5 consistent 3D angles for?", defaultName);
+        if (!setName || !setName.trim()) return;
+        const out = $("v2LocBlenderOut");
+        const orig = bSetAng.textContent;
+        bSetAng.disabled = true;
+        bSetAng.textContent = "⏳ Rendering 5 Angles…";
+        if (out) { out.classList.remove("hidden"); out.textContent = `Rendering Wide, Reverse, Corner, OTS & Top-Down 3D plates for "${setName}"…`; }
+        try {
+          const res = await callApi("/api/v2_blender_set_angles", { project: slug, set_name: setName.trim() });
+          if (out) {
+            out.textContent = "";
+            const hdr = document.createElement("div");
+            hdr.style.cssText = "font-weight:700;color:#34d399;margin-bottom:6px;display:flex;gap:10px;flex-wrap:wrap";
+            hdr.textContent = `✓ Rendered ${res.views_rendered || 0} consistent 3D set angles for "${res.set_name}" (registered in Step 11 views)`;
+            if (res.glb_url) { const a = document.createElement("a"); a.href = res.glb_url; a.download = ""; a.textContent = "⬇ Download 3D Set .glb"; a.style.color = "#38bdf8"; hdr.appendChild(a); }
+            out.appendChild(hdr);
+            const grid = document.createElement("div");
+            grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill, minmax(160px, 1fr));gap:8px";
+            (res.views || []).forEach(v => {
+              const box = document.createElement("div");
+              box.style.cssText = "background:#020617;border:1px solid #1e293b;border-radius:6px;padding:4px";
+              const img = document.createElement("img");
+              img.src = v.image_url + "?t=" + Date.now();
+              img.alt = v.label || v.angle;
+              img.style.cssText = "width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:4px;display:block";
+              const cap = document.createElement("div");
+              cap.style.cssText = "font-size:10px;color:#94a3b8;margin-top:3px;text-align:center";
+              cap.textContent = v.label || v.angle;
+              box.appendChild(img);
+              box.appendChild(cap);
+              grid.appendChild(box);
+            });
+            out.appendChild(grid);
+          }
+          if (typeof loadV2Locations === "function") await loadV2Locations();
+        } catch (err) {
+          if (out) { out.classList.remove("hidden"); out.style.color = "#f87171"; out.textContent = `3D set render failed: ${err.message || err}`; }
+        } finally {
+          bSetAng.disabled = false;
+          bSetAng.textContent = orig;
+        }
+      });
+    }
+
+    // 3. Step 17: True-Scale 3D Blocking & Depth Guides
+    const bKfGuide = $("bV2KfBlenderGuide");
+    if (bKfGuide && !bKfGuide.dataset.blBound) {
+      bKfGuide.dataset.blBound = "1";
+      bKfGuide.addEventListener("click", async () => {
+        const slug = _slug();
+        if (!slug) { alert("Pick a book in Step 01 first."); return; }
+        const sid = (typeof v2KfState !== "undefined" && v2KfState.activeScene && v2KfState.activeScene !== "ALL") ? v2KfState.activeScene : "S001";
+        const orig = bKfGuide.textContent;
+        bKfGuide.disabled = true;
+        bKfGuide.textContent = "⏳ Rendering 3D Guides…";
+        const statusEl = $("v2KfStatus");
+        if (statusEl) statusEl.textContent = `Rendering true-scale Blender 3D blocking & depth guides for ${sid}…`;
+        try {
+          const res = await callApi("/api/v2_blender_depth_guide", { project: slug, scene: sid });
+          const count = res.count || (res.blocking_url ? 1 : 0);
+          if (statusEl) statusEl.textContent = `✓ Rendered ${count} true-scale 3D blocking & depth guide(s) for ${sid}. Next keyframe renders automatically lock proportions to these guides!`;
+        } catch (err) {
+          if (statusEl) statusEl.textContent = `3D depth guide failed: ${err.message || err}`;
+        } finally {
+          bKfGuide.disabled = false;
+          bKfGuide.textContent = orig;
+        }
+      });
+    }
+
+    // 4. Step 18/20: 3D Animated Extruded Title Card (Blender)
+    const bCd3d = $("bV2CdBlender3D");
+    if (bCd3d && !bCd3d.dataset.blBound) {
+      bCd3d.dataset.blBound = "1";
+      bCd3d.addEventListener("click", async () => {
+        const slug = _slug();
+        if (!slug) { alert("Pick a book in Step 01 first."); return; }
+        const title = (($("v2CdTitle") && $("v2CdTitle").value) || slug.replace(/_/g, " ")).trim();
+        const subtitle = (($("v2CdSubtitle") && $("v2CdSubtitle").value) || "").trim();
+        const statusEl = $("v2CdStatus");
+        const prevEl = $("v2CdPreview");
+        const orig = bCd3d.textContent;
+        bCd3d.disabled = true;
+        bCd3d.textContent = "⏳ Rendering 3D Title…";
+        if (statusEl) statusEl.textContent = `Rendering 3D extruded title card "${title}" in standalone Blender 5.4…`;
+        try {
+          const res = await callApi("/api/v2_blender_title_card", { project: slug, title, subtitle, style: "space_orbit", duration_s: 3.0, render_video: true });
+          if (statusEl) statusEl.textContent = `✓ Rendered 3D title card${res.video_url ? " + animated MP4" : ""}.`;
+          if (prevEl) {
+            prevEl.textContent = "";
+            if (res.video_url) {
+              const v = document.createElement("video");
+              v.controls = true;
+              v.src = res.video_url + "?t=" + Date.now();
+              v.style.cssText = "width:100%;max-width:560px;border-radius:6px;border:1px solid #334155";
+              prevEl.appendChild(v);
+            } else if (res.still_url) {
+              const img = document.createElement("img");
+              img.src = res.still_url + "?t=" + Date.now();
+              img.alt = title;
+              img.style.cssText = "width:100%;max-width:560px;border-radius:6px;border:1px solid #334155";
+              prevEl.appendChild(img);
+            }
+          }
+        } catch (err) {
+          if (statusEl) statusEl.textContent = `3D title card failed: ${err.message || err}`;
+        } finally {
+          bCd3d.disabled = false;
+          bCd3d.textContent = orig;
+        }
+      });
+    }
+
+    // 5. Step 08 & Step 10: True-Scale 3D Cast Height Lineup & 4-Angle Character Turnaround Guides
+    const runCastBlenderGuides = async (includeTurnarounds, btn, outEl) => {
+      const slug = _slug();
+      if (!slug) { alert("Pick a book in Step 01 first."); return; }
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = includeTurnarounds ? "⏳ Rendering Turnarounds…" : "⏳ Rendering Lineup…";
+      if (outEl) {
+        outEl.classList.remove("hidden");
+        outEl.style.color = "#cbd5e1";
+        outEl.textContent = includeTurnarounds
+          ? "Rendering true-scale Cast Height Lineup + 4-angle (Front, 3/4, Profile, Back) 3D Turnaround guides in standalone Blender 5.4…"
+          : "Rendering true-scale 3D Cast Height Lineup (adult vs child vs dog vs toy) in standalone Blender 5.4…";
+      }
+      try {
+        const res = await callApi("/api/v2_blender_cast_guides", { project: slug, include_turnarounds: !!includeTurnarounds });
+        if (outEl) {
+          outEl.textContent = "";
+          const hdr = document.createElement("div");
+          hdr.style.cssText = "font-weight:700;color:#34d399;margin-bottom:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:center";
+          const charCount = res.characters_count || 0;
+          const turnCount = Array.isArray(res.turnarounds) ? res.turnarounds.length : 0;
+          hdr.textContent = includeTurnarounds
+            ? `✓ Rendered true-scale lineup (${charCount} cast) + ${turnCount} 4-angle 3D turnaround guide(s)`
+            : `✓ Rendered true-scale Cast Height Lineup for ${charCount} character(s)`;
+          if (res.blend_url) {
+            const a = document.createElement("a");
+            a.href = res.blend_url;
+            a.download = "";
+            a.textContent = "⬇ .blend";
+            a.style.color = "#38bdf8";
+            hdr.appendChild(a);
+          }
+          if (res.glb_url) {
+            const a = document.createElement("a");
+            a.href = res.glb_url;
+            a.download = "";
+            a.textContent = "⬇ .glb";
+            a.style.color = "#38bdf8";
+            hdr.appendChild(a);
+          }
+          outEl.appendChild(hdr);
+          if (res.lineup_url) {
+            const img = document.createElement("img");
+            img.src = res.lineup_url + "?t=" + Date.now();
+            img.alt = "True-scale 3D Cast Height Lineup";
+            img.style.cssText = "width:100%;max-width:720px;border-radius:6px;border:1px solid #334155;display:block;margin-bottom:8px";
+            outEl.appendChild(img);
+          }
+          if (Array.isArray(res.turnarounds) && res.turnarounds.length) {
+            const grid = document.createElement("div");
+            grid.style.cssText = "display:flex;flex-direction:column;gap:8px";
+            res.turnarounds.forEach((t) => {
+              const card = document.createElement("div");
+              card.style.cssText = "background:#020617;border:1px solid #1e293b;border-radius:6px;padding:6px";
+              const cap = document.createElement("div");
+              cap.style.cssText = "font-size:11px;font-weight:700;color:#fde68a;margin-bottom:4px";
+              cap.textContent = `${t.name} (${t.kind} · ~${t.height_ft} ft / ${t.height_m}m) — Front · 3/4 · Profile · Back`;
+              const im = document.createElement("img");
+              im.src = t.image_url + "?t=" + Date.now();
+              im.alt = `${t.name} 4-angle 3D turnaround guide`;
+              im.style.cssText = "width:100%;border-radius:4px;display:block";
+              card.appendChild(cap);
+              card.appendChild(im);
+              grid.appendChild(card);
+            });
+            outEl.appendChild(grid);
+          }
+        }
+      } catch (err) {
+        if (outEl) {
+          outEl.classList.remove("hidden");
+          outEl.style.color = "#f87171";
+          outEl.textContent = `3D Cast guide render failed: ${err.message || err}`;
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    };
+    const bCastLineup = $("bV2CastBlenderLineup");
+    if (bCastLineup && !bCastLineup.dataset.blBound) {
+      bCastLineup.dataset.blBound = "1";
+      bCastLineup.addEventListener("click", () => runCastBlenderGuides(false, bCastLineup, $("v2CastBlenderOut")));
+    }
+    const bTurnGuides = $("bV2TurnBlenderGuides");
+    if (bTurnGuides && !bTurnGuides.dataset.blBound) {
+      bTurnGuides.dataset.blBound = "1";
+      bTurnGuides.addEventListener("click", () => runCastBlenderGuides(true, bTurnGuides, $("v2TurnBlenderOut")));
+    }
+
+    // 6. Launch Standalone Blender 5.4 Live MCP Bridge (Steps 10 Cast/Turnarounds, 11 Sets, 17 Keyframes)
+    document.querySelectorAll(".v2-blender-live-btn").forEach((liveBtn) => {
+      if (liveBtn.dataset.blBound) return;
+      liveBtn.dataset.blBound = "1";
+      liveBtn.addEventListener("click", async () => {
+        const slug = _slug();
+        if (!slug) { alert("Pick a book in Step 01 first."); return; }
+        const ctxKind = liveBtn.getAttribute("data-blender-context") || "set";
+        const orig = liveBtn.textContent;
+        liveBtn.disabled = true;
+        liveBtn.textContent = "⏳ Launching Blender…";
+        try {
+          const payload = { project: slug };
+          if (ctxKind === "keyframe" && typeof v2KfState !== "undefined" && v2KfState.activeScene && v2KfState.activeScene !== "ALL") {
+            payload.scene = v2KfState.activeScene;
+          }
+          const res = await callApi("/api/v2_blender_live_launch", payload);
+          const msg = `✓ Launched standalone Blender 5.4 (PID ${res.pid || "?"}) with Live MCP Bridge on port ${res.port || 9876}.`;
+          if (ctxKind === "cast" && $("v2TurnStatus")) $("v2TurnStatus").textContent = msg;
+          else if (ctxKind === "keyframe" && $("v2KfStatus")) $("v2KfStatus").textContent = msg;
+          else if ($("v2LocBlenderOut")) {
+            $("v2LocBlenderOut").classList.remove("hidden");
+            $("v2LocBlenderOut").style.color = "#34d399";
+            $("v2LocBlenderOut").textContent = msg;
+          }
+        } catch (err) {
+          alert(`Could not launch Blender Live: ${err.message || err}`);
+        } finally {
+          liveBtn.disabled = false;
+          liveBtn.textContent = orig;
+        }
+      });
+    });
+  }
+
+  function _v2GetPendingDecisions(rep) {
+    const issues = rep && Array.isArray(rep.issues) ? rep.issues : [];
+    return issues.filter((it) => it && (it.ambiguous || it.needs_user_decision));
+  }
+
+  const _V2_AUDIT_STEP_TITLES = {
+    3: "Step 03: Coverage & Logline",
+    4: "Step 04: Format & Runtime Scope",
+    5: "Step 05: Story Structure & Beats",
+    6: "Step 06: Screenplay Continuity",
+    7: "Step 07: Continuity Book & Scale",
+    12: "Step 12: Shot List Continuity",
+    17: "Step 17: Keyframes & Shot Continuity",
+  };
+
+  function _v2AuditReportStep(stepNum) {
+    return Number(stepNum) === 17 ? 12 : Number(stepNum || 6);
+  }
+
+  function updateResolveBtnCount(stepNum, rep) {
+    const norm = _v2AuditReportStep(stepNum);
+    const stepsToUpdate = norm === 12 ? [12, 17] : [norm];
+    const pending = _v2GetPendingDecisions(rep).length;
+    stepsToUpdate.forEach((st) => {
+      document.querySelectorAll(`.v2-resolve-decisions-btn[data-resolve-step="${st}"]`).forEach((btn) => {
+        if (pending > 0) {
+          btn.textContent = `⚖️ Resolve Decisions (${pending})`;
+          btn.style.borderColor = "#f59e0b";
+          btn.style.color = "#fcd34d";
+        } else {
+          btn.textContent = "⚖️ Resolve Decisions";
+          btn.style.borderColor = "#f59e0b";
+          btn.style.color = "#fde68a";
+        }
+      });
+    });
+  }
+
+  function updateSpResolveBtnCount(rep) {
+    updateResolveBtnCount(6, rep);
+  }
+
+  function _v2RenderHighlightedLine(container, fullText, highlight) {
+    container.textContent = "";
+    const txt = String(fullText || "");
+    const hl = String(highlight || "").trim();
+    if (!txt) {
+      const empty = document.createElement("span");
+      empty.style.cssText = "color:#94a3b8;font-style:italic;";
+      empty.textContent = "(Original line text unavailable — review the finding description above and edit below.)";
+      container.appendChild(empty);
+      return;
+    }
+    if (!hl) {
+      container.textContent = txt;
+      return;
+    }
+    const idx = txt.toLowerCase().indexOf(hl.toLowerCase());
+    if (idx < 0) {
+      container.textContent = txt;
+      return;
+    }
+    if (idx > 0) {
+      container.appendChild(document.createTextNode(txt.slice(0, idx)));
+    }
+    const mark = document.createElement("mark");
+    mark.style.cssText = "background:rgba(245,158,11,0.34);color:#fef08a;border-bottom:2px solid #f59e0b;padding:1px 4px;border-radius:4px;font-weight:600;";
+    mark.textContent = txt.slice(idx, idx + hl.length);
+    container.appendChild(mark);
+    if (idx + hl.length < txt.length) {
+      container.appendChild(document.createTextNode(txt.slice(idx + hl.length)));
+    }
+  }
+
+  let _v2DecisionState = {
+    stepNum: 6,
+    report: null,
+    pending: [],
+    activeIdx: 0,
+    selectedOptIdx: 0,
+    bound: false,
+  };
+
+  function _closeV2AuditDecisionModal() {
+    const modal = $("v2AuditDecisionModal");
+    if (modal) modal.classList.remove("open");
+  }
+
+  function _renderV2AuditDecisionModalItem() {
+    const st = _v2DecisionState;
+    const progressEl = $("v2DecisionProgress");
+    const sevEl = $("v2DecisionSeverity");
+    const targetEl = $("v2DecisionTarget");
+    const charEl = $("v2DecisionChar");
+    const issueEl = $("v2DecisionIssue");
+    const riskEl = $("v2DecisionRisk");
+    const lineEl = $("v2DecisionOffendingLine");
+    const optsEl = $("v2DecisionOptions");
+    const customEl = $("v2DecisionCustomText");
+    const statusEl = $("v2DecisionStatus");
+    const prevBtn = $("bV2DecisionPrev");
+    const nextBtn = $("bV2DecisionNext");
+    const applyBtn = $("bV2DecisionApply");
+    const keepBtn = $("bV2DecisionKeep");
+
+    const total = st.pending.length;
+    if (!total) {
+      if (progressEl) progressEl.textContent = "All resolved";
+      if (issueEl) issueEl.textContent = "All [Needs Decision] findings for this step have been resolved!";
+      if (riskEl) riskEl.textContent = "";
+      if (lineEl) lineEl.textContent = "No remaining conflicts.";
+      if (optsEl) optsEl.textContent = "";
+      if (customEl) customEl.value = "";
+      if (statusEl) {
+        statusEl.style.color = "#22c55e";
+        statusEl.textContent = "✓ Screenplay and continuity audit report updated.";
+      }
+      if (prevBtn) prevBtn.disabled = true;
+      if (nextBtn) nextBtn.disabled = true;
+      if (applyBtn) applyBtn.disabled = true;
+      if (keepBtn) keepBtn.disabled = true;
+      return;
+    }
+
+    if (st.activeIdx < 0) st.activeIdx = 0;
+    if (st.activeIdx >= total) st.activeIdx = total - 1;
+    const item = st.pending[st.activeIdx];
+
+    if (progressEl) progressEl.textContent = `${st.activeIdx + 1} of ${total} remaining`;
+    if (prevBtn) prevBtn.disabled = st.activeIdx <= 0;
+    if (nextBtn) nextBtn.disabled = st.activeIdx >= total - 1;
+    if (applyBtn) applyBtn.disabled = false;
+    if (keepBtn) keepBtn.disabled = false;
+    if (statusEl) statusEl.textContent = "";
+
+    const sev = String(item.severity || "major").toLowerCase();
+    const sevStyles = {
+      critical: "background:rgba(239,68,68,0.2);color:#fca5a5;border:1px solid rgba(239,68,68,0.45);",
+      major: "background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.45);",
+      minor: "background:rgba(148,163,184,0.2);color:#cbd5e1;border:1px solid rgba(148,163,184,0.4);",
+    };
+    if (sevEl) {
+      sevEl.textContent = sev.toUpperCase();
+      sevEl.style.cssText = `font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;text-transform:uppercase;${sevStyles[sev] || sevStyles.major}`;
+    }
+    if (targetEl) {
+      const elType = item.element_type || item.field || "";
+      targetEl.textContent = elType ? `${item.target || item.scene_id || "Line"} · ${elType}` : (item.target || item.scene_id || "Finding");
+    }
+    if (charEl) {
+      const ch = String(item.character || "").trim();
+      if (ch) {
+        charEl.textContent = ch;
+        charEl.classList.remove("hidden");
+      } else {
+        charEl.classList.add("hidden");
+      }
+    }
+    if (issueEl) issueEl.textContent = String(item.issue || "Continuity conflict requires your decision.");
+    if (riskEl) {
+      riskEl.textContent = item.risk ? `Downstream risk: ${item.risk}` : "";
+      riskEl.style.display = item.risk ? "block" : "none";
+    }
+    if (lineEl) {
+      _v2RenderHighlightedLine(lineEl, item.current_text || "", item.highlight || "");
+    }
+
+    const opts = Array.isArray(item.options) && item.options.length
+      ? item.options
+      : [
+          {
+            label: "Revise line to resolve conflict",
+            summary: "Edit the line below to clarify the visual or prop continuity before saving.",
+            replacement_text: item.current_text || "",
+          },
+          {
+            label: "Keep current line as written",
+            summary: "Accept the line as intentional and dismiss this audit warning.",
+            replacement_text: item.current_text || "",
+          },
+        ];
+
+    st.selectedOptIdx = 0;
+    if (optsEl) {
+      optsEl.textContent = "";
+      const selectOpt = (optIdx) => {
+        st.selectedOptIdx = optIdx;
+        const chosen = opts[optIdx] || opts[0];
+        if (customEl && chosen && typeof chosen.replacement_text === "string") {
+          customEl.value = chosen.replacement_text;
+        }
+        Array.from(optsEl.children).forEach((card, idx) => {
+          const isSel = idx === optIdx;
+          card.setAttribute("aria-checked", isSel ? "true" : "false");
+          card.style.borderColor = isSel ? "#38bdf8" : "rgba(148,163,184,0.28)";
+          card.style.background = isSel ? "rgba(56,189,248,0.12)" : "rgba(15,23,42,0.45)";
+          const dot = card.querySelector(".v2-opt-dot");
+          if (dot) {
+            dot.style.borderColor = isSel ? "#38bdf8" : "#64748b";
+            dot.style.background = isSel ? "#38bdf8" : "transparent";
+          }
+        });
+      };
+
+      opts.forEach((opt, idx) => {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.setAttribute("role", "radio");
+        card.setAttribute("aria-checked", idx === 0 ? "true" : "false");
+        card.style.cssText = "width:100%;text-align:left;padding:10px 12px;border-radius:8px;border:1px solid rgba(148,163,184,0.28);background:rgba(15,23,42,0.45);color:#f8fafc;cursor:pointer;display:flex;align-items:flex-start;gap:10px;transition:border-color 0.15s,background 0.15s;";
+
+        const dot = document.createElement("span");
+        dot.className = "v2-opt-dot";
+        dot.style.cssText = "width:14px;height:14px;min-width:14px;border-radius:999px;border:2px solid #64748b;margin-top:3px;box-sizing:border-box;";
+
+        const body = document.createElement("div");
+        body.style.cssText = "flex:1;min-width:0;";
+
+        const lbl = document.createElement("div");
+        lbl.style.cssText = "font-size:13px;font-weight:700;color:#f8fafc;";
+        lbl.textContent = String(opt.label || `Option ${idx + 1}`);
+        body.appendChild(lbl);
+
+        if (opt.summary) {
+          const sum = document.createElement("div");
+          sum.style.cssText = "font-size:12px;color:#cbd5e1;margin-top:2px;line-height:1.4;";
+          sum.textContent = String(opt.summary);
+          body.appendChild(sum);
+        }
+        if (opt.replacement_text) {
+          const prev = document.createElement("div");
+          prev.style.cssText = "font-size:11.5px;color:#93c5fd;margin-top:5px;padding:5px 8px;border-radius:5px;background:rgba(15,23,42,0.65);font-family:var(--font-mono, ui-monospace, Consolas, monospace);white-space:pre-wrap;word-break:break-word;";
+          prev.textContent = String(opt.replacement_text);
+          body.appendChild(prev);
+        }
+
+        card.appendChild(dot);
+        card.appendChild(body);
+        card.addEventListener("click", () => selectOpt(idx));
+        optsEl.appendChild(card);
+      });
+      selectOpt(0);
+    }
+  }
+
+  async function _submitV2AuditDecision(keepOriginal) {
+    const st = _v2DecisionState;
+    const item = st.pending[st.activeIdx];
+    if (!item) return;
+    const selProj = $("proj");
+    const slug = (selProj && selProj.value) || activeProject || "";
+    if (!slug) return;
+
+    const customEl = $("v2DecisionCustomText");
+    const statusEl = $("v2DecisionStatus");
+    const applyBtn = $("bV2DecisionApply");
+    const keepBtn = $("bV2DecisionKeep");
+    const opts = Array.isArray(item.options) ? item.options : [];
+    const chosenOpt = opts[st.selectedOptIdx] || {};
+    const replacementText = customEl ? customEl.value.trim() : "";
+
+    if (!keepOriginal && !replacementText) {
+      if (statusEl) {
+        statusEl.style.color = "#ef4444";
+        statusEl.textContent = "Please select an option or enter the replacement line (or click Keep Current Line).";
+      }
+      return;
+    }
+
+    if (applyBtn) applyBtn.disabled = true;
+    if (keepBtn) keepBtn.disabled = true;
+    if (statusEl) {
+      statusEl.style.color = "#fbbf24";
+      statusEl.textContent = keepOriginal ? "Dismissing finding…" : "Saving resolution to screenplay & syncing…";
+    }
+
+    try {
+      const reportStep = _v2AuditReportStep(st.stepNum);
+      const res = await callApi("/api/v2_early_audit_resolve", {
+        project: slug,
+        step: reportStep,
+        target: item.target || "",
+        scene_id: item.scene_id || "",
+        line_index: typeof item.line_index === "number" ? item.line_index : -1,
+        field: item.field || item.element_type || "",
+        issue: item.issue || "",
+        replacement_text: replacementText,
+        option_label: keepOriginal ? "Kept original line" : (chosenOpt.label || "Custom resolution"),
+        keep_original: !!keepOriginal,
+        record_bidirectional: true,
+      });
+
+      const updatedRep = res && res.report && Object.keys(res.report).length ? res.report : st.report;
+      window._v2EarlyAuditCache = window._v2EarlyAuditCache || {};
+      if (updatedRep) {
+        window._v2EarlyAuditCache[`${slug}:${reportStep}`] = updatedRep;
+        st.report = updatedRep;
+        st.pending = _v2GetPendingDecisions(updatedRep);
+      } else {
+        st.pending.splice(st.activeIdx, 1);
+      }
+      if (st.activeIdx >= st.pending.length) st.activeIdx = Math.max(0, st.pending.length - 1);
+
+      updateResolveBtnCount(st.stepNum, st.report);
+      const stepsToRender = reportStep === 12 ? [12, 17] : [reportStep];
+      stepsToRender.forEach((sNum) => {
+        const outEl = $(`v2EarlyAuditOut${sNum}`);
+        if (outEl && st.report && (!outEl.classList.contains("hidden") || sNum === st.stepNum)) {
+          renderV2EarlyAuditPanel(sNum, outEl, st.report);
+        }
+      });
+
+      if (reportStep === 3 && typeof loadV2Coverage === "function") await loadV2Coverage();
+      else if (reportStep === 4 && typeof loadV2Scope === "function") await loadV2Scope();
+      else if (reportStep === 5 && typeof loadV2StoryBreakdown === "function") await loadV2StoryBreakdown();
+      else if (reportStep === 6 && typeof loadV2Screenplay === "function") await loadV2Screenplay();
+      else if (reportStep === 7 && typeof loadV2Continuity === "function") await loadV2Continuity();
+      else if (reportStep === 12) {
+        if (typeof loadV2ShotList === "function") await loadV2ShotList();
+        if (typeof loadV2Keyframes === "function") await loadV2Keyframes();
+      }
+
+      _renderV2AuditDecisionModalItem();
+      if (!st.pending.length) {
+        setTimeout(() => _closeV2AuditDecisionModal(), 900);
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.style.color = "#ef4444";
+        statusEl.textContent = `Could not apply resolution: ${err.message || err}`;
+      }
+      if (applyBtn) applyBtn.disabled = false;
+      if (keepBtn) keepBtn.disabled = false;
+    }
+  }
+
+  function _bindV2AuditDecisionModal() {
+    if (_v2DecisionState.bound) return;
+    _v2DecisionState.bound = true;
+    const modal = $("v2AuditDecisionModal");
+    const closeBtn = $("bV2DecisionClose");
+    const prevBtn = $("bV2DecisionPrev");
+    const nextBtn = $("bV2DecisionNext");
+    const applyBtn = $("bV2DecisionApply");
+    const keepBtn = $("bV2DecisionKeep");
+
+    if (closeBtn) closeBtn.addEventListener("click", _closeV2AuditDecisionModal);
+    if (modal) {
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) _closeV2AuditDecisionModal();
+      });
+    }
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modal && modal.classList.contains("open")) {
+        _closeV2AuditDecisionModal();
+      }
+    });
+    if (prevBtn) {
+      prevBtn.addEventListener("click", () => {
+        if (_v2DecisionState.activeIdx > 0) {
+          _v2DecisionState.activeIdx--;
+          _renderV2AuditDecisionModalItem();
+        }
+      });
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener("click", () => {
+        if (_v2DecisionState.activeIdx < _v2DecisionState.pending.length - 1) {
+          _v2DecisionState.activeIdx++;
+          _renderV2AuditDecisionModalItem();
+        }
+      });
+    }
+    if (applyBtn) applyBtn.addEventListener("click", () => _submitV2AuditDecision(false));
+    if (keepBtn) keepBtn.addEventListener("click", () => _submitV2AuditDecision(true));
+  }
+
+  function openV2AuditDecisionModal(stepNum, reportData, initialIdx = 0) {
+    _bindV2AuditDecisionModal();
+    const pending = _v2GetPendingDecisions(reportData);
+    if (!pending.length) return false;
+    const sNum = Number(stepNum || 6);
+    _v2DecisionState.stepNum = sNum;
+    _v2DecisionState.report = reportData;
+    _v2DecisionState.pending = pending;
+    _v2DecisionState.activeIdx = Math.max(0, Math.min(Number(initialIdx) || 0, pending.length - 1));
+    const titleEl = $("v2DecisionModalTitle");
+    if (titleEl) {
+      const stepLbl = _V2_AUDIT_STEP_TITLES[sNum] || (reportData && reportData.label) || `Step ${String(sNum).padStart(2, "0")}`;
+      titleEl.textContent = `⚖️ Resolve Decisions — ${stepLbl}`;
+    }
+    _renderV2AuditDecisionModalItem();
+    const modal = $("v2AuditDecisionModal");
+    if (modal) modal.classList.add("open");
+    return true;
+  }
+
+  function renderV2EarlyAuditPanel(stepNum, outEl, res) {
+    if (!outEl || !res) return;
+    outEl.classList.remove("hidden");
+    const issues = Array.isArray(res.issues) ? res.issues : [];
+    const scorecard = Array.isArray(res.scorecard) ? res.scorecard : [];
+    const blindSpots = Array.isArray(res.blind_spots) ? res.blind_spots : [];
+    const pendingDecisions = _v2GetPendingDecisions(res);
+    const ambCount = pendingDecisions.length;
+    outEl.style.borderColor = ambCount > 0 ? "#f59e0b" : (issues.length ? "#38bdf8" : "#22c55e");
+    outEl.textContent = "";
+
+    const headRow = document.createElement("div");
+    headRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;";
+    const head = document.createElement("div");
+    head.style.fontWeight = "600";
+    head.textContent = res.message || `Step ${stepNum} audited.`;
+    headRow.appendChild(head);
+
+    if (ambCount > 0) {
+      const resolveInlineBtn = document.createElement("button");
+      resolveInlineBtn.type = "button";
+      resolveInlineBtn.className = "btn btn--primary";
+      resolveInlineBtn.style.cssText = "font-size:12px;padding:4px 10px;";
+      resolveInlineBtn.textContent = `⚖️ Resolve ${ambCount} Decision${ambCount === 1 ? "" : "s"}…`;
+      resolveInlineBtn.addEventListener("click", () => openV2AuditDecisionModal(stepNum, res, 0));
+      headRow.appendChild(resolveInlineBtn);
+    }
+    outEl.appendChild(headRow);
+
+    if (scorecard.length) {
+      const bar = document.createElement("div");
+      bar.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;";
+      scorecard.forEach((sc) => {
+        const pill = document.createElement("span");
+        const rating = String(sc.rating || "Pass");
+        const col = rating === "Fail" ? "#ef4444" : (rating === "Needs Work" ? "#f59e0b" : "#22c55e");
+        const icon = rating === "Fail" ? "✗" : (rating === "Needs Work" ? "⚠" : "✓");
+        pill.style.cssText = `font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid ${col};color:${col};background:rgba(15,23,42,0.45);`;
+        pill.title = sc.notes || "";
+        pill.textContent = `${icon} ${sc.criterion}: ${rating}`;
+        bar.appendChild(pill);
+      });
+      outEl.appendChild(bar);
+    }
+
+    if (issues.length) {
+      const ul = document.createElement("ul");
+      ul.style.cssText = "margin:6px 0 0 18px;padding:0;line-height:1.5;";
+      issues.slice(0, 14).forEach((it) => {
+        const li = document.createElement("li");
+        const sev = String(it.severity || "major").toUpperCase();
+        const isAmb = !!(it.ambiguous || it.needs_user_decision);
+        const tag = isAmb
+          ? "[Needs Decision]"
+          : (it.resolved_by === "user"
+            ? `[Resolved: ${it.resolution_label || "User"}]`
+            : (it.fixed ? "[Auto-fixed]" : "[Flagged]"));
+        const riskTxt = it.risk ? ` — Risk: ${it.risk}` : "";
+        const span = document.createElement("span");
+        span.textContent = `[${sev}] ${tag} ${it.target ? it.target + ": " : ""}${it.issue || ""}${riskTxt}`;
+        if (sev === "CRITICAL" && !it.fixed) span.style.color = "#f87171";
+        else if (isAmb) span.style.color = "#fbbf24";
+        else if (it.resolved_by === "user") span.style.color = "#4ade80";
+        li.appendChild(span);
+
+        if (isAmb) {
+          const pIdx = pendingDecisions.indexOf(it);
+          const pickBtn = document.createElement("button");
+          pickBtn.type = "button";
+          pickBtn.className = "btn btn--ghost";
+          pickBtn.style.cssText = "font-size:11px;padding:1px 7px;margin-left:8px;border:1px solid rgba(245,158,11,0.5);color:#fcd34d;";
+          pickBtn.textContent = "Resolve →";
+          pickBtn.addEventListener("click", () => openV2AuditDecisionModal(stepNum, res, pIdx >= 0 ? pIdx : 0));
+          li.appendChild(pickBtn);
+        }
+        ul.appendChild(li);
+      });
+      outEl.appendChild(ul);
+    }
+
+    if (blindSpots.length) {
+      const bsBox = document.createElement("div");
+      bsBox.style.cssText = "margin-top:6px;padding-top:6px;border-top:1px dashed rgba(148,163,184,0.35);font-size:11.5px;color:#94a3b8;";
+      bsBox.textContent = `Audit Blind Spots (not verified): ${blindSpots.slice(0, 3).join(" · ")}`;
+      outEl.appendChild(bsBox);
+    }
   }
 
   function initV2EarlyPromptAudit() {
+    document.querySelectorAll(".v2-resolve-decisions-btn").forEach((resolveBtn) => {
+      if (resolveBtn.dataset.resolveBound) return;
+      resolveBtn.dataset.resolveBound = "1";
+      resolveBtn.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) {
+          alert("Pick or save a book in Step 01 first.");
+          return;
+        }
+        const uiStep = Number(resolveBtn.getAttribute("data-resolve-step") || 6);
+        const reportStep = _v2AuditReportStep(uiStep);
+        const outEl = $(`v2EarlyAuditOut${uiStep}`) || $(`v2EarlyAuditOut${reportStep}`);
+        window._v2EarlyAuditCache = window._v2EarlyAuditCache || {};
+        const cacheKey = `${slug}:${reportStep}`;
+        let rep = window._v2EarlyAuditCache[cacheKey];
+        if (!rep) {
+          const origLbl = resolveBtn.textContent;
+          resolveBtn.disabled = true;
+          resolveBtn.textContent = "⏳ Loading Audit…";
+          try {
+            const saved = await callApi(`/api/v2_early_prompt_audit?project=${encodeURIComponent(slug)}`);
+            const stepsMap = (saved && saved.steps) || {};
+            Object.entries(stepsMap).forEach(([k, v]) => {
+              if (v && typeof v === "object") {
+                window._v2EarlyAuditCache[`${slug}:${k}`] = v;
+                updateResolveBtnCount(Number(k), v);
+              }
+            });
+            rep = stepsMap[String(reportStep)] || null;
+            if (rep && outEl) renderV2EarlyAuditPanel(uiStep, outEl, rep);
+          } catch (err) {
+            if (outEl) {
+              outEl.classList.remove("hidden");
+              outEl.style.borderColor = "#ef4444";
+              outEl.textContent = `Could not load audit results: ${err.message || err}`;
+            }
+            resolveBtn.disabled = false;
+            resolveBtn.textContent = origLbl;
+            return;
+          }
+          resolveBtn.disabled = false;
+          updateResolveBtnCount(uiStep, rep);
+        }
+
+        if (!rep) {
+          if (outEl) {
+            outEl.classList.remove("hidden");
+            outEl.style.borderColor = "#38bdf8";
+            outEl.textContent = `No Step ${String(uiStep).padStart(2, "0")} audit results found yet — run the Audit button first.`;
+          }
+          return;
+        }
+        const opened = openV2AuditDecisionModal(uiStep, rep, 0);
+        if (!opened && outEl) {
+          renderV2EarlyAuditPanel(uiStep, outEl, rep);
+          const note = document.createElement("div");
+          note.style.cssText = "margin-top:6px;color:#22c55e;font-weight:600;";
+          note.textContent = `✓ No [Needs Decision] findings remain in Step ${String(uiStep).padStart(2, "0")}.`;
+          outEl.appendChild(note);
+        }
+      });
+    });
+
     document.querySelectorAll(".v2-early-audit-btn").forEach((btn) => {
       if (btn.dataset.auditBound) return;
       btn.dataset.auditBound = "1";
@@ -6779,87 +7833,20 @@
             payload.scene = v2ShotScenes[v2ShotActiveSceneIdx].id || "";
           }
           const res = await callApi("/api/v2_early_prompt_audit", payload);
+          window._v2EarlyAuditCache = window._v2EarlyAuditCache || {};
+          window._v2EarlyAuditCache[`${slug}:${stepNum}`] = res;
+          updateResolveBtnCount(stepNum, res);
           if (outEl) {
-            const issues = Array.isArray(res.issues) ? res.issues : [];
-            const scorecard = Array.isArray(res.scorecard) ? res.scorecard : [];
-            const blindSpots = Array.isArray(res.blind_spots) ? res.blind_spots : [];
-            const hasFail = scorecard.some(c => String(c.rating || "").toLowerCase() === "fail") || issues.some(it => it.ambiguous || it.severity === "critical");
-            const okColor = hasFail ? "#f87171" : (issues.length ? "#f59e0b" : "#22c55e");
-            outEl.style.borderColor = okColor;
-            outEl.textContent = "";
-
-            const head = document.createElement("div");
-            head.style.cssText = `font-weight:700;color:${okColor};margin-bottom:${(scorecard.length || issues.length || blindSpots.length) ? "6px" : "0"}`;
-            head.textContent = res.message || `Step ${stepNum} audited.`;
-            outEl.appendChild(head);
-
-            // 1. Per-criterion Scorecard (Pass / Needs Work / Fail)
-            if (scorecard.length) {
-              const scBar = document.createElement("div");
-              scBar.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px";
-              scorecard.forEach((scItem) => {
-                const rating = String(scItem.rating || "Pass");
-                const rLow = rating.toLowerCase();
-                const bg = rLow === "fail" ? "rgba(239,68,68,0.16)" : (rLow === "needs work" ? "rgba(245,158,11,0.16)" : "rgba(34,197,94,0.14)");
-                const bd = rLow === "fail" ? "#ef4444" : (rLow === "needs work" ? "#f59e0b" : "#22c55e");
-                const fg = rLow === "fail" ? "#fca5a5" : (rLow === "needs work" ? "#fde68a" : "#86efac");
-                const pill = document.createElement("span");
-                pill.title = String(scItem.reason || "");
-                pill.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:${bg};border:1px solid ${bd};color:${fg};font-size:11px;font-weight:600`;
-                pill.textContent = `${scItem.criterion || "Check"}: ${rating}`;
-                scBar.appendChild(pill);
-              });
-              outEl.appendChild(scBar);
-            }
-
-            // 2. Severity-ordered Issues & Targeted Fixes / Ambiguities
-            if (issues.length) {
-              const ul = document.createElement("ul");
-              ul.style.cssText = "margin:0;padding-left:16px;display:flex;flex-direction:column;gap:3px;";
-              issues.slice(0, 12).forEach((it) => {
-                const li = document.createElement("li");
-                const sev = String(it.severity || "major").toUpperCase();
-                const sevColor = sev === "CRITICAL" ? "#f87171" : (sev === "MINOR" ? "#94a3b8" : "#fbbf24");
-                const sevTag = document.createElement("span");
-                sevTag.style.cssText = `font-weight:700;color:${sevColor};margin-right:4px`;
-                sevTag.textContent = `[${sev}]`;
-                li.appendChild(sevTag);
-                const stateTag = it.ambiguous ? "[Needs Decision] " : (it.fixed ? "[Auto-fixed] " : "[Check] ");
-                const riskTxt = it.risk ? ` — Risk: ${it.risk}` : "";
-                li.appendChild(document.createTextNode(`${stateTag}${it.target ? it.target + ": " : ""}${it.issue || ""}${riskTxt}`));
-                ul.appendChild(li);
-              });
-              if (issues.length > 12) {
-                const more = document.createElement("li");
-                more.textContent = `…and ${issues.length - 12} more item(s).`;
-                ul.appendChild(more);
-              }
-              outEl.appendChild(ul);
-            }
-
-            // 3. Blind Spots & Unverified Assumptions
-            if (blindSpots.length) {
-              const bsBox = document.createElement("div");
-              bsBox.style.cssText = "margin-top:6px;padding-top:6px;border-top:1px dashed #334155;color:#94a3b8;font-size:11px";
-              const bsTitle = document.createElement("div");
-              bsTitle.style.cssText = "font-weight:700;color:#cbd5e1;margin-bottom:2px";
-              bsTitle.textContent = "Blind Spots & Assumptions:";
-              bsBox.appendChild(bsTitle);
-              const bUl = document.createElement("ul");
-              bUl.style.cssText = "margin:0;padding-left:16px;display:flex;flex-direction:column;gap:2px";
-              blindSpots.slice(0, 6).forEach((b) => {
-                const li = document.createElement("li");
-                li.textContent = String(b || "");
-                bUl.appendChild(li);
-              });
-              bsBox.appendChild(bUl);
-              outEl.appendChild(bsBox);
-            }
+            renderV2EarlyAuditPanel(stepNum, outEl, res);
           }
-          if (stepNum === 12) await loadV2ShotList();
+          if (stepNum === 12) {
+            await loadV2ShotList();
+            if (typeof loadV2Keyframes === "function") await loadV2Keyframes();
+          }
           else if (stepNum === 7 && typeof loadV2Continuity === "function") await loadV2Continuity();
           else if (stepNum === 6 && typeof loadV2Screenplay === "function") await loadV2Screenplay();
-          else if (stepNum === 5 && typeof loadV2Beats === "function") await loadV2Beats();
+          else if (stepNum === 5 && typeof loadV2StoryBreakdown === "function") await loadV2StoryBreakdown();
+          else if (stepNum === 4 && typeof loadV2Scope === "function") await loadV2Scope();
           else if (stepNum === 3 && typeof loadV2Coverage === "function") await loadV2Coverage();
         } catch (err) {
           if (outEl) {
@@ -8853,6 +9840,7 @@
       ta.className = "v2-kf-prompt";
       ta.rows = 4;
       ta.value = shot.prompt || "";
+      ta.setAttribute("aria-label", `Prompt for keyframe ${shot.id}`);
       ta.style.cssText = "width:100%;padding:6px 8px;background:#0a0d14;color:#e2e8f0;border:1px solid #334155;border-radius:4px;font-size:11px;resize:vertical;margin-top:4px";
       card.appendChild(ta);
 
@@ -8965,6 +9953,55 @@
         reader.readAsDataURL(f);
       });
 
+      const btnSavePrompt = document.createElement("button");
+      btnSavePrompt.type = "button";
+      btnSavePrompt.className = "btn btn--secondary v2-kf-save-prompt-btn";
+      btnSavePrompt.style.cssText = "padding:4px 8px;font-size:var(--text-xs)";
+      btnSavePrompt.textContent = "💾 Save Prompt";
+      btnSavePrompt.title = `Save edited prompt for ${shot.id} without regenerating the image`;
+      const markPromptDirty = () => {
+        const isDirty = ta.value.trim() !== String(shot.prompt || "").trim();
+        btnSavePrompt.textContent = isDirty ? "💾 Save Prompt •" : "💾 Save Prompt";
+        btnSavePrompt.style.borderColor = isDirty ? "#f59e0b" : "";
+        btnSavePrompt.style.color = isDirty ? "#fcd34d" : "";
+      };
+      ta.addEventListener("input", markPromptDirty);
+      btnSavePrompt.addEventListener("click", async () => {
+        if (!v2KfState.project) return;
+        const newPrompt = ta.value.trim();
+        btnSavePrompt.disabled = true;
+        btnSavePrompt.textContent = "⏳ Saving…";
+        try {
+          await callApi("/api/v2_keyframe_prompts_save", {
+            project: v2KfState.project,
+            prompts: { [shot.id]: newPrompt },
+          });
+          shot.prompt = newPrompt;
+          shot.prompt_outdated = false;
+          btnSavePrompt.style.borderColor = "#22c55e";
+          btnSavePrompt.style.color = "#4ade80";
+          btnSavePrompt.textContent = "✓ Saved";
+          setV2KfStatus(`✓ Saved prompt for ${shot.id} (no image re-rendered).`);
+          proposeUpstreamSync({
+            project: v2KfState.project,
+            kind: "keyframe_to_shotlist",
+            affectedStepNums: [12],
+            title: `🔄 Sync ${shot.id} Prompt Edit Back to Step 12 (Shot List)?`,
+            message: `You edited the keyframe prompt for ${shot.id} in Step 17.\n\nWould you like to update Step 12 (Shot List) to match?`,
+            payload: { prompts: { [shot.id]: newPrompt } },
+            onSynced: () => setV2KfStatus(`✓ Saved prompt & synced ${shot.id} back to Step 12 (Shot List).`),
+          });
+          setTimeout(() => {
+            btnSavePrompt.disabled = false;
+            markPromptDirty();
+          }, 1400);
+        } catch (err) {
+          btnSavePrompt.disabled = false;
+          markPromptDirty();
+          setV2KfStatus(`Could not save prompt for ${shot.id}: ` + (err.message || err), true);
+        }
+      });
+
       const btnUp = document.createElement("button");
       btnUp.type = "button";
       btnUp.className = "btn btn--ghost";
@@ -8974,6 +10011,7 @@
       btnUp.addEventListener("click", () => upIn.click());
 
       row.appendChild(btnGen);
+      row.appendChild(btnSavePrompt);
       row.appendChild(btnUp);
 
       // #3 Clone Prev Frame & Edit button (shown when a prior rendered shot or Scene Anchor exists and shot is unlocked)
@@ -9734,12 +10772,33 @@
         setV2KfStatus(`Auditing shot-to-shot prop persistence, grounded surfaces & character/prop scale (${curSc || "all scenes"})…`);
         try {
           const res = await callApi("/api/v2_shot_continuity_audit", { project: slug, scene: curSc, record_bidirectional: true });
+          const rep12 = res && res.report ? res.report : {
+            step: 12,
+            label: "Step 12: Shot List",
+            engine: res.engine || "deterministic",
+            issues: Array.isArray(res.issues) ? res.issues : [],
+            scorecard: Array.isArray(res.scorecard) ? res.scorecard : [],
+            blind_spots: Array.isArray(res.blind_spots) ? res.blind_spots : [],
+            ambiguous_count: Number(res.ambiguous_count || 0),
+            message: res.fixes_applied
+              ? `Continuity Audit (${res.engine}): ${res.fixes_applied} fix(es) applied` + (res.ambiguous_count ? `, ${res.ambiguous_count} need decision.` : ".")
+              : `Continuity Audit (${res.engine}): All ${res.scenes_audited} scene(s) checked` + (res.ambiguous_count ? ` — ${res.ambiguous_count} need decision.` : "."),
+          };
+          window._v2EarlyAuditCache = window._v2EarlyAuditCache || {};
+          window._v2EarlyAuditCache[`${slug}:12`] = rep12;
+          updateResolveBtnCount(12, rep12);
+          const out17 = $("v2EarlyAuditOut17");
+          if (out17) renderV2EarlyAuditPanel(17, out17, rep12);
+          const out12 = $("v2EarlyAuditOut12");
+          if (out12 && !out12.classList.contains("hidden")) renderV2EarlyAuditPanel(12, out12, rep12);
           await loadV2Keyframes();
           if (typeof loadV2WorkflowSync === "function") await loadV2WorkflowSync(slug);
           setV2KfStatus(
             res.fixes_applied
               ? `✓ Continuity Audit (${res.engine}): ${res.fixes_applied} fix(es) applied & synced → ${(res.updated_steps || []).join(" · ")}`
-              : `✓ Continuity Audit (${res.engine}): All ${res.scenes_audited} scene(s) passed with no prop or scale conflicts.`
+              : (res.ambiguous_count
+                ? `⚠️ Continuity Audit (${res.engine}): ${res.ambiguous_count} finding(s) need your decision — click ⚖️ Resolve Decisions.`
+                : `✓ Continuity Audit (${res.engine}): All ${res.scenes_audited} scene(s) passed with no prop or scale conflicts.`)
           );
         } catch (err) {
           setV2KfStatus("Continuity audit failed: " + (err.message || err), true);

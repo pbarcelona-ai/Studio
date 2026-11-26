@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "blender": {
+      "command": ".venv/Scripts/python.exe",
+      "args": [
+        "scripts/local_runners/blender_mcp_server.py"
+      ]
+    }
+  }
+}

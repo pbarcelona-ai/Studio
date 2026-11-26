@@ -401,6 +401,7 @@
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--secondary" id="v2CovBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate Coverage</button>
                 <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="3" style="padding:5px 12px;font-size:var(--text-xs)" title="AI check character species/scale and event continuity before beats and screenplay">🔍 Audit Continuity</button>
+                <button type="button" class="btn btn--secondary v2-resolve-decisions-btn" data-resolve-step="3" style="padding:5px 12px;font-size:var(--text-xs);border-color:#f59e0b;color:#fde68a" title="Open popup to inspect highlighted Step 03 findings and resolve [Needs Decision] conflicts">⚖️ Resolve Decisions</button>
                 <button type="button" class="btn btn--ghost" id="v2CovReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
             </div>
@@ -437,6 +438,7 @@
               <div id="v2ScopeBookStats" style="font-size:var(--text-sm);color:#e2e8f0">Analyzing current book reading length and chapter count…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="4" style="padding:4px 10px;font-size:var(--text-xs)" title="Check runtime, chapter pacing, aspect ratio, and rating alignment">🔍 Audit Scope</button>
+                <button type="button" class="btn btn--secondary v2-resolve-decisions-btn" data-resolve-step="4" style="padding:4px 10px;font-size:var(--text-xs);border-color:#f59e0b;color:#fde68a" title="Open popup to inspect highlighted Step 04 scope advisories and resolve [Needs Decision] conflicts">⚖️ Resolve Decisions</button>
                 <button type="button" class="btn btn--ghost" id="v2ScopeReload" style="padding:4px 10px;font-size:var(--text-xs)">↻ Recalculate from Book</button>
               </div>
             </div>
@@ -534,6 +536,7 @@
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--secondary" id="v2BeatsBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate / Rebuild Beats</button>
                 <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="5" style="padding:5px 12px;font-size:var(--text-xs)" title="AI beat-by-beat check for location teleports, time jumps, and cast/prop continuity">🔍 Audit Beats</button>
+                <button type="button" class="btn btn--secondary v2-resolve-decisions-btn" data-resolve-step="5" style="padding:5px 12px;font-size:var(--text-xs);border-color:#f59e0b;color:#fde68a" title="Open popup to inspect highlighted Step 05 beat issues and resolve [Needs Decision] conflicts">⚖️ Resolve Decisions</button>
                 <button type="button" class="btn btn--ghost" id="v2BeatsReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
             </div>
@@ -629,16 +632,15 @@
               </label>
               <button type="button" class="btn btn--ghost" id="bV2SpHumanize" title="Strip stiff AI prose clichés &amp; em-dash clutter so screenplay &amp; spoken lines sound natural">✍️ Humanize Script &amp; Dialogue</button>
               <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="6" style="padding:5px 12px;font-size:var(--text-xs)" title="AI beat-by-beat screenplay check for prop contradictions, room leaks, surfaces, and scale">🔍 Audit Screenplay Continuity</button>
+              <button type="button" class="btn btn--secondary v2-resolve-decisions-btn" id="bV2SpResolveDecisions" data-resolve-step="6" style="padding:5px 12px;font-size:var(--text-xs);border-color:#f59e0b;color:#fde68a" title="Open interactive popup to inspect highlighted offending lines and resolve [Needs Decision] continuity findings">⚖️ Resolve Decisions</button>
               <span id="spFiles"></span>
               <span id="v2SpHumanizeStatus" style="font-size:var(--text-xs);color:#34d399" aria-live="polite"></span>
           </div>
           <div id="v2EarlyAuditOut6" class="hidden" style="margin-bottom:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
 
-          <!-- MCP Integration Buttons -->
+          <!-- Screenplay External Tool Integration -->
           <div id="spMcpTools" class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;padding:12px;background:var(--bg-tertiary, #1e293b);border-radius:8px;border:1px solid var(--border, #334155);">
-              <span style="font-size:var(--text-xs);color:#94a3b8;font-weight:600">MCP Integrations:</span>
-              <button type="button" class="btn btn--secondary" id="spMcpPremiere" title="Send FDX to Premiere Pro via MCP" style="padding:6px 12px;font-size:var(--text-xs)">🎬 Send to Premiere Pro</button>
-              <button type="button" class="btn btn--secondary" id="spMcpBlender" title="Generate 3D previs for current scene via Blender MCP" style="padding:6px 12px;font-size:var(--text-xs)">🎯 Generate Previs (Blender)</button>
+              <span style="font-size:var(--text-xs);color:#94a3b8;font-weight:600">Screenplay Integration:</span>
               <button type="button" class="btn btn--secondary" id="spMcpFinalDraft" title="Open FDX in Final Draft Web via Playwright MCP" style="padding:6px 12px;font-size:var(--text-xs)">📝 Open in Final Draft Web</button>
               <span id="spMcpStatus" style="font-size:var(--text-xs);color:#64748b;margin-left:auto"></span>
           </div>
@@ -651,7 +653,8 @@
                 <span id="v2SpCount" style="font-size:var(--text-sm);font-weight:700;color:#f59e0b">Loading scenes…</span>
                 <button type="button" class="btn btn--secondary" id="v2SpNext" style="padding:4px 10px;font-size:var(--text-xs)">Next Scene ➔</button>
               </div>
-              <div style="display:flex;align-items:center;gap:6px">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <button type="button" class="btn btn--primary" id="v2SpSaveAll" style="padding:4px 12px;font-size:var(--text-xs)" title="Save all scene scripts at once and sync downstream steps">💾 Save All Scenes</button>
                 <button type="button" class="btn btn--primary" id="v2SpViewSingle" style="padding:4px 10px;font-size:var(--text-xs)">Edit One Scene</button>
                 <button type="button" class="btn btn--ghost" id="v2SpViewAll" style="padding:4px 10px;font-size:var(--text-xs)">View All Scenes</button>
                 <button type="button" class="btn btn--ghost" id="v2SpRefresh" style="padding:4px 10px;font-size:var(--text-xs)" title="Reload scenes from project">↻ Reload</button>
@@ -699,8 +702,9 @@
                 <small style="color:#64748b;margin-top:4px;display:block">Only affects the currently selected scene. The AI will rewrite the scene incorporating your instructions.</small>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px">
-                <div style="display:flex;align-items:center;gap:10px">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                   <button type="button" class="btn btn--primary" id="v2SpSave" style="padding:6px 16px">💾 Save Scene Changes</button>
+                  <button type="button" class="btn btn--secondary v2-sp-save-all-btn" style="padding:6px 16px" title="Save all scene scripts at once">💾 Save All Scenes</button>
                   <span id="v2SpSaveMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
                 </div>
                 <small style="color:#64748b">Editing a scene automatically flags downstream shots/audio for selective re-sync.</small>
@@ -741,6 +745,7 @@
                 <button type="button" class="btn btn--primary" id="bV2ContBootstrap" style="padding:6px 14px;font-size:var(--text-xs)">⚡ Quick-Build from Script (Instant)</button>
                 <button type="button" class="btn btn--secondary" id="bV2ContGenerate" style="padding:6px 14px;font-size:var(--text-xs)">✨ Write with AI</button>
                 <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="7" style="padding:6px 14px;font-size:var(--text-xs)" title="AI check every character, location, and prop token for style neutrality, solid wardrobe, scale, and rooms">🔍 Audit Tokens &amp; Scale</button>
+                <button type="button" class="btn btn--secondary v2-resolve-decisions-btn" data-resolve-step="7" style="padding:6px 14px;font-size:var(--text-xs);border-color:#f59e0b;color:#fde68a" title="Open popup to inspect highlighted Step 07 token issues and resolve [Needs Decision] conflicts">⚖️ Resolve Decisions</button>
                 <button type="button" class="btn btn--secondary" id="bV2ContApprove" style="padding:6px 14px;font-size:var(--text-xs)" disabled>✓ Approve Continuity Book</button>
                 <button type="button" class="btn btn--ghost" id="v2ContReload" style="padding:6px 10px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
@@ -825,12 +830,14 @@
               <div id="v2CastSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading characters for this book…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--primary" id="bV2CastImportToggle" style="padding:5px 12px;font-size:var(--text-xs)">📷 Import Photo</button>
+                <button type="button" class="btn btn--secondary" id="bV2CastBlenderLineup" style="padding:5px 12px;font-size:var(--text-xs)" title="Render a true-to-scale 3D Cast Height Lineup (adult vs child vs dog vs toy) &amp; .blend/.glb in standalone Blender 5.4">📏 3D Cast Scale Lineup (Blender)</button>
                 <button type="button" class="btn btn--secondary" id="bV2CastAddToggle" style="padding:5px 12px;font-size:var(--text-xs)">➕ Add Character</button>
                 <button type="button" class="btn btn--secondary" id="bV2CastCustomTypeToggle" style="padding:5px 12px;font-size:var(--text-xs)">✨ + Custom Type</button>
                 <button type="button" class="btn btn--secondary" id="bV2CastSync" style="padding:5px 12px;font-size:var(--text-xs)">🔄 Sync from Book</button>
                 <button type="button" class="btn btn--ghost" id="bV2CastReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
             </div>
+            <div id="v2CastBlenderOut" class="hidden" style="margin-top:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
 
             <!-- Inline Import Reference Photo & Convert to Film Style (mirrors Step 11 Sets Import) -->
             <div id="v2CastImportForm" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid #232d3f;display:none;flex-direction:column;gap:8px">
@@ -1086,9 +1093,14 @@
           <div class="direct-story-card" style="margin-bottom:var(--space-3)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
               <div id="v2TurnSummary" style="font-size:var(--text-sm);color:#cbd5e1">Loading characters for this book…</div>
-              <button type="button" class="btn btn--ghost" id="bV2TurnReload">↻ Reload</button>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn--secondary" id="bV2TurnBlenderGuides" style="padding:5px 12px;font-size:var(--text-xs)" title="Render true-scale 4-angle (Front, 3/4, Profile, Back) 3D character turnaround guides &amp; cast lineup in standalone Blender 5.4">🧊 3D Turnaround Guides (Blender)</button>
+                <button type="button" class="btn btn--ghost v2-blender-live-btn" data-blender-context="cast" style="padding:5px 12px;font-size:var(--text-xs)" title="Launch standalone Blender 5.4 GUI with Live MCP Bridge for cast/turnaround sculpting">🖥️ Launch Blender Live</button>
+                <button type="button" class="btn btn--ghost" id="bV2TurnReload">↻ Reload</button>
+              </div>
             </div>
             <div id="v2TurnStatus" style="font-size:var(--text-xs);color:#34d399;margin-top:4px" aria-live="polite"></div>
+            <div id="v2TurnBlenderOut" class="hidden" style="margin-top:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
           </div>
           <div id="v2TurnList" style="display:flex;flex-direction:column;gap:12px"></div>
         </div>
@@ -1117,11 +1129,14 @@
               <div id="v2LocSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading locations &amp; sets for this book…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--primary" id="bV2LocImportToggle" style="padding:5px 12px;font-size:var(--text-xs)">📷 Import Reference Photo</button>
+                <button type="button" class="btn btn--secondary" id="bV2LocBlenderAngles" style="padding:5px 12px;font-size:var(--text-xs)" title="Render 5 consistent true-scale camera angles (Wide, Reverse, Corner, OTS, Top-Down) from one 3D room in standalone Blender">🧊 Render 3D Multi-Angle Set</button>
+                <button type="button" class="btn btn--ghost v2-blender-live-btn" data-blender-context="set" style="padding:5px 12px;font-size:var(--text-xs)" title="Launch standalone Blender 5.4 GUI with Live MCP Bridge on 127.0.0.1:9876 to adjust 3D sets directly">🖥️ Launch Blender Live</button>
                 <button type="button" class="btn btn--secondary" id="bV2LocAddToggle" style="padding:5px 12px;font-size:var(--text-xs)">➕ Add Set</button>
                 <button type="button" class="btn btn--secondary" id="bV2LocBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Extract Sets from Script</button>
                 <button type="button" class="btn btn--ghost" id="bV2LocReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
             </div>
+            <div id="v2LocBlenderOut" class="hidden" style="margin-top:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
 
             <!-- Inline Import Reference Photo & Associate with Location / View -->
             <div id="v2LocImportForm" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid #232d3f;display:none;flex-direction:column;gap:8px">
@@ -1212,10 +1227,14 @@
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--primary" id="bV2ShotsBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate Shot List</button>
                 <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="12" style="padding:5px 12px;font-size:var(--text-xs)" title="AI frame-by-frame audit for prop persistence, grounded surfaces, and character/prop scale across shots">🔍 Audit Continuity &amp; Scale</button>
+                <button type="button" class="btn btn--secondary v2-resolve-decisions-btn" data-resolve-step="12" style="padding:5px 12px;font-size:var(--text-xs);border-color:#f59e0b;color:#fde68a" title="Open popup to inspect highlighted Step 12 shot issues and resolve [Needs Decision] conflicts">⚖️ Resolve Decisions</button>
+                <button type="button" class="btn btn--secondary" id="bV2ShotsBlenderPrevis" style="padding:5px 12px;font-size:var(--text-xs)" title="Render headless Blender 3D previs stills, .blend &amp; .glb for active scene">🎯 3D Previs (Blender)</button>
+                <button type="button" class="btn btn--secondary" id="bV2ShotsBlenderAnimatic" style="padding:5px 12px;font-size:var(--text-xs)" title="Render headless Blender 3D camera-move MP4 animatic for active scene">🎬 3D Animatic MP4</button>
                 <button type="button" class="btn btn--secondary" id="bV2ShotsApprove" style="padding:5px 12px;font-size:var(--text-xs)">✓ Approve Shot List</button>
                 <button type="button" class="btn btn--ghost" id="bV2ShotsReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
             </div>
+            <div id="v2ShotsBlenderOut" class="hidden" style="margin-top:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
             <div id="v2EarlyAuditOut12" class="hidden" style="margin-top:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
             <!-- Scene Filter Pills -->
             <div id="v2ShotsPills" style="display:flex;gap:6px;overflow-x:auto;padding-top:8px" role="tablist" aria-label="Filter shots by scene"></div>
@@ -1568,6 +1587,9 @@
                 <button type="button" class="btn btn--ghost" id="bV2KfRebuildPrompts" title="Rebuild this scene's unlocked prompts from latest Steps 08-12 (cast, turnarounds, sets, props, shotlist)">🔄 Sync Scene Prompts</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfRebuildAllPrompts" title="Rebuild ALL unlocked scenes' prompts across the entire project from latest Steps 08-12">🔄 Sync All Scenes</button>
                 <button type="button" class="btn btn--secondary" id="bV2KfContAudit" title="Audit shot-to-shot prop persistence, grounded surfaces, and character/prop proportions across this scene and feed fixes back to Step 12, Step 17 & Bi-Directional Sync">🔍 Audit Continuity &amp; Scale</button>
+                <button type="button" class="btn btn--secondary v2-resolve-decisions-btn" id="bV2KfResolveDecisions" data-resolve-step="17" style="border-color:#f59e0b;color:#fde68a" title="Open popup to inspect highlighted Step 12/17 shot continuity findings and resolve [Needs Decision] conflicts">⚖️ Resolve Decisions</button>
+                <button type="button" class="btn btn--secondary" id="bV2KfBlenderGuide" title="Render true-scale Blender 3D blocking &amp; normalized depth guides for active scene (auto-locked into Step 17 keyframe renders)">📐 3D Scale &amp; Depth Guides</button>
+                <button type="button" class="btn btn--ghost v2-blender-live-btn" data-blender-context="keyframe" title="Launch standalone Blender 5.4 GUI with Live MCP Bridge to inspect/tweak 3D blocking scenes">🖥️ Launch Blender Live</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfPlateAudit" title="Build side-by-side contact sheets comparing every Step 10 character &amp; Step 11 set plate against all Step 17 keyframes">🧩 Plate Consistency Sheets</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfLocalModelsToggle" title="Check &amp; install 100% free local consistency models (FLUX.1 Kontext Dev, FLUX.2 Klein 9B, Ollama Vision QA, ComfyUI Angles)">🆓 Free Local Engines</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfReload">↻ Reload</button>
@@ -1578,6 +1600,7 @@
             <div id="v2KfScenes" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:6px"></div>
             <div id="v2KfMissingSetsBanner" class="v2-kf-sets-banner" style="display:none"></div>
             <div id="v2KfStatus" style="font-size:var(--text-xs);color:#34d399" aria-live="polite"></div>
+            <div id="v2EarlyAuditOut17" class="hidden" style="margin-top:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
           </div>
 
           <!-- Missing Step 11 Set Plates Popup Modal -->
@@ -1898,6 +1921,7 @@
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <input type="text" id="v2CdBullets" aria-label="Code-drawn explainer bullet points" placeholder="Optional bullets separated by | (e.g. Lift off | Pass Mars | Reach Titan)" style="flex:1;min-width:220px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
               <button type="button" class="btn btn--primary" id="bV2CdRender" style="padding:6px 14px;font-size:var(--text-xs)">🎬 Render Code-Drawn MP4</button>
+              <button type="button" class="btn btn--secondary" id="bV2CdBlender3D" style="padding:6px 14px;font-size:var(--text-xs)" title="Render 3D extruded bevelled title card &amp; animated camera sweep via standalone Blender 5.4">🧊 Render 3D Title Card (Blender)</button>
             </div>
             <div id="v2CdStatus" style="font-size:var(--text-xs);color:#34d399;margin-top:6px" aria-live="polite"></div>
             <div id="v2CdPreview" style="margin-top:8px"></div>
@@ -3620,6 +3644,60 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
     </section>
 </main>
 </div> <!-- #classicPanels -->
+
+<div class="modal-overlay" id="v2AuditDecisionModal" role="dialog" aria-modal="true" aria-labelledby="v2DecisionModalTitle">
+    <div class="modal" style="max-width:740px;width:min(740px,calc(100vw - 32px));max-height:90vh;display:flex;flex-direction:column;">
+        <div class="modal__header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <h2 class="modal__title" id="v2DecisionModalTitle" style="margin:0;">⚖️ Resolve Continuity Decisions</h2>
+                <span id="v2DecisionProgress" style="font-size:12px;padding:3px 9px;border-radius:999px;background:rgba(245,158,11,0.18);border:1px solid rgba(245,158,11,0.45);color:#fcd34d;font-weight:600;"></span>
+            </div>
+            <button type="button" class="btn btn--ghost" id="bV2DecisionClose" aria-label="Close continuity decision dialog" style="padding:4px 10px;">✕</button>
+        </div>
+        <div class="modal__body" style="overflow-y:auto;display:flex;flex-direction:column;gap:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <span id="v2DecisionSeverity" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;text-transform:uppercase;"></span>
+                    <span id="v2DecisionTarget" style="font-size:13px;font-weight:700;color:var(--text-primary,#f8fafc);"></span>
+                    <span id="v2DecisionChar" class="hidden" style="font-size:11px;padding:2px 8px;border-radius:6px;background:rgba(139,92,246,0.18);color:#c4b5fd;"></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <button type="button" class="btn btn--ghost" id="bV2DecisionPrev" style="font-size:12px;padding:4px 10px;">◀ Prev</button>
+                    <button type="button" class="btn btn--ghost" id="bV2DecisionNext" style="font-size:12px;padding:4px 10px;">Next ▶</button>
+                </div>
+            </div>
+
+            <div style="padding:11px 13px;border-radius:8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.35);">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fbbf24;margin-bottom:4px;">Finding Description</div>
+                <div id="v2DecisionIssue" style="font-size:13.5px;line-height:1.45;color:var(--text-primary,#f8fafc);"></div>
+                <div id="v2DecisionRisk" style="font-size:12px;line-height:1.4;color:#cbd5e1;margin-top:6px;"></div>
+            </div>
+
+            <div>
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#94a3b8;margin-bottom:5px;">Current Line on Disk (Area of Concern Highlighted)</div>
+                <div id="v2DecisionOffendingLine" style="padding:11px 13px;border-radius:8px;background:rgba(15,23,42,0.72);border:1px solid rgba(148,163,184,0.28);font-family:var(--font-mono, ui-monospace, Consolas, monospace);font-size:13px;line-height:1.55;white-space:pre-wrap;color:#e2e8f0;"></div>
+            </div>
+
+            <div>
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#94a3b8;margin-bottom:6px;">Conflicting Options — Choose Your Resolution</div>
+                <div id="v2DecisionOptions" role="radiogroup" aria-label="Conflicting resolution options" style="display:flex;flex-direction:column;gap:8px;"></div>
+            </div>
+
+            <div>
+                <label for="v2DecisionCustomText" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#94a3b8;margin-bottom:5px;">Resulting Line to Save (Editable)</label>
+                <textarea id="v2DecisionCustomText" rows="3" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;background:rgba(15,23,42,0.65);border:1px solid rgba(148,163,184,0.35);color:#f8fafc;font-size:13px;line-height:1.45;resize:vertical;"></textarea>
+            </div>
+
+            <div id="v2DecisionStatus" aria-live="polite" style="font-size:12.5px;min-height:18px;"></div>
+        </div>
+        <div class="modal__footer" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <button type="button" class="btn btn--ghost" id="bV2DecisionKeep">Keep Current Line (Dismiss)</button>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button type="button" class="btn btn--primary" id="bV2DecisionApply">✓ Apply Resolution</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div class="modal-overlay" id="warnModal" role="alertdialog" aria-modal="true" aria-labelledby="warnTitle" aria-describedby="warnBody">
     <div class="modal">

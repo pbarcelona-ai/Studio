@@ -278,7 +278,9 @@ def audit_scene_shots_llm(
         "- List any 'blind_spots' (missing set geometry, unspecified character heights, or unverified assumptions).\n"
         "Preserve 100% of the story beats, dialogue intent, camera shot types, and character names.\n"
         "Respond ONLY with valid JSON: "
-        '{"fixes": [{"n": 5, "severity": "critical|major|minor", "issue": "short reason", "risk": "visual impact", "ambiguous": false, '
+        '{"fixes": [{"n": 5, "field": "composition|action|blocking|lighting", "severity": "critical|major|minor", "issue": "short reason", "risk": "visual impact", "ambiguous": false, '
+        '"highlight": "exact offending phrase copied verbatim from that shot field (required if ambiguous)", '
+        '"options": [{"label": "Option A", "summary": "why/tradeoff", "replacement_text": "full rewritten field text"}], '
         '"composition": "updated composition (empty if ambiguous)", "blocking": "optional", "action": "optional", "props": ["optional updated props list"]}], '
         '"blind_spots": ["optional missing context"]}\n'
         "Return {\"fixes\": [], \"blind_spots\": []} if every shot is already consistent.\n\n"
@@ -313,16 +315,27 @@ def audit_scene_shots_llm(
         issue_txt = str(fx.get("issue") or "Aligned shot continuity & scale").strip()
         if is_amb:
             # Never auto-overwrite when the AI flags genuine ambiguity — surface for human decision!
+            amb_field = str(fx.get("field") or "").strip().lower()
+            if amb_field not in ("composition", "action", "blocking", "lighting"):
+                amb_field = "composition"
+            cur_val = str(sh.get(amb_field) or sh.get("composition") or sh.get("action") or "")
+            raw_opts = fx.get("options") if isinstance(fx.get("options"), list) else []
             applied.append(
                 {
                     "shot": f"{sc_id}-{n:02d}",
-                    "fields": [],
+                    "scene_id": sc_id,
+                    "shot_n": n,
+                    "field": amb_field,
+                    "fields": [amb_field],
                     "severity": sev,
                     "risk": risk,
                     "ambiguous": True,
                     "needs_user_decision": True,
                     "fixed": False,
                     "issue": issue_txt,
+                    "current_text": cur_val,
+                    "highlight": str(fx.get("highlight") or "").strip(),
+                    "options": raw_opts,
                 }
             )
             continue

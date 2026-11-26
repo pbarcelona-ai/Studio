@@ -437,6 +437,32 @@ def mcp_blender_generate_previs(r: Request):
     script_path = _write_blender_previs_script(book_dir, scene_id, previs_data)
     script_url = f"/download/{project}/exports/{script_path.name}"
 
+    # 1. If standalone portable Blender is installed inside Neon/.local_ai/blender, render real 3D previs PNGs, .blend & .glb right away!
+    from local_runners import blender_runner
+
+    if blender_runner.find_blender_executable() is not None and bool(r.body.get("render_headless", True)):
+        try:
+            rendered = blender_runner.render_scene_previs(
+                book_dir,
+                project,
+                scene_id,
+                render_animatic=bool(r.body.get("render_animatic", False)),
+            )
+            return {
+                **rendered,
+                "status": "ok",
+                "mode": "blender_headless",
+                "mcp_configured": get_bm().is_configured(),
+                "script_path": str(script_path),
+                "script_url": script_url,
+                "message": (
+                    f"Rendered {rendered.get('shots_rendered', 0)} 3D previs frame(s) + .blend/.glb for {scene_id} "
+                    f"using standalone {rendered.get('blender_version') or 'Blender'}."
+                ),
+            }
+        except Exception as e:
+            log.warning("Headless Blender previs render failed (%s), falling back to script export", e)
+
     bm = get_bm()
     if bm.is_configured():
         result = bm.generate_previs(previs_data)
@@ -467,6 +493,37 @@ def mcp_blender_generate_previs(r: Request):
         "script_url": script_url,
         "message": f"Generated runnable Blender 3D previs script ({script_path.name}) for {scene_id} — open in Blender (`blender --python {script_path.name}`) or add a 'blender' server in .mcp.json for live MCP.",
     }
+
+
+@route("GET", "/api/v2_blender_status")
+def _v2_blender_status(r: Request):
+    """Return standalone portable Blender 5.4 installation & live MCP bridge status."""
+    from local_runners import blender_runner
+
+    st = blender_runner.blender_status()
+    return {"status": "ok", **st, "mcp_configured": get_bm().is_configured()}
+
+
+@route("POST", "/api/mcp/blender/launch_live")
+def _mcp_blender_launch_live(r: Request):
+    """Launch standalone portable Blender GUI with the Studio live MCP bridge addon pre-loaded."""
+    from layout import project_dir as pdir
+    from local_runners import blender_runner
+
+    project = str(r.body.get("project") or "").strip()
+    scene_id = str(r.body.get("scene_id") or "").strip()
+    blend_path: Path | None = None
+    if project and scene_id:
+        pd = pdir(project, "book")
+        safe_sid = "".join(c for c in scene_id.lower() if c.isalnum() or c in "_-") or "scene"
+        cand = pd / "exports" / f"previs_{safe_sid}.blend"
+        if cand.is_file():
+            blend_path = cand
+    try:
+        res = blender_runner.launch_blender_live(blend_path)
+    except RuntimeError as e:
+        raise HttpError(400, str(e)) from e
+    return {"status": "ok", **res, "message": f"Launched standalone Blender GUI (PID {res['pid']}) with Live MCP Bridge on 127.0.0.1:{res['port']}."}
 
 
 @route("POST", "/api/mcp/blender/export_gltf")

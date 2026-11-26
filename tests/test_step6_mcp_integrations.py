@@ -128,10 +128,10 @@ def test_step6_mcp_routes_auto_export_and_generate_local_packages(tmp_path: Path
     assert tree.tag == "xmeml"
     assert any("S001" in (m.text or "") for m in tree.findall(".//marker/name"))
 
-    # 2. Blender Previs route writes syntactically valid runnable Blender Python script
+    # 2. Blender Previs route writes syntactically valid runnable Blender Python script (and renders live when standalone Blender is installed)
     res_b = mcp_routes.mcp_blender_generate_previs(Request(body={"project": "mcp_demo", "scene_id": "S001"}))
     assert res_b["status"] == "ok"
-    assert res_b["mode"] == "local_script"
+    assert res_b["mode"] in ("blender_headless", "local_script")
     py_path = Path(res_b["script_path"])
     assert py_path.is_file()
     src = py_path.read_text(encoding="utf-8")

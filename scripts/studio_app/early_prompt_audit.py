@@ -79,8 +79,15 @@ def _make_issue(
     risk: str = "",
     fixed: bool = False,
     ambiguous: bool = False,
+    scene_id: str = "",
+    line_index: int = -1,
+    element_type: str = "",
+    character: str = "",
+    current_text: str = "",
+    highlight: str = "",
+    options: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    return {
+    item: dict[str, Any] = {
         "target": str(target or "").strip(),
         "field": str(field or "").strip(),
         "severity": _norm_severity(severity, "major"),
@@ -90,6 +97,59 @@ def _make_issue(
         "ambiguous": bool(ambiguous),
         "needs_user_decision": bool(ambiguous),
     }
+    if scene_id:
+        item["scene_id"] = str(scene_id).strip()
+    if line_index >= 0:
+        item["line_index"] = int(line_index)
+    if element_type:
+        item["element_type"] = str(element_type).strip()
+    if character:
+        item["character"] = str(character).strip()
+    if current_text:
+        item["current_text"] = str(current_text)
+    if highlight:
+        item["highlight"] = str(highlight)
+    clean_opts: list[dict[str, str]] = []
+    if isinstance(options, list):
+        for opt in options:
+            if not isinstance(opt, dict):
+                continue
+            lbl = str(opt.get("label") or "").strip()
+            rep = str(opt.get("replacement_text") or opt.get("text") or opt.get("value") or "").strip()
+            summ = str(opt.get("summary") or opt.get("description") or "").strip()
+            if lbl and (rep or opt.get("keep_original")):
+                clean_opts.append({
+                    "label": lbl,
+                    "summary": summ,
+                    "replacement_text": rep,
+                })
+    if ambiguous and not clean_opts and current_text:
+        clean_opts = _fallback_conflict_options(current_text, highlight, issue)
+    if clean_opts:
+        item["options"] = clean_opts
+    return item
+
+
+def _fallback_conflict_options(current_text: str, highlight: str, issue: str) -> list[dict[str, str]]:
+    """Build concrete starter conflict options when an AI flags ambiguity without explicit options."""
+    cur = str(current_text or "").strip()
+    hl = str(highlight or "").strip()
+    opts: list[dict[str, str]] = []
+    if hl and hl.lower() in cur.lower():
+        removed = re.sub(re.escape(hl), "", cur, count=1, flags=re.IGNORECASE)
+        removed = re.sub(r"\s{2,}", " ", removed).replace(" ,", ",").replace(" .", ".").strip(" ,;-")
+        if removed and removed != cur:
+            opts.append({
+                "label": f"Remove conflicting phrase ('{hl[:36]}')",
+                "summary": "Drops the conflicting detail from this line so downstream shots stay consistent.",
+                "replacement_text": removed,
+            })
+    opts.append({
+        "label": "Clarify & anchor in scene (edit below)",
+        "summary": f"Revise this line directly to resolve: {issue[:120]}",
+        "replacement_text": cur,
+    })
+    return opts
 
 
 def _sort_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -264,7 +324,27 @@ def _audit_step3(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                     severity="major",
                     risk="Steps 06, 07, 10, and 17 may invent inconsistent age, species, or height.",
                     fixed=False,
-                    ambiguous=False,
+                    ambiguous=True,
+                    character=name,
+                    current_text=desc or f"{name} (no description)",
+                    highlight=desc or name,
+                    options=[
+                        {
+                            "label": f"Specify adult human scale & look for {name}",
+                            "summary": "Locks species, approximate age, adult height (~5'6\"-5'10\"), and key visual traits.",
+                            "replacement_text": f"{desc or name} — adult human (~5'7\" tall), everyday attire, distinctive facial features and hair",
+                        },
+                        {
+                            "label": f"Specify young child scale & look for {name}",
+                            "summary": "Locks child age and waist-high height (~3'6\") so downstream shots keep accurate proportions.",
+                            "replacement_text": f"{desc or name} — young child (~3'6\" tall, waist-high to adults), expressive face, solid-color casual outfit",
+                        },
+                        {
+                            "label": f"Specify animal / pet scale & breed for {name}",
+                            "summary": "Locks species, breed/coloring, and knee-high (~2 ft at shoulder) relative scale.",
+                            "replacement_text": f"{desc or name} — friendly pet (~2 ft tall at shoulder, knee-high to adults), distinct coat color",
+                        },
+                    ],
                 )
             )
             blind_spots.append(f"Character '{name}' lacks explicit age/species/height in Step 03 coverage.")
@@ -276,9 +356,13 @@ def _audit_step3(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
         "1. Every recurring character description must unambiguously state species (human/dog/toy/etc.), approximate age, and relative height/size so downstream steps never confuse scale.\n"
         "2. Flag any contradictory traits, duplicate character names, or chronological/location jumps in key_events.\n"
         + _AUDITOR_RULES_BLOCK
+        + "When '\"ambiguous\": true', ALSO include 'highlight' (verbatim offending substring from the current field) and "
+        "'options' (2-3 concrete conflicting choices [{\"label\": \"Option A\", \"summary\": \"...\", \"replacement_text\": \"...\"}]).\n"
         + "Return ONLY valid JSON:\n"
         '{"issues": [{"target": "character name or key_events", "field": "description|logline|key_events", '
         '"severity": "critical|major|minor", "issue": "brief explanation", "risk": "downstream impact", "ambiguous": false, '
+        '"highlight": "exact offending phrase if ambiguous", '
+        '"options": [{"label": "Option A", "summary": "...", "replacement_text": "..."}], '
         '"value": "optional corrected text (empty if advisory or ambiguous)"}], "blind_spots": ["optional missing context"]}\n'
         "If everything is already clear and consistent, return {\"issues\": [], \"blind_spots\": []}.\n\n"
         f"COVERAGE:\n{json.dumps(cov, ensure_ascii=False)[:14000]}"
@@ -295,6 +379,16 @@ def _audit_step3(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
             field = str(item.get("field") or "").strip().lower()
             val = str(item.get("value") or "").strip()
             is_amb = bool(item.get("ambiguous") or item.get("needs_user_decision"))
+            cur_val = ""
+            if field == "logline":
+                cur_val = str(cov.get("logline") or "")
+            elif field == "key_events" and isinstance(cov.get("key_events"), list):
+                cur_val = "\n".join(str(x) for x in cov["key_events"])
+            elif field == "description" and target:
+                for c in chars:
+                    if isinstance(c, dict) and str(c.get("name") or "").strip().lower() == target.lower():
+                        cur_val = str(c.get("description") or "")
+                        break
             fixed = False
             if auto_apply and val and not is_amb:
                 if field == "logline":
@@ -310,6 +404,7 @@ def _audit_step3(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                             changed = True
                             fixes_applied += 1
                             break
+            raw_opts = item.get("options") if isinstance(item.get("options"), list) else None
             issues.append(
                 _make_issue(
                     target or field,
@@ -319,6 +414,10 @@ def _audit_step3(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                     risk=str(item.get("risk") or "Downstream beats and character tokens inherit coverage ambiguity.").strip(),
                     fixed=fixed,
                     ambiguous=is_amb,
+                    character=target if field == "description" else "",
+                    current_text=cur_val,
+                    highlight=str(item.get("highlight") or "").strip(),
+                    options=raw_opts,
                 )
             )
     if isinstance(ai_data, dict) and isinstance(ai_data.get("blind_spots"), list):
@@ -381,6 +480,8 @@ def _audit_step4(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
 
     # Deterministic pacing/scope checks
     if n_chapters > 0 and target_min < max(2.0, n_chapters * 0.4):
+        rec_min = round(min(180.0, max(target_min * 2.0, n_chapters * 0.6)), 1)
+        mid_min = round(min(180.0, max(target_min * 1.5, n_chapters * 0.45)), 1)
         issues.append(
             _make_issue(
                 "target_minutes",
@@ -389,9 +490,30 @@ def _audit_step4(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                 severity="major",
                 risk="Compressing too many chapters into too few minutes causes teleporting locations and rushed transitions.",
                 fixed=False,
+                ambiguous=True,
+                current_text=f"target_minutes: {target_min:g} (across {n_chapters} chapters / {total_words:,} words)",
+                highlight=f"{target_min:g}",
+                options=[
+                    {
+                        "label": f"Expand target runtime to {rec_min:g} min (Recommended)",
+                        "summary": "Gives each chapter enough breathing room for smooth transitions and grounded sets.",
+                        "replacement_text": f"{rec_min:g}",
+                    },
+                    {
+                        "label": f"Moderate condensed runtime ({mid_min:g} min)",
+                        "summary": "Balances tighter pacing while avoiding abrupt room-to-room cuts.",
+                        "replacement_text": f"{mid_min:g}",
+                    },
+                    {
+                        "label": f"Keep short highlight cut ({target_min:g} min)",
+                        "summary": "Intentionally trims minor chapters to stay within your tight target duration.",
+                        "replacement_text": f"{target_min:g}",
+                    },
+                ],
             )
         )
     if total_words > 0 and total_words < 1500 and target_min > 45:
+        rec_short = round(max(3.0, min(20.0, total_words / 120.0)), 1)
         issues.append(
             _make_issue(
                 "target_minutes",
@@ -400,6 +522,21 @@ def _audit_step4(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                 severity="major",
                 risk="Over-expanding thin source text increases hallucinated sets and props downstream.",
                 fixed=False,
+                ambiguous=True,
+                current_text=f"target_minutes: {target_min:g} (for {total_words:,} source words)",
+                highlight=f"{target_min:g}",
+                options=[
+                    {
+                        "label": f"Right-size runtime to {rec_short:g} min (Recommended)",
+                        "summary": "Matches runtime tightly to the source word count to prevent invented filler.",
+                        "replacement_text": f"{rec_short:g}",
+                    },
+                    {
+                        "label": "Use medium expanded cut (25 min)",
+                        "summary": "Allows moderate visual expansion while limiting hallucinated subplots.",
+                        "replacement_text": "25",
+                    },
+                ],
             )
         )
     aspect = str(settings.get("aspect") or "").strip()
@@ -412,6 +549,14 @@ def _audit_step4(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                 severity="minor",
                 risk="Non-standard aspect ratios may crop keyframe composition unexpectedly.",
                 fixed=False,
+                ambiguous=True,
+                current_text=f"aspect: {aspect or '(blank)'}",
+                highlight=aspect or "(blank)",
+                options=[
+                    {"label": "Standard Widescreen 16:9 (Recommended)", "summary": "Best compatibility across YouTube, TV, and storyboard generators.", "replacement_text": "16:9"},
+                    {"label": "Vertical 9:16 (Shorts / Reels)", "summary": "Portrait framing for mobile-first vertical cinema.", "replacement_text": "9:16"},
+                    {"label": "Classic 4:3", "summary": "Traditional animated / storybook framing.", "replacement_text": "4:3"},
+                ],
             )
         )
 
@@ -425,7 +570,8 @@ def _audit_step4(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
             "Check if target_minutes, aspect ratio, rating, and faithfulness align cleanly with the book's scope & tone "
             "so downstream beats/screenplay/shots won't be cramped or padded with inconsistent scenes.\n"
             + _AUDITOR_RULES_BLOCK
-            + 'Return ONLY valid JSON: {"issues": [{"target": "target_minutes|rating|aspect|faithfulness", "severity": "critical|major|minor", "issue": "...", "risk": "...", "ambiguous": false}], "blind_spots": ["..."]}\n'
+            + "When '\"ambiguous\": true', include 'highlight' (offending value) and 'options' (2-3 choices with replacement_text set to the clean new setting value).\n"
+            + 'Return ONLY valid JSON: {"issues": [{"target": "target_minutes|rating|aspect|faithfulness", "severity": "critical|major|minor", "issue": "...", "risk": "...", "ambiguous": false, "highlight": "...", "options": [{"label": "...", "summary": "...", "replacement_text": "..."}]}], "blind_spots": ["..."]}\n'
             "If the scope settings fit well, return {\"issues\": [], \"blind_spots\": []}.\n\n"
             f"SETTINGS: {json.dumps(settings, ensure_ascii=False)}\n"
             f"BOOK STATS: {n_chapters} chapters, {total_words} words.\n"
@@ -438,15 +584,21 @@ def _audit_step4(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
         if isinstance(raw_ai, list):
             for item in raw_ai:
                 if isinstance(item, dict) and str(item.get("issue") or "").strip():
+                    tgt = str(item.get("target") or "scope").strip()
+                    cur_s = str(settings.get(tgt, "")) if tgt in settings else ""
+                    raw_opts = item.get("options") if isinstance(item.get("options"), list) else None
                     issues.append(
                         _make_issue(
-                            str(item.get("target") or "scope").strip(),
-                            str(item.get("target") or "scope").strip(),
+                            tgt,
+                            tgt,
                             str(item["issue"]).strip(),
                             severity=_norm_severity(item.get("severity"), "major"),
                             risk=str(item.get("risk") or "Mismatched scope distorts scene pacing.").strip(),
                             fixed=False,
-                            ambiguous=bool(item.get("ambiguous")),
+                            ambiguous=bool(item.get("ambiguous") or item.get("needs_user_decision")),
+                            current_text=f"{tgt}: {cur_s}" if cur_s else "",
+                            highlight=str(item.get("highlight") or cur_s).strip(),
+                            options=raw_opts,
                         )
                     )
         if isinstance(ai_data, dict) and isinstance(ai_data.get("blind_spots"), list):
@@ -518,6 +670,19 @@ def _audit_step5(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
         tod = str(sc.get("time_of_day") or "").strip()
         summary = str(sc.get("summary") or "").strip()
         if not loc:
+            prev_loc = str(scenes[i - 1].get("location") or "").strip() if i > 0 else ""
+            loc_opts: list[dict[str, str]] = []
+            if prev_loc:
+                loc_opts.append({
+                    "label": f"Continue in previous location: '{prev_loc}'",
+                    "summary": "Keeps continuous spatial flow from the preceding scene.",
+                    "replacement_text": prev_loc,
+                })
+            loc_opts.append({
+                "label": f"Set new interior location for {sid}",
+                "summary": "Assign a concrete interior room name (edit below before applying).",
+                "replacement_text": f"living room ({sc.get('title') or sid})",
+            })
             issues.append(
                 _make_issue(
                     sid,
@@ -527,6 +692,10 @@ def _audit_step5(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                     risk="Screenplay and Step 11 Sets will invent conflicting room names.",
                     fixed=False,
                     ambiguous=True,
+                    scene_id=sid,
+                    current_text=f"{sid} ({sc.get('title') or 'Untitled'}) — location: (blank)",
+                    highlight="(blank)",
+                    options=loc_opts,
                 )
             )
         if not tod:
@@ -554,6 +723,15 @@ def _audit_step5(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                         risk="Lighting setup in Steps 06, 11, and 12 will be arbitrary.",
                         fixed=False,
                         ambiguous=True,
+                        scene_id=sid,
+                        current_text=f"{sid} ({sc.get('title') or 'Untitled'}) — time_of_day: (blank)",
+                        highlight="(blank)",
+                        options=[
+                            {"label": "Morning daylight", "summary": "Soft natural morning light.", "replacement_text": "morning"},
+                            {"label": "Afternoon daylight", "summary": "Warm balanced afternoon light.", "replacement_text": "afternoon"},
+                            {"label": "Evening / golden hour", "summary": "Warm practical lamps / dusk lighting.", "replacement_text": "evening"},
+                            {"label": "Night", "summary": "Dark exterior with interior practical lighting.", "replacement_text": "night"},
+                        ],
                     )
                 )
         if not summary:
@@ -566,6 +744,16 @@ def _audit_step5(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                     risk="Screenwriter has no beat action to adapt.",
                     fixed=False,
                     ambiguous=True,
+                    scene_id=sid,
+                    current_text=f"{sid} ({sc.get('title') or 'Untitled'}) — summary: (blank)",
+                    highlight="(blank)",
+                    options=[
+                        {
+                            "label": f"Draft beat summary from title '{sc.get('title') or sid}'",
+                            "summary": "Write the concrete visual action & emotional turn for this scene below.",
+                            "replacement_text": f"In {loc or 'the main setting'}, the characters carry out the key beat of '{sc.get('title') or sid}'.",
+                        },
+                    ],
                 )
             )
 
@@ -589,9 +777,12 @@ def _audit_step5(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
         "2. Abrupt time-of-day contradictions between immediately consecutive scenes.\n"
         "3. Characters appearing/disappearing without entrance/exit, or major props appearing in one beat and vanishing in the next.\n"
         + _AUDITOR_RULES_BLOCK
+        + "When '\"ambiguous\": true', include 'highlight' (verbatim offending substring) and 'options' (2-3 conflicting choices [{\"label\": \"Option A\", \"summary\": \"...\", \"replacement_text\": \"...\"}]).\n"
         + "Return ONLY valid JSON:\n"
         '{"fixes": [{"scene": "S002", "field": "location|time_of_day|summary", "severity": "critical|major|minor", '
-        '"issue": "brief explanation", "risk": "downstream impact", "ambiguous": false, "value": "corrected text (empty if ambiguous)"}], '
+        '"issue": "brief explanation", "risk": "downstream impact", "ambiguous": false, "highlight": "...", '
+        '"options": [{"label": "Option A", "summary": "...", "replacement_text": "..."}], '
+        '"value": "corrected text (empty if ambiguous)"}], '
         '"blind_spots": ["optional missing context"]}\n'
         "Only include real continuity issues. If consistent, return {\"fixes\": [], \"blind_spots\": []}.\n\n"
         f"SCENES:\n{json.dumps(compact_scenes, ensure_ascii=False)[:16000]}"
@@ -611,12 +802,14 @@ def _audit_step5(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
             is_amb = bool(fx.get("ambiguous") or fx.get("needs_user_decision"))
             fixed = False
             sc_obj = by_id.get(sid)
+            cur_val = str(sc_obj.get(field) or "") if (sc_obj is not None and field) else ""
             if auto_apply and not is_amb and sc_obj is not None and field in ("location", "time_of_day", "summary") and val:
-                if str(sc_obj.get(field) or "").strip() != val:
+                if cur_val.strip() != val:
                     sc_obj[field] = val[:500]
                     fixed = True
                     changed = True
                     fixes_applied += 1
+            raw_opts = fx.get("options") if isinstance(fx.get("options"), list) else None
             issues.append(
                 _make_issue(
                     sid or "beats",
@@ -626,6 +819,10 @@ def _audit_step5(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                     risk=str(fx.get("risk") or "Screenplay inherits broken location or beat continuity.").strip(),
                     fixed=fixed,
                     ambiguous=is_amb,
+                    scene_id=sid,
+                    current_text=cur_val,
+                    highlight=str(fx.get("highlight") or "").strip(),
+                    options=raw_opts,
                 )
             )
     if isinstance(ai_data, dict) and isinstance(ai_data.get("blind_spots"), list):
@@ -724,7 +921,29 @@ def _deterministic_screenplay_scene_audit(
 
         # 2. Room-boundary leak: kitchen dog bowl inside living room action (ambiguous: user decides if moved or at threshold)
         if "living room" in heading_low and "kitchen" not in heading_low:
-            if re.search(r"\b(?:dog\s+bowl|food\s+bowl|water\s+bowl)\b", low) and "kitchen" not in low:
+            bowl_m = re.search(r"\b(?:dog\s+bowl|food\s+bowl|water\s+bowl)\b", txt, re.IGNORECASE)
+            if bowl_m and "kitchen" not in low:
+                hl = bowl_m.group(0)
+                relocated = re.sub(
+                    r"\b(?:on\s+the\s+(?:carpet|rug|living\s+room\s+floor)|in\s+the\s+living\s+room)\b",
+                    "at the kitchen doorway threshold",
+                    txt,
+                    flags=re.IGNORECASE,
+                )
+                if relocated == txt:
+                    relocated = f"{txt.rstrip('. ')} (kept strictly at the kitchen doorway threshold, off the living room rug)."
+                removed_clause = re.sub(
+                    r",?\s*(?:while|as|with)\s+[^.]*\b(?:dog|food|water)\s+bowl\b[^.]*",
+                    "",
+                    txt,
+                    flags=re.IGNORECASE,
+                ).strip(" ,")
+                if not removed_clause or removed_clause == txt:
+                    removed_clause = re.sub(r"\b(?:his|her|the|a)?\s*(?:dog|food|water)\s+bowl\b", "", txt, flags=re.IGNORECASE)
+                    removed_clause = re.sub(r"\s{2,}", " ", removed_clause).strip(" ,")
+                if removed_clause and not removed_clause.endswith((".", "!", "?")):
+                    removed_clause += "."
+                explicit_moved = f"{txt.rstrip('. ')}, intentionally carried out from the kitchen earlier and kept in the same spot."
                 issues.append(
                     _make_issue(
                         f"{sid} line {idx + 1}",
@@ -734,6 +953,28 @@ def _deterministic_screenplay_scene_audit(
                         risk="Room-specific prop drifts onto the living room rug and changes size across keyframes.",
                         fixed=False,
                         ambiguous=True,
+                        scene_id=sid,
+                        line_index=idx,
+                        element_type="action",
+                        current_text=txt,
+                        highlight=hl,
+                        options=[
+                            {
+                                "label": "Keep bowl at kitchen doorway threshold (Recommended)",
+                                "summary": "Keeps the dog bowl grounded in its proper kitchen/threshold home instead of the living room rug.",
+                                "replacement_text": relocated,
+                            },
+                            {
+                                "label": "Remove bowl from this living room line",
+                                "summary": "Omits the kitchen bowl from the living room beat so it never teleports between rooms.",
+                                "replacement_text": removed_clause,
+                            },
+                            {
+                                "label": "Keep bowl in living room & establish explicitly",
+                                "summary": "Locks an explicit continuity note that the bowl was intentionally brought into the living room.",
+                                "replacement_text": explicit_moved,
+                            },
+                        ],
                     )
                 )
 
@@ -843,9 +1084,14 @@ def _audit_step6(
                 "3. Ungrounded props placed on furniture not present in the room, or scale-distorting language.\n"
                 "4. Wardrobe contradictions within the same scene or stiff robotic AI dialogue clichés.\n"
                 + _AUDITOR_RULES_BLOCK
-                + "Return ONLY valid JSON:\n"
+                + "When '\"ambiguous\": true', you MUST ALSO include:\n"
+                "  - 'highlight': exact short substring copied verbatim from that element's text showing the conflicting phrase\n"
+                "  - 'options': 2-3 concrete conflicting choices [{\"label\": \"Option A\", \"summary\": \"why/tradeoff\", \"replacement_text\": \"full rewritten line\"}]\n"
+                "Return ONLY valid JSON:\n"
                 '{"fixes": [{"idx": 0, "severity": "critical|major|minor", "issue": "brief reason", "risk": "downstream impact", '
-                '"ambiguous": false, "text": "surgically corrected element text (empty if ambiguous)"}], "blind_spots": ["optional missing context"]}\n'
+                '"ambiguous": false, "highlight": "exact offending phrase", '
+                '"options": [{"label": "Option A", "summary": "...", "replacement_text": "..."}], '
+                '"text": "surgically corrected element text (empty if ambiguous)"}], "blind_spots": ["optional missing context"]}\n'
                 "Keep dialogue natural and intact unless it contradicts visual continuity or contains robotic AI filler. If clean, return {\"fixes\": [], \"blind_spots\": []}.\n\n"
                 f"ELEMENTS:\n{json.dumps(numbered, ensure_ascii=False)[:14000]}"
             )
@@ -864,21 +1110,33 @@ def _audit_step6(
                         idx = -1
                     new_txt = str(fx.get("text") or "").strip()
                     is_amb = bool(fx.get("ambiguous") or fx.get("needs_user_decision"))
+                    cur_el = els[idx] if (0 <= idx < len(els) and isinstance(els[idx], dict)) else {}
+                    cur_txt = str(cur_el.get("text") or "")
+                    el_type = str(cur_el.get("type") or "action")
+                    el_char = str(cur_el.get("character") or "")
                     fixed = False
                     if auto_apply and not is_amb and 0 <= idx < len(els) and isinstance(els[idx], dict) and new_txt:
-                        if str(els[idx].get("text") or "").strip() != new_txt:
+                        if cur_txt.strip() != new_txt:
                             els[idx]["text"] = new_txt[:1200]
                             fixed = True
                             sc_changed = True
+                    raw_opts = fx.get("options") if isinstance(fx.get("options"), list) else None
                     sc_issues.append(
                         _make_issue(
                             f"{sid} line {idx + 1}" if idx >= 0 else sid,
-                            str(els[idx].get("type") or "action") if 0 <= idx < len(els) and isinstance(els[idx], dict) else "action",
+                            el_type,
                             str(fx["issue"]).strip(),
                             severity=_norm_severity(fx.get("severity"), "major"),
                             risk=str(fx.get("risk") or "Step 12 shots and Step 17 keyframes will inherit this contradiction.").strip(),
                             fixed=fixed,
                             ambiguous=is_amb,
+                            scene_id=sid,
+                            line_index=idx,
+                            element_type=el_type,
+                            character=el_char,
+                            current_text=cur_txt,
+                            highlight=str(fx.get("highlight") or "").strip(),
+                            options=raw_opts,
                         )
                     )
             if isinstance(parsed, dict) and isinstance(parsed.get("blind_spots"), list):
@@ -1026,6 +1284,7 @@ def _audit_step7(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
 
             pat_m = _VAGUE_PATTERN_RE.search(tok) if kind == "characters" else None
             if pat_m:
+                solid_tok = re.sub(_VAGUE_PATTERN_RE, "solid", tok, count=1)
                 issues.append(
                     _make_issue(
                         f"character:{name}",
@@ -1035,6 +1294,20 @@ def _audit_step7(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                         risk="Image models randomize stripe count and pattern layout on every keyframe.",
                         fixed=False,
                         ambiguous=True,
+                        current_text=tok,
+                        highlight=pat_m.group(0),
+                        options=[
+                            {
+                                "label": f"Switch '{pat_m.group(0)}' to solid color (Recommended)",
+                                "summary": "Locks a single solid garment color so every keyframe matches cleanly.",
+                                "replacement_text": solid_tok,
+                            },
+                            {
+                                "label": "Keep exact patterned wording",
+                                "summary": "Keeps the current pattern token as written.",
+                                "replacement_text": tok,
+                            },
+                        ],
                     )
                 )
 
@@ -1095,9 +1368,12 @@ def _audit_step7(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
         "3. PROPS: must state realistic physical size (e.g., ~4-inch mug, ~8-inch dog bowl) and home room so props never teleport rooms or change size.\n"
         "Every replacement token MUST be style-neutral and under 220 characters.\n"
         + _AUDITOR_RULES_BLOCK
+        + "When '\"ambiguous\": true', include 'highlight' (verbatim offending substring from the token) and 'options' (2-3 concrete style-neutral choices under 220 chars).\n"
         + "Return ONLY valid JSON:\n"
         '{"fixes": [{"kind": "characters|locations|props", "name": "exact name", "severity": "critical|major|minor", '
-        '"issue": "brief reason", "risk": "downstream impact", "ambiguous": false, "token": "corrected style-neutral token under 220 chars (empty if ambiguous)"}], '
+        '"issue": "brief reason", "risk": "downstream impact", "ambiguous": false, "highlight": "...", '
+        '"options": [{"label": "Option A", "summary": "...", "replacement_text": "..."}], '
+        '"token": "corrected style-neutral token under 220 chars (empty if ambiguous)"}], '
         '"blind_spots": ["optional missing context"]}\n'
         "If all tokens are already rock-solid, return {\"fixes\": [], \"blind_spots\": []}.\n\n"
         + (f"LOCKED SET DESCRIPTIONS (Step 11):\n{json.dumps(set_notes, ensure_ascii=False)}\n\n" if set_notes else "")
@@ -1115,18 +1391,24 @@ def _audit_step7(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
             name = str(fx.get("name") or "").strip()
             new_tok = re.sub(r"\s{2,}", " ", _STYLE_BUZZ_RE.sub("", str(fx.get("token") or ""))).strip(" ,;:-")[:240]
             is_amb = bool(fx.get("ambiguous") or fx.get("needs_user_decision"))
-            fixed = False
-            if auto_apply and not is_amb and kind in ("characters", "locations", "props") and name and new_tok:
+            cur_tok = ""
+            matched_item: dict[str, Any] | None = None
+            if kind in ("characters", "locations", "props") and name:
                 items = book.get(kind)
                 if isinstance(items, list):
                     for item in items:
                         if isinstance(item, dict) and str(item.get("name") or "").strip().lower() == name.lower():
-                            if str(item.get("token") or "").strip() != new_tok:
-                                item["token"] = new_tok
-                                fixed = True
-                                changed = True
-                                fixes_applied += 1
+                            matched_item = item
+                            cur_tok = str(item.get("token") or "")
                             break
+            fixed = False
+            if auto_apply and not is_amb and matched_item is not None and new_tok:
+                if cur_tok.strip() != new_tok:
+                    matched_item["token"] = new_tok
+                    fixed = True
+                    changed = True
+                    fixes_applied += 1
+            raw_opts = fx.get("options") if isinstance(fx.get("options"), list) else None
             issues.append(
                 _make_issue(
                     f"{kind[:-1] if kind.endswith('s') else kind}:{name}",
@@ -1136,6 +1418,10 @@ def _audit_step7(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
                     risk=str(fx.get("risk") or "Inconsistent character/set/prop tokens propagate into Steps 10, 11, 12, and 17.").strip(),
                     fixed=fixed,
                     ambiguous=is_amb,
+                    character=name if kind == "characters" else "",
+                    current_text=cur_tok,
+                    highlight=str(fx.get("highlight") or "").strip(),
+                    options=raw_opts,
                 )
             )
     if isinstance(ai_data, dict) and isinstance(ai_data.get("blind_spots"), list):
@@ -1181,24 +1467,8 @@ def _audit_step7(pd: Path, slug: str, *, use_llm: bool, auto_apply: bool, record
 # ==============================================================================
 # STEP 12: SHOT LIST (DELEGATES TO FULL SHOT CONTINUITY & SCALE AUDITOR)
 # ==============================================================================
-def _audit_step12(
-    pd: Path,
-    slug: str,
-    *,
-    target_scene: str = "",
-    use_llm: bool,
-    auto_apply: bool,
-    record_bidirectional: bool,
-) -> dict[str, Any]:
-    from studio_app import shot_continuity_audit
-
-    res = shot_continuity_audit.run_project_shot_continuity_audit(
-        pd,
-        slug,
-        target_scene=target_scene,
-        use_llm=use_llm,
-        record_bidirectional=record_bidirectional,
-    )
+def format_shot_audit_report(res: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a `shot_continuity_audit.run_project_shot_continuity_audit` result into a standard Step 12 report."""
     if not res.get("ok"):
         return {
             "ok": True,
@@ -1233,19 +1503,35 @@ def _audit_step12(
     ]
     for am in ambiguous_list:
         if isinstance(am, dict):
+            shot_lbl = str(am.get("shot") or "")
+            sc_id = str(am.get("scene_id") or "").strip()
+            shot_n = int(am.get("shot_n") or 0)
+            if (not sc_id or shot_n <= 0) and shot_lbl:
+                m_sh = re.match(r"^(S\d+)-(\d+)$", shot_lbl.strip(), re.IGNORECASE)
+                if m_sh:
+                    sc_id = sc_id or m_sh.group(1).upper()
+                    shot_n = shot_n or int(m_sh.group(2))
+            fld = str(am.get("field") or (am.get("fields") or ["composition"])[0] or "composition").strip()
+            raw_opts = am.get("options") if isinstance(am.get("options"), list) else None
             issues.append(
                 _make_issue(
-                    str(am.get("shot") or ""),
-                    str(am.get("field") or ""),
+                    shot_lbl,
+                    fld,
                     str(am.get("issue") or ""),
                     severity=_norm_severity(am.get("severity"), "major"),
                     risk=str(am.get("risk") or "Ambiguous shot continuity needs director decision.").strip(),
                     fixed=False,
                     ambiguous=True,
+                    scene_id=sc_id,
+                    line_index=max(-1, shot_n - 1) if shot_n > 0 else -1,
+                    element_type=fld,
+                    current_text=str(am.get("current_text") or ""),
+                    highlight=str(am.get("highlight") or "").strip(),
+                    options=raw_opts,
                 )
             )
     sorted_issues = _sort_issues(issues)
-    amb_count = len(ambiguous_list)
+    amb_count = sum(1 for it in sorted_issues if it.get("ambiguous"))
     raw_sc = res.get("scorecard")
     scorecard: list[Any] = raw_sc if isinstance(raw_sc, list) else []
     raw_bs = res.get("blind_spots")
@@ -1270,6 +1556,27 @@ def _audit_step12(
             else f"Step 12 Shot List clean ({res.get('engine', 'deterministic')}) — shot-to-shot continuity & scale verified."
         ),
     }
+
+
+def _audit_step12(
+    pd: Path,
+    slug: str,
+    *,
+    target_scene: str = "",
+    use_llm: bool,
+    auto_apply: bool,
+    record_bidirectional: bool,
+) -> dict[str, Any]:
+    from studio_app import shot_continuity_audit
+
+    res = shot_continuity_audit.run_project_shot_continuity_audit(
+        pd,
+        slug,
+        target_scene=target_scene,
+        use_llm=use_llm,
+        record_bidirectional=record_bidirectional,
+    )
+    return format_shot_audit_report(res)
 
 
 # ==============================================================================
@@ -1361,5 +1668,275 @@ def audit_all_early_steps(
             f"Audited steps {', '.join(str(s) for s in steps)}: "
             f"{total_issues} issue(s), {total_fixes} auto-fixed"
             + (f", {total_ambiguous} need user decision." if total_ambiguous else ".")
+        ),
+    }
+
+
+def resolve_audit_decision(
+    pd: Path,
+    slug: str,
+    *,
+    step_num: int,
+    target: str = "",
+    scene_id: str = "",
+    line_index: int = -1,
+    field: str = "",
+    issue_text: str = "",
+    replacement_text: str = "",
+    keep_original: bool = False,
+    option_label: str = "",
+    record_bidirectional: bool = True,
+) -> dict[str, Any]:
+    """Apply a user's resolution for a `[Needs Decision]` audit finding directly to the source artifact and update saved audit reports."""
+    step = int(step_num)
+    if step == 17:
+        step = 12
+    new_txt = str(replacement_text or "").strip()
+    applied_file = ""
+
+    if not keep_original:
+        if step == 3:
+            cov_path = pd / "readin" / "coverage.json"
+            cov = _read_json(cov_path)
+            if not isinstance(cov, dict):
+                return {"ok": False, "error": "readin/coverage.json not found."}
+            if not new_txt:
+                return {"ok": False, "error": "replacement_text cannot be empty unless keep_original=True."}
+            fld = (field or "description").strip().lower()
+            if fld == "logline":
+                cov["logline"] = new_txt[:500]
+            elif fld == "key_events":
+                cov["key_events"] = [ln.strip("•- \t") for ln in new_txt.splitlines() if ln.strip()]
+            else:
+                chars = cov.get("characters")
+                if not isinstance(chars, list):
+                    return {"ok": False, "error": "No characters list found in coverage.json."}
+                updated_char = False
+                for c in chars:
+                    if isinstance(c, dict) and str(c.get("name") or "").strip().lower() == target.strip().lower():
+                        c["description"] = new_txt[:400]
+                        updated_char = True
+                        break
+                if not updated_char:
+                    return {"ok": False, "error": f"Character '{target}' not found in coverage.json."}
+            _write_json(cov_path, cov)
+            applied_file = "readin/coverage.json"
+            if record_bidirectional:
+                _record_sync_if_needed(pd, slug, 3, f"User resolved Step 03 coverage decision for {target or fld}")
+        elif step == 4:
+            import production
+
+            settings = dict(production.load(pd) or {})
+            fld = (field or target or "target_minutes").strip().lower()
+            if not new_txt:
+                return {"ok": False, "error": "replacement_text cannot be empty unless keep_original=True."}
+            if fld == "target_minutes":
+                m_num = re.search(r"\d+(?:\.\d+)?", new_txt)
+                if not m_num:
+                    return {"ok": False, "error": "target_minutes must contain a number of minutes."}
+                settings["target_minutes"] = round(max(0.5, min(600.0, float(m_num.group(0)))), 1)
+            elif fld in ("aspect", "rating", "faithfulness", "tier"):
+                clean_v = new_txt.split(":", 1)[-1].strip() if ":" in new_txt and fld != "aspect" else new_txt.strip()
+                if fld == "aspect" and clean_v.lower().startswith("aspect:"):
+                    clean_v = clean_v.split(":", 1)[1].strip()
+                settings[fld] = clean_v
+            else:
+                settings[fld] = new_txt[:200]
+            _write_json(pd / "production.json", settings)
+            applied_file = "production.json"
+            if record_bidirectional:
+                _record_sync_if_needed(pd, slug, 4, f"User resolved Step 04 scope decision for {fld}")
+        elif step == 6:
+            import screenplay as sp
+
+            sid = str(scene_id or "").strip()
+            idx = int(line_index)
+            if (not sid or idx < 0) and target:
+                m = re.match(r"^(S\d+)\s+line\s+(\d+)$", target.strip(), re.IGNORECASE)
+                if m:
+                    sid = sid or m.group(1).upper()
+                    idx = idx if idx >= 0 else (int(m.group(2)) - 1)
+            if not sid:
+                return {"ok": False, "error": "scene_id is required to resolve a Step 06 screenplay finding."}
+            sc = sp.load_scene(pd, sid)
+            if not isinstance(sc, dict):
+                return {"ok": False, "error": f"Screenplay scene {sid} not found."}
+            raw_els = sc.get("elements")
+            els: list[Any] = raw_els if isinstance(raw_els, list) else []
+            if not (0 <= idx < len(els) and isinstance(els[idx], dict)):
+                return {"ok": False, "error": f"Line {idx + 1} not found in scene {sid}."}
+            if not new_txt:
+                return {"ok": False, "error": "replacement_text cannot be empty unless keep_original=True."}
+            els[idx]["text"] = new_txt[:1200]
+            sp.save_scene(pd, sid, {"heading": sc.get("heading", ""), "elements": els}, edited=True)
+            applied_file = f"screenplay/scene-{sid}.json"
+
+            # Mirror into readin/screenplay.json if present
+            readin_sp_path = pd / "readin" / "screenplay.json"
+            readin_sp = _read_json(readin_sp_path)
+            if isinstance(readin_sp, dict) and isinstance(readin_sp.get("scenes"), list):
+                m_num = re.search(r"(\d+)", sid)
+                if m_num:
+                    idx0 = int(m_num.group(1)) - 1
+                    if 0 <= idx0 < len(readin_sp["scenes"]) and isinstance(readin_sp["scenes"][idx0], dict):
+                        readin_sp["scenes"][idx0]["elements"] = els
+                        _write_json(readin_sp_path, readin_sp)
+            if record_bidirectional:
+                _record_sync_if_needed(pd, slug, 6, f"User resolved Step 06 continuity decision in {sid} line {idx + 1}")
+        elif step == 7:
+            import continuity_book
+            from bookkit import continuity_file
+
+            book = continuity_book.load(pd)
+            if not isinstance(book, dict):
+                return {"ok": False, "error": "Continuity book not found."}
+            if ":" in target:
+                k_raw, item_name = target.split(":", 1)
+                kind_map = {"character": "characters", "location": "locations", "prop": "props"}
+                kind = kind_map.get(k_raw.strip().lower(), k_raw.strip().lower())
+            else:
+                kind, item_name = "characters", target
+            items = book.get(kind)
+            if not isinstance(items, list):
+                return {"ok": False, "error": f"Section '{kind}' not found in continuity book."}
+            cleaned = re.sub(r"\s{2,}", " ", _STYLE_BUZZ_RE.sub("", new_txt)).strip(" ,;:-")[:250]
+            updated_item = False
+            for it in items:
+                if isinstance(it, dict) and str(it.get("name") or "").strip().lower() == item_name.strip().lower():
+                    it["token"] = cleaned
+                    updated_item = True
+                    break
+            if not updated_item:
+                return {"ok": False, "error": f"Item '{item_name}' not found in {kind}."}
+            _write_json(continuity_file(pd), book)
+            applied_file = continuity_file(pd).name
+            if record_bidirectional:
+                _record_sync_if_needed(pd, slug, 7, f"User resolved Step 07 continuity decision for {target}")
+        elif step == 5:
+            import adaptation as ad
+
+            plan = ad.load(pd)
+            if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list):
+                return {"ok": False, "error": "Adaptation plan not found."}
+            sid = (scene_id or target).strip().upper()
+            fld = (field or "summary").strip().lower()
+            found_sc = next((s for s in plan["scenes"] if isinstance(s, dict) and str(s.get("id") or "").upper() == sid), None)
+            if found_sc is None:
+                return {"ok": False, "error": f"Scene {sid} not found in adaptation plan."}
+            found_sc[fld] = new_txt[:500]
+            try:
+                ad.save(pd, plan)
+            except Exception:
+                _write_json(ad.adapt_dir(pd) / "adaptation.json", plan)
+            applied_file = "adaptation/adaptation.json"
+            if record_bidirectional:
+                _record_sync_if_needed(pd, slug, 5, f"User resolved Step 05 decision in {sid}.{fld}")
+        elif step == 12:
+            from studio_app import keyframe_context
+
+            sl_path = pd / "shots" / "shotlist.json"
+            sl_data = _read_json(sl_path)
+            if not isinstance(sl_data, dict) or not isinstance(sl_data.get("scenes"), list):
+                return {"ok": False, "error": "shots/shotlist.json not found."}
+            if not new_txt:
+                return {"ok": False, "error": "replacement_text cannot be empty unless keep_original=True."}
+            sid = str(scene_id or "").strip().upper()
+            shot_n = int(line_index) + 1 if int(line_index) >= 0 else 0
+            if (not sid or shot_n <= 0) and target:
+                m_sh = re.match(r"^(S\d+)-(\d+)$", target.strip(), re.IGNORECASE)
+                if m_sh:
+                    sid = sid or m_sh.group(1).upper()
+                    shot_n = shot_n or int(m_sh.group(2))
+            if not sid or shot_n <= 0:
+                return {"ok": False, "error": "Shot target (e.g. S001-02) is required to resolve Step 12/17 finding."}
+            target_sc = next((s for s in sl_data["scenes"] if isinstance(s, dict) and str(s.get("id") or s.get("scene") or "").upper() == sid), None)
+            if target_sc is None:
+                return {"ok": False, "error": f"Scene {sid} not found in shotlist.json."}
+            raw_sh = target_sc.get("shots")
+            shots: list[Any] = raw_sh if isinstance(raw_sh, list) else []
+            target_sh = next((sh for idx_i, sh in enumerate(shots, start=1) if isinstance(sh, dict) and int(sh.get("n") or idx_i) == shot_n), None)
+            if target_sh is None:
+                return {"ok": False, "error": f"Shot {sid}-{shot_n:02d} not found in shotlist.json."}
+            fld = (field or "composition").strip().lower()
+            if fld not in ("composition", "action", "blocking", "lighting", "props"):
+                fld = "composition"
+            if fld == "props":
+                target_sh["props"] = [p.strip()[:60] for p in new_txt.split(",") if p.strip()]
+            else:
+                target_sh[fld] = new_txt[:600]
+            _write_json(sl_path, sl_data)
+            applied_file = "shots/shotlist.json"
+
+            # Sync unlocked Step 17 keyframe prompt for this shot
+            meta_path = pd / "keyframes_v2.json"
+            meta = _read_json(meta_path)
+            if isinstance(meta, dict):
+                locked_ids = {str(x) for x in (meta.get("locked") or [])}
+                shot_key = f"{sid}-{shot_n:02d}"
+                if shot_key not in locked_ids:
+                    with contextlib.suppress(Exception):
+                        ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+                        info = keyframe_context.build_shot_keyframe_info(target_sh, sid, str(target_sc.get("heading") or ""), ctx)
+                        prompts = dict(meta.get("prompts") or {})
+                        prompts[shot_key] = info["default_prompt"]
+                        meta["prompts"] = prompts
+                        _write_json(meta_path, meta, indent=2)
+            if record_bidirectional:
+                _record_sync_if_needed(pd, slug, 12, f"User resolved Step 12/17 shot continuity decision in {sid}-{shot_n:02d}.{fld}")
+
+    # Update persisted report so this finding is marked resolved
+    reports = load_reports(pd)
+    step_rep = reports.get("steps", {}).get(str(step))
+    if isinstance(step_rep, dict) and isinstance(step_rep.get("issues"), list):
+        issue_norm = str(issue_text or "").strip().lower()
+        def _matches_issue(it: dict[str, Any], *, require_ambiguous: bool) -> bool:
+            if require_ambiguous and not (it.get("ambiguous") or it.get("needs_user_decision")):
+                return False
+            if issue_norm and str(it.get("issue") or "").strip().lower() != issue_norm:
+                return False
+            same_target = bool(target) and str(it.get("target") or "").strip().lower() == target.strip().lower()
+            same_loc = (
+                bool(scene_id)
+                and str(it.get("scene_id") or "").upper() == scene_id.strip().upper()
+                and int(it.get("line_index", -1)) == int(line_index)
+            )
+            return same_target or same_loc
+
+        matched_it = next(
+            (it for it in step_rep["issues"] if isinstance(it, dict) and _matches_issue(it, require_ambiguous=True)),
+            None,
+        )
+        if matched_it is None:
+            matched_it = next(
+                (it for it in step_rep["issues"] if isinstance(it, dict) and _matches_issue(it, require_ambiguous=False)),
+                None,
+            )
+        if matched_it is not None:
+            matched_it["ambiguous"] = False
+            matched_it["needs_user_decision"] = False
+            matched_it["fixed"] = True
+            matched_it["resolved_by"] = "user"
+            matched_it["resolution_label"] = option_label or ("Kept original line" if keep_original else "Updated line")
+            if not keep_original and new_txt:
+                matched_it["current_text"] = new_txt
+        remaining_amb = sum(1 for it in step_rep["issues"] if isinstance(it, dict) and it.get("ambiguous"))
+        step_rep["ambiguous_count"] = remaining_amb
+        step_rep["fixes_applied"] = sum(1 for it in step_rep["issues"] if isinstance(it, dict) and it.get("fixed"))
+        save_step_report(pd, step, step_rep)
+
+    return {
+        "ok": True,
+        "step": step,
+        "target": target,
+        "scene_id": scene_id,
+        "line_index": line_index,
+        "applied_file": applied_file,
+        "keep_original": bool(keep_original),
+        "replacement_text": new_txt,
+        "report": step_rep if isinstance(step_rep, dict) else {},
+        "message": (
+            f"Dismissed {target or scene_id} (kept original text)."
+            if keep_original
+            else f"Applied resolution to {target or scene_id} ({applied_file})."
         ),
     }

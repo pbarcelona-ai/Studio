@@ -3062,7 +3062,7 @@ def _try_sd_cli_image(
     single_subject: bool | None = None,
 ) -> str:
     """Run local `sd-cli` with the best installed free model on disk (FLUX.1 Kontext Dev / FLUX.2 Klein 9B / 4B)."""
-    from local_runners.sd_cli_runner import SdCliRunner
+    from local_runners.sd_cli_runner import MODEL_CATALOG, SdCliRunner
 
     runner = SdCliRunner()
     if not runner.is_installed():
@@ -3102,7 +3102,21 @@ def _try_sd_cli_image(
     if valid_refs:
         spec["ref_images"] = [str(p) for p in valid_refs[:4]]
     effective_init = init_image if (init_image and init_image.is_file() and init_image.stat().st_size > 100) else (valid_refs[0] if valid_refs else None)
-    if init_strength is not None and effective_init is not None:
+    entry_kind = str((MODEL_CATALOG.get(chosen) or {}).get("kind") or "")
+    same_as_ref = bool(
+        valid_refs
+        and effective_init is not None
+        and effective_init.resolve() == valid_refs[0].resolve()
+    )
+    # Match _try_comfyui_image: for 4-step FLUX.2 Klein (and FLUX.1 Kontext) with -r reference conditioning,
+    # high-strength style conversion (>= 0.55) MUST start from pure noise (full steps) instead of double-locking
+    # the raw photographic latent with -i + --strength (which leaves only ~2 denoise steps and outputs the raw photo).
+    use_init_latent = (
+        init_strength is not None
+        and effective_init is not None
+        and not (entry_kind in ("flux2", "flux_kontext") and same_as_ref and float(init_strength) >= 0.55)
+    )
+    if use_init_latent and effective_init is not None and init_strength is not None:
         spec["init_image"] = str(effective_init)
         spec["strength"] = float(init_strength)
     if mask_image is not None and mask_image.is_file() and mask_image.stat().st_size > 100:
@@ -3566,7 +3580,20 @@ def _v2_keyframe_render(r: Request):
     char_refs_used: list[dict[str, str]] = ref_pack["char_refs_used"]
     style_negatives: str = ref_pack["style_negatives"]
 
-    final_prompt = f"{ref_legend}{continuity_prefix}{prompt}"
+    # Optional Blender 3D true-scale blocking/depth guide lock (Step 17 spatial proportion lock)
+    blender_guide_note = ""
+    if bool(r.body.get("use_blender_guide", True)):
+        from local_runners import blender_runner
+
+        blk_png, _dep_png = blender_runner.find_existing_shot_guide(pd, shot_id)
+        if blk_png is not None and blk_png not in ref_imgs:
+            ref_imgs = [*ref_imgs, blk_png]
+            blender_guide_note = (
+                f"[3D SPATIAL SCALE LOCK: Image {len(ref_imgs)} is a true-scale 3D Blender blocking plate for this exact shot. "
+                "Strictly preserve the relative heights, positions, camera perspective, and furniture placement shown in that 3D guide.] "
+            )
+
+    final_prompt = f"{ref_legend}{blender_guide_note}{continuity_prefix}{prompt}"
     # On interior shots mentioning rain/streaks/rivulets, collapse repeated rain-streak tokens
     # so CFG=1 models (FLUX.2 Klein) do NOT bleed droplets onto the camera lens, TV, or floor
     # and do NOT invent extra windows where hallways belong.
@@ -4322,7 +4349,7 @@ def _v2_keyframe_sync_prompts(r: Request):
 @route("POST", "/api/v2_shot_continuity_audit")
 def _v2_shot_continuity_audit(r: Request):
     """Audit shot-to-shot continuity, prop persistence, grounded surfaces, and character/prop scale; feed fixes back to Steps 12, 17 & Bi-Directional Sync."""
-    from studio_app import shot_continuity_audit
+    from studio_app import early_prompt_audit, shot_continuity_audit
 
     slug = str(r.body.get("project") or "").strip()
     if not slug:
@@ -4337,7 +4364,9 @@ def _v2_shot_continuity_audit(r: Request):
     )
     if not res.get("ok"):
         raise PlanError(str(res.get("error") or "Shot continuity audit failed."))
-    return {"status": "ok", **res}
+    step12_rep = early_prompt_audit.format_shot_audit_report(res)
+    early_prompt_audit.save_step_report(pd, 12, step12_rep)
+    return {"status": "ok", **res, "issues": step12_rep.get("issues", []), "report": step12_rep}
 
 
 @route("POST", "/api/v2_early_prompt_audit")
@@ -4380,6 +4409,38 @@ def _v2_early_prompt_audit(r: Request):
         )
     if not res.get("ok"):
         raise PlanError(str(res.get("error") or "Early prompt audit failed."))
+    return {"status": "ok", **res}
+
+
+@route("POST", "/api/v2_early_audit_resolve")
+def _v2_early_audit_resolve(r: Request):
+    """Apply a user's resolution choice for a [Needs Decision] early-audit finding directly to the project."""
+    from studio_app import early_prompt_audit
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    try:
+        step_num = int(r.body.get("step", 6))
+    except (TypeError, ValueError) as e:
+        raise PlanError("step must be a number") from e
+    pd = pdir(slug, "book")
+    res = early_prompt_audit.resolve_audit_decision(
+        pd,
+        slug,
+        step_num=step_num,
+        target=str(r.body.get("target") or "").strip(),
+        scene_id=str(r.body.get("scene_id") or "").strip(),
+        line_index=int(r.body.get("line_index", -1)),
+        field=str(r.body.get("field") or "").strip(),
+        issue_text=str(r.body.get("issue") or "").strip(),
+        replacement_text=str(r.body.get("replacement_text") or ""),
+        keep_original=bool(r.body.get("keep_original", False)),
+        option_label=str(r.body.get("option_label") or "").strip(),
+        record_bidirectional=bool(r.body.get("record_bidirectional", True)),
+    )
+    if not res.get("ok"):
+        raise PlanError(str(res.get("error") or "Could not apply resolution."))
     return {"status": "ok", **res}
 
 
@@ -5501,7 +5562,32 @@ def _resolve_set_film_style(pd: Path) -> tuple[str, str, str, bool]:
             else:
                 gp_pos = str(gp.get("positives") or "").strip()
                 gp_neg = str(gp.get("negatives") or "").strip()
-                look = str(gp.get("look") or ("live_action" if ("live action" in gp_pos.lower() and "photorealistic" not in gp_neg.lower()) else "pixar_3d"))
+                explicit_look = str(gp.get("look") or "").strip()
+                if explicit_look:
+                    look = explicit_look
+                else:
+                    pl = gp_pos.lower()
+                    nl = gp_neg.lower()
+                    if "live action" in pl and "photorealistic" not in nl:
+                        look = "live_action"
+                    elif "claymation" in pl or "plasticine" in pl:
+                        look = "claymation"
+                    elif "anime" in pl or "cel shading" in pl:
+                        look = "anime"
+                    elif "watercolour" in pl or "watercolor" in pl:
+                        look = "watercolour"
+                    elif "comic" in pl or "halftone" in pl:
+                        look = "comic_ink"
+                    elif "felt" in pl or "wool" in pl:
+                        look = "felt"
+                    elif "noir" in pl or "black-and-white" in pl:
+                        look = "noir"
+                    elif "ukiyo" in pl or "woodblock" in pl:
+                        look = "ukiyo_e"
+                    elif "2d cartoon" in pl or "mid-century" in pl:
+                        look = "midcentury_2d"
+                    else:
+                        look = "pixar_3d"
         except Exception as e:
             log.debug("global_params.json read failed in _resolve_set_film_style: %s", e)
     st = ctr.get_style(look)
@@ -5577,12 +5663,15 @@ def _render_set_view_plate(
             )
         else:
             # Real-world photo -> stylized film (e.g. 3D Pixar / 2D / claymation) conversion!
-            init_strength = float(style_strength) if style_strength is not None else 0.68
+            # Lead with the target art style FIRST so 4-step FLUX.2 Klein prioritizes complete stylization.
+            init_strength = float(style_strength) if style_strength is not None else 0.72
             directives.append(
-                f"STYLE CONVERSION FROM IMPORTED REFERENCE PHOTO (Image {len(ref_imgs)}): Preserve ONLY the exact subject, geometry, spatial layout, proportions, and camera perspective already shown in Image {len(ref_imgs)}, "
-                f"while COMPLETELY transforming every surface, wall, floor, material, texture, prop, and light source into stylized animated movie art ({style_pos}) with soft bevelled CGI edges, painterly stylized materials, and warm animated film lighting — NOT a real-world photograph, NOT photorealistic photography. "
-                f"STRICT FIDELITY: Do NOT add any new objects, eyes, googly eyes, faces, wall art, framed pictures, stickers, labels, buttons, knobs, extra props, characters, or creatures that are not in Image {len(ref_imgs)}. "
-                "Keep plain surfaces clean and faithful to the reference photo; render it cohesively in the film's art style without inventing new items."
+                f"{style_pos}. Complete stylized animated movie art conversion of Image {len(ref_imgs)} — "
+                f"re-render EVERY wall, cabinet, countertop, floor tile, appliance, prop, fabric, window, and light source from Image {len(ref_imgs)} "
+                f"entirely in {style_pos}, with simplified painterly stylized materials, soft rounded bevelled CGI shapes, smooth clean surfaces, and warm animated film lighting "
+                "(completely stylized animated film artwork, NOT a real-world photograph, NOT realistic camera photography). "
+                f"Keep the exact room layout, furniture positions, camera angle, and existing objects from Image {len(ref_imgs)}. "
+                f"STRICT FIDELITY: Do NOT add any new objects, eyes, googly eyes, faces, wall art, framed pictures, stickers, labels, buttons, knobs, extra props, characters, or creatures that are not in Image {len(ref_imgs)}."
             )
             style_neg = ", ".join(x for x in (style_neg, "raw photograph, unstyled real photo, camera snapshot, real estate photography") if x)
 
@@ -5610,14 +5699,22 @@ def _render_set_view_plate(
     view_lbl = str(vrec.get("label") or "").strip()
     view_desc = str(vrec.get("notes") or "").strip()
     view_heading = f"{name} — {view_lbl}" if (view_lbl and vid != "main") else name
-    bits: list[str] = list(directives) + [
-        f"Wide establishing set plate of {view_heading}",
-        view_desc,
-        desc,
-        f"Lighting: {lighting}" if lighting else "",
-        style_pos,
-        "Empty environment set plate, no people, no characters in frame",
-    ]
+    if ref_img is not None:
+        # When converting an imported photo, convert the image AS-IS into the target art style
+        # WITHOUT following the old pre-import text prompt (desc / view_desc / lighting).
+        bits: list[str] = list(directives) + [
+            style_pos,
+            "Convert the imported image faithfully as-is; keep only what is in Image 1 with no people or characters added",
+        ]
+    else:
+        bits = list(directives) + [
+            f"Wide establishing set plate of {view_heading}",
+            view_desc,
+            desc,
+            f"Lighting: {lighting}" if lighting else "",
+            style_pos,
+            "Empty environment set plate, no people, no characters in frame",
+        ]
     if reserve_2d_gaps:
         gap_clause = (
             f"IMPORTANT COMPOSITION: Keep clear empty spaces reserved for 2D cartoon characters to be added later ({gap_notes}). "
@@ -5797,19 +5894,53 @@ def _v2_set_ref_upload(r: Request):
             name,
             view_id=vid,
             view_label=str(vrec.get("label") or ""),
-            view_notes=str(vrec.get("notes") or ""),
-            desc=str(r.body.get("description") or "").strip(),
-            lighting=str(r.body.get("lighting") or "").strip(),
+            view_notes="",
+            desc="",
+            lighting="",
             reserve_2d_gaps=bool(r.body.get("reserve_2d_gaps", False)),
             gap_notes=str(r.body.get("gap_notes") or "").strip(),
             req_engine=str(r.body.get("engine") or "auto").strip().lower(),
             use_ref=True,
-            use_baseline=bool(r.body.get("use_baseline", True)),
+            use_baseline=False,
             style_strength=style_strength,
         )
         out["converted_url"] = conv["converted_url"]
         out["model"] = conv["model"]
         out["used_baseline"] = conv["used_baseline"]
+
+    # Automatically run image-to-text on the imported picture to update the set's prompt/description
+    from studio_app import set_vision_sync
+
+    if bool(r.body.get("auto_describe", True)):
+        try:
+            vision_sync = set_vision_sync.sync_baselined_set_from_image(
+                pd,
+                slug,
+                name,
+                pd / ref_rel,
+                view_id=vid,
+                reconcile_shots=bool(r.body.get("reconcile_shots", True)),
+            )
+            out["vision_sync"] = vision_sync
+            if vision_sync.get("ok"):
+                out["description"] = vision_sync.get("description", "")
+                out["lighting"] = vision_sync.get("lighting", "")
+        except Exception as e:
+            log.debug("Auto image-to-text on set import skipped for %s: %s", name, e)
+
+    # Create a bi-directional update queue starting at the earliest inception of this set in the pipeline
+    try:
+        bidir = set_vision_sync.record_import_bidirectional_sync(
+            pd,
+            slug,
+            kind="set",
+            name=name,
+            source_step=11,
+        )
+        out["earliest_inception_step"] = bidir["earliest_inception_step"]
+        out["bidirectional_sync"] = bidir
+    except Exception as e:
+        log.debug("Bi-directional sync on set import skipped for %s: %s", name, e)
     return out
 
 
@@ -6527,10 +6658,13 @@ def _v2_character_ref_upload(r: Request):
         req_style = str(r.body.get("style_id") or r.body.get("target_style") or "").strip()
         if not req_style and isinstance(existing, dict):
             req_style = str(existing.get("style_override") or "").strip()
+        book_look, book_pos, book_neg, _book_is_photo = _resolve_set_film_style(pd)
+        using_book_default = not req_style
         if not req_style:
-            book_look, _sp, _sn, _ip = _resolve_set_film_style(pd)
             req_style = book_look or "pixar_3d"
-        st = ctr.get_style(req_style) or ctr.get_style("pixar_3d") or {"id": req_style, "name": req_style, "positives": req_style, "negatives": ""}
+        st = ctr.get_style(req_style) or ctr.get_style("pixar_3d") or {"id": req_style, "name": req_style, "positives": book_pos or req_style, "negatives": book_neg}
+        eff_pos = book_pos if (using_book_default and book_pos) else str(st.get("positives") or st.get("name") or req_style)
+        eff_neg = book_neg if (using_book_default and book_neg) else str(st.get("negatives") or "")
 
         raw_ss = r.body.get("style_strength")
         eff_strength: float = 0.75
@@ -6540,14 +6674,14 @@ def _v2_character_ref_upload(r: Request):
             except (TypeError, ValueError):
                 eff_strength = 0.75
 
-        notes = str(r.body.get("style_notes") or r.body.get("notes") or "").strip()
-        notes_clause = f" Additional details: {notes}." if notes else ""
-        restyle_base = str(st.get("restyle_prompt") or f"Complete style transformation into {st['name']} style: {st['positives']}")
+        restyle_base = str(st.get("restyle_prompt") or f"Complete style transformation into {st['name']} style: {eff_pos}")
+        # Convert the imported photo AS-IS into the target art style WITHOUT following the original character prompt
         prompt = (
-            f"{restyle_base}. Transform the person/character in Image 1 ({char_name}) completely into {st['name']} style — "
-            "translate their recognizable likeness, hairstyle, expression, glasses/accessories, and exact outfit into stylized animated character design "
-            f"(NOT a real-world photograph, NOT realistic human skin or camera photography).{notes_clause} "
-            "Centered full-body straight-on front-facing view standing alone head to toe on a clean solid light-gray studio backdrop, no text or numbers."
+            f"{eff_pos}. {restyle_base}. Convert Image 1 AS-IS into {st['name']} animated movie art — "
+            "preserve the exact subject, framing, pose, facial expression, hairstyle, colors, outfit, and composition already shown in Image 1, "
+            "while completely transforming the rendering medium and materials into stylized animated art "
+            "(NOT a real-world photograph, NOT realistic camera photography). "
+            "Do NOT replace the subject, pose, framing, or outfit with anything not shown in Image 1; no text or watermarks."
         )
         req_engine = str(r.body.get("engine") or "auto").strip().lower()
         model_used = _render_keyframe_local_or_gemini(
@@ -6562,13 +6696,45 @@ def _v2_character_ref_upload(r: Request):
             init_image=ref_png,
             require_ref=True,
             bypass_cache=True,
-            extra_negative=str(st.get("negatives") or ""),
+            extra_negative=eff_neg,
         )
         out["converted_url"] = f"/file/{slug}/assets/turnarounds/{safe}_front.png"
         out["model"] = model_used
         out["style_id"] = str(st.get("id") or req_style)
         out["style_name"] = str(st.get("name") or req_style)
         out["seeded_front"] = True
+
+    # Automatically run image-to-text on the imported photo to update the character's prompt/description & continuity token
+    from studio_app import set_vision_sync
+
+    if bool(r.body.get("auto_describe", True)):
+        try:
+            vision_sync = set_vision_sync.sync_character_from_imported_image(
+                pd,
+                slug,
+                char_name,
+                ref_png,
+            )
+            out["vision_sync"] = vision_sync
+            if vision_sync.get("ok"):
+                out["description"] = vision_sync.get("description", "")
+                out["token"] = vision_sync.get("token", "")
+        except Exception as e:
+            log.debug("Auto image-to-text on character import skipped for %s: %s", char_name, e)
+
+    # Create a bi-directional update queue starting at the earliest inception of this character in the pipeline
+    try:
+        bidir = set_vision_sync.record_import_bidirectional_sync(
+            pd,
+            slug,
+            kind="character",
+            name=char_name,
+            source_step=8,
+        )
+        out["earliest_inception_step"] = bidir["earliest_inception_step"]
+        out["bidirectional_sync"] = bidir
+    except Exception as e:
+        log.debug("Bi-directional sync on character import skipped for %s: %s", char_name, e)
 
     return out
 
@@ -7528,5 +7694,128 @@ def _v2_code_drawn_render(r: Request):
         )
     except Exception as e:
         raise PlanError(f"Code-drawn animation render failed: {e}") from e
+
+
+@route("POST", "/api/v2_blender_previs")
+def _v2_blender_previs(r: Request):
+    """Step 12: Render headless Blender 5.4 3D previs stills, .blend/.glb, and optional camera-move MP4 animatic."""
+    from local_runners import blender_runner
+
+    slug = str(r.body.get("project") or "").strip()
+    scene_id = str(r.body.get("scene_id") or r.body.get("scene") or "S001").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    try:
+        res = blender_runner.render_scene_previs(
+            pd,
+            slug,
+            scene_id,
+            render_animatic=bool(r.body.get("render_animatic", False)),
+        )
+    except (RuntimeError, ValueError) as e:
+        raise PlanError(str(e)) from e
+    return {"status": "ok", **res}
+
+
+@route("POST", "/api/v2_blender_depth_guide")
+def _v2_blender_depth_guide(r: Request):
+    """Step 17: Render true-scale 3D Blocking PNG + Normalized Depth Map PNG for a shot (or all shots in a scene)."""
+    from local_runners import blender_runner
+
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = str(r.body.get("shot_id") or r.body.get("id") or "").strip()
+    scene_id = str(r.body.get("scene") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    try:
+        if shot_id:
+            res = blender_runner.render_shot_depth_guide(pd, slug, shot_id)
+            return {"status": "ok", **res}
+        sid = scene_id or "S001"
+        ctx = blender_runner._load_project_scene_context(pd, sid)
+        guides = []
+        for idx, sh in enumerate(ctx["shots"][:12], start=1):
+            n = int(sh.get("n") or idx)
+            guides.append(blender_runner.render_shot_depth_guide(pd, slug, f"{sid}-{n:02d}"))
+        return {"status": "ok", "scene": sid, "count": len(guides), "guides": guides}
+    except (RuntimeError, ValueError) as e:
+        raise PlanError(str(e)) from e
+
+
+@route("POST", "/api/v2_blender_set_angles")
+def _v2_blender_set_angles(r: Request):
+    """Step 11: Render multi-angle consistent 3D set plates (Wide, Reverse, Corner, OTS, Top-Down) from one 3D room."""
+    from local_runners import blender_runner
+
+    slug = str(r.body.get("project") or "").strip()
+    set_name = str(r.body.get("set_name") or r.body.get("name") or "").strip()
+    if not slug or not set_name:
+        raise PlanError("project and set_name are required")
+    pd = pdir(slug, "book")
+    desc = str(r.body.get("description") or "").strip()
+    lighting = str(r.body.get("lighting") or "").strip()
+    if not desc and (pd / "sets_custom.json").is_file():
+        try:
+            sc = json.loads((pd / "sets_custom.json").read_text(encoding="utf-8")) or {}
+            rec = sc.get(set_name.lower()) if isinstance(sc, dict) else None
+            if isinstance(rec, dict):
+                desc = str(rec.get("description") or "")
+                lighting = lighting or str(rec.get("lighting") or "")
+        except (OSError, ValueError):
+            pass
+    try:
+        res = blender_runner.render_set_multi_angle(pd, slug, set_name, description=desc, lighting=lighting)
+    except (RuntimeError, ValueError) as e:
+        raise PlanError(str(e)) from e
+    return {"status": "ok", **res}
+
+
+@route("POST", "/api/v2_blender_title_card")
+def _v2_blender_title_card(r: Request):
+    """Step 18/20: Render a 3D animated extruded bevelled title card (PNG + MP4) via standalone Blender."""
+    from local_runners import blender_runner
+
+    slug = str(r.body.get("project") or "").strip()
+    title = str(r.body.get("title") or slug).strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    try:
+        res = blender_runner.render_3d_title_card(
+            pd,
+            slug,
+            title=title,
+            subtitle=str(r.body.get("subtitle") or "").strip(),
+            style=str(r.body.get("style") or "space_orbit").strip(),
+            duration_s=float(r.body.get("duration_s") or 3.0),
+            render_video=bool(r.body.get("render_video", True)),
+        )
+    except (RuntimeError, ValueError) as e:
+        raise PlanError(str(e)) from e
+    return {"status": "ok", **res}
+
+
+@route("POST", "/api/v2_blender_cast_guides")
+def _v2_blender_cast_guides(r: Request):
+    """Steps 08 & 10: Render true-scale 3D Cast Height Lineup and 4-angle Character Turnaround Guides via standalone Blender."""
+    from local_runners import blender_runner
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    try:
+        res = blender_runner.render_cast_scale_turnaround_guides(
+            pd,
+            slug,
+            character_name=str(r.body.get("character") or "").strip(),
+            include_turnarounds=bool(r.body.get("include_turnarounds", True)),
+        )
+    except (RuntimeError, ValueError) as e:
+        raise PlanError(str(e)) from e
+    return {"status": "ok", **res}
+
 
 

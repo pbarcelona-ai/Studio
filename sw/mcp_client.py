@@ -111,7 +111,11 @@ class MCPClient:
                 "detail": str(spec["url"]),
             }
         cmd = str(spec.get("command") or "").strip()
+        repo_root = Path(__file__).resolve().parent.parent
+        rel_cmd = (repo_root / cmd) if cmd and not Path(cmd).is_absolute() else None
         resolved = shutil.which(cmd) if cmd else None
+        if not resolved and rel_cmd is not None and rel_cmd.is_file():
+            resolved = str(rel_cmd)
         ok = bool(resolved or (cmd and Path(cmd).is_file()))
         return {
             "configured": True,
@@ -157,7 +161,9 @@ class MCPClient:
         cmd_args = [str(a) for a in raw_args] if isinstance(raw_args, list) else []
         if not cmd:
             return {"error": f"MCP server '{server}' config is missing 'command'"}
-        exe = shutil.which(cmd) or (cmd if Path(cmd).is_file() else "")
+        repo_root = Path(__file__).resolve().parent.parent
+        rel_cmd = (repo_root / cmd) if not Path(cmd).is_absolute() else None
+        exe = shutil.which(cmd) or (cmd if Path(cmd).is_file() else (str(rel_cmd) if rel_cmd is not None and rel_cmd.is_file() else ""))
         if not exe:
             return {"error": f"MCP server '{server}' executable not found: {cmd}"}
 
@@ -195,6 +201,7 @@ class MCPClient:
                 encoding="utf-8",
                 errors="replace",
                 env=env,
+                cwd=str(repo_root),
                 timeout=self.timeout,
             )
         except subprocess.TimeoutExpired:
