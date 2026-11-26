@@ -34,16 +34,17 @@ def pdf_choices(slug):
     return out
 
 
-def project_info(slug):
+def project_info(slug, *, sync: bool = False):
+    """Read-only project status summary (mutating sync/movie-build only runs when `sync=True`)."""
     d = pdir(slug)
     chapters = read_json(d / "chapters.json", {})
-    if (d / "all_shots.csv").exists() and not (d / "movies.json").exists():
+    if sync and (d / "all_shots.csv").exists() and not (d / "movies.json").exists():
         build_movies(d, 10)
     movies = read_json(d / "movies.json", {})
 
-    # Sync character tokens from the continuity book file
     series = get_character_series(slug)
-    character_tokens.sync_characters_from_project(slug)
+    if sync:
+        character_tokens.sync_characters_from_project(slug)
     char_list = character_tokens.list_characters(series)
 
     return {

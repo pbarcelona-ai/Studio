@@ -121,7 +121,13 @@ def _production_save(r: Request):
         d, notes = production.save(pdir, body)
     except ValueError as e:
         raise PlanError(str(e)) from e
-    return {"settings": d, "notes": notes, "estimate": production.estimate(d), "catalog": production.catalog()}
+    early_audit = None
+    try:
+        from studio_app import early_prompt_audit
+        early_audit = early_prompt_audit.audit_step(pdir, pdir.name, 4, use_llm=False, auto_apply=False, record_bidirectional=False)
+    except Exception:
+        early_audit = None
+    return {"settings": d, "notes": notes, "estimate": production.estimate(d), "catalog": production.catalog(), "early_audit": early_audit}
 
 
 def upload(pdir: Path, tmp: Path, fname: str, agreed: bool, comic: bool, title: str, note: str) -> dict:

@@ -1,0 +1,22 @@
+### 1. Audit Scope & Target
+- Script Type: [e.g., YouTube/TikTok video script, ad copy, podcast, Python/Bash script, AI agent prompt]
+- Target Audience / Runtime / Environment: [e.g., beginners, 60-second vertical video, Python 3.12 production]
+- Primary Goal: [e.g., retention and sign-ups, reliability and zero unhandled exceptions]
+
+### 2. Evaluation Criteria
+Audit the script across these dimensions (customize as needed):
+1. [Criterion 1, e.g., Hook & Pacing / Input Validation & Error Handling]
+2. [Criterion 2, e.g., Clarity & Tone / Logic & Edge Cases]
+3. [Criterion 3, e.g., Call to Action & Visual Cues / Security & Resource Cleanup]
+
+### 3. Output Format
+Return your audit in four sections:
+1. **Summary Scorecard**: Rate each criterion (Pass / Needs Work / Fail) with a one-line reason.
+2. **Issues Found (Ordered by Severity)**: For each issue, quote or cite the exact line/section, explain why it fails or underperforms, and state the risk.
+3. **Targeted Fixes**: Provide concrete replacement lines, patches, or snippets for the flagged spots.
+4. **Blind Spots & Assumptions**: List unverified assumptions, missing context, or edge cases the script does not handle.
+
+### 4. Rules
+- Be objective and specific; avoid vague praise or filler.
+- Do not invent facts, metrics, or external dependencies not present in the script.
+- Flag ambiguities instead of guessing intent.

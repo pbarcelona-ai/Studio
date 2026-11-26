@@ -83,7 +83,7 @@ def earlier_job() -> dict | None:
     if not st or st.get("status") != "running" or JOB.running and JOB.state.get("id") == st.get("id"):
         return None
     pid = st.get("step_pid")
-    alive = pid_alive(pid)
+    alive = pid_alive(pid, str(st.get("step_start_id") or ""))
     done_code = exit_code(st.get("exit", "")) if st.get("exit") else None
     steps = st.get("steps") or []
     idx = int(st.get("index", 0))
@@ -96,7 +96,7 @@ def earlier_job() -> dict | None:
 def on_startup() -> None:
     """When the Studio starts: if the last session's job is still running a step, follow it (and carry on with the rest of the job)."""
     st = read_state()
-    if st.get("status") == "running" and pid_alive(st.get("step_pid")) and st.get("log") and st.get("exit"):
+    if st.get("status") == "running" and pid_alive(st.get("step_pid"), str(st.get("step_start_id") or "")) and st.get("log") and st.get("exit"):
         if JOB.attach(st):
             log.info("following a step left running by the last session (pid %s)", st.get("step_pid"))
 

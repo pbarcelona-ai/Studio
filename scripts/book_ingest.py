@@ -134,6 +134,12 @@ else:
     if cur:
         chapters.append((f"Section {len(chapters) + 1}", "\n\n".join(cur)))
 
+if not chapters:
+    sys.exit(
+        f"No readable text or chapters could be extracted from {dest.name} "
+        "(the file may be blank, image-only without OCR, or corrupted)."
+    )
+
 cdir = pdir / "chapters"
 shutil.rmtree(cdir, ignore_errors=True)
 cdir.mkdir()
@@ -148,8 +154,9 @@ write_json(pdir / "chapters.json", {"method": method, "pdf": dest.name, "format"
 
 tiny = [c["n"] for c in index if c["words"] < 40]
 print(f"{dest.name}: {len(pages)} pages, {words(text):,} words -> {len(index)} chapters (split by: {method})")
-print(f"words per chapter: min {min(c['words'] for c in index)}, median {sorted(c['words'] for c in index)[len(index)//2]}, "
-      f"max {max(c['words'] for c in index)}")
+if index:
+    word_counts = sorted(c["words"] for c in index)
+    print(f"words per chapter: min {word_counts[0]}, median {word_counts[len(word_counts) // 2]}, max {word_counts[-1]}")
 if method == "sections":
     print("note: no chapter headings were found, so the book was cut into ~%d-word sections." % args.section_words)
 if tiny:

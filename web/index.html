@@ -305,7 +305,7 @@
             </div>
             <div class="card__body">
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-                <input type="text" id="step1ResearchQuery" placeholder="Research query (e.g., 'sci-fi film budget 2024', 'comparable films to Dune')" style="flex:1;min-width:200px;padding:8px 12px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit">
+                <input type="text" id="step1ResearchQuery" aria-label="Story research query" placeholder="Research query (e.g., 'sci-fi film budget 2024', 'comparable films to Dune')" style="flex:1;min-width:200px;padding:8px 12px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit">
                 <button type="button" class="btn btn--secondary" id="bStep1Research" style="padding:6px 14px">🔍 Search</button>
                 <button type="button" class="btn btn--ghost" id="bStep1ResearchGenre" style="padding:6px 14px">🎬 Film Comparables</button>
                 <button type="button" class="btn btn--ghost" id="bStep1ResearchScreenplay" style="padding:6px 14px">📝 Screenplay Analysis</button>
@@ -398,11 +398,13 @@
           <div class="direct-story-card">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
               <div id="v2CovMeta" style="font-size:var(--text-xs);color:#94a3b8">Select a book in Step 01 to load its coverage.</div>
-              <div style="display:flex;gap:8px">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--secondary" id="v2CovBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate Coverage</button>
+                <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="3" style="padding:5px 12px;font-size:var(--text-xs)" title="AI check character species/scale and event continuity before beats and screenplay">🔍 Audit Continuity</button>
                 <button type="button" class="btn btn--ghost" id="v2CovReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
             </div>
+            <div id="v2EarlyAuditOut3" class="hidden" style="margin-bottom:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
             <label class="f" for="v2Logline">Commercial Logline</label>
             <input type="text" id="v2Logline" style="width:100%;padding:10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-base)" placeholder="No logline generated yet for this book.">
             <label class="f" for="v2Synopsis" style="margin-top:10px">Synopsis / Premise &amp; Key Events</label>
@@ -433,8 +435,12 @@
           <div class="direct-story-card" style="margin-bottom:var(--space-3)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
               <div id="v2ScopeBookStats" style="font-size:var(--text-sm);color:#e2e8f0">Analyzing current book reading length and chapter count…</div>
-              <button type="button" class="btn btn--ghost" id="v2ScopeReload" style="padding:4px 10px;font-size:var(--text-xs)">↻ Recalculate from Book</button>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="4" style="padding:4px 10px;font-size:var(--text-xs)" title="Check runtime, chapter pacing, aspect ratio, and rating alignment">🔍 Audit Scope</button>
+                <button type="button" class="btn btn--ghost" id="v2ScopeReload" style="padding:4px 10px;font-size:var(--text-xs)">↻ Recalculate from Book</button>
+              </div>
             </div>
+            <div id="v2EarlyAuditOut4" class="hidden" style="margin-top:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
           </div>
 
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:var(--space-3)">
@@ -527,9 +533,11 @@
               <div id="v2BeatsSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading story structure and scene breakdown…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--secondary" id="v2BeatsBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate / Rebuild Beats</button>
+                <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="5" style="padding:5px 12px;font-size:var(--text-xs)" title="AI beat-by-beat check for location teleports, time jumps, and cast/prop continuity">🔍 Audit Beats</button>
                 <button type="button" class="btn btn--ghost" id="v2BeatsReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
             </div>
+            <div id="v2EarlyAuditOut5" class="hidden" style="margin-top:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
             <div id="v2BeatsEmpty" class="hidden" style="margin-top:8px;padding:12px;background:#0a0d14;border:1px dashed #334155;border-radius:8px;color:#94a3b8;font-size:var(--text-sm)">
               No film plan or beat sheet exists yet for this book. Click <strong>✨ Generate / Rebuild Beats</strong> above to break your story into acts, beats, and scenes.
             </div>
@@ -620,9 +628,11 @@
                   <input type="file" id="spImportFile" accept=".fdx,.fountain,.fntn" style="display:none" aria-label="Import screenplay file">
               </label>
               <button type="button" class="btn btn--ghost" id="bV2SpHumanize" title="Strip stiff AI prose clichés &amp; em-dash clutter so screenplay &amp; spoken lines sound natural">✍️ Humanize Script &amp; Dialogue</button>
+              <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="6" style="padding:5px 12px;font-size:var(--text-xs)" title="AI beat-by-beat screenplay check for prop contradictions, room leaks, surfaces, and scale">🔍 Audit Screenplay Continuity</button>
               <span id="spFiles"></span>
               <span id="v2SpHumanizeStatus" style="font-size:var(--text-xs);color:#34d399" aria-live="polite"></span>
           </div>
+          <div id="v2EarlyAuditOut6" class="hidden" style="margin-bottom:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
 
           <!-- MCP Integration Buttons -->
           <div id="spMcpTools" class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;padding:12px;background:var(--bg-tertiary, #1e293b);border-radius:8px;border:1px solid var(--border, #334155);">
@@ -645,7 +655,7 @@
                 <button type="button" class="btn btn--primary" id="v2SpViewSingle" style="padding:4px 10px;font-size:var(--text-xs)">Edit One Scene</button>
                 <button type="button" class="btn btn--ghost" id="v2SpViewAll" style="padding:4px 10px;font-size:var(--text-xs)">View All Scenes</button>
                 <button type="button" class="btn btn--ghost" id="v2SpRefresh" style="padding:4px 10px;font-size:var(--text-xs)" title="Reload scenes from project">↻ Reload</button>
-                <select id="v2SpFilter" style="padding:4px 8px;font-size:var(--text-xs);background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px" title="Filter displayed content">
+                <select id="v2SpFilter" aria-label="Filter displayed screenplay content" style="padding:4px 8px;font-size:var(--text-xs);background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px" title="Filter displayed content">
                   <option value="A">A Action</option>
                   <option value="D" selected>D Dialogue</option>
                   <option value="T">T Transition</option>
@@ -730,10 +740,12 @@
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--primary" id="bV2ContBootstrap" style="padding:6px 14px;font-size:var(--text-xs)">⚡ Quick-Build from Script (Instant)</button>
                 <button type="button" class="btn btn--secondary" id="bV2ContGenerate" style="padding:6px 14px;font-size:var(--text-xs)">✨ Write with AI</button>
+                <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="7" style="padding:6px 14px;font-size:var(--text-xs)" title="AI check every character, location, and prop token for style neutrality, solid wardrobe, scale, and rooms">🔍 Audit Tokens &amp; Scale</button>
                 <button type="button" class="btn btn--secondary" id="bV2ContApprove" style="padding:6px 14px;font-size:var(--text-xs)" disabled>✓ Approve Continuity Book</button>
                 <button type="button" class="btn btn--ghost" id="v2ContReload" style="padding:6px 10px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
             </div>
+            <div id="v2EarlyAuditOut7" class="hidden" style="margin-top:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
             <pre id="v2ContLog" class="hidden" style="margin:8px 0 0;padding:10px;background:#0a0d14;color:#94a3b8;border:1px solid #1e293b;border-radius:6px;font-family:var(--font-mono);font-size:var(--text-xs);max-height:180px;overflow:auto;white-space:pre-wrap"></pre>
             <div id="v2ContBookView" style="margin-top:8px;display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto"></div>
           </div>
@@ -812,10 +824,44 @@
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
               <div id="v2CastSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading characters for this book…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button type="button" class="btn btn--primary" id="bV2CastAddToggle" style="padding:5px 12px;font-size:var(--text-xs)">➕ Add Character</button>
+                <button type="button" class="btn btn--primary" id="bV2CastImportToggle" style="padding:5px 12px;font-size:var(--text-xs)">📷 Import Photo</button>
+                <button type="button" class="btn btn--secondary" id="bV2CastAddToggle" style="padding:5px 12px;font-size:var(--text-xs)">➕ Add Character</button>
                 <button type="button" class="btn btn--secondary" id="bV2CastCustomTypeToggle" style="padding:5px 12px;font-size:var(--text-xs)">✨ + Custom Type</button>
                 <button type="button" class="btn btn--secondary" id="bV2CastSync" style="padding:5px 12px;font-size:var(--text-xs)">🔄 Sync from Book</button>
                 <button type="button" class="btn btn--ghost" id="bV2CastReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
+              </div>
+            </div>
+
+            <!-- Inline Import Reference Photo & Convert to Film Style (mirrors Step 11 Sets Import) -->
+            <div id="v2CastImportForm" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid #232d3f;display:none;flex-direction:column;gap:8px">
+              <div style="font-size:var(--text-xs);font-weight:700;color:#fde68a">📷 Import a Character Photo &amp; Convert to Your Film's Visual Style</div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:8px">
+                <div>
+                  <label class="f" for="v2CastImportChar">Associate with Character</label>
+                  <select id="v2CastImportChar" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px"></select>
+                </div>
+                <div>
+                  <label class="f" for="v2CastImportStyle">Target Visual Style</label>
+                  <select id="v2CastImportStyle" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                    <option value="">Book Default (Step 09)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="f" for="v2CastImportNotes">Outfit / Style Notes (optional)</label>
+                  <input type="text" id="v2CastImportNotes" placeholder="e.g. olive tactical vest, sunglasses, combat boots" style="width:100%;padding:7px 10px;background:#0a0d14;color:#cbd5e1;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                </div>
+                <div>
+                  <label class="f" for="v2CastImportStrength">Style Conversion Strength (<span id="v2CastImportStrengthVal">0.75</span>)</label>
+                  <input type="range" id="v2CastImportStrength" min="0.45" max="0.90" step="0.02" value="0.75" style="width:100%;accent-color:#f59e0b" title="Higher converts more strongly into your film's visual style (0.75 recommended for real photo to 3D Pixar)">
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <input type="file" id="v2CastImportFile" aria-label="Choose cast reference photo" accept="image/*" style="font-size:var(--text-xs);color:#cbd5e1">
+                <img id="v2CastImportPreview" alt="Selected character photo preview" style="display:none;width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #f59e0b">
+                <button type="button" class="btn btn--primary" id="bV2CastImportConvert" style="padding:6px 14px;font-size:var(--text-xs)">✨ Import &amp; Convert to Film Style</button>
+                <button type="button" class="btn btn--secondary" id="bV2CastImportOnly" style="padding:6px 12px;font-size:var(--text-xs)">📥 Import Photo Only</button>
+                <button type="button" class="btn btn--ghost" id="bV2CastImportCancel" style="padding:6px 10px;font-size:var(--text-xs)">Cancel</button>
+                <span id="v2CastImportMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
               </div>
             </div>
 
@@ -1099,7 +1145,7 @@
                 </div>
               </div>
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <input type="file" id="v2LocImportFile" accept="image/*" style="font-size:var(--text-xs);color:#cbd5e1">
+                <input type="file" id="v2LocImportFile" aria-label="Choose set reference photo" accept="image/*" style="font-size:var(--text-xs);color:#cbd5e1">
                 <img id="v2LocImportPreview" alt="Selected reference photo preview" style="display:none;width:112px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;border:1px solid #f59e0b">
                 <button type="button" class="btn btn--primary" id="bV2LocImportConvert" style="padding:6px 14px;font-size:var(--text-xs)">✨ Import &amp; Convert to Film Style</button>
                 <button type="button" class="btn btn--secondary" id="bV2LocImportOnly" style="padding:6px 12px;font-size:var(--text-xs)">📥 Import Photo Only</button>
@@ -1165,10 +1211,12 @@
               <div id="v2ShotsSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading shot list for this book…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--primary" id="bV2ShotsBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate Shot List</button>
+                <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="12" style="padding:5px 12px;font-size:var(--text-xs)" title="AI frame-by-frame audit for prop persistence, grounded surfaces, and character/prop scale across shots">🔍 Audit Continuity &amp; Scale</button>
                 <button type="button" class="btn btn--secondary" id="bV2ShotsApprove" style="padding:5px 12px;font-size:var(--text-xs)">✓ Approve Shot List</button>
                 <button type="button" class="btn btn--ghost" id="bV2ShotsReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
             </div>
+            <div id="v2EarlyAuditOut12" class="hidden" style="margin-top:8px;padding:8px 10px;background:#0a0d14;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);color:#cbd5e1"></div>
             <!-- Scene Filter Pills -->
             <div id="v2ShotsPills" style="display:flex;gap:6px;overflow-x:auto;padding-top:8px" role="tablist" aria-label="Filter shots by scene"></div>
           </div>
@@ -1176,16 +1224,16 @@
           <!-- Dynamic Shot List Container -->
           <div class="direct-story-card">
             <div id="v2ShotsSceneNote" style="font-size:var(--text-xs);color:#94a3b8;margin-bottom:8px"></div>
-            <div style="overflow-x:auto;max-height:480px;overflow-y:auto">
-              <table class="data-table" id="v2ShotsTable" style="width:100%;border-collapse:collapse;font-size:var(--text-sm)" aria-label="Shot list for active book">
+            <div style="overflow-x:auto;max-height:72vh;overflow-y:auto">
+              <table class="data-table" id="v2ShotsTable" style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:var(--text-sm)" aria-label="Shot list for active book">
                 <thead>
                   <tr style="border-bottom:1px solid #334155;text-align:left;color:#94a3b8">
-                    <th style="padding:8px">#</th>
-                    <th style="padding:8px">Framing &amp; Lens</th>
-                    <th style="padding:8px">Camera &amp; Motion</th>
-                    <th style="padding:8px">Subject &amp; Action</th>
-                    <th style="padding:8px">Sec</th>
-                    <th style="padding:8px">Actions</th>
+                    <th style="padding:8px;width:6%">#</th>
+                    <th style="padding:8px;width:10%">Framing &amp; Lens</th>
+                    <th style="padding:8px;width:36%">Camera &amp; Motion</th>
+                    <th style="padding:8px;width:36%">Subject &amp; Action</th>
+                    <th style="padding:8px;width:6%">Sec</th>
+                    <th style="padding:8px;width:6%">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="v2ShotsBody" style="color:#e2e8f0"></tbody>
@@ -1354,8 +1402,8 @@
             <div id="v2DialogueStatus" style="font-size:var(--text-xs);color:#34d399" aria-live="polite"></div>
           </div>
 
-          <!-- Dynamic Dialogue Cards Container -->
-          <div id="v2DialogueList" style="display:flex;flex-direction:column;gap:12px"></div>
+          <!-- Dynamic Dialogue Tiles Grid -->
+          <div id="v2DialogueList" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));gap:12px;align-items:stretch"></div>
         </div>
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Voice Casting</button>
@@ -1519,6 +1567,7 @@
                 <button type="button" class="btn btn--secondary" id="bV2KfSavePrompts">💾 Save Prompts Only</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfRebuildPrompts" title="Rebuild this scene's unlocked prompts from latest Steps 08-12 (cast, turnarounds, sets, props, shotlist)">🔄 Sync Scene Prompts</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfRebuildAllPrompts" title="Rebuild ALL unlocked scenes' prompts across the entire project from latest Steps 08-12">🔄 Sync All Scenes</button>
+                <button type="button" class="btn btn--secondary" id="bV2KfContAudit" title="Audit shot-to-shot prop persistence, grounded surfaces, and character/prop proportions across this scene and feed fixes back to Step 12, Step 17 & Bi-Directional Sync">🔍 Audit Continuity &amp; Scale</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfPlateAudit" title="Build side-by-side contact sheets comparing every Step 10 character &amp; Step 11 set plate against all Step 17 keyframes">🧩 Plate Consistency Sheets</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfLocalModelsToggle" title="Check &amp; install 100% free local consistency models (FLUX.1 Kontext Dev, FLUX.2 Klein 9B, Ollama Vision QA, ComfyUI Angles)">🆓 Free Local Engines</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfReload">↻ Reload</button>
@@ -1801,7 +1850,7 @@
                 📁 Upload Reference MP4
                 <input type="file" id="v2RefVidFile" accept="video/*" style="display:none">
               </label>
-              <input type="text" id="v2RefVidUrl" placeholder="Or paste permitted video URL (yt-dlp)…" style="flex:1;min-width:200px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              <input type="text" id="v2RefVidUrl" aria-label="Reference video URL" placeholder="Or paste permitted video URL (yt-dlp)…" style="flex:1;min-width:200px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
               <label style="display:inline-flex;align-items:center;gap:5px;font-size:var(--text-xs);color:#cbd5e1;cursor:pointer">
                 <input type="checkbox" id="v2RefVidWhisper"> Measure speech (Whisper)
               </label>
@@ -1847,7 +1896,7 @@
               </div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <input type="text" id="v2CdBullets" placeholder="Optional bullets separated by | (e.g. Lift off | Pass Mars | Reach Titan)" style="flex:1;min-width:220px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              <input type="text" id="v2CdBullets" aria-label="Code-drawn explainer bullet points" placeholder="Optional bullets separated by | (e.g. Lift off | Pass Mars | Reach Titan)" style="flex:1;min-width:220px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
               <button type="button" class="btn btn--primary" id="bV2CdRender" style="padding:6px 14px;font-size:var(--text-xs)">🎬 Render Code-Drawn MP4</button>
             </div>
             <div id="v2CdStatus" style="font-size:var(--text-xs);color:#34d399;margin-top:6px" aria-live="polite"></div>
@@ -1996,8 +2045,8 @@
               <button type="button" class="btn btn--secondary" id="bV2BuildCaptions" style="padding:5px 12px;font-size:var(--text-xs)">🎙️ Build Frame-Snapped Captions (.srt)</button>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
-              <input type="text" id="v2CapFind" placeholder="Proofread find (e.g. Cloud)" style="flex:1;min-width:140px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
-              <input type="text" id="v2CapReplace" placeholder="Replace with (e.g. Claude)" style="flex:1;min-width:140px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              <input type="text" id="v2CapFind" aria-label="Caption proofread find text" placeholder="Proofread find (e.g. Cloud)" style="flex:1;min-width:140px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              <input type="text" id="v2CapReplace" aria-label="Caption proofread replacement text" placeholder="Replace with (e.g. Claude)" style="flex:1;min-width:140px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
               <button type="button" class="btn btn--ghost" id="bV2CapFix" style="padding:5px 10px;font-size:var(--text-xs)">✏️ Proofread &amp; Fix Captions</button>
             </div>
             <div id="v2CaptionsStatus" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite">
@@ -2853,12 +2902,12 @@
       <div id="pStyleGalleryPanel" class="p-style-gallery" style="display:none">
         <div class="p-style-gallery__bar">
           <div id="pStyleCats" class="p-style-gallery__cats"></div>
-          <input type="search" id="pStyleSearch" placeholder="Search styles (e.g. claymation, anime, noir, pixel)…" autocomplete="off">
+          <input type="search" id="pStyleSearch" aria-label="Search visual styles" placeholder="Search styles (e.g. claymation, anime, noir, pixel)…" autocomplete="off">
         </div>
         <div id="pStyleGrid" class="p-style-grid" role="radiogroup" aria-label="Single prompt visual style gallery"></div>
       </div>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px">
-        <input type="file" id="pRefFile" accept="image/*" multiple style="display:none">
+        <input type="file" id="pRefFile" aria-label="Upload prompt reference images" accept="image/*" multiple style="display:none">
         <button type="button" id="bPRefUpload">📷 Upload Reference Picture(s)</button>
         <button type="button" id="bPRefClear" disabled>✕ Clear All Refs</button>
         <img id="pRefPreview" alt="Selected reference preview" style="display:none;width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #f59e0b;cursor:zoom-in">

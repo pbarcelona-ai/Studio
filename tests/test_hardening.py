@@ -47,7 +47,7 @@ class TestSafety:
 class TestRecipes:
     def test_every_built_in_recipe_is_valid_and_usable(self, tmp_path):
         names = [r["name"] for r in crew.recipes()]
-        assert len(names) == 8
+        assert len(names) == 9
         for n in names:
             crew.set_recipe(tmp_path, n)
             assert production.load(tmp_path)["target_minutes"] >= 0.5

@@ -76,7 +76,9 @@ Write the scene as a screenplay. Return ONE JSON object: {{"heading": "INT. PLAC
  {{"type": "action", "text": "what we SEE and HEAR, present tense, concrete and filmable"}},
  {{"type": "dialogue", "character": "NAME", "note": "optional: how it is said", "text": "the spoken line"}},
  {{"type": "transition", "text": "CUT TO:"}} ]}}
-Rules: show, do not tell (thoughts become behaviour); keep to the book's events and, where you can, its own words for dialogue; all dialogue together at most about
+Rules: show, do not tell (thoughts become behaviour); keep to the book's events and, where you can, its own words for dialogue; write spoken dialogue
+like real people talk (plain, conversational, natural rhythm — never robotic AI clichés like 'folks', 'embarking', 'enchanting', 'delve', 'tapestry',
+or excessive em-dashes); all dialogue together at most about
 {budget} words so the scene fits {s['seconds']:g} seconds; 2 to 12 elements; nothing out of place for the book's era and world; no camera angles."""
     d = llm_json(prompt, SYSTEM, model=args.model, engine=args.engine, validate=sp.check_scene)
     sp.save_scene(pdir, s["id"], d, edited=False)
@@ -96,5 +98,11 @@ with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
             failed.append(s["id"])
             print(f"scene {s['id']}: FAILED - {e}", flush=True)
 total = sum(words(" ".join(e["text"] for e in (sp.load_scene(pdir, s["id"]) or {}).get("elements", []))) for s in scenes)
+if not failed:
+    import contextlib
+    with contextlib.suppress(Exception):
+        from studio_app import early_prompt_audit
+        rep = early_prompt_audit.audit_step(pdir, pdir.name, 6, use_llm=True, auto_apply=True, record_bidirectional=False)
+        print(f"[early audit] {rep.get('message', '')}", flush=True)
 print(f"done. failed scenes: {sorted(failed) or 'none'}; {total:,} words in all. Read the screenplay on the Adapt card, then approve it.")
 sys.exit(1 if failed else 0)

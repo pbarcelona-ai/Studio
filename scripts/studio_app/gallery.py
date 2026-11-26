@@ -1,6 +1,10 @@
 """Pictures of the results: thumbnails, depth maps, ratings, the Compare wall, the showcase and the prompt library."""
+import os
+from pathlib import Path
 import re
+import tempfile
 import threading
+import time
 from bookkit import read_json, write_json
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
@@ -37,19 +41,32 @@ def load_rgb(src):
     return Image.open(src).convert("RGB")
 
 
+def _atomic_save_image(im, dest: Path, fmt: str, **save_kw) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=dest.parent, prefix=f".{dest.stem}-", suffix=".tmp", delete=False) as tf:
+            tmp_path = Path(tf.name)
+        im.save(tmp_path, fmt, **save_kw)
+        os.replace(tmp_path, dest)
+        tmp_path = None
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+
+
 def make_thumb(src, dest):
     """A small JPEG of a picture, or of a frame from a clip, so the grids do not load the full files."""
     im = load_rgb(src)
     im.thumbnail((THUMB_PX, THUMB_PX))
-    dest.parent.mkdir(exist_ok=True)
-    tmp = dest.with_suffix(".tmp")
-    im.save(tmp, "JPEG", quality=82)
-    tmp.replace(dest)
+    _atomic_save_image(im, Path(dest), "JPEG", quality=82)
 
 
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"      # Apache-2.0, about 100 MB; downloaded once on first use
 _DEPTH: dict = {}
 DEPTH_LOCK = threading.Lock()
+DEPTH_BACKOFF_BASE = 60.0
+DEPTH_BACKOFF_MAX = 600.0
 
 
 def get_depth_device() -> str:
@@ -85,15 +102,17 @@ def make_depth(src, dest):
     im = load_rgb(src)
     im.thumbnail((1024, 1024))
     with DEPTH_LOCK:                                          # one at a time: the model is loaded once and shared
-        if _DEPTH.get("failed"):
-            raise RuntimeError(f"Depth model unavailable: {_DEPTH['failed']}")
+        now = time.monotonic()
+        retry_after = float(_DEPTH.get("retry_after") or 0.0)
+        if _DEPTH.get("failed") and now < retry_after:
+            wait_s = max(1, int(retry_after - now))
+            raise RuntimeError(f"Depth model unavailable (retrying in {wait_s}s): {_DEPTH['failed']}")
         if "pipe" not in _DEPTH:
             try:
                 from transformers import pipeline
                 dev = get_depth_device()
                 online = _hf_is_online()
                 if not online:
-                    import os
                     os.environ["HF_HUB_OFFLINE"] = "1"
                     try:
                         import huggingface_hub.constants
@@ -101,17 +120,21 @@ def make_depth(src, dest):
                     except Exception as e:
                         log.debug("Could not set HF_HUB_OFFLINE: %s", e)
                 _DEPTH["pipe"] = pipeline("depth-estimation", model=DEPTH_MODEL, device=dev)
+                _DEPTH.pop("failed", None)
+                _DEPTH.pop("fail_count", None)
+                _DEPTH.pop("retry_after", None)
             except Exception as e:
+                fails = int(_DEPTH.get("fail_count") or 0) + 1
+                backoff = min(DEPTH_BACKOFF_MAX, DEPTH_BACKOFF_BASE * (2 ** min(fails - 1, 4)))
                 _DEPTH["failed"] = str(e)
+                _DEPTH["fail_count"] = fails
+                _DEPTH["retry_after"] = now + backoff
                 raise
         depth = _DEPTH["pipe"](im)["depth"]
     arr = np.asarray(depth.resize(im.size), dtype="float32")
     lo, hi = np.percentile(arr, 1), np.percentile(arr, 99)
     arr = np.clip((arr - lo) / max(hi - lo, 1e-6), 0, 1)
-    dest.parent.mkdir(exist_ok=True)
-    tmp = dest.with_suffix(".tmp")
-    Image.fromarray((arr * 255).astype("uint8")).save(tmp, "PNG")
-    tmp.replace(dest)
+    _atomic_save_image(Image.fromarray((arr * 255).astype("uint8")), Path(dest), "PNG")
 
 
 def load_ratings():

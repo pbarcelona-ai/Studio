@@ -263,7 +263,7 @@ BUILTIN_STYLES: list[dict[str, str]] = [
         "positives": "polished theatrical 3D CGI animated film still, stylized appealing 3D forms, subsurface-scattered skin, groomed hair strands, woven fabric shaders, warm global illumination, rich saturated color, soft cinematic bokeh",
         "negatives": "photorealistic human skin, clay texture, flat 2D drawing, uncanny valley, harsh flat lighting",
         "motion_cadence": "silky-smooth 24-fps feature-animation motion with natural weight transfer, subtle cinematic motion blur, overlapping follow-through, and rich PBR lighting",
-        "restyle_prompt": "Turn this image into polished theatrical 3D Animation with smooth stylized 3D geometry, subsurface-scattered skin, groomed hair, woven cloth shaders, and warm global illumination",
+        "restyle_prompt": "Complete 3D Pixar animated movie transformation (like The Incredibles and Toy Story): convert into exaggerated stylized 3D CGI cartoon proportions, smooth sculpted 3D animated surfaces and features, stylized groomed 3D hair, chunky stylized clothing and materials, warm global illumination, and rich saturated Pixar colors — NOT a real-world photograph, NOT photorealistic human skin",
     },
     {
         "id": "pixar_disney",
@@ -274,7 +274,7 @@ BUILTIN_STYLES: list[dict[str, str]] = [
         "positives": "3D animated fairytale feature film still with painterly hand-brushed surface textures, expressive luminous eyes, graceful storybook silhouette, golden fairytale rim lighting, rich lush color harmony",
         "negatives": "gritty realism, harsh cyberpunk neon, clay texture, flat unshaded vector",
         "motion_cadence": "fluid 24-fps feature animation with graceful theatrical acting, soft magical lighting continuity, and painterly surface stability",
-        "restyle_prompt": "Turn this image into a Pixar-Disney Storybook 3D animated film still combining smooth 3D forms with hand-painted fairytale textures and luminous storybook lighting",
+        "restyle_prompt": "Complete Pixar-Disney Storybook 3D animated feature film transformation: convert into appealing stylized 3D CGI cartoon proportions, smooth sculpted 3D animated forms, hand-painted fairytale textures, and luminous golden storybook lighting — NOT a real-world photograph, NOT photorealistic",
     },
     {
         "id": "painted_3d",

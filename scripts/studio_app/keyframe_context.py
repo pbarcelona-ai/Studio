@@ -249,35 +249,52 @@ def load_keyframe_project_context(slug: str, pd: Path) -> dict[str, Any]:
                 "lighting": light or prev.get("lighting", ""),
             }
 
-    # Index rendered Step 11 set plates (assets/sets/*.png), preferring pinned Baselines from sets_views.json!
+    # Index rendered Step 11 set plates (assets/sets/*.png), preferring newest pinned Baselines from sets_views.json!
+    deleted_sets_doc = _read_json_dict(pd / "sets_deleted.json")
+    deleted_set_keys = {
+        str(x).strip().lower()
+        for x in (deleted_sets_doc.get("deleted") or [])
+        if str(x).strip()
+    }
     set_images: dict[str, Path] = {}
     sets_dir = pd / "assets" / "sets"
     if sets_dir.is_dir():
-        for p in sorted(sets_dir.glob("*.png")):
+        for p in sorted(sets_dir.glob("*.png"), key=lambda x: x.stat().st_mtime):
             if p.stat().st_size <= 100:
                 continue
             stem_low = p.stem.lower()
             if "__view_" in stem_low or stem_low.endswith("_baseline"):
                 continue
-            nk = _norm_key(p.stem.replace("_", " "))
+            raw_label = stem_low.replace("_", " ").strip()
+            if raw_label in deleted_set_keys:
+                continue
+            nk = _norm_key(raw_label)
             if nk:
                 set_images[nk] = p
 
     raw_views_doc = _read_json_dict(pd / "sets_views.json")
     raw_vsets = raw_views_doc.get("sets") if isinstance(raw_views_doc.get("sets"), dict) else {}
+    baseline_mtimes: dict[str, float] = {}
     if isinstance(raw_vsets, dict):
         for sk, sdata in raw_vsets.items():
             if not isinstance(sdata, dict):
                 continue
-            nk = _norm_key(str(sdata.get("name") or sk))
+            raw_name = str(sdata.get("name") or sk).strip().lower()
+            if raw_name in deleted_set_keys or str(sk).strip().lower() in deleted_set_keys:
+                continue
+            nk = _norm_key(raw_name)
             if not nk:
                 continue
             b_snap = str(sdata.get("baseline_snapshot") or "").strip()
             if b_snap:
                 bp = pd / b_snap
                 if bp.is_file() and bp.stat().st_size > 100:
-                    # Pinned Baseline ALWAYS takes top priority for Step 17!
-                    set_images[nk] = bp
+                    # Pinned Baseline ALWAYS takes top priority; if duplicate set names collapse
+                    # to the same key (e.g. "living room" vs "the living room"), prefer the NEWEST baseline.
+                    bm = bp.stat().st_mtime
+                    if nk not in baseline_mtimes or bm >= baseline_mtimes[nk]:
+                        set_images[nk] = bp
+                        baseline_mtimes[nk] = bm
                     continue
             if nk not in set_images:
                 for vw in sdata.get("views") or []:
@@ -323,26 +340,42 @@ def compute_scene_seed(slug: str, sc_id: str) -> int:
     return (int.from_bytes(digest[:4], "big") % 1_999_999_000) + 100
 
 
+def _strip_shared_prompt_boilerplate(prompt: str) -> str:
+    """Remove shared style/location/character lock headers so prompt similarity measures shot-specific action/framing."""
+    txt = str(prompt or "")
+    # Cut LOCKED CHARACTERS tail
+    txt = re.split(r"LOCKED CHARACTERS\b", txt, maxsplit=1, flags=re.IGNORECASE)[0]
+    # Drop LOCKED LOCATION (...): <long set description> prefix if followed by shot blocking/action
+    m_blk = re.search(r"\b(Blocking:|Action:|Expression:|Lighting:)\b", txt, re.IGNORECASE)
+    m_loc = re.search(r"\bLOCKED LOCATION\b", txt, re.IGNORECASE)
+    if m_loc and m_blk and m_blk.start() > m_loc.start():
+        txt = txt[: m_loc.start()] + " " + txt[m_blk.start() :]
+    return re.sub(r"\s+", " ", txt).strip().lower()
+
+
 def detect_camera_continuity(
     cur_shot: dict[str, Any] | None,
     ref_shot: dict[str, Any] | None,
     cur_prompt: str,
     ref_prompt: str,
 ) -> tuple[str, float | None]:
-    """Classify shot-to-shot continuity using Step 12 camera metadata + prompt similarity.
+    """Classify shot-to-shot continuity using Step 12 camera metadata + shot-specific prompt similarity.
 
     Returns ``(mode, recommended_init_strength)`` where mode is:
     - ``"same_angle"`` -> strong img2img lock (``0.45``) preserving room/camera geometry
-    - ``"incremental"`` -> moderate img2img lock (``0.62``) preserving palette & layout
+    - ``"incremental"`` -> moderate continuity reference preserving palette & layout
     - ``"scene_cut"`` -> fresh composition using ``-r`` references only (``None``)
     """
     import difflib
 
-    sim = (
-        difflib.SequenceMatcher(None, ref_prompt.lower(), cur_prompt.lower()).ratio()
-        if (ref_prompt and cur_prompt)
-        else 0.5
-    )
+    if isinstance(cur_shot, dict) and isinstance(ref_shot, dict):
+        c_blob = f"{cur_shot.get('composition', '')} {cur_shot.get('blocking', '')} {cur_shot.get('action', '')}".strip().lower()
+        r_blob = f"{ref_shot.get('composition', '')} {ref_shot.get('blocking', '')} {ref_shot.get('action', '')}".strip().lower()
+        sim = difflib.SequenceMatcher(None, r_blob, c_blob).ratio() if (c_blob and r_blob) else 0.5
+    else:
+        c_clean = _strip_shared_prompt_boilerplate(cur_prompt)
+        r_clean = _strip_shared_prompt_boilerplate(ref_prompt)
+        sim = difflib.SequenceMatcher(None, r_clean, c_clean).ratio() if (c_clean and r_clean) else 0.5
 
     if isinstance(cur_shot, dict) and isinstance(ref_shot, dict):
         c_type = str(cur_shot.get("type") or "").strip().upper()
@@ -357,6 +390,17 @@ def detect_camera_continuity(
         # Explicit reverse angle / opposing side cues always count as a camera cut
         combined_angles = f"{c_angle} {r_angle}"
         if "reverse" in c_angle or ("behind" in c_angle) != ("behind" in r_angle):
+            return "scene_cut", None
+
+        # Switching between wide/medium establishing framing and tight/detail framing (INSERT, CU, MCU, ECU)
+        # or jumping focal length >= 15mm is ALWAYS a real camera cut — never smear the previous wide frame!
+        tight_types = {"INSERT", "ECU", "CU", "MCU"}
+        wide_types = {"EWS", "WS", "MLS", "LS", "MS", "TWO", "OTS"}
+        if c_type == "INSERT" and r_type != "INSERT":
+            return "scene_cut", None
+        if (c_type in tight_types and r_type in wide_types) or (c_type in wide_types and r_type in tight_types):
+            return "scene_cut", None
+        if c_lens and r_lens and abs(c_lens - r_lens) >= 15:
             return "scene_cut", None
 
         lens_close = bool(c_lens and r_lens and abs(c_lens - r_lens) <= 10)
@@ -970,12 +1014,26 @@ def collect_render_references(
             continuity_mode = mode
             auto_strength = rec_str
 
-    # If user pinned an anchor and neither is same_angle, anchor takes lead over sequential prev shot to eliminate chain drift
+    # If user pinned an anchor and neither is same_angle, anchor takes lead over sequential prev shot to eliminate chain drift.
+    # Even without an explicit pin, fall back to the scene's 1st-generation shot (`S001-01`) on later scene cuts (`sh_num >= 3`)
+    # so we never feed a 4th/5th-generation VAE-degraded mid-scene keyframe as the primary spatial reference.
+    scene_first_id = f"{sc_id}-01" if (sc_id and sh_num >= 3) else ""
+    scene_first_png = (kf_dir / f"{scene_first_id}.png") if scene_first_id else None
+    if scene_first_png is not None and not (scene_first_png.is_file() and scene_first_png.stat().st_size > 200):
+        scene_first_id = ""
+        scene_first_png = None
+
     if anchor_png is not None and continuity_mode == "scene_cut":
         primary_ref_id = anchor_ref
         primary_ref_png = anchor_png
+    elif scene_first_png is not None and continuity_mode == "scene_cut":
+        primary_ref_id = scene_first_id
+        primary_ref_png = scene_first_png
 
-    # Resolve effective init_image & init_strength (respecting explicit user slider when provided)
+    # Resolve effective init_image & init_strength (respecting explicit user slider when provided).
+    # IMPORTANT: Only apply automatic img2img `init_image` on true `same_angle` (0.45) or 1st-hop `incremental` (sh_num == 2).
+    # For `sh_num >= 3` incremental shots, use clean `-r` / `ReferenceMultiLatent` conditioning instead of chaining
+    # `init_image` across 3+ sequential VAE re-encodes (which causes progressive ceiling smear & clarity loss).
     init_image: Path | None = None
     init_strength: float | None = None
     if primary_ref_png is not None:
@@ -984,8 +1042,9 @@ def collect_render_references(
                 init_image = primary_ref_png
                 init_strength = max(0.15, min(0.95, float(user_strength)))
         elif auto_strength is not None:
-            init_image = primary_ref_png
-            init_strength = auto_strength
+            if continuity_mode == "same_angle" or sh_num <= 2 or (anchor_png is not None and primary_ref_png == anchor_png):
+                init_image = primary_ref_png
+                init_strength = auto_strength
 
     continuity_prefix = ""
     if primary_ref_id:
@@ -1102,29 +1161,52 @@ def collect_render_references(
         remaining_chars = char_ref_items
 
     if primary_ref_png is not None:
-        ref_imgs.append(primary_ref_png)
-        seen_paths.add(primary_ref_png.resolve())
-        role_lbl = "pinned Scene Anchor" if primary_ref_id == anchor_ref else "previous shot"
-        legend_parts.append(
-            f"Image {len(ref_imgs)} = {role_lbl} {primary_ref_id} (match room geometry, furniture, lighting & continuity)"
-        )
-        # Put Step 11 Set Plate right behind the anchor/prev shot (Slot 2) so the room stays locked!
-        _attach_set_plate()
+        # On camera cuts (`scene_cut`) when a crisp 0-generation Step 11 Set Plate exists,
+        # place the Step 11 Set Plate FIRST (`Image 1`) so room clarity stays razor-sharp!
+        if continuity_mode == "scene_cut" and set_img_path is not None:
+            _attach_set_plate()
+            if len(ref_imgs) < max_refs and primary_ref_png.resolve() not in seen_paths:
+                ref_imgs.append(primary_ref_png)
+                seen_paths.add(primary_ref_png.resolve())
+                role_lbl = "pinned Scene Anchor" if primary_ref_id == anchor_ref else "scene anchor"
+                legend_parts.append(
+                    f"Image {len(ref_imgs)} = {role_lbl} {primary_ref_id} (match scene lighting & continuity)"
+                )
+        else:
+            ref_imgs.append(primary_ref_png)
+            seen_paths.add(primary_ref_png.resolve())
+            role_lbl = "pinned Scene Anchor" if primary_ref_id == anchor_ref else "previous shot"
+            legend_parts.append(
+                f"Image {len(ref_imgs)} = {role_lbl} {primary_ref_id} (match room geometry, furniture, lighting & continuity)"
+            )
+            # Put Step 11 Set Plate right behind the anchor/prev shot (Slot 2) so the room stays locked!
+            _attach_set_plate()
     else:
         # First shot of a scene (no prev shot): put Step 11 Set Plate FIRST (Slot 1 on wide/medium, Slot 2 on CU)!
         _attach_set_plate()
 
+    scale_suffix = (
+        " — scale realistically DOWN to true human/room proportions matching Image 1 furniture & doorways (do NOT copy turnaround portrait size)"
+        if (not is_cu and (set_img_path is not None or primary_ref_png is not None))
+        else ""
+    )
     for rp, cname, rurl, rsrc, is_crop in remaining_chars:
         if len(ref_imgs) >= max_refs:
             break
         ref_imgs.append(rp)
-        role_desc = "FACE CLOSE-UP CROP (match EXACT face, eyes & hair)" if is_crop else "character turnaround (match EXACT face, hair, eyes, proportions, and outfit)"
+        role_desc = (
+            "FACE CLOSE-UP CROP (match EXACT face, eyes & hair)"
+            if is_crop
+            else f"character turnaround (match EXACT face, hair, eyes, proportions, and outfit{scale_suffix})"
+        )
         legend_parts.append(f"Image {len(ref_imgs)} = {cname} {role_desc}")
         char_refs_used.append({"name": cname, "url": rurl, "source": rsrc})
 
-    # If both a pinned anchor AND a separate previous shot exist and a slot remains, attach the secondary frame too
-    secondary_png = anchor_png if primary_ref_png == prev_png else prev_png
-    secondary_id = anchor_ref if primary_ref_id == prev_shot_ref else prev_shot_ref
+    # If both a pinned anchor AND a separate previous shot exist and a slot remains, attach the secondary frame too.
+    # On `scene_cut` when a crisp Step 11 Set Plate + scene anchor are already attached, skip mid-chain `prev_png`
+    # so degraded intermediate frames never pollute the reference set.
+    secondary_png = anchor_png if primary_ref_png == prev_png else (None if (continuity_mode == "scene_cut" and set_img_path is not None) else prev_png)
+    secondary_id = anchor_ref if primary_ref_id == prev_shot_ref else ("" if secondary_png is None else prev_shot_ref)
     if len(ref_imgs) < max_refs and secondary_png is not None and secondary_png.resolve() not in seen_paths:
         ref_imgs.append(secondary_png)
         seen_paths.add(secondary_png.resolve())
@@ -1138,6 +1220,90 @@ def collect_render_references(
     suggested_angle_move = ""
     if continuity_mode == "scene_cut" and primary_ref_png is not None:
         suggested_angle_move = map_shot_to_angles_move(target_shot, shots_by_id.get(primary_ref_id), prompt)
+
+    effective_negatives = str(ctx.get("style_negatives") or "")
+    if not resolved_chars and not char_refs_used:
+        empty_guard = "eyes, googly eyes, faces, cartoon faces on pillows, anthropomorphic furniture, extra creatures"
+        effective_negatives = ", ".join(x for x in (effective_negatives, empty_guard) if x)
+    elif char_refs_used and not is_cu and (set_img_path is not None or primary_ref_png is not None):
+        # Architectural & Inter-Character Scale Lock: prevent full-frame character turnarounds from rendering as giants!
+        has_adult = False
+        has_child = False
+        has_dog = False
+        has_toy = False
+        for c_info in char_refs_used:
+            cn = str(c_info.get("name") or "")
+            rec = ctx["cast_profiles"].get(cn.lower()) or {}
+            blob = f"{cn} {rec.get('token', '')} {rec.get('archetype', '')}".lower()
+            if any(w in blob for w in ("stuffed", "plush", "toy", "rag doll", "doll", "action figure", "foot-tall")):
+                has_toy = True
+            elif any(w in blob for w in ("dog", "labrador", "puppy", "cat", "kitten", "hound", "retriever")):
+                has_dog = True
+            elif any(w in blob for w in ("boy", "girl", "child", "kid", "toddler", "5-year-old", "4-year-old", "3-year-old", "6-year-old", "7-year-old", "waist-high")):
+                has_child = True
+            else:
+                has_adult = True
+        char_names_list = [str(ci.get("name") or "").strip() for ci in char_refs_used if str(ci.get("name") or "").strip()]
+        if len(char_names_list) == 1:
+            count_rule = f"EXACTLY ONE SINGLE CHARACTER IN FRAME ({char_names_list[0]} ONLY — depict ONE moment in time with ONE single figure, NEVER duplicate or clone {char_names_list[0]})."
+            scale_neg = "duplicate person, clone, two people, second figure, giant character, oversized person, head touching doorway top, towering figure, disproportionate scale, miniature furniture, horse-sized dog, giant dog"
+        else:
+            count_rule = f"EXACTLY {len(char_names_list)} CHARACTERS IN FRAME ({', '.join(char_names_list)} ONLY — depict ONE single moment in time with ZERO duplicate clones)."
+            scale_neg = "duplicate character, clone figure, giant character, oversized person, head touching doorway top, towering figure, disproportionate scale, miniature furniture, horse-sized dog, giant dog"
+
+        scale_rules: list[str] = [
+            count_rule,
+            "REAL-WORLD ARCHITECTURAL SCALE (CRITICAL): Scale character height realistically DOWN to true real-world proportions relative to the doors, kitchen counters, dining table, and sofa in Image 1 — NEVER draw characters giant or towering near doorways/ceilings.",
+        ]
+        if has_adult:
+            scale_rules.append(
+                "An adult stands ~5'4\" tall: leave 1.5–2 feet of clear opening space ABOVE the adult's head below the top of interior doorways/archways, with hips aligned to dining-table/kitchen-counter height and knees aligned to sofa-seat height."
+            )
+        if has_child:
+            scale_rules.append(
+                "A young child stands ~3'6\" tall (waist-high to an adult, top of head near dining-tabletop or sofa-backrest height)."
+            )
+        if has_dog:
+            scale_rules.append(
+                "A Labrador dog stands ONLY ~2 feet tall at the shoulder (knee-high to an adult woman, top of the dog's head below Mom's waist/hip and below dining-tabletop height — NEVER as tall as a human or horse-sized, standing solidly on all four paws on the floor)."
+            )
+        if has_toy:
+            scale_rules.append(
+                "A toy or rag doll is small (~10–14 inches tall, hand-sized relative to dining chairs and sofa cushions)."
+            )
+        continuity_prefix = continuity_prefix + " ".join(scale_rules) + "\n"
+        effective_negatives = ", ".join(x for x in (effective_negatives, scale_neg) if x)
+
+    # Small Prop Scale & Surface Contact Lock (prevents giant mugs on the floor rug or bathtub-sized dog bowls)
+    low_p_props = (prompt or "").lower()
+    if re.search(r"\b(mug|teacup|tea\s+cup|coffee\s+cup|dog\s+bowl|steel\s+bowl|bowl|remote)\b", low_p_props):
+        prop_rules: list[str] = []
+        if re.search(r"\b(mug|teacup|tea\s+cup|coffee\s+cup)\b", low_p_props):
+            prop_rules.append("A ceramic mug is small (~4 inches tall, palm-sized) resting solidly flat ON a wooden table surface (NEVER giant, NEVER sitting on the floor rug).")
+        if re.search(r"\b(dog\s+bowl|steel\s+bowl|bowl)\b", low_p_props):
+            prop_rules.append("A stainless steel dog bowl is small (~8 inches wide, ~3 inches high) resting flat on the floor (NEVER bathtub-sized, NEVER stood inside by a person).")
+        if prop_rules:
+            continuity_prefix = continuity_prefix + "PROP SCALE & SURFACE CONTACT: " + " ".join(prop_rules) + "\n"
+            prop_neg = "giant mug, oversized mug, mug on floor, mug on rug, giant dog bowl, bathtub bowl, oversized bowl, floating prop"
+            effective_negatives = ", ".join(x for x in (effective_negatives, prop_neg) if x)
+
+    # Interior Weather Boundary: when an indoor (INT.) scene mentions rain/snow/storm,
+    # keep the indoor air, walls, furniture, and camera lens completely dry and crisp
+    # (using positive dry-room tokens for CFG=1 models + explicit negative guards).
+    is_interior_scene = bool(
+        re.search(r"\bINT\.", heading or "", re.IGNORECASE)
+        or re.search(r"\b(living room|kitchen|bedroom|hallway|office|classroom|cabin|bridge|indoors?|interior)\b", f"{heading} {set_loc_lbl}", re.IGNORECASE)
+    ) and not re.search(r"^\s*EXT\.", heading or "", re.IGNORECASE)
+    has_exterior_weather = bool(
+        re.search(r"\b(rain|rainy|raining|raindrops?|rivulets?|drizzle|downpour|storm|snow|snowing|sleet|hail)\b", prompt or "", re.IGNORECASE)
+    )
+    if is_interior_scene and has_exterior_weather:
+        continuity_prefix = (
+            continuity_prefix
+            + "DRY INDOOR ROOM & ARCHITECTURE LOCK: Keep every wall, open hallway, doorway, and existing window in the exact positions of the attached set plate without adding or replacing openings. Keep the indoor ceiling, walls, hallway, TV, sofa, rug, and hardwood floor completely dry and spotless, with overcast weather confined strictly outdoors beyond the existing window pane.\n"
+        )
+        weather_neg = "rain inside room, indoor rain, rain on camera lens, wet lens, raindrops on screen, water streaks across frame, rain over furniture, rain on floor, rain on TV, extra windows, blocked hallway, rain overlay"
+        effective_negatives = ", ".join(x for x in (effective_negatives, weather_neg) if x)
 
     return {
         "ref_imgs": ref_imgs,
@@ -1155,5 +1321,5 @@ def collect_render_references(
         "char_refs_used": char_refs_used,
         "set_ref_used": set_ref_used,
         "resolved_characters": resolved_chars,
-        "style_negatives": ctx["style_negatives"],
+        "style_negatives": effective_negatives,
     }

@@ -96,11 +96,35 @@ def copy_files(payload: Path) -> Task:
             old = ctx.home / STATE_DIR / "stage" / "old"
             shutil.rmtree(old, ignore_errors=True)
             old.mkdir(parents=True)
-            for p in entries:                                  # 2: swap each one into place (quick; projects/ and books/ are never touched)
-                dest = ctx.home / p.name
-                if dest.exists() or dest.is_symlink():
-                    os.replace(dest, old / p.name)
-                os.replace(stage / p.name, dest)
+            swapped: list[tuple[Path, Path | None]] = []
+            try:
+                for p in entries:                              # 2: transactional swap (rolls back on any mid-swap error)
+                    dest = ctx.home / p.name
+                    backup: Path | None = None
+                    if dest.exists() or dest.is_symlink():
+                        backup = old / p.name
+                        os.replace(dest, backup)
+                    try:
+                        os.replace(stage / p.name, dest)
+                    except BaseException:
+                        if backup is not None and (backup.exists() or backup.is_symlink()):
+                            with contextlib.suppress(OSError):
+                                os.replace(backup, dest)
+                        raise
+                    swapped.append((dest, backup))
+            except BaseException:
+                # Roll back every already-swapped entry in reverse order so the install is never half-updated
+                for dest, backup in reversed(swapped):
+                    with contextlib.suppress(OSError):
+                        if dest.is_dir() and not dest.is_symlink():
+                            shutil.rmtree(dest, ignore_errors=True)
+                        elif dest.exists() or dest.is_symlink():
+                            dest.unlink(missing_ok=True)
+                    if backup is not None and (backup.exists() or backup.is_symlink()):
+                        with contextlib.suppress(OSError):
+                            os.replace(backup, dest)
+                shutil.rmtree(old, ignore_errors=True)
+                raise
             shutil.rmtree(old, ignore_errors=True)
     return Task("files", "Copying the Studio's files", run, weight=1, done=lambda ctx: payload.resolve() == ctx.home.resolve())
 

@@ -751,13 +751,47 @@ def sync_shot_edit(
     if not isinstance(shot_obj, dict):
         return report
 
-    if any(k in fields for k in ("type", "composition", "action", "camera", "lens")):
-        parts = [
-            str(shot_obj.get("type") or "").strip(),
-            str(shot_obj.get("composition") or "").strip(),
-            str(shot_obj.get("action") or "").strip(),
-        ]
-        new_prompt = ". ".join(p.rstrip(". ") for p in parts if p)
+    if any(
+        k in fields
+        for k in (
+            "type",
+            "composition",
+            "action",
+            "camera",
+            "lens",
+            "lens_mm",
+            "height",
+            "movement",
+            "lighting",
+            "angle",
+            "camera_motion",
+            "camera_notes",
+            "subject_action",
+        )
+    ):
+        new_prompt = ""
+        try:
+            from studio_app import keyframe_context
+
+            ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+            heading = ""
+            if isinstance(sl, dict):
+                for sc in sl.get("scenes") or []:
+                    if str(sc.get("id") or "") == sid:
+                        heading = str(sc.get("heading") or "")
+                        break
+            info = keyframe_context.build_shot_keyframe_info(shot_obj, sid, heading, ctx)
+            new_prompt = str(info.get("default_prompt") or "").strip()
+        except Exception:
+            new_prompt = ""
+        if not new_prompt:
+            parts = [
+                str(shot_obj.get("type") or "").strip(),
+                str(shot_obj.get("composition") or "").strip(),
+                str(shot_obj.get("action") or "").strip(),
+                str(shot_obj.get("camera_notes") or shot_obj.get("lighting") or "").strip(),
+            ]
+            new_prompt = ". ".join(p.rstrip(". ") for p in parts if p)
         prompts = dict(kf_meta.get("prompts") or {})
         if new_prompt and prompts.get(shot_id) != new_prompt:
             prompts[shot_id] = new_prompt

@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -63,18 +64,38 @@ def read_state() -> dict:
         return {}
 
 
+_STATE_LOCK = threading.Lock()
+
+
 def write_state(d: dict) -> None:
     f = state_file()
     f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(d, indent=1, default=str))
-    if not procs.IS_WIN:
-        os.chmod(tmp, 0o600)                                 # it holds the job's options (a Kaggle name, never a key)
-    os.replace(tmp, f)
+    payload = json.dumps(d, indent=1, default=str)
+    with _STATE_LOCK:
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=f.parent,
+                prefix="current-",
+                suffix=".tmp",
+                delete=False,
+            ) as fh:
+                tmp_path = Path(fh.name)
+                fh.write(payload)
+                fh.flush()
+            if not procs.IS_WIN:
+                os.chmod(tmp_path, 0o600)                    # it holds the job's options (a Kaggle name, never a key)
+            os.replace(tmp_path, f)
+            tmp_path = None
+        finally:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
 
 
-def pid_alive(pid) -> bool:
-    return procs.pid_alive(pid)
+def pid_alive(pid, expected_start_id: str = "") -> bool:
+    return procs.pid_matches(pid, expected_start_id) if expected_start_id else procs.pid_alive(pid)
 
 
 def exit_code(path) -> int | None:
@@ -91,6 +112,7 @@ class Job:
         self.running = False
         self.proc: subprocess.Popen | None = None
         self.attached_pid: int | None = None                     # a step started by an earlier Studio that this one follows
+        self.attached_start_id: str = ""
         self.stop_flag = False
         self.current = ""
         self.thread: threading.Thread | None = None
@@ -146,16 +168,19 @@ class Job:
         jid = time.strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}"
         d = job_dir() / jid
         d.mkdir(parents=True, exist_ok=True)
-        self.state = {"id": jid, "dir": str(d), "studio_pid": os.getpid(), "started": time.strftime("%Y-%m-%d %H:%M:%S"), "status": "running",
-                      "project": opt.get("project") or opt.get("set") or "", "steps": steps, "opt": opt, "index": 0, "label": "",
-                      "step_pid": None, "log": "", "exit": ""}
+        with self.lock:
+            self.state = {"id": jid, "dir": str(d), "studio_pid": os.getpid(), "started": time.strftime("%Y-%m-%d %H:%M:%S"), "status": "running",
+                          "project": opt.get("project") or opt.get("set") or "", "steps": steps, "opt": opt, "index": 0, "label": "",
+                          "step_pid": None, "step_start_id": "", "step_pgid": None, "log": "", "exit": ""}
         self._save()
         self._prune()
 
     def _save(self, **kw) -> None:
-        self.state.update(kw)
+        with self.lock:
+            self.state.update(kw)
+            snapshot = dict(self.state)
         try:
-            write_state(self.state)
+            write_state(snapshot)
         except OSError:
             log.exception("could not save the job state")
 
@@ -179,8 +204,10 @@ class Job:
             self.log("!! the job stopped because of an internal error (see studio.log)")
         finally:
             self.attached_pid = None
+            self.attached_start_id = ""
             if self.state:
-                self._save(status="stopped" if self.stop_flag else "finished", ended=time.strftime("%Y-%m-%d %H:%M:%S"), step_pid=None)
+                self._save(status="stopped" if self.stop_flag else "finished", ended=time.strftime("%Y-%m-%d %H:%M:%S"),
+                           step_pid=None, step_start_id="", step_pgid=None)
             nxt = None
             with self.lock:
                 self.current = ""
@@ -253,7 +280,12 @@ class Job:
             return 127
         self.proc = proc
         if self.state:
-            self._save(step_pid=proc.pid, log=str(logf), exit=str(exitf))
+            pgid = None
+            try:
+                pgid = procs.group_of(proc.pid)
+            except OSError:
+                pgid = None
+            self._save(step_pid=proc.pid, step_start_id=procs.process_start_id(proc.pid), step_pgid=pgid, log=str(logf), exit=str(exitf))
         if self.stop_flag:                                    # Stop was pressed while this step was starting
             self._terminate(proc)
         self._follow(logf, lambda: proc.poll() is not None)
@@ -287,14 +319,19 @@ class Job:
 
     # ---- after a restart
     def attach(self, state: dict) -> bool:
-        """Follow a step that an earlier Studio started and that is still running, then carry on with the rest of its job. False if busy."""
+        """Follow a step that an earlier Studio started and that is still running, then carry on with the rest of its job. False if busy or PID identity mismatched."""
+        pid = state.get("step_pid")
+        start_id = str(state.get("step_start_id") or "")
+        if not pid or not pid_alive(int(pid), start_id):
+            return False
         with self.lock:
             if self.running:
                 return False
             self.lines, self.running, self.stop_flag = [], True, False
         self.state = dict(state)
         self.state["studio_pid"] = os.getpid()
-        self.attached_pid = int(state["step_pid"])
+        self.attached_pid = int(pid)
+        self.attached_start_id = start_id
         t = threading.Thread(target=self._attached, daemon=True)
         t.start()
         self.thread = t                  # set once started: wait() may join it at any moment
@@ -309,8 +346,8 @@ class Job:
             self.log(f"===== carrying on with the job started {st.get('started', '')} by the last session of the Studio")
             self.log(f"===== [{idx + 1}/{len(steps)}] {st.get('label', '')} (still running: following its log)")
             self._save()
-            pid, exitf = self.attached_pid, st.get("exit", "")
-            self._follow(Path(st.get("log", "")), lambda: not pid_alive(pid) or Path(exitf).is_file())
+            pid, start_id, exitf = self.attached_pid, self.attached_start_id, st.get("exit", "")
+            self._follow(Path(st.get("log", "")), lambda: not pid_alive(pid, start_id) or Path(exitf).is_file())
             code = exit_code(exitf)
             ok = code is not None and code in tuple((steps[idx] or {}).get("ok_codes", (0,)))
             if not ok and not self.stop_flag:
@@ -345,7 +382,8 @@ class Job:
         if proc is not None and proc.poll() is None:
             self._terminate(proc)
         pid = self.attached_pid
-        if pid and pid_alive(pid):
+        start_id = self.attached_start_id
+        if pid and pid_alive(pid, start_id):
             kill_group(pid)
 
     def _terminate(self, proc: subprocess.Popen) -> None:

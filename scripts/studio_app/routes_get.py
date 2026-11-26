@@ -1533,5 +1533,32 @@ def _v2_code_drawn_templates_get(r: Request):
     return {"status": "ok", "templates": code_drawn_templates.CODE_DRAWN_TEMPLATES}
 
 
+@route("GET", "/api/v2_early_prompt_audit")
+def _v2_early_prompt_audit_get(r: Request):
+    """Return persisted early-stage prompt continuity audit reports for Steps 03, 04, 05, 06, 07, and 12."""
+    from studio_app import early_prompt_audit
+
+    slug = str(r.q("project") or "").strip()
+    if not slug:
+        return {"status": "ok", "project": "", "steps": {}, "updated_at": 0.0}
+    pd = pdir(slug, "book")
+    data = early_prompt_audit.load_reports(pd)
+    return {"status": "ok", "project": slug, **data}
+
+
+@route("GET", "/api/v2_render_job")
+def _v2_render_job_get(r: Request):
+    """Poll status/result of an async background render job submitted with `async: true`."""
+    from studio_app import render_jobs
+
+    jid = str(r.q("id") or "").strip()
+    if not jid:
+        return {"status": "ok", "jobs": render_jobs.list_render_jobs()}
+    rec = render_jobs.get_render_job(jid)
+    if rec is None:
+        raise HttpError(404, f"unknown render job: {jid}")
+    return {"status": "ok", "job": rec}
+
+
 
 

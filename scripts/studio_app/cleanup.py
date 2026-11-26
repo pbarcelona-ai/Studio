@@ -2,8 +2,10 @@
 import os
 import re
 import shutil
+import threading
 import time
 from pathlib import Path
+from typing import Any
 from bookkit import SLUG_RE
 import layout
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
@@ -29,13 +31,31 @@ KEEP_NOTEBOOKS = 3                       # clean-up keeps this many of the newes
 OUTPUT_PATTERN = re.compile(r"^(shot|image|narration|sfx|music)-(\d{4})(_alt\d)?\.(mp4|png|wav)$")
 
 
+_SCAN_TTL = 15.0
+_SCAN_LOCK = threading.Lock()
+_SCAN_CACHE: tuple[float, list[dict[str, Any]]] | None = None
+
+
+def invalidate_cleanup_cache() -> None:
+    """Clear the cached workspace cleanup scan after deletions or generation."""
+    global _SCAN_CACHE
+    with _SCAN_LOCK:
+        _SCAN_CACHE = None
+
+
 def _size(path):
     if path.is_file():
         return path.stat().st_size
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
 
 
-def cleanup_scan():
+def cleanup_scan(*, force: bool = False):
+    global _SCAN_CACHE
+    now = time.monotonic()
+    if not force:
+        with _SCAN_LOCK:
+            if _SCAN_CACHE is not None and (now - _SCAN_CACHE[0]) < _SCAN_TTL:
+                return _SCAN_CACHE[1]
     found: dict[str, list] = {c[0]: [] for c in CLEAN_CATEGORIES}
 
     def add(cat, path):
@@ -89,8 +109,11 @@ def cleanup_scan():
                     if m and int(m.group(2)) > limit:
                         add("stale", f)
     add("other", ROOT / "graphify-out")
-    return [{"id": cid, "title": title, "default": default, "note": note, "items": sorted(found[cid], key=lambda i: i["path"]),
-             "bytes": sum(i["bytes"] for i in found[cid])} for cid, title, default, note in CLEAN_CATEGORIES]
+    result = [{"id": cid, "title": title, "default": default, "note": note, "items": sorted(found[cid], key=lambda i: i["path"]),
+               "bytes": sum(i["bytes"] for i in found[cid])} for cid, title, default, note in CLEAN_CATEGORIES]
+    with _SCAN_LOCK:
+        _SCAN_CACHE = (time.monotonic(), result)
+    return result
 
 
 def move_to_trash(paths, label):
@@ -106,6 +129,8 @@ def move_to_trash(paths, label):
         total += _size(src)
         shutil.move(str(src), str(target))
         moved += 1
+    if moved:
+        invalidate_cleanup_cache()
     return {"moved": moved, "bytes": total, "trash": str(dest) if moved else ""}
 
 
@@ -115,7 +140,7 @@ def cleanup_delete(categories):
         raise PlanError("tick at least one group")
     paths: list = []
     seen: list = []
-    for cat in cleanup_scan():                                              # re-scan: only what the server finds itself is ever removed
+    for cat in cleanup_scan(force=True):                                    # fresh scan before deletion
         if cat["id"] in wanted:
             for item in cat["items"]:
                 if not any(item["path"] == p or item["path"].startswith(p + "/") for p in seen):

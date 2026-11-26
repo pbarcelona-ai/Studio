@@ -22,6 +22,10 @@ from .gpu_lease import acquire_media_lease
 from .pantry import Meter, Pantry, apply_inputs, model_key, pick_outputs, resolve_values
 
 
+class ComfyUICancelledError(RuntimeError):
+    """Raised when a ComfyUI workflow run is cancelled before producing outputs."""
+
+
 def parse_ws_preview_frame(frame: bytes) -> dict[str, str] | None:
     """Decode a ComfyUI binary WebSocket preview frame: >II header (event_type=1, format 1=JPEG / 2=PNG) + image payload."""
     if not isinstance(frame, (bytes, bytearray)) or len(frame) <= 8:
@@ -433,6 +437,9 @@ class ComfyUIRunner(LocalRunner):
                 with contextlib.suppress(Exception):
                     ws_sock.close()
 
+        if self._cancelled:
+            raise ComfyUICancelledError("ComfyUI render was cancelled")
+
         # Wait briefly for /history/{prompt_id} if WS disconnected early
         hist: dict[str, Any] = {}
         poll_deadline = time.monotonic() + min(self.timeout, 120.0)
@@ -443,6 +450,9 @@ class ComfyUIRunner(LocalRunner):
             if hist:
                 break
             time.sleep(0.5)
+
+        if self._cancelled:
+            raise ComfyUICancelledError("ComfyUI render was cancelled")
 
         raw_outputs: list[dict[str, Any]] = []
         for nid, node_out in (hist.get("outputs") or {}).items():
@@ -463,6 +473,8 @@ class ComfyUIRunner(LocalRunner):
         output_dir.mkdir(parents=True, exist_ok=True)
         saved_paths: list[str] = []
         for idx, item in enumerate(chosen):
+            if self._cancelled:
+                raise ComfyUICancelledError("ComfyUI render was cancelled")
             q = urllib.parse.urlencode({
                 "filename": item["filename"],
                 "subfolder": item.get("subfolder", ""),
@@ -470,9 +482,16 @@ class ComfyUIRunner(LocalRunner):
             })
             with urllib.request.urlopen(f"{self.base_url}/view?{q}", timeout=30.0) as vresp:
                 content = vresp.read()
+            if not content:
+                continue
             dest = output_dir / f"out-{idx:02d}-{Path(item['filename']).name}"
             dest.write_bytes(content)
             saved_paths.append(str(dest))
+
+        if self._cancelled:
+            raise ComfyUICancelledError("ComfyUI render was cancelled")
+        if not saved_paths:
+            raise RuntimeError(f"ComfyUI prompt {prompt_id} finished without producing any output files")
 
         if on_progress:
             on_progress({"event": "progress", "progress": 1.0})
@@ -481,5 +500,5 @@ class ComfyUIRunner(LocalRunner):
             "ok": True,
             "prompt_id": prompt_id,
             "outputs": saved_paths,
-            "output_path": saved_paths[0] if saved_paths else "",
+            "output_path": saved_paths[0],
         }

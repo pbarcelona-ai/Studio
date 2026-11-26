@@ -625,3 +625,120 @@ def test_step17_set_plate_never_evicted_is_image_1_and_ignores_locked_dossier_me
     assert rp2["set_ref_used"] is not None
 
 
+def test_interior_weather_guard_keeps_rain_outside_window_not_on_camera(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import character_tokens
+    from studio_app import keyframe_context
+
+    slug = "dry_interior_demo"
+    pd = tmp_path / "projects" / "books" / slug
+    (pd / "assets" / "sets").mkdir(parents=True, exist_ok=True)
+    (pd / "keyframes").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(character_tokens, "PROJECTS", tmp_path / "projects")
+    monkeypatch.setattr(character_tokens, "CHARACTERS_ROOT", tmp_path / "projects" / "characters")
+
+    _make_png(pd / "assets" / "sets" / "living_room_baseline.png")
+    (pd / "sets_views.json").write_text(
+        json.dumps({"sets": {"living room": {"name": "LIVING ROOM", "baseline_view_id": "main", "baseline_snapshot": "assets/sets/living_room_baseline.png", "views": []}}}),
+        encoding="utf-8",
+    )
+    sl_data = {
+        "scenes": [
+            {
+                "id": "S001",
+                "heading": "INT. LIVING ROOM - DAY",
+                "shots": [{"n": 1, "type": "WS", "composition": "Window on right with rain streaks outside.", "action": "Rain runs down the glass."}],
+            }
+        ]
+    }
+    ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+    pack = keyframe_context.collect_render_references(
+        ctx,
+        "S001-01",
+        "WS shot in living room. Rain streaks on the right window.",
+        sl_data,
+        pd / "keyframes",
+        {},
+    )
+    assert "DRY INDOOR ROOM & ARCHITECTURE LOCK" in pack["continuity_prefix"]
+    assert "rain on camera lens" in pack["style_negatives"]
+    assert "rain inside room" in pack["style_negatives"]
+    assert "extra windows" in pack["style_negatives"]
+
+
+def test_step17_breaks_insert_chaining_and_enforces_architectural_character_scale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import character_tokens
+    from studio_app import keyframe_context
+
+    slug = "clarity_scale_demo"
+    pd = tmp_path / "projects" / "books" / slug
+    (pd / "assets" / "sets").mkdir(parents=True, exist_ok=True)
+    (pd / "assets" / "turnarounds").mkdir(parents=True, exist_ok=True)
+    (pd / "keyframes").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(character_tokens, "PROJECTS", tmp_path / "projects")
+    monkeypatch.setattr(character_tokens, "CHARACTERS_ROOT", tmp_path / "projects" / "characters")
+
+    _make_png(pd / "assets" / "sets" / "living_room_baseline.png")
+    _make_png(pd / "assets" / "turnarounds" / "mom_front.png")
+    _make_png(pd / "keyframes" / "S001-01.png")
+    _make_png(pd / "keyframes" / "S001-02.png")
+    _make_png(pd / "keyframes" / "S001-05.png")
+    (pd / "sets_views.json").write_text(
+        json.dumps({"sets": {"living room": {"name": "LIVING ROOM", "baseline_view_id": "main", "baseline_snapshot": "assets/sets/living_room_baseline.png", "views": []}}}),
+        encoding="utf-8",
+    )
+    (pd / f"{slug}.json").write_text(
+        json.dumps({"characters": [{"name": "MOM", "token": "Warm mother in her mid-30s wearing a charcoal apron"}]}),
+        encoding="utf-8",
+    )
+    sl_data = {
+        "scenes": [
+            {
+                "id": "S001",
+                "heading": "INT. LIVING ROOM - DAY",
+                "shots": [
+                    {"n": 1, "type": "WS", "lens_mm": 32, "composition": "Wide view of the living room."},
+                    {"n": 2, "type": "MS", "lens_mm": 40, "composition": "Medium view across the sofa and TV."},
+                    {"n": 3, "type": "INSERT", "lens_mm": 65, "composition": "Close detail of the folded newspaper on the chair."},
+                    {"n": 5, "type": "MCU", "lens_mm": 50, "composition": "Close detail of the empty coat hook."},
+                    {"n": 6, "type": "MLS", "lens_mm": 35, "characters": ["MOM"], "composition": "Mom enters from the kitchen holding a bowl."},
+                ],
+            }
+        ]
+    }
+    ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+
+    # 1. S001-03 (65mm INSERT after 40mm MS) MUST classify as scene_cut (no wide-room init_image smear!) and put crisp Set Plate first
+    p3 = keyframe_context.collect_render_references(
+        ctx,
+        "S001-03",
+        "LOCKED LOCATION (INT. LIVING ROOM - DAY): Big room. Close detail of the folded newspaper.",
+        sl_data,
+        pd / "keyframes",
+        {},
+    )
+    assert p3["continuity_mode"] == "scene_cut"
+    assert p3["init_image"] is None
+    assert p3["ref_imgs"][0].name == "living_room_baseline.png"
+
+    # 2. S001-06 (MLS introducing MOM after S001-05 MCU) MUST anchor to crisp Set Plate + S001-01 (NOT degraded S001-05!)
+    #    AND inject the REAL-WORLD ARCHITECTURAL SCALE rule so MOM is never drawn giant!
+    p6 = keyframe_context.collect_render_references(
+        ctx,
+        "S001-06",
+        "MLS shot. Mom steps out of the kitchen doorway holding a mixing bowl.",
+        sl_data,
+        pd / "keyframes",
+        {},
+    )
+    assert p6["continuity_mode"] == "scene_cut"
+    assert p6["ref_imgs"][0].name == "living_room_baseline.png"
+    assert "S001-05.png" not in [p.name for p in p6["ref_imgs"]]
+    assert "REAL-WORLD ARCHITECTURAL SCALE" in p6["continuity_prefix"]
+    assert "1.5–2 feet" in p6["continuity_prefix"]
+    assert "giant character" in p6["style_negatives"]
+
+

@@ -1,0 +1,26 @@
+{
+  "name": "youtube_explainer",
+  "title": "YouTube & explainer video",
+  "about": "Retention-driven 16:9 YouTube video or explainer: 3-15s hook (Direct, Controversy, or Negative), open information loops, conversational human narration, inline facts/mechanisms, and a single-sentence CTA.",
+  "products": [
+    "screenplay",
+    "storyboard",
+    "film",
+    "marketing"
+  ],
+  "aspect": "16:9",
+  "target_minutes": 8,
+  "series": false,
+  "quality_tier": "final",
+  "critique": {
+    "min_score": 8,
+    "max_rounds": 2
+  },
+  "prompt_rules": {
+    "story_analyst": "Extract the core viewer promise, strongest counter-intuitive angles, and concrete facts, mechanisms, or examples that keep viewers watching without fluff.",
+    "screenwriter": "Open in the first 3-15 seconds with a Direct, Controversy, or Negative hook (NEVER 'Welcome back to the channel' or 'Hi guys'). Follow Hook -> Shock -> Validate -> Tease, open information loops that pull viewers across every section, attach concrete facts/mechanisms inline at the exact point they matter (never dumped at the end), write in plain conversational human language (understandable by a 12-year-old, zero AI buzzwords like 'folks', 'embarking', 'enchanting', 'delve', 'tapestry'), pair spoken narration with concrete filmable visual action, and finish with a single-sentence CTA (under 10 seconds, one ask only).",
+    "script_doctor": "Audit ruthlessly for first-15-second hook strength, open-loop retention across sections, conversational human voice (flag stiff AI phrasing), inline factual specificity, and a crisp single-sentence ending CTA.",
+    "director": "Design dynamic visual cutaways, B-roll, and visual analogies that reinforce every spoken beat so the screen never goes static.",
+    "editor": "Tight rhythm with zero dead air; visual pattern interrupt every 4-8 seconds; end cleanly right on the single-sentence CTA."
+  }
+}

@@ -123,7 +123,7 @@ def recipes() -> list[dict]:
         d = _read(p, {})
         if d.get("name") == p.stem and d.get("title") and not recipe_problems(d):
             out.append(d)
-    order = ["feature_film", "short_film", "vertical_microdrama", "picture_book", "animatic_pitch", "trailer_only", "audiobook_only", "music_video"]
+    order = ["feature_film", "short_film", "vertical_microdrama", "youtube_explainer", "picture_book", "animatic_pitch", "trailer_only", "audiobook_only", "music_video"]
     return sorted(out, key=lambda d: (order.index(d["name"]) if d["name"] in order else len(order), d["name"]))
 
 

@@ -61,16 +61,16 @@ def get_client() -> MCPClient:
 
 @route("GET", "/api/mcp/status")
 def mcp_status(r: Request):
-    """Check which MCP servers are available."""
+    """Check which MCP servers are configured and available (plus local fallback readiness)."""
     client = get_client()
-    servers = {
-        "firecrawl": client.check_server("firecrawl"),
-        "premiere": client.check_server("premiere"),
-        "blender": client.check_server("blender"),
-        "playwright": client.check_server("playwright"),
-        "postgres": client.check_server("postgres"),
+    names = ("firecrawl", "premiere", "blender", "playwright", "postgres")
+    servers = {name: client.check_server(name) for name in names}
+    details = {name: client.server_status(name) for name in names}
+    return {
+        "servers": servers,
+        "details": details,
+        "local_fallbacks": {"premiere": True, "blender": True, "playwright": True},
     }
-    return {"servers": servers}
 
 
 # =============================================================================
@@ -131,28 +131,224 @@ def mcp_premiere_connect(r: Request):
     return result
 
 
+def _ensure_fdx_export(book_dir: Path) -> Path:
+    """Ensure a fresh screenplay.fdx exists in `<book_dir>/exports/` (auto-exporting if needed)."""
+    import screenplay_export
+
+    exports_dir = book_dir / "exports"
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        screenplay_export.export(book_dir, ("fdx",))
+    except Exception as e:
+        log.debug("Auto FDX export skipped or failed: %s", e)
+    fdx_files = list(exports_dir.glob("*.fdx"))
+    if not fdx_files:
+        raise HttpError(404, "No screenplay found to export as .fdx. Generate or import a screenplay in Step 06 first.")
+    return max(fdx_files, key=lambda f: f.stat().st_mtime)
+
+
+def _write_premiere_xml(book_dir: Path, project: str) -> Path:
+    """Build a valid Final Cut Pro 7 / Adobe Premiere Pro XML sequence with scene markers for direct Import."""
+    import json
+    from xml.sax.saxutils import escape
+    import adaptation as ad
+    import screenplay
+
+    exports_dir = book_dir / "exports"
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    xml_path = exports_dir / f"{project}_premiere.xml"
+
+    fps = 24
+    scenes_meta: list[tuple[str, str, int, str]] = []
+    plan = ad.load(book_dir) or {}
+    for idx, sc in enumerate(plan.get("scenes") or [], start=1):
+        sid = str(sc.get("id") or f"S{idx:03d}")
+        sp = screenplay.load_scene(book_dir, sid) or {}
+        heading = str(sp.get("heading") or sc.get("title") or sid)
+        secs = max(4, int(round(float(sc.get("seconds") or 12))))
+        summary = str(sc.get("summary") or "")[:240]
+        scenes_meta.append((sid, heading, secs, summary))
+
+    if not scenes_meta:
+        rd_sp = book_dir / "readin" / "screenplay.json"
+        if rd_sp.is_file():
+            try:
+                raw = json.loads(rd_sp.read_text(encoding="utf-8")) or {}
+                for idx, sc in enumerate(raw.get("scenes") or [], start=1):
+                    heading = str(sc.get("heading") or f"Scene {idx}")
+                    secs = max(4, int(round(float((sc.get("block") or {}).get("seconds") or 12))))
+                    scenes_meta.append((f"S{idx:03d}", heading, secs, ""))
+            except (OSError, ValueError):
+                pass
+
+    cursor = 0
+    marker_xml: list[str] = []
+    for sid, heading, secs, summary in scenes_meta:
+        dur_frames = secs * fps
+        marker_xml.append(
+            f"      <marker>\n"
+            f"        <name>{escape(f'{sid}: {heading}')}</name>\n"
+            f"        <comment>{escape(summary or heading)}</comment>\n"
+            f"        <in>{cursor}</in>\n"
+            f"        <out>{cursor + dur_frames}</out>\n"
+            f"      </marker>"
+        )
+        cursor += dur_frames
+    total_frames = max(fps * 10, cursor)
+
+    xml_doc = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE xmeml>\n'
+        '<xmeml version="4">\n'
+        '  <sequence id="pistachio-sequence-1">\n'
+        f'    <name>{escape(project)} — Screenplay Breakdown</name>\n'
+        f'    <duration>{total_frames}</duration>\n'
+        '    <rate><timebase>24</timebase><ntsc>FALSE</ntsc></rate>\n'
+        '    <media>\n'
+        '      <video>\n'
+        '        <format><samplecharacteristics><width>1920</width><height>1080</height></samplecharacteristics></format>\n'
+        '        <track />\n'
+        '      </video>\n'
+        '      <audio><track /></audio>\n'
+        '    </media>\n'
+        + ("\n".join(marker_xml) + "\n" if marker_xml else "")
+        + '  </sequence>\n'
+        '</xmeml>\n'
+    )
+    xml_path.write_text(xml_doc, encoding="utf-8")
+    return xml_path
+
+
+def _write_blender_previs_script(book_dir: Path, scene_id: str, previs_data: dict) -> Path:
+    """Generate a self-contained runnable Blender Python (.py) 3D previs blockout script for the scene."""
+    import json
+
+    exports_dir = book_dir / "exports"
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    safe_sid = "".join(c for c in scene_id if c.isalnum() or c in "_-") or "scene"
+    py_path = exports_dir / f"previs_{safe_sid}.py"
+
+    heading = str(previs_data.get("heading") or scene_id)
+    summary = str(previs_data.get("action_summary") or "")
+    chars = [str(c) for c in (previs_data.get("characters") or []) if str(c).strip()]
+
+    script_src = f'''"""Pistachio's Studio — 3D Previs Blockout Script for {heading}
+
+Run directly inside Blender:
+  blender --python {py_path.name}
+"""
+import math
+import bpy
+
+SCENE_META = {json.dumps(previs_data, indent=2, ensure_ascii=False)}
+
+# Reset default scene
+bpy.ops.wm.read_factory_settings(use_empty=True)
+scene = bpy.context.scene
+scene.render.resolution_x = 1920
+scene.render.resolution_y = 1080
+scene.render.fps = 24
+
+# Ground plane (set floor)
+bpy.ops.mesh.primitive_plane_add(size=16.0, location=(0.0, 0.0, 0.0))
+floor = bpy.context.active_object
+floor.name = "Set_Floor"
+
+# Back & side architectural blockout walls
+for name, loc, scale in (
+    ("Back_Wall", (0.0, 4.5, 2.0), (8.0, 0.15, 2.0)),
+    ("Left_Wall", (-6.0, 0.0, 2.0), (0.15, 5.0, 2.0)),
+):
+    bpy.ops.mesh.primitive_cube_add(size=2.0, location=loc)
+    wall = bpy.context.active_object
+    wall.name = name
+    wall.scale = scale
+
+# Character stand-in markers for blocking
+characters = {json.dumps(chars, ensure_ascii=False)} or ["Subject_A"]
+for idx, cname in enumerate(characters):
+    x_pos = (idx - (len(characters) - 1) / 2.0) * 1.4
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.28, depth=1.65, location=(x_pos, 0.5, 0.825))
+    actor = bpy.context.active_object
+    actor.name = f"Actor_{{cname}}"
+
+# Key & Fill lighting rig
+bpy.ops.object.light_add(type="AREA", location=(-3.0, -3.5, 3.8))
+key_light = bpy.context.active_object
+key_light.name = "Key_Light"
+key_light.data.energy = 350.0
+key_light.rotation_euler = (math.radians(52), 0.0, math.radians(-35))
+
+bpy.ops.object.light_add(type="AREA", location=(3.5, -2.5, 2.6))
+fill_light = bpy.context.active_object
+fill_light.name = "Fill_Light"
+fill_light.data.energy = 120.0
+fill_light.rotation_euler = (math.radians(65), 0.0, math.radians(40))
+
+# Main 35mm cinema camera aimed at center stage
+bpy.ops.object.camera_add(location=(0.0, -5.8, 1.55), rotation=(math.radians(85), 0.0, 0.0))
+cam = bpy.context.active_object
+cam.name = "Previs_Camera_35mm"
+cam.data.lens = 35.0
+scene.camera = cam
+
+print("Loaded Pistachio's Studio Previs:", {json.dumps(heading)})
+print("Action:", {json.dumps(summary[:300])})
+'''
+    py_path.write_text(script_src, encoding="utf-8")
+    return py_path
+
+
 @route("POST", "/api/mcp/premiere/import_fdx")
 def mcp_premiere_import_fdx(r: Request):
-    """Import FDX file into Premiere Pro and create sequence."""
+    """Auto-export FDX + Premiere XML and send to Premiere Pro MCP (or return local import package if MCP is not configured)."""
     project = r.body.get("project", "").strip()
     if not project:
         raise HttpError(400, "project is required")
 
-    # Find the FDX file in the project's exports
     from layout import project_dir as pdir
-    book_dir = pdir(project)
-    exports_dir = book_dir / "exports"
-    fdx_files = list(exports_dir.glob("*.fdx"))
 
-    if not fdx_files:
-        raise HttpError(404, "No .fdx file found in project exports. Export screenplay first.")
-
-    # Use the most recent FDX
-    fdx_path = max(fdx_files, key=lambda f: f.stat().st_mtime)
+    book_dir = pdir(project, "book")
+    fdx_path = _ensure_fdx_export(book_dir)
+    xml_path = _write_premiere_xml(book_dir, project)
     project_name = r.body.get("project_name", project)
 
-    result = get_pm().import_fdx(str(fdx_path), project_name)
-    return result
+    pm = get_pm()
+    if pm.is_configured():
+        result = pm.import_fdx(str(fdx_path), project_name)
+        if isinstance(result, dict) and not result.get("error"):
+            return {
+                **result,
+                "status": "ok",
+                "mode": "mcp",
+                "mcp_configured": True,
+                "fdx_url": f"/download/{project}/exports/{fdx_path.name}",
+                "xml_url": f"/download/{project}/exports/{xml_path.name}",
+                "message": f"Sent {fdx_path.name} to Premiere Pro via live MCP.",
+            }
+        # Fall through cleanly with the generated package + diagnostic note
+        return {
+            "status": "ok",
+            "mode": "local_package",
+            "mcp_configured": True,
+            "mcp_error": str(result.get("error") or ""),
+            "fdx_path": str(fdx_path),
+            "xml_path": str(xml_path),
+            "fdx_url": f"/download/{project}/exports/{fdx_path.name}",
+            "xml_url": f"/download/{project}/exports/{xml_path.name}",
+            "message": f"Premiere MCP returned an error ({result.get('error')}); generated {xml_path.name} & {fdx_path.name} for direct File → Import in Premiere Pro.",
+        }
+
+    return {
+        "status": "ok",
+        "mode": "local_package",
+        "mcp_configured": False,
+        "fdx_path": str(fdx_path),
+        "xml_path": str(xml_path),
+        "fdx_url": f"/download/{project}/exports/{fdx_path.name}",
+        "xml_url": f"/download/{project}/exports/{xml_path.name}",
+        "message": f"Exported Premiere Pro XML ({xml_path.name}) + {fdx_path.name} — ready for File → Import in Premiere Pro (configure a 'premiere' server in .mcp.json for direct MCP control).",
+    }
 
 
 @route("POST", "/api/mcp/premiere/create_sequence")
@@ -196,33 +392,41 @@ def mcp_blender_create_scene(r: Request):
 
 @route("POST", "/api/mcp/blender/generate_previs")
 def mcp_blender_generate_previs(r: Request):
-    """Generate previs for a screenplay scene."""
+    """Generate 3D previs via Blender MCP (or export a runnable Blender Python previs blockout script if MCP is not configured)."""
+    import json
+    import re
+    from layout import project_dir as pdir
+    import screenplay
+
     project = r.body.get("project", "").strip()
     scene_id = r.body.get("scene_id", "").strip()
 
     if not project or not scene_id:
         raise HttpError(400, "project and scene_id are required")
 
-    # Load the scene data
-    from layout import project_dir as pdir
-    import screenplay
-    import adaptation as ad
-
-    book_dir = pdir(project)
-    plan = ad.load(book_dir)
-    if not plan:
-        raise HttpError(404, "No adaptation plan found")
-
+    book_dir = pdir(project, "book")
     scene_data = screenplay.load_scene(book_dir, scene_id)
+    if not scene_data:
+        rd_sp = book_dir / "readin" / "screenplay.json"
+        if rd_sp.is_file():
+            try:
+                raw = json.loads(rd_sp.read_text(encoding="utf-8")) or {}
+                m = re.search(r"(\d+)", scene_id)
+                idx0 = (int(m.group(1)) - 1) if m else 0
+                sc_list = raw.get("scenes") or []
+                if 0 <= idx0 < len(sc_list):
+                    scene_data = sc_list[idx0]
+            except (OSError, ValueError):
+                scene_data = None
     if not scene_data:
         raise HttpError(404, f"Scene {scene_id} not found")
 
-    # Build previs prompt from scene
     elements = scene_data.get("elements", [])
-    action_text = " ".join([e["text"] for e in elements if e["type"] == "action"])
-    characters = list({e["character"] for e in elements if e["type"] == "dialogue" and e.get("character")})
+    action_text = " ".join(str(e.get("text") or "") for e in elements if isinstance(e, dict) and e.get("type") == "action")
+    characters = sorted({str(e.get("character") or "").strip() for e in elements if isinstance(e, dict) and e.get("type") == "dialogue" and e.get("character")})
 
     previs_data = {
+        "scene_id": scene_id,
         "heading": scene_data.get("heading", ""),
         "action_summary": action_text[:500],
         "characters": characters,
@@ -230,8 +434,39 @@ def mcp_blender_generate_previs(r: Request):
         "lighting": "natural",
     }
 
-    result = get_bm().generate_previs(previs_data)
-    return result
+    script_path = _write_blender_previs_script(book_dir, scene_id, previs_data)
+    script_url = f"/download/{project}/exports/{script_path.name}"
+
+    bm = get_bm()
+    if bm.is_configured():
+        result = bm.generate_previs(previs_data)
+        if isinstance(result, dict) and not result.get("error"):
+            return {
+                **result,
+                "status": "ok",
+                "mode": "mcp",
+                "mcp_configured": True,
+                "script_url": script_url,
+                "message": f"Generated 3D previs for {scene_id} via live Blender MCP.",
+            }
+        return {
+            "status": "ok",
+            "mode": "local_script",
+            "mcp_configured": True,
+            "mcp_error": str(result.get("error") or ""),
+            "script_path": str(script_path),
+            "script_url": script_url,
+            "message": f"Blender MCP returned an error ({result.get('error')}); generated runnable Blender previs script {script_path.name} instead.",
+        }
+
+    return {
+        "status": "ok",
+        "mode": "local_script",
+        "mcp_configured": False,
+        "script_path": str(script_path),
+        "script_url": script_url,
+        "message": f"Generated runnable Blender 3D previs script ({script_path.name}) for {scene_id} — open in Blender (`blender --python {script_path.name}`) or add a 'blender' server in .mcp.json for live MCP.",
+    }
 
 
 @route("POST", "/api/mcp/blender/export_gltf")
@@ -262,25 +497,50 @@ def mcp_playwright_run_script(r: Request):
 
 @route("POST", "/api/mcp/playwright/finaldraft_import")
 def mcp_playwright_finaldraft_import(r: Request):
-    """Automate FDX import into Final Draft Web."""
+    """Auto-export FDX and open/import via Playwright MCP (or return one-click FDX download + Final Draft handoff)."""
     project = r.body.get("project", "").strip()
     if not project:
         raise HttpError(400, "project is required")
 
-    # Find the FDX file
     from layout import project_dir as pdir
-    book_dir = pdir(project)
-    exports_dir = book_dir / "exports"
-    fdx_files = list(exports_dir.glob("*.fdx"))
 
-    if not fdx_files:
-        raise HttpError(404, "No .fdx file found in project exports. Export screenplay first.")
-
-    fdx_path = max(fdx_files, key=lambda f: f.stat().st_mtime)
+    book_dir = pdir(project, "book")
+    fdx_path = _ensure_fdx_export(book_dir)
+    fdx_url = f"/download/{project}/exports/{fdx_path.name}"
     project_title = r.body.get("project_title", project)
 
-    result = get_pw().automate_finaldraft_import(str(fdx_path), project_title)
-    return result
+    pw = get_pw()
+    if pw.is_configured():
+        result = pw.automate_finaldraft_import(str(fdx_path), project_title)
+        if isinstance(result, dict) and not result.get("error"):
+            return {
+                **result,
+                "status": "ok",
+                "mode": "mcp",
+                "mcp_configured": True,
+                "fdx_url": fdx_url,
+                "message": f"Opened {fdx_path.name} in Final Draft Web via live Playwright MCP.",
+            }
+        return {
+            "status": "ok",
+            "mode": "local_handoff",
+            "mcp_configured": True,
+            "mcp_error": str(result.get("error") or ""),
+            "fdx_path": str(fdx_path),
+            "fdx_url": fdx_url,
+            "open_url": "https://www.finaldraft.com/",
+            "message": f"Playwright MCP returned an error ({result.get('error')}); exported {fdx_path.name} ready to open in Final Draft.",
+        }
+
+    return {
+        "status": "ok",
+        "mode": "local_handoff",
+        "mcp_configured": False,
+        "fdx_path": str(fdx_path),
+        "fdx_url": fdx_url,
+        "open_url": "https://www.finaldraft.com/",
+        "message": f"Exported {fdx_path.name} ready to import into Final Draft (add a 'playwright' server in .mcp.json for automated browser import).",
+    }
 
 
 @route("POST", "/api/mcp/playwright/finaldraft_export")

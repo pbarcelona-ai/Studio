@@ -226,3 +226,145 @@ def test_comfyui_lifecycle_autostart_and_clean_stop(tmp_path: Path, monkeypatch:
     # Shutdown cleanly stops managed process
     assert lc.stop_managed_comfyui() is True
     assert lc.stop_managed_comfyui() is False
+
+
+def test_flux2_comfyui_skips_init_latent_for_high_strength_photo_restyle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import local_runners.comfyui_runner as cr_mod
+
+    models_root = tmp_path / "models"
+    sd_dir = models_root / "sd_cli"
+    sd_dir.mkdir(parents=True)
+    (sd_dir / "flux-2-klein-4b-Q8_0.gguf").write_bytes(b"flux2")
+    (sd_dir / "Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf").write_bytes(b"clip")
+    (sd_dir / "flux2_ae.safetensors").write_bytes(b"vae")
+    monkeypatch.setattr(rp, "ROOT", tmp_path)
+
+    photo = tmp_path / "living_room_main_ref.jpg"
+    photo.write_bytes(b"\x89PNG\r\n\x1a\n" + b"photo" * 40)
+    captured: list[dict[str, Any]] = []
+
+    class FakeComfyRunner:
+        base_url = "http://127.0.0.1:8188"
+
+        def is_installed(self) -> bool:
+            return True
+
+        def has_node(self, node_name: str) -> bool:
+            return node_name in ("UnetLoaderGGUF", "CLIPLoaderGGUF")
+
+        def upload_image(self, file_path: Path, max_mb: float | None = None) -> str:
+            return f"up_{file_path.name}"
+
+        def run_workflow(self, workflow: dict[str, Any], *, output_dir: Path, **kw: Any) -> dict[str, Any]:
+            captured.append(workflow)
+            out = output_dir / "out-00.png"
+            out.write_bytes(b"\x89PNG\r\n\x1a\n" + b"pixar" * 40)
+            return {"ok": True, "output_path": str(out), "outputs": [str(out)]}
+
+    monkeypatch.setattr(cr_mod, "ComfyUIRunner", FakeComfyRunner)
+
+    # High-strength style conversion (0.68) with same ref & init -> uses EmptyFlux2LatentImage (full 4 steps) + ReferenceMultiLatent
+    out1 = tmp_path / "lr_pixar.png"
+    rp._try_comfyui_image("Convert to 3D Pixar", out1, "16:9", ref_images=[photo], init_image=photo, init_strength=0.68)
+    assert "6" in captured[0] and captured[0]["6"]["class_type"] == "EmptyFlux2LatentImage"
+    assert captured[0]["7"]["inputs"]["denoise"] == 1.0
+    assert captured[0]["17"]["class_type"] == "ReferenceMultiLatent"
+
+    # Low-strength tight continuity edit (0.45) -> keeps VAEEncode init latent
+    out2 = tmp_path / "lr_tight.png"
+    rp._try_comfyui_image("Subtle lamp glow", out2, "16:9", ref_images=[photo], init_image=photo, init_strength=0.45)
+    assert "27" in captured[1] and captured[1]["27"]["class_type"] == "VAEEncode"
+    assert captured[1]["7"]["inputs"]["denoise"] == pytest.approx(0.45)
+
+
+def test_turnaround_render_prefers_exact_step08_uploaded_ref_over_other_variant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    proj_dir = tmp_path / "demo_book"
+    (proj_dir / "assets" / "turnarounds").mkdir(parents=True)
+    (proj_dir / "assets" / "cast_refs").mkdir(parents=True)
+    monkeypatch.setattr(rp, "pdir", lambda slug, kind="book": proj_dir)
+
+    # Another variant turnaround already exists ("kibble_front.png"), AND user explicitly uploaded "security_officer_kibble_ref.png"
+    (proj_dir / "assets" / "turnarounds" / "kibble_front.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"toy" * 40)
+    uploaded = proj_dir / "assets" / "cast_refs" / "security_officer_kibble_ref.png"
+    uploaded.write_bytes(b"\x89PNG\r\n\x1a\n" + b"real-soldier" * 40)
+
+    seen: dict[str, Any] = {}
+
+    def fake_render(prompt: str, out_png: Path, ref_images: list[Path] | None = None, **kw: Any) -> str:
+        seen["prompt"] = prompt
+        seen["refs"] = [p.name for p in (ref_images or [])]
+        out_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"pixar-soldier" * 40)
+        return "comfyui:flux2-klein-4b"
+
+    monkeypatch.setattr(rp, "_render_keyframe_local_or_gemini", fake_render)
+    res = rp._v2_turnaround_render(
+        SimpleNamespace(
+            body={
+                "project": "demo_book",
+                "character": "Security Officer Kibble",
+                "view": "front",
+                "look": "pixar_3d",
+                "desc": "Tactical security officer",
+            }
+        )
+    )  # type: ignore[arg-type]
+    assert seen["refs"] == ["security_officer_kibble_ref.png"]
+    assert "3D Pixar" in seen["prompt"]
+    assert res["character_control"]["reference_reason"] == "uploaded_cast_photo_restyle"
+
+
+def test_step08_cast_photo_import_and_convert_to_film_style(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import base64
+    from types import SimpleNamespace
+
+    proj_dir = tmp_path / "projects" / "books" / "demo_book"
+    proj_dir.mkdir(parents=True)
+    monkeypatch.setattr(rp, "pdir", lambda slug, kind="book": proj_dir)
+    monkeypatch.setattr("character_tokens.load_character", lambda slug, name: None)
+
+    seen: dict[str, Any] = {}
+
+    def fake_render(prompt: str, out_png: Path, ref_images: list[Path] | None = None, **kw: Any) -> str:
+        seen["prompt"] = prompt
+        seen["refs"] = [p.name for p in (ref_images or [])]
+        seen["init_strength"] = kw.get("init_strength")
+        out_png.parent.mkdir(parents=True, exist_ok=True)
+        out_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"styled-front" * 40)
+        return "comfyui:flux2-klein-4b"
+
+    monkeypatch.setattr(rp, "_render_keyframe_local_or_gemini", fake_render)
+
+    raw_photo = b"\x89PNG\r\n\x1a\n" + b"real-photo-bytes" * 40
+    b64_photo = "data:image/png;base64," + base64.b64encode(raw_photo).decode("ascii")
+    res = rp._v2_character_ref_upload(
+        SimpleNamespace(
+            body={
+                "project": "demo_book",
+                "character": "Security Officer Kibble",
+                "image_base64": b64_photo,
+                "convert_now": True,
+                "style_id": "pixar_3d",
+                "style_strength": 0.75,
+                "style_notes": "olive tactical vest and sunglasses",
+            }
+        )
+    )  # type: ignore[arg-type]
+
+    assert res["status"] == "ok"
+    assert res["ref_url"].endswith("/assets/cast_refs/security_officer_kibble_ref.png")
+    assert res["converted_url"].endswith("/assets/turnarounds/security_officer_kibble_front.png")
+    assert res["model"] == "comfyui:flux2-klein-4b"
+    assert (proj_dir / "assets" / "cast_refs" / "security_officer_kibble_ref.png").read_bytes() == raw_photo
+    assert b"styled-front" in (proj_dir / "assets" / "turnarounds" / "security_officer_kibble_front.png").read_bytes()
+    assert seen["refs"] == ["security_officer_kibble_ref.png"]
+    assert seen["init_strength"] == pytest.approx(0.75)
+    assert "3D Pixar" in seen["prompt"]
+    assert "olive tactical vest" in seen["prompt"]

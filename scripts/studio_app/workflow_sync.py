@@ -54,32 +54,32 @@ STEP_CATALOG: dict[int, dict[str, str]] = {
     7: {
         "short": "07 Continuity",
         "title": "Continuity & World Rules",
-        "action": "Update or rebuild the Continuity Book in Step 07",
+        "action": "Click '💾 Save Continuity' or 'Rebuild Continuity Book' in Step 07",
     },
     8: {
         "short": "08 Cast",
         "title": "Cast & Characters",
-        "action": "Click '🔄 Sync from Book' (or save an updated character dossier) in Step 08",
+        "action": "Click '🔄 Sync from Book', '📷 Import Photo', or '💾 Save' on a character in Step 08",
     },
     9: {
         "short": "09 Style",
         "title": "Art Direction & Style Recipe",
-        "action": "Apply your Visual Style Recipe to the book in Step 09",
+        "action": "Click '💾 Apply Style to Book' in Step 09",
     },
     10: {
         "short": "10 Turnaround",
         "title": "Look Development & Turnarounds",
-        "action": "Re-render affected Character Turnarounds in Step 10",
+        "action": "Update affected Character Turnarounds in Step 10 by clicking '✨ Generate' / '↺ Re-roll', '🎨 Restyle', or '📷' upload on any character view",
     },
     11: {
         "short": "11 Sets",
         "title": "Locations & Environment Sets",
-        "action": "Re-render or baseline affected Set Plates in Step 11",
+        "action": "Update affected Set Plates in Step 11 by clicking '🎨 Generate / Re-convert', '📷 Import Photo', or '📌 Set Baseline' on any set card",
     },
     12: {
         "short": "12 Shots",
         "title": "Shot List & Cinematography",
-        "action": "Regenerate or save the updated Shot List in Step 12",
+        "action": "Click 'Regenerate Shot List' or '💾 Save' on an edited shot in Step 12",
     },
     13: {
         "short": "13 Hardware",
@@ -287,6 +287,14 @@ def load_queue(pd: Path) -> dict[str, Any]:
         try:
             doc = json.loads(p.read_text(encoding="utf-8"))
             if isinstance(doc, dict) and isinstance(doc.get("items"), list):
+                # Keep action instructions in sync with latest STEP_CATALOG button labels
+                for it in doc["items"]:
+                    if isinstance(it, dict) and it.get("step") is not None:
+                        meta = STEP_CATALOG.get(int(it["step"]))
+                        if meta:
+                            it["action"] = meta["action"]
+                            it["title"] = meta["title"]
+                            it["short"] = meta["short"]
                 return doc
         except Exception as e:
             log.debug("workflow_sync_queue.json read failed: %s", e)
@@ -474,6 +482,7 @@ def approve_step(pd: Path, slug: str, step_num: int) -> dict[str, Any]:
 
     blocked = False
     advanced = False
+    required_action = ""
     origin_step = int(doc.get("origin_step") or 0)
 
     for it in doc.get("items") or []:
@@ -481,6 +490,8 @@ def approve_step(pd: Path, slug: str, step_num: int) -> dict[str, Any]:
             st = str(it.get("status") or "needs_run")
             if st == "needs_run":
                 blocked = True
+                meta = STEP_CATALOG.get(int(step_num))
+                required_action = str((meta or {}).get("action") or it.get("action") or "")
             elif st == "needs_approve":
                 it["status"] = "done"
                 advanced = True
@@ -496,6 +507,7 @@ def approve_step(pd: Path, slug: str, step_num: int) -> dict[str, Any]:
         "queue": doc,
         "advanced": advanced,
         "blocked_needs_run": blocked,
+        "required_action": required_action,
         "completed": completed,
         "next_step": next_step,
         "origin_step": origin_step,

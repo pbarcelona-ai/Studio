@@ -1,0 +1,66 @@
+High-priority findings
+Concurrent uploads can overwrite each other
+handler.py uses <filename>.part for every ordinary upload.
+
+A concurrent upload of the same name truncates or corrupts the other upload.
+Fix: use tempfile.NamedTemporaryFile, validate it, then atomically rename it to the final filename.
+Job state writes can corrupt current.json
+jobs.py uses one fixed current.json.tmp file for concurrent saves.
+
+Two state writers can interleave, producing partial JSON or stale snapshots.
+Fix: create a unique temp file in the job directory, write fully, then atomically replace the state file. Serialize state mutations.
+Attached-job recovery can follow the wrong process
+jobs.py uses the saved numeric PID as the sole process identity.
+
+After a restart, PID reuse could cause attachment or termination of an unrelated process.
+Fix: save process start identity or process-group metadata and verify it before attaching or stopping.
+Cancelled ComfyUI renders report success
+comfyui_runner.py may return {"ok": True, "outputs": []} after cancellation.
+
+Callers can proceed as though generation completed.
+Fix: immediately raise a cancellation exception and verify at least one real output before every success return.
+Live rendering holds HTTP request threads synchronously
+routes_post.py and routes_post.py generate keyframes/turnarounds inline.
+
+A 300-second ComfyUI run blocks the API response and makes UI requests vulnerable to client timeouts.
+Fix: use the existing job queue, return a job ID immediately, and expose progress/results through SSE or polling.
+SSE errors permanently stop browser reconnection
+core.js calls close() from onerror.
+
+Native reconnect behavior is suppressed after transient network or server failures.
+Fix: let EventSource reconnect automatically, or explicitly restart bounded polling after an error.
+
+Medium-priority findings
+book_ingest.py computes min() and a median over an empty chapter list. Blank or OCR-failing books crash with ValueError; detect zero chapters and return a clear error.
+projects.py performs character synchronization and build_movies() during status reads. Move these mutations to explicit initialization/build operations.
+
+media.py has an unbounded _SECONDS cache. Use an LRU cache or database-backed cache.
+
+media.py repeatedly scans folders and reloads the same CSVs. Cache one project inventory and invalidate it on generation completion.
+
+gallery.py and gallery.py use fixed .tmp names, risking concurrent thumbnail/depth-write collisions.
+
+gallery.py permanently caches depth-model failures until restart. Cache failures briefly and retry with backoff.
+
+handler.py reads up to 300 MB during upload validation. Stream or use bounded sample validation instead.
+
+routes_post.py and nearby upload routes use permissive base64.b64decode() and accept decoded bytes without verifying the actual image/audio format. Decode validate=True and inspect signatures before writing.
+
+setup_engine.py swaps installed files sequentially without a rollback transaction. A failure midway can leave a half-updated installation.
+
+cleanup.py performs an entire workspace filesystem scan and rereads several CSV files per project on every cleanup request. Cache or incrementally update scan results.
+
+Readability and maintainability
+routes_post.py is a very large route module with dozens of unrelated operations. Split it into feature groups such as keyframes, turnarounds, dialogue, media, synchronization, and exports.
+
+make_image.py mixes model definitions, generated runtime code, and notebook generation in one data structure. Separate model metadata from generated notebook templates.
+
+make_audio.py uses shell-based generated commands. Prefer argv lists and small worker entry points without shell=True.
+
+The frontend relies heavily on classic global scripts and large inline HTML. Introduce typed ApiClient, JobMonitor, ProjectStore, and feature controllers rather than accumulating global helpers.
+
+Tested observations
+Ruff lint checks passed.
+Startup tests fail because test_server.py does not implement server_close() in FakeHttpd.
+test_hardening.py found ten unlabeled form/file controls in index.html, including step1ResearchQuery, v2SpFilter, v2CastImportFile, v2RefVidUrl, and pRefFile.
+The local-GPU route test exceeded its 10-second HTTP timeout, consistent with synchronous external rendering.

@@ -1,6 +1,10 @@
 """Lengths of clips and narration (mp4/wav readers), the inventory of downloaded files, and the film made from the ones you tick."""
+from collections import OrderedDict
 import re
 import struct
+import threading
+import time
+from typing import Any
 from bookkit import SLUG_RE
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
@@ -13,13 +17,52 @@ from .projects import read_csv_rows
 # ---------------------------------------------------------------- make a film from the downloaded files you tick
 AUDIO_KINDS_FILES = {"narration": "narration-*.wav", "sfx": "sfx-*.wav", "music": "music-*.wav"}
 FILM_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,60}$")
+_INVENTORY_TTL = 5.0
+_INVENTORY_LOCK = threading.Lock()
+_INVENTORY_CACHE: dict[str, tuple[float, tuple[int, ...], dict[str, Any]]] = {}
 
 
-def media_inventory(slug):
+def invalidate_inventory_cache(slug: str | None = None) -> None:
+    """Clear cached project media inventory (call when generation/uploads/deletes finish)."""
+    with _INVENTORY_LOCK:
+        if slug:
+            _INVENTORY_CACHE.pop(str(slug), None)
+        else:
+            _INVENTORY_CACHE.clear()
+
+
+def _inventory_fingerprint(d) -> tuple[int, ...]:
+    vals: list[int] = []
+    for p in (d / "videos", d / "audio", d / "all_shots.csv", d / "all_chapters.csv"):
+        try:
+            vals.append(p.stat().st_mtime_ns)
+        except OSError:
+            vals.append(0)
+    for parent in (d / "videos", d / "audio"):
+        if parent.is_dir():
+            for sub in sorted(parent.iterdir()):
+                if sub.is_dir():
+                    try:
+                        vals.append(sub.stat().st_mtime_ns)
+                    except OSError:
+                        vals.append(0)
+    return tuple(vals)
+
+
+def media_inventory(slug, *, force: bool = False):
     """What has been downloaded for a project: clip folders and audio folders with the rows each holds, plus a line of text per row."""
     d = pdir(slug)
     if not SLUG_RE.match(slug) or not d.is_dir():
         raise PlanError("pick a book or prompt set first")
+
+    fp = _inventory_fingerprint(d)
+    now = time.monotonic()
+    if not force:
+        with _INVENTORY_LOCK:
+            cached = _INVENTORY_CACHE.get(slug)
+            if cached and (now - cached[0]) < _INVENTORY_TTL and cached[1] == fp:
+                return cached[2]
+
     inv: dict[str, dict] = {"videos": {}, "narration": {}, "sfx": {}, "music": {}, "texts": {}}
 
     def rows_of(folder, pattern):
@@ -45,14 +88,21 @@ def media_inventory(slug):
         for src, rows in inv[kind].items():
             pattern = "shot-{:04d}.mp4" if kind == "videos" else AUDIO_KINDS_FILES[kind].replace("*", "{:04d}")
             inv["seconds"].setdefault(src, {}).update({str(n): media_seconds(d / src / pattern.format(n)) for n in rows})
+    csv_cache: dict[str, list[dict[str, str]]] = {}
     for src, rows in inv["videos"].items():
         csv_name = "all_chapters.csv" if src.endswith("_chapters") else "all_shots.csv"
-        table = read_csv_rows(d / csv_name)
+        if csv_name not in csv_cache:
+            csv_cache[csv_name] = read_csv_rows(d / csv_name)
+        table = csv_cache[csv_name]
         inv["texts"][src] = {str(n): (f"{table[n - 1]['chapter']}: {table[n - 1]['prompt']}"[:110] if 0 < n <= len(table) else "") for n in rows}
+    with _INVENTORY_LOCK:
+        _INVENTORY_CACHE[slug] = (now, fp, inv)
     return inv
 
 
-_SECONDS: dict = {}      # (path, size, mtime) -> seconds
+_SECONDS_MAX = 2048
+_SECONDS_LOCK = threading.Lock()
+_SECONDS: OrderedDict[tuple[str, int, int], float | None] = OrderedDict()      # bounded LRU: (path, size, mtime) -> seconds
 
 
 def _mp4_seconds(fh, size):
@@ -115,20 +165,28 @@ def _wav_seconds(fh):
 
 
 def media_seconds(path):
-    """Length in seconds (rounded to 0.01) of an .mp4 or .wav file, or None if it cannot be read. Cached until the file changes."""
+    """Length in seconds (rounded to 0.01) of an .mp4 or .wav file, or None if it cannot be read. Bounded LRU cache."""
     try:
         st = path.stat()
     except OSError:
         return None
     key = (str(path), st.st_size, st.st_mtime_ns)
-    if key not in _SECONDS:
-        try:
-            with open(path, "rb") as fh:
-                secs = _mp4_seconds(fh, st.st_size) if path.suffix.lower() == ".mp4" else _wav_seconds(fh)
-        except (OSError, ValueError, IndexError, struct.error):          # a truncated or odd file: no length, the timeline guesses
-            secs = None
-        _SECONDS[key] = round(secs, 2) if secs else None
-    return _SECONDS[key]
+    with _SECONDS_LOCK:
+        if key in _SECONDS:
+            _SECONDS.move_to_end(key)
+            return _SECONDS[key]
+    try:
+        with open(path, "rb") as fh:
+            secs = _mp4_seconds(fh, st.st_size) if path.suffix.lower() == ".mp4" else _wav_seconds(fh)
+    except (OSError, ValueError, IndexError, struct.error):          # a truncated or odd file: no length, the timeline guesses
+        secs = None
+    val = round(secs, 2) if secs else None
+    with _SECONDS_LOCK:
+        _SECONDS[key] = val
+        _SECONDS.move_to_end(key)
+        while len(_SECONDS) > _SECONDS_MAX:
+            _SECONDS.popitem(last=False)
+    return val
 
 
 def film_step(opt):

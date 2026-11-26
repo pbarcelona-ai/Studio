@@ -42,6 +42,9 @@ class FakeHttpd:
         if self.raise_interrupt:
             raise KeyboardInterrupt
 
+    def server_close(self):
+        self.closed = True
+
 
 @pytest.fixture
 def quiet(monkeypatch, tmp_path):
@@ -53,6 +56,9 @@ def quiet(monkeypatch, tmp_path):
     monkeypatch.setattr(SESSION, "remove", lambda: seen.__setitem__("removed", seen["removed"] + 1))
     monkeypatch.setattr(srv, "start_auto_cleanup", lambda: seen.__setitem__("cleanup", seen["cleanup"] + 1))
     monkeypatch.setattr(srv.JOB, "on_finish", None)
+    from local_runners import comfyui_lifecycle
+    monkeypatch.setattr(comfyui_lifecycle, "ensure_comfyui_started", lambda wait_ready_s=0.0: {"status": "skipped"})
+    monkeypatch.setattr(comfyui_lifecycle, "stop_managed_comfyui", lambda: False)
     import studio_index
     monkeypatch.setattr(studio_index, "rebuild_in_background", lambda: seen.__setitem__("index", seen.get("index", 0) + 1))
     return seen

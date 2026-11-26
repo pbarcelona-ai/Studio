@@ -4,8 +4,8 @@ root = output_root()
 HEADER = '''import csv, os, subprocess, sys, tarfile, time
 from pathlib import Path
 
-def sh(cmd):
-    subprocess.run(cmd, shell=True, check=True)
+def run_cmd(argv, cwd=None):
+    subprocess.run([str(a) for a in argv], cwd=cwd, check=True)
 
 # Injected by run_colab_model.sh / the notebooks; defaults suit `colab exec` on a fresh VM.
 START = globals().get("START", 1)
@@ -120,22 +120,22 @@ KINDS = {
 "kokoro": dict(title="Kokoro narration", prefix="narration", csv_hint="audio_shots.csv",
  note="Text-to-speech for the narrator and speaking characters (24 kHz wav). Runs on CPU or GPU. Voices are picked per speaker from the `lines_json` column.",
  body='''
-import shlex
-sh("apt-get -qq update && apt-get -qq install -y espeak-ng > /dev/null")
+run_cmd(["apt-get", "-qq", "update"])
+run_cmd(["apt-get", "-qq", "install", "-y", "espeak-ng"])
 # Kaggle's image now runs Python 3.13, where Kokoro's dependency spacy cannot be built (the first Kaggle run failed on exactly
 # that), so Kokoro runs in a Python 3.12 environment made with uv. uv downloads Python 3.12 if the machine has none.
-sh(f"{sys.executable} -m pip install -q uv")
+run_cmd([sys.executable, "-m", "pip", "install", "-q", "uv"])
 PYENV = "/tmp/kokoro_py312"
-sh(f"{sys.executable} -m uv venv --python 3.12 --seed {PYENV}")
-sh(f"{PYENV}/bin/python -m pip install -q kokoro soundfile numpy")
+run_cmd([sys.executable, "-m", "uv", "venv", "--python", "3.12", "--seed", PYENV])
+run_cmd([f"{PYENV}/bin/python", "-m", "pip", "install", "-q", "kokoro", "soundfile", "numpy"])
 WORKER = @@WORKER@@
 Path("/tmp/kokoro_worker.py").write_text(WORKER)
-sh(f"{PYENV}/bin/python /tmp/kokoro_worker.py {shlex.quote(str(CSV_PATH))} {START} {END} {shlex.quote(str(OUT))}")
+run_cmd([f"{PYENV}/bin/python", "/tmp/kokoro_worker.py", str(CSV_PATH), str(START), str(END), str(OUT)])
 '''),
 "musicgen": dict(title="MusicGen music", prefix="music", csv_hint="audio_shots.csv",
  note="Background score from the `music` column using Meta's MusicGen (small). 15 s per row, or 28 s per chapter in chapter mode. Check the model license for how you plan to use the music.",
  body='''
-sh(f"{sys.executable} -m pip install -q -U transformers accelerate scipy")
+run_cmd([sys.executable, "-m", "pip", "install", "-q", "-U", "transformers", "accelerate", "scipy"])
 import numpy as np, scipy.io.wavfile as wavfile, torch
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
 
@@ -162,8 +162,8 @@ for i in range(START, END + 1):
  note="Sound effects and ambience from the `sfx` column (text-to-audio mode of MMAudio; it does not look at the video). 8 s per row. This is the least certain of the three: the command-line flags are from memory of the MMAudio repo, so check its README if a call fails.",
  body='''
 if not Path("MMAudio").exists():
-    sh("git clone -q https://github.com/hkchengrex/MMAudio.git")
-sh(f"{sys.executable} -m pip install -q -e MMAudio soundfile")
+    run_cmd(["git", "clone", "-q", "https://github.com/hkchengrex/MMAudio.git"])
+run_cmd([sys.executable, "-m", "pip", "install", "-q", "-e", "MMAudio", "soundfile"])
 import glob, shutil
 import soundfile as sf
 
@@ -183,8 +183,8 @@ for i in range(START, END + 1):
         prompt = " ".join(rows[i - 1]["sfx"].split())
         if len(prompt) > 150:
             prompt = prompt[:150].rsplit(" ", 1)[0]
-        sh(f'cd MMAudio && {sys.executable} demo.py --duration={SECONDS} --output ../{TMP} '
-           f'--seed {i} --prompt {json_q(prompt)} --negative_prompt "music, speech, voice"')
+        run_cmd([sys.executable, "demo.py", f"--duration={SECONDS}", "--output", str(TMP.resolve()),
+                 "--seed", str(i), "--prompt", prompt, "--negative_prompt", "music, speech, voice"], cwd="MMAudio")
         made = sorted(TMP.glob("*.flac")) + sorted(TMP.glob("*.wav"))
         if not made:
             raise RuntimeError("MMAudio wrote no audio file (check its README for current flags)")
@@ -197,7 +197,7 @@ for i in range(START, END + 1):
 "audioldm2": dict(title="AudioLDM 2 sound effects", prefix="sfx", csv_hint="audio_shots.csv",
  note="Sound effects and ambience from the `sfx` column with AudioLDM 2 (diffusers AudioLDM2Pipeline, cvssp/audioldm2, 16 kHz, 8 s per row). The call follows the diffusers documentation and was run once on a CPU here (diffusers 0.30.3, 10 steps, 3 s of sound); it has not been run on a GPU. LICENCE: CC BY-NC-SA 4.0, so for non-commercial use only. It does not look at the video.",
  body='''
-sh(f"{sys.executable} -m pip install -q -U diffusers transformers accelerate scipy")
+run_cmd([sys.executable, "-m", "pip", "install", "-q", "-U", "diffusers", "transformers", "accelerate", "scipy"])
 import numpy as np, scipy.io.wavfile as wavfile, torch
 from diffusers import AudioLDM2Pipeline
 
@@ -222,7 +222,7 @@ for i in range(START, END + 1):
 "qwen3_tts": dict(title="Qwen3-TTS narration", prefix="narration", csv_hint="audio_shots.csv",
  note="Text-to-speech for the narrator and speaking characters with Qwen3-TTS 1.7B (Apache-2.0, Jan 2026), a newer and more natural voice than Kokoro (24 kHz wav). Needs a GPU. Speakers named in FEMALE get the female voice, everyone else the male voice; the language is detected from the text.",
  body='''
-sh(f"{sys.executable} -m pip install -q -U qwen-tts soundfile")
+run_cmd([sys.executable, "-m", "pip", "install", "-q", "-U", "qwen-tts", "soundfile"])
 import json, numpy as np, soundfile as sf, torch
 from qwen_tts import Qwen3TTSModel
 
@@ -253,19 +253,17 @@ for i in range(START, END + 1):
 "chatterbox_turbo": dict(title="Chatterbox-Turbo narration", prefix="narration", csv_hint="audio_shots.csv",
  note="Text-to-speech with Resemble AI's Chatterbox-Turbo (MIT, Dec 2025): fast, natural, and it understands tags such as [chuckle] in the text. One default voice for every speaker. Needs a GPU. 24 kHz wav. It pins an older torch, so it runs in its own Python 3.12 environment made with uv (like Kokoro) and does not disturb the notebook's torch.",
  body='''
-import shlex
-sh(f"{sys.executable} -m pip install -q uv")
+run_cmd([sys.executable, "-m", "pip", "install", "-q", "uv"])
 PYENV = "/tmp/chatterbox_py312"
-sh(f"{sys.executable} -m uv venv --python 3.12 --seed {PYENV}")
-sh(f"{PYENV}/bin/python -m pip install -q chatterbox-tts soundfile numpy 'setuptools<81'")      # perth (its watermarker) needs pkg_resources, which setuptools 81+ removed
+run_cmd([sys.executable, "-m", "uv", "venv", "--python", "3.12", "--seed", PYENV])
+run_cmd([f"{PYENV}/bin/python", "-m", "pip", "install", "-q", "chatterbox-tts", "soundfile", "numpy", "setuptools<81"])      # perth (its watermarker) needs pkg_resources, which setuptools 81+ removed
 WORKER = @@CWORKER@@
 Path("/tmp/chatterbox_worker.py").write_text(WORKER)
-sh(f"{PYENV}/bin/python /tmp/chatterbox_worker.py {shlex.quote(str(CSV_PATH))} {START} {END} {shlex.quote(str(OUT))}")
+run_cmd([f"{PYENV}/bin/python", "/tmp/chatterbox_worker.py", str(CSV_PATH), str(START), str(END), str(OUT)])
 '''),
 }
 KINDS["kokoro"]["body"] = KINDS["kokoro"]["body"].replace("@@WORKER@@", repr(KOKORO_WORKER))
 KINDS["chatterbox_turbo"]["body"] = KINDS["chatterbox_turbo"]["body"].replace("@@CWORKER@@", repr(CHATTERBOX_WORKER))
-KINDS["mmaudio"]["body"] = "import shlex\njson_q = shlex.quote\n" + KINDS["mmaudio"]["body"]
 
 def script(k, m):
     return f'"""{m["title"]}. Runs ON the Colab/Kaggle VM. {m["note"]}\n\nReads {m["csv_hint"]} (or the chapters variant) rows START..END and writes {m["prefix"]}-NNNN.wav files.\n"""\n' + HEADER + m["body"] + FOOTER

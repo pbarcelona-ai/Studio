@@ -159,6 +159,11 @@ for s in plan["scenes"]:
 if saved.get("pilot", {}).get("kind", "none") != "none":
     print("note: the earlier pilot choice was cleared by the new plan.")
 ad.save(pdir, plan)
+import contextlib
+with contextlib.suppress(Exception):
+    from studio_app import early_prompt_audit
+    rep = early_prompt_audit.audit_step(pdir, pdir.name, 5, use_llm=(not args.fit_only), auto_apply=True, record_bidirectional=False)
+    print(f"[early audit] {rep.get('message', '')}", flush=True)
 gone = sp.discard(pdir)
 if gone:
     print(f"note: the old screenplay ({gone} scenes) belonged to the old plan and was removed.")

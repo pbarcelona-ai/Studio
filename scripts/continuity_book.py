@@ -104,7 +104,7 @@ Reply as JSON: {{"title": "...", "setting": "era, region, world", "music_theme":
 {material}"""
 
 
-def write(pdir: Path, ask: Ask) -> dict:
+def write(pdir: Path, ask: Ask, *, run_ai_audit: bool = False) -> dict:
     d = ask(PROMPT.format(voices=", ".join(sorted(VOICE_MAP)), material=material(pdir)), ["script_supervisor", "casting_director", "production_designer"],
             "continuity book", check)
     f = continuity_file(pdir)
@@ -121,6 +121,13 @@ def write(pdir: Path, ask: Ask) -> dict:
             "locations": [{"name": c["name"], "token": c["token"]} for c in d.get("locations", [])],
             "props": [{"name": c["name"], "token": c["token"]} for c in d.get("props", [])], "style_neutral": True}
     f.write_text(json.dumps(book, indent=1, ensure_ascii=False), encoding="utf-8")
+    import contextlib
+    with contextlib.suppress(Exception):
+        from studio_app import early_prompt_audit
+        early_prompt_audit.audit_step(pdir, pdir.name, 7, use_llm=run_ai_audit, auto_apply=True, record_bidirectional=False)
+        reloaded = load(pdir)
+        if reloaded:
+            book = reloaded
     return book
 
 
@@ -299,6 +306,13 @@ def bootstrap_from_readin(pdir: Path) -> dict:
     if f.is_file():
         shutil.copy2(f, f.with_suffix(".json.bak"))
     f.write_text(json.dumps(book, indent=1, ensure_ascii=False), encoding="utf-8")
+    import contextlib
+    with contextlib.suppress(Exception):
+        from studio_app import early_prompt_audit
+        early_prompt_audit.audit_step(pdir, pdir.name, 7, use_llm=False, auto_apply=True, record_bidirectional=False)
+        reloaded = load(pdir)
+        if reloaded:
+            book = reloaded
     return book
 
 
@@ -338,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
             return bookkit.llm_json(prompt, crew.system(roles, pdir, step), model=a.model, engine=a.engine, validate=validate)
     try:
         print("Your script supervisor, casting director and production designer are writing the continuity book", flush=True)
-        book = write(pdir, ask)
+        book = write(pdir, ask, run_ai_audit=(a.engine != "fake"))
     except (ContinuityError, RuntimeError) as e:
         print(f"The continuity book was not written: {e}", flush=True)
         return 1

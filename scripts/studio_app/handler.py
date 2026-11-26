@@ -91,6 +91,7 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' 
        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 MEDIA = {".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg", ".wav": "audio/wav", ".srt": "text/plain; charset=utf-8"}
 DOWNLOADS = {".pdf": "application/pdf", ".fountain": "text/plain; charset=utf-8", ".fdx": "application/xml",
+             ".xml": "application/xml", ".py": "text/x-python; charset=utf-8",
              ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".zip": "application/zip", ".json": "application/json",
              ".epub": "application/epub+zip", ".m4b": "audio/mp4", ".mp3": "audio/mpeg"}
 
@@ -423,9 +424,11 @@ class Handler(BaseHTTPRequestHandler):
                     return want in z.namelist(), f"a valid {ext[1:].upper()} file"
             except (zipfile.BadZipFile, OSError):
                 return False, f"a valid {ext[1:].upper()} file"
-        try:                                                         # text and HTML: must be readable with real words in it
+        try:                                                         # text and HTML: sample only the first 256 KiB (avoid reading 300 MB into RAM)
             from book_formats import decode
-            text = decode(path.read_bytes())
+            with open(path, "rb") as f:
+                sample = f.read(256 * 1024)
+            text = decode(sample)
             ok = "\x00" not in text and len(text.split()) >= 5
         except OSError:
             ok = False
@@ -472,6 +475,8 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(200, {"added": entry, **sources.summary(book)})
 
     def _upload(self, url):
+        import tempfile
+
         q = parse_qs(url.query)
         fname = re.sub(r"[^A-Za-z0-9._ -]", "_", Path(q.get("filename", ["book.pdf"])[0]).name).strip()
         if not fname.lower().endswith(BOOK_EXTS) or len(fname) < 5:
@@ -482,18 +487,30 @@ class Handler(BaseHTTPRequestHandler):
         if size <= 0 or size > MAX_UPLOAD:
             return self._json(400, {"error": f"file must be 1 byte to {MAX_UPLOAD // 2**20} MB"})
         LIBRARY.mkdir(exist_ok=True)
-        tmp = LIBRARY / (fname + ".part")
-        left = size
-        with open(tmp, "wb") as f:
-            while left:
-                chunk = self.rfile.read(min(1 << 20, left))
-                if not chunk:
-                    break
-                f.write(chunk)
-                left -= len(chunk)
-        ok, what = self._check_book_file(tmp, fname)
-        if left or not ok:
-            tmp.unlink(missing_ok=True)
-            return self._json(400, {"error": f"that is not {what}"})
-        tmp.replace(LIBRARY / fname)
+        tmp: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=LIBRARY,
+                prefix=f".{slugify(Path(fname).stem)}-",
+                suffix=".part",
+                delete=False,
+            ) as f:
+                tmp = Path(f.name)
+                left = size
+                while left:
+                    chunk = self.rfile.read(min(1 << 20, left))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    left -= len(chunk)
+            ok, what = self._check_book_file(tmp, fname)
+            if left or not ok:
+                tmp.unlink(missing_ok=True)
+                return self._json(400, {"error": f"that is not {what}"})
+            os.replace(tmp, LIBRARY / fname)
+            tmp = None
+        finally:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
         return self._json(200, {"filename": fname, "project": slugify(Path(fname).stem), "bytes": size})

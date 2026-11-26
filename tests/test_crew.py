@@ -88,7 +88,7 @@ class TestRules:
 class TestRecipes:
     def test_built_ins_in_order(self):
         names = [r["name"] for r in crew.recipes()]
-        assert names[:3] == ["feature_film", "short_film", "vertical_microdrama"] and "picture_book" in names and len(names) == 8
+        assert names[:3] == ["feature_film", "short_film", "vertical_microdrama"] and "picture_book" in names and "youtube_explainer" in names and len(names) == 9
         for r in crew.recipes():
             assert r["aspect"] in ("16:9", "9:16", "4:3", "1:1") and set(r["prompt_rules"]) <= set(crew.roles())
 

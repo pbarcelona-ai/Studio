@@ -459,9 +459,23 @@ function startLogStream() {
     }
   });
 
+  let sseErrors = 0;
+  es.addEventListener("open", () => {
+    sseErrors = 0;
+  });
+
   es.onerror = () => {
-    try { es.close(); } catch (_e) {}
-    es.closed = true;
+    sseErrors += 1;
+    // Allow native EventSource auto-reconnect (retry: 3000) for transient failures;
+    // only close and fall back to bounded polling after repeated errors or permanent close.
+    const closedState = (typeof window.EventSource === "function" && typeof window.EventSource.CLOSED === "number")
+      ? window.EventSource.CLOSED
+      : 2;
+    if (es.readyState === closedState || sseErrors >= 4) {
+      try { es.close(); } catch (_e) {}
+      es.closed = true;
+      if (building) setTimeout(pollOnce, 1500);
+    }
   };
   return es;
 }

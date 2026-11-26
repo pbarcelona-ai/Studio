@@ -34,7 +34,7 @@ HEIGHTS = ("ground", "low", "eye", "shoulder", "high", "overhead")
 MOVES = ("static", "pan", "tilt", "dolly in", "dolly out", "truck", "crane", "handheld", "steadicam", "zoom", "push in", "pull out", "tracking")
 TRANSITIONS = ("cut", "dissolve", "match cut", "smash cut", "fade in", "fade out", "whip pan", "j-cut", "l-cut")
 TEXT_FIELDS = ("composition", "lighting", "blocking", "action", "expression", "dialogue", "sound", "angle")
-EDITABLE = (*TEXT_FIELDS, "type", "lens_mm", "height", "movement", "seconds", "transition", "priority", "characters", "props", "source")
+EDITABLE = (*TEXT_FIELDS, "type", "lens_mm", "height", "movement", "seconds", "transition", "priority", "characters", "props", "source", "camera_notes")
 MIN_SECONDS, MAX_SECONDS = 1.5, 12.0
 PACE_TOLERANCE = 0.10
 Ask = Callable[[str, str | list[str], str, Callable[[dict], None]], dict]
@@ -226,9 +226,13 @@ def clean_shot(s: dict, n: int) -> dict:
     if src not in ("ai", "footage"):
         raise ValueError("source is ai or footage")
     lists = {k: [str(x)[:60] for x in s.get(k, []) if str(x).strip()] if isinstance(s.get(k, []), list) else [] for k in ("characters", "props")}
-    return {"n": n, "type": t, "lens_mm": lens, "height": h, "angle": str(s.get("angle", "straight"))[:60], "movement": mv,
-            **{k: " ".join(str(s.get(k, "")).split())[:600] for k in TEXT_FIELDS if k != "angle"}, "seconds": round(secs, 1), "transition": tr,
-            "priority": prio, **lists, "source": src}
+    out = {"n": n, "type": t, "lens_mm": lens, "height": h, "angle": str(s.get("angle", "straight"))[:60], "movement": mv,
+           **{k: " ".join(str(s.get(k, "")).split())[:600] for k in TEXT_FIELDS if k != "angle"}, "seconds": round(secs, 1), "transition": tr,
+           "priority": prio, **lists, "source": src}
+    cam_notes = " ".join(str(s.get("camera_notes", "")).split())[:600]
+    if cam_notes:
+        out["camera_notes"] = cam_notes
+    return out
 
 
 def check_scene_reply(d) -> None:
@@ -272,6 +276,58 @@ def people(book: dict) -> str:
                      for c in book.get("characters", []))
 
 
+def scene_set_and_props_context(pdir: Path, sc: dict, book: dict) -> str:
+    """Resolve locked Step 11 baselined set descriptions + Step 07 location/prop tokens for a scene."""
+    heading_low = str(sc.get("heading") or "").lower()
+    blk_loc = str((sc.get("block") or {}).get("location") or "").lower()
+    match_blob = f"{heading_low} {blk_loc}".strip()
+
+    def _norm(s: str) -> str:
+        s2 = re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
+        return re.sub(r"^(?:the|a|an)\s+", "", s2).strip()
+
+    lines: list[str] = []
+    matched_set = False
+    sc_path = pdir / "sets_custom.json"
+    if sc_path.is_file():
+        try:
+            sets_custom = json.loads(sc_path.read_text(encoding="utf-8")) or {}
+        except (OSError, ValueError):
+            sets_custom = {}
+        if isinstance(sets_custom, dict):
+            for sk, sv in sets_custom.items():
+                if not isinstance(sv, dict):
+                    continue
+                nk = _norm(sk)
+                if nk and (nk in _norm(match_blob) or _norm(blk_loc) == nk):
+                    desc = str(sv.get("description") or "").strip()
+                    light = str(sv.get("lighting") or "").strip()
+                    if desc:
+                        lines.append(f"- LOCKED BASELINED SET ({sk}): {desc}")
+                        matched_set = True
+                    if light:
+                        lines.append(f"- LOCKED SET LIGHTING: {light}")
+                    if matched_set:
+                        break
+
+    if not matched_set:
+        for loc in book.get("locations", []) or []:
+            if not isinstance(loc, dict):
+                continue
+            lname = str(loc.get("name") or "").strip()
+            ltok = str(loc.get("token") or "").strip()
+            nk = _norm(lname)
+            if nk and ltok and (nk in _norm(match_blob) or _norm(blk_loc) == nk):
+                lines.append(f"- LOCKED LOCATION ({lname}): {ltok}")
+                break
+
+    props = [p for p in (book.get("props") or []) if isinstance(p, dict) and str(p.get("name") or "").strip()]
+    if props:
+        lines.append("- LOCKED PROPS: " + "; ".join(f"{p['name']}: {p.get('token', '')}" for p in props[:14]))
+
+    return "\n".join(lines) if lines else "- Follow the screenplay heading and continuity book strictly; do not invent missing furniture or windows."
+
+
 SCENE_PROMPT = """Break down scene {n} of {of} and write its shot list. First the director's breakdown (intent, emotional beat, blocking,
 performance notes using the characters' personalities), then the shots: shot type ({types}), lens in mm, camera height ({heights}), angle,
 movement ({moves}), composition, lighting setup, blocking, action, expression, the dialogue spoken in the shot, sound, length in seconds,
@@ -280,6 +336,8 @@ transition to the next shot ({transitions}), priority (1 must have, 3 nice to ha
 STRICT CONTINUITY RULES:
 - WARDROBE LOCK: Every character must keep their exact, singular locked outfit and exact clothing colours from the continuity book across every shot in this scene (never change or improvise clothing mid-scene; an outfit change belongs in a new scene).
 - LOCATION LOCK: Keep every shot strictly anchored in this scene's single locked location, spatial layout, and background props; characters stay in this location until a scene transition explicitly moves them to the next scene's location.
+- PROP PERSISTENCE & ROOM BOUNDARIES: Never introduce a prop (e.g. box, newspaper, coat, bowl, mug) in one shot and make it vanish in the next shot showing the same area, and never contradict your own shot (e.g. never put a coat on an "empty/bare hook"). Keep room-specific props (like a dog bowl at a kitchen threshold) in their proper room — never teleport them into the living room rug or change their size across shots.
+- GROUNDED SURFACES & REAL-WORLD SCALE: Place every small prop (mug, bowl, remote, book) solidly ON a real furniture surface that exists in the room (never invent missing tables or drop mugs on the floor). State realistic relative sizes between adults (~5'4"-5'10"), young children (~3'6", waist-high to adults), dogs (~2 ft at shoulder, knee-high to adults — NEVER write "fills the frame" for a dog/child beside an adult), and small props (~4-inch mug, ~8-inch dog bowl).
 - SMOOTH FLOW & STORYLINE BRIDGES: Sequence shots for effortless visual rhythm and clear spatial continuity; when opening or closing a scene that jumps to or from a parallel storyline, choose a deliberate transition (match cut, L-cut/J-cut sound bridge, or clean establishing shot) so the cut flows smoothly.
 Reply as JSON: {{"breakdown": {{"intent": "...", "emotional_beat": "...", "blocking": "...", "performance": "..."}}, "shots": [{{"type": "WS",
 "lens_mm": 24, "height": "eye", "angle": "straight", "movement": "static", "composition": "...", "lighting": "...", "blocking": "...",
@@ -289,15 +347,18 @@ Reply as JSON: {{"breakdown": {{"intent": "...", "emotional_beat": "...", "block
 THE CHARACTERS (from the continuity book):
 {people}
 
+LOCKED SET & PROPS FOR THIS SCENE (match ONLY real furniture, windows, doors, and props listed here):
+{set_context}
+
 THE SCENE:
 {scene}"""
 
 
-def scene_key(sc: dict, book: dict) -> str:
-    return hashlib.sha256(json.dumps([sc["heading"], sc["elements"], sc["block"], book.get("characters", [])], sort_keys=True).encode()).hexdigest()[:16]
+def scene_key(sc: dict, book: dict, set_context: str = "") -> str:
+    return hashlib.sha256(json.dumps([sc["heading"], sc["elements"], sc["block"], book.get("characters", []), set_context], sort_keys=True).encode()).hexdigest()[:16]
 
 
-def write(pdir: Path, ask: Ask, say: Callable[[str], None] = print, force: bool = False) -> dict:
+def write(pdir: Path, ask: Ask, say: Callable[[str], None] = print, force: bool = False, *, run_ai_audit: bool = False) -> dict:
     book = continuity_book.load(pdir)
     if not book.get("characters"):
         raise ShotListError("There is no continuity book yet: make it first (Continuity book card).")
@@ -308,7 +369,8 @@ def write(pdir: Path, ask: Ask, say: Callable[[str], None] = print, force: bool 
     cache_dir.mkdir(parents=True, exist_ok=True)
     out_scenes = []
     for i, sc in enumerate(scenes, 1):
-        key = scene_key(sc, book)
+        set_ctx = scene_set_and_props_context(pdir, sc, book)
+        key = scene_key(sc, book, set_ctx)
         cache = cache_dir / f"{sc['id']}-{key}.json"
         if cache.is_file() and not force:
             d = json.loads(cache.read_text(encoding="utf-8"))
@@ -317,7 +379,7 @@ def write(pdir: Path, ask: Ask, say: Callable[[str], None] = print, force: bool 
             text = sc["heading"] + "\n" + "\n".join((f"{e['character']}: " if e["type"] == "dialogue" else "") + e["text"] for e in sc["elements"])
             d = ask(SCENE_PROMPT.format(n=i, of=len(scenes), types=", ".join(SHOT_TYPES), heights=", ".join(HEIGHTS), moves=", ".join(MOVES),
                                         transitions=", ".join(TRANSITIONS), seconds=round(sc["seconds"]), rules=rules, people=people(book),
-                                        scene=text + f"\nBLOCK: {json.dumps(sc['block'], ensure_ascii=False)}"),
+                                        set_context=set_ctx, scene=text + f"\nBLOCK: {json.dumps(sc['block'], ensure_ascii=False)}"),
                     ["director", "cinematographer", "editor"], f"shot list: scene {i}", check_scene_reply)
             cache.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         out_scenes.append({"id": sc["id"], "heading": sc["heading"], "breakdown": {k: str(d["breakdown"][k]) for k in ("intent", "emotional_beat", "blocking", "performance")},
@@ -325,20 +387,38 @@ def write(pdir: Path, ask: Ask, say: Callable[[str], None] = print, force: bool 
     data = {"scenes": out_scenes, "target_seconds": round(settings["target_minutes"] * 60, 1), "checks": {}}
     say("Your script supervisor is checking continuity")
     data["checks"]["continuity"] = continuity_check(data, book, ask)
+    # Automatic deterministic shot-to-shot prop, surface, and scale sanity pass on every new book import
+    import contextlib
+    with contextlib.suppress(Exception):
+        from studio_app import shot_continuity_audit
+        auto_fixes = shot_continuity_audit.run_deterministic_shot_sanity(data, pdir)
+        if auto_fixes:
+            data["checks"]["auto_prop_scale_fixes"] = auto_fixes
     say("Your editor is checking the pacing")
     data["checks"]["pacing"] = pace(data)
     save(pdir, data)
+    # Run frame-by-frame AI shot continuity audit automatically on real book imports
+    with contextlib.suppress(Exception):
+        from studio_app import early_prompt_audit
+        early_prompt_audit.audit_step(pdir, pdir.name, 12, use_llm=run_ai_audit, auto_apply=True, record_bidirectional=False)
     say(f"Done: {sum(len(s['shots']) for s in out_scenes)} shots in {len(out_scenes)} scenes, {round(load(pdir)['runtime_seconds'] / 60, 1)} minutes.")
     return load(pdir)
 
 
 def continuity_check(data: dict, book: dict, ask: Ask) -> list[dict]:
-    """The Script Supervisor's continuity notes; a note with scene, shot, field and value is applied as a fix (text fields only)."""
-    listing = "\n".join(f"scene {sc['id']} shot {s['n']}: {s['type']} | chars {', '.join(s['characters'])} | props {', '.join(s['props'])} | {s['action']} | "
-                        f"light: {s['lighting']}" for sc in data["scenes"] for s in sc["shots"])
-    d = ask("Check this shot list for continuity against the continuity book: wardrobe, props, injuries, time of day, screen direction, who is "
-            "in frame. For each problem give the scene id, the shot number, the field to change (one of " + ", ".join(TEXT_FIELDS) + ") and its "
-            'new text. Reply as JSON: {"issues": [{"scene": "S001", "shot": 2, "issue": "...", "field": "action", "value": "..."}]}\n\n'
+    """The Script Supervisor's continuity notes; inspects composition, blocking, action, props, surfaces, and relative scale."""
+    listing = "\n".join(
+        f"scene {sc['id']} shot {s['n']}: {s['type']} {s.get('lens_mm', 35)}mm | chars {', '.join(s['characters'])} | "
+        f"props {', '.join(s['props'])} | comp: {s.get('composition', '')} | blk: {s.get('blocking', '')} | "
+        f"act: {s['action']} | light: {s['lighting']}"
+        for sc in data["scenes"]
+        for s in sc["shots"]
+    )
+    d = ask("Check this shot list shot-by-shot for continuity against the continuity book: wardrobe, prop persistence (no disappearing boxes/props or self-contradictions like a coat on a bare hook), "
+            "room-boundary prop placement (no kitchen bowls teleporting onto living room rugs), grounded furniture surfaces, and realistic character/prop scale "
+            "(adults vs children vs dogs vs small mugs/bowls — never 'fills the frame' for a dog beside an adult), plus time of day and screen direction. "
+            "For each problem give the scene id, the shot number, the field to change (one of " + ", ".join(TEXT_FIELDS) + ") and its "
+            'new text. Reply as JSON: {"issues": [{"scene": "S001", "shot": 2, "issue": "...", "field": "composition", "value": "..."}]}\n\n'
             f"CONTINUITY BOOK:\n{people(book)}\nLocations: " + "; ".join(f"{x['name']}: {x['token']}" for x in book.get("locations", []))
             + "\nProps: " + "; ".join(f"{x['name']}: {x['token']}" for x in book.get("props", [])) + f"\n\nSHOT LIST:\n{listing}",
             "script_supervisor", "shot list: continuity check", check_continuity_reply)
@@ -391,12 +471,71 @@ def _renumber(sc: dict) -> None:
         s["n"] = i
 
 
+def parse_camera_motion_fields(raw_text: str, existing: dict) -> dict:
+    """Parse a free-text Step 12 'Camera & Motion' edit into valid (height, movement, lighting, camera_notes)."""
+    txt = " ".join(str(raw_text or "").replace("\r", "\n").split())
+    if not txt:
+        return {"height": existing.get("height", "eye"), "movement": existing.get("movement", "static"), "lighting": "", "camera_notes": ""}
+    segments = [p.strip() for p in re.split(r"[,;\n]+", str(raw_text or "")) if p.strip()]
+    height = str(existing.get("height", "eye"))
+    movement = str(existing.get("movement", "static"))
+    found_h = False
+    found_m = False
+    rest: list[str] = []
+    for seg in segments:
+        nh = _normalize_height(seg)
+        if not found_h and nh in HEIGHTS:
+            height = nh
+            found_h = True
+            continue
+        nm = _normalize_move(seg)
+        if not found_m and nm in MOVES:
+            movement = nm
+            found_m = True
+            continue
+        rest.append(seg)
+    lighting = ", ".join(rest).strip()
+    canonical = ", ".join(x for x in (height, movement, lighting) if x)
+    # Preserve exact custom wording in camera_notes whenever the user typed modifiers/phrases beyond exact canonical tokens
+    camera_notes = txt if txt.lower() != canonical.lower() else ""
+    return {"height": height, "movement": movement, "lighting": lighting, "camera_notes": camera_notes}
+
+
+def parse_subject_action_fields(raw_text: str, existing: dict) -> dict:
+    """Parse Step 12 'Subject & Action' textarea into (composition, action) without losing either field."""
+    raw = str(raw_text or "").strip()
+    if not raw:
+        return {"action": str(existing.get("action") or "").strip()}
+    comp_m = re.search(r"(?im)^\s*(?:subject|composition)\s*:\s*(.+?)(?=\n\s*action\s*:|\Z)", raw, re.DOTALL)
+    act_m = re.search(r"(?im)^\s*action\s*:\s*(.+)\Z", raw, re.DOTALL)
+    if comp_m or act_m:
+        out: dict[str, str] = {}
+        if comp_m:
+            out["composition"] = " ".join(comp_m.group(1).split())[:600]
+        if act_m:
+            act_val = " ".join(act_m.group(1).split())[:600]
+            if act_val:
+                out["action"] = act_val
+        if "action" not in out:
+            out["action"] = str(existing.get("action") or out.get("composition") or "").strip()[:600]
+        return out
+    return {"action": " ".join(raw.split())[:600]}
+
+
 def edit_shot(pdir: Path, sid: str, n: int, fields: dict) -> dict:
     d = load(pdir)
     sc = _scene(d, sid)
     if not 1 <= n <= len(sc["shots"]):
         raise ShotListError(f"scene {sid} has no shot {n}")
-    new = {**sc["shots"][n - 1], **{k: v for k, v in fields.items() if k in EDITABLE}}
+    cur = sc["shots"][n - 1]
+    expanded = dict(fields)
+    if "camera_motion" in expanded:
+        parsed_cam = parse_camera_motion_fields(str(expanded.pop("camera_motion") or ""), cur)
+        expanded.update(parsed_cam)
+    if "subject_action" in expanded:
+        parsed_sa = parse_subject_action_fields(str(expanded.pop("subject_action") or ""), cur)
+        expanded.update(parsed_sa)
+    new = {**cur, **{k: v for k, v in expanded.items() if k in EDITABLE}}
     try:
         sc["shots"][n - 1] = clean_shot(new, n)
     except ValueError as e:
@@ -486,7 +625,7 @@ def main(argv: list[str] | None = None) -> int:
         def ask(prompt, roles, step, validate):
             return bookkit.llm_json(prompt, crew.system(roles, pdir, step), model=a.model, engine=a.engine, validate=validate)
     try:
-        write(pdir, ask, lambda t: print(t, flush=True), force=a.force)
+        write(pdir, ask, lambda t: print(t, flush=True), force=a.force, run_ai_audit=(a.engine != "fake"))
     except (ShotListError, RuntimeError) as e:
         print(f"The shot list was not made: {e}", flush=True)
         return 1

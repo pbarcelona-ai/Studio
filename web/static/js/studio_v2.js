@@ -614,8 +614,8 @@
     [/\/api\/characters(?:\?|$)|\/api\/cast_lock|\/api\/v2_cast_save|\/api\/v2_character_ref_upload|\/api\/v2_character_identity_link|\/api\/v2_wardrobe_states_save|\/api\/v2_wardrobe_save|\/api\/character_token/, { step: 8, label: "Updated cast / wardrobe", isEdit: true, includeUpstream: true }],
     [/\/api\/global_params|\/api\/v2_style_apply/, { step: 9, label: "Updated visual style recipe", isEdit: true }],
     [/\/api\/v2_turnaround_render|\/api\/v2_turnaround_sheet|\/api\/v2_turnaround_restyle/, { step: 10, label: "Updated character turnaround", isEdit: true }],
-    [/\/api\/v2_set_render|\/api\/v2_set_ref_upload|\/api\/v2_set_baseline|\/api\/v2_set_save|\/api\/v2_set_view_save|\/api\/v2_set_order/, { step: 11, label: "Updated location / set plate", isEdit: true }],
-    [/\/api\/shot_list|\/api\/shot_list_approve|\/api\/shot_edit|\/api\/v2_shots_save/, { step: 12, label: "Updated shot list", isEdit: true }],
+    [/\/api\/v2_set_render|\/api\/v2_set_ref_upload|\/api\/v2_set_baseline|\/api\/v2_set_analyze_sync|\/api\/v2_set_save|\/api\/v2_set_view_save|\/api\/v2_set_order/, { step: 11, label: "Updated location / set plate", isEdit: true }],
+    [/\/api\/shot_list|\/api\/shot_list_approve|\/api\/shot_edit|\/api\/v2_shots_save|\/api\/v2_shot_continuity_audit/, { step: 12, label: "Updated shot list", isEdit: true }],
     [/\/api\/v2_voice_cast_save|\/api\/redo_audio|\/api\/v2_voice_profile_apply/, { step: 14, label: "Updated voice casting", isEdit: true }],
     [/\/api\/v2_dialogue_render|\/api\/v2_dialogue_upload|\/api\/v2_dialogue_save|\/api\/v2_voice_baseline_set/, { step: 15, label: "Updated spoken dialogue", isEdit: true, includeUpstream: false }],
     [/\/api\/v2_sound_design_render|\/api\/v2_sound_design_save|\/api\/v2_sound_preset_save|\/api\/v2_sound_sfx_propagate/, { step: 16, label: "Updated score / foley SFX", isEdit: true, includeUpstream: false }],
@@ -719,6 +719,20 @@
       btnGo.textContent = `⬅ Go to Step ${String(tStep).padStart(2, "0")} Now`;
       btnGo.addEventListener("click", () => activateStep(tStep));
       actions.appendChild(btnGo);
+    } else if (phase === "needs_run") {
+      const btnReviewed = document.createElement("button");
+      btnReviewed.type = "button";
+      btnReviewed.className = "btn btn--secondary";
+      btnReviewed.style.cssText = "padding:6px 12px;font-size:12px;font-weight:600;";
+      btnReviewed.textContent = "✓ Reviewed — No Changes Needed";
+      btnReviewed.title = `Confirm you reviewed Step ${String(tStep).padStart(2, "0")} and no re-render is needed, unlocking Approve & Next.`;
+      btnReviewed.addEventListener("click", async () => {
+        const slug = _activeBookSlug();
+        if (!slug) return;
+        btnReviewed.disabled = true;
+        await v2WorkflowMarkToolDone(slug, tStep, `Reviewed Step ${String(tStep).padStart(2, "0")} (no changes needed)`);
+      });
+      actions.appendChild(btnReviewed);
     } else if (phase === "needs_approve") {
       const activePanel = document.querySelector(`.step-panel[data-step="${currentStep}"]`);
       const nextBtn = activePanel ? activePanel.querySelector(".btn-step-next") : null;
@@ -888,8 +902,12 @@
           v2WorkflowState = { project: slug, queue: res.queue, banner: res.banner || { active: false } };
         }
         if (res && res.blocked_needs_run) {
+          const reqItem = ((res.queue && res.queue.items) || []).find(it => Number(it.step) === Number(currentStep));
+          const reqAction = (res.required_action || (reqItem && reqItem.action) || "").trim();
           renderV2BiDirBanner(
-            `⚠️ You must run the required tool on Step ${String(currentStep).padStart(2, "0")} BEFORE clicking Approve & Next!`
+            reqAction
+              ? `⚠️ Action needed before approving Step ${String(currentStep).padStart(2, "0")}: ${reqAction} — or click "✓ Reviewed — No Changes Needed" if everything here already matches.`
+              : `⚠️ Complete the required update on Step ${String(currentStep).padStart(2, "0")} BEFORE clicking Approve & Next!`
           );
           const banner = $("v2BiDirBanner");
           if (banner) banner.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2410,7 +2428,27 @@
         ol.style.cssText = "margin:0;padding-left:18px;font-size:var(--text-xs);color:#cbd5e1;display:flex;flex-direction:column;gap:6px;";
         (act.beats || []).forEach(b => {
           const li = document.createElement("li");
-          li.innerHTML = `<strong style="color:#f59e0b">${b.name || `Beat ${b.n}`}</strong>: ${b.description || ""}`;
+          const titleEl = document.createElement("strong");
+          titleEl.style.color = "#f59e0b";
+          titleEl.textContent = b.name || `Beat ${b.n}`;
+          li.appendChild(titleEl);
+          li.appendChild(document.createTextNode(`: ${b.description || ""}`));
+          if (b.viewer_expectation || b.open_loop) {
+            const meta = document.createElement("div");
+            meta.style.cssText = "margin-top:3px;padding-left:8px;border-left:2px solid #334155;color:#94a3b8;font-size:11px;display:flex;flex-direction:column;gap:2px";
+            if (b.viewer_expectation) {
+              const ex = document.createElement("span");
+              ex.textContent = `👁 Expects: ${b.viewer_expectation}`;
+              meta.appendChild(ex);
+            }
+            if (b.open_loop) {
+              const lp = document.createElement("span");
+              lp.style.color = "#38bdf8";
+              lp.textContent = `🪝 Open loop: ${b.open_loop}`;
+              meta.appendChild(lp);
+            }
+            li.appendChild(meta);
+          }
           ol.appendChild(li);
         });
         card.appendChild(ol);
@@ -3005,23 +3043,48 @@
     const btnMcpFinalDraft = $("spMcpFinalDraft");
     const mcpStatus = $("spMcpStatus");
 
+    // MCP Integration helper: render status message + clickable download/open links
+    function setSpMcpResult(msg, links = [], isErr = false) {
+      if (!mcpStatus) return;
+      mcpStatus.style.color = isErr ? "#f87171" : "#34d399";
+      mcpStatus.textContent = "";
+      const span = document.createElement("span");
+      span.textContent = msg;
+      mcpStatus.appendChild(span);
+      links.forEach(({ label, href, external }) => {
+        if (!href) return;
+        const a = document.createElement("a");
+        a.href = href;
+        a.textContent = label;
+        a.style.cssText = "margin-left:8px;color:#38bdf8;text-decoration:underline;font-weight:600";
+        if (external) {
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+        } else {
+          a.download = "";
+        }
+        mcpStatus.appendChild(a);
+      });
+    }
+
     if (btnMcpPremiere) {
       btnMcpPremiere.addEventListener("click", async () => {
         const selProj = $("proj");
         const slug = (selProj && selProj.value) || activeProject || "";
         if (!slug) { alert("Pick a book first."); return; }
-        if (!confirm("This will export the screenplay to FDX and send it to Premiere Pro via MCP. Continue?")) return;
         try {
           btnMcpPremiere.disabled = true;
-          btnMcpPremiere.textContent = "🎬 Sending to Premiere…";
-          if (mcpStatus) mcpStatus.textContent = "Connecting to Premiere Pro MCP…";
+          btnMcpPremiere.textContent = "🎬 Exporting for Premiere…";
+          setSpMcpResult("Auto-exporting FDX & Premiere Pro XML…", [], false);
           const result = await callApi("/api/mcp/premiere/import_fdx", { project: slug });
           if (result.error) throw new Error(result.error);
-          if (mcpStatus) mcpStatus.textContent = "✓ Sent to Premiere Pro successfully";
-          setTimeout(() => { if (mcpStatus) mcpStatus.textContent = ""; }, 5000);
+          const links = [];
+          if (result.xml_url) links.push({ label: "⬇ Download Premiere XML", href: result.xml_url });
+          if (result.fdx_url) links.push({ label: "⬇ Download .fdx", href: result.fdx_url });
+          setSpMcpResult(`✓ ${result.message || "Ready for Premiere Pro"}`, links, false);
         } catch (err) {
           console.error("Premiere MCP failed:", err);
-          if (mcpStatus) mcpStatus.textContent = "Error: " + err.message;
+          setSpMcpResult("Error: " + (err.message || err), [], true);
         } finally {
           btnMcpPremiere.disabled = false;
           btnMcpPremiere.textContent = "🎬 Send to Premiere Pro";
@@ -3037,18 +3100,18 @@
         if (!slug) { alert("Pick a book first."); return; }
         const s = spScenesData[spActiveIdx];
         if (!s) { alert("Select a scene first."); return; }
-        if (!confirm(`Generate 3D previs for scene ${s.id} via Blender MCP? This may take a minute.`)) return;
         try {
           btnMcpBlender.disabled = true;
           btnMcpBlender.textContent = "🎯 Generating…";
-          if (mcpStatus) mcpStatus.textContent = "Generating previs with Blender MCP…";
+          setSpMcpResult(`Generating 3D previs for ${s.id}…`, [], false);
           const result = await callApi("/api/mcp/blender/generate_previs", { project: slug, scene_id: s.id });
           if (result.error) throw new Error(result.error);
-          if (mcpStatus) mcpStatus.textContent = "✓ Previs generated";
-          setTimeout(() => { if (mcpStatus) mcpStatus.textContent = ""; }, 5000);
+          const links = [];
+          if (result.script_url) links.push({ label: `⬇ Download previs_${s.id}.py`, href: result.script_url });
+          setSpMcpResult(`✓ ${result.message || "Previs generated"}`, links, false);
         } catch (err) {
           console.error("Blender MCP failed:", err);
-          if (mcpStatus) mcpStatus.textContent = "Error: " + err.message;
+          setSpMcpResult("Error: " + (err.message || err), [], true);
         } finally {
           btnMcpBlender.disabled = false;
           btnMcpBlender.textContent = "🎯 Generate Previs (Blender)";
@@ -3062,18 +3125,19 @@
         const selProj = $("proj");
         const slug = (selProj && selProj.value) || activeProject || "";
         if (!slug) { alert("Pick a book first."); return; }
-        if (!confirm("This will export the screenplay to FDX and open it in Final Draft Web via Playwright MCP. Continue?")) return;
         try {
           btnMcpFinalDraft.disabled = true;
-          btnMcpFinalDraft.textContent = "📝 Opening Final Draft…";
-          if (mcpStatus) mcpStatus.textContent = "Launching Final Draft Web via Playwright MCP…";
+          btnMcpFinalDraft.textContent = "📝 Preparing Final Draft…";
+          setSpMcpResult("Auto-exporting FDX for Final Draft…", [], false);
           const result = await callApi("/api/mcp/playwright/finaldraft_import", { project: slug, project_title: slug });
           if (result.error) throw new Error(result.error);
-          if (mcpStatus) mcpStatus.textContent = "✓ Opened in Final Draft Web";
-          setTimeout(() => { if (mcpStatus) mcpStatus.textContent = ""; }, 5000);
+          const links = [];
+          if (result.fdx_url) links.push({ label: "⬇ Download screenplay.fdx", href: result.fdx_url });
+          if (result.open_url) links.push({ label: "↗ Open Final Draft", href: result.open_url, external: true });
+          setSpMcpResult(`✓ ${result.message || "Ready for Final Draft"}`, links, false);
         } catch (err) {
           console.error("Playwright MCP failed:", err);
-          if (mcpStatus) mcpStatus.textContent = "Error: " + err.message;
+          setSpMcpResult("Error: " + (err.message || err), [], true);
         } finally {
           btnMcpFinalDraft.disabled = false;
           btnMcpFinalDraft.textContent = "📝 Open in Final Draft Web";
@@ -4224,6 +4288,7 @@
     await loadV2CharacterTypes();
     populateArchetypeSelect($("v2CastNewArchetype"), "");
     populateStyleSelect($("v2CastNewStyle"), "", "Book Default (Step 09)");
+    populateStyleSelect($("v2CastImportStyle"), "", "Book Default (Step 09)");
 
     if (!slug) {
       grid.textContent = "";
@@ -4374,6 +4439,20 @@
       badgeEl.className = "status-badge " + (allChars.length ? "status-badge--synced" : "status-badge--drift");
     }
 
+    // Populate Step 08 top Import Photo character dropdown (just like Step 11 Sets)
+    const impCharSel = $("v2CastImportChar");
+    if (impCharSel) {
+      const prevChar = impCharSel.value;
+      impCharSel.textContent = "";
+      allChars.forEach(ch => {
+        const opt = document.createElement("option");
+        opt.value = ch.name;
+        opt.textContent = ch.name;
+        impCharSel.appendChild(opt);
+      });
+      if (prevChar && allChars.some(ch => ch.name === prevChar)) impCharSel.value = prevChar;
+    }
+
     const castScrollY = window.scrollY || 0;
     const castPrevH = grid.offsetHeight;
     if (castPrevH > 0) grid.style.minHeight = castPrevH + "px";
@@ -4409,31 +4488,54 @@
       head.appendChild(srcBadge);
       card.appendChild(head);
 
-      // Reference Picture Upload / Preview (Step 08 -> Step 10 & Single Prompts)
+      // Reference Picture Upload / Preview (Original Photo -> Converted Film-Style Front View, mirroring Step 11 Sets)
       const refInfo = findCharRefs(c.name);
       const refBox = document.createElement("div");
-      refBox.style.cssText = "display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;background:#0a0d14;border:1px solid #232d3f;border-radius:6px;";
-      const refThumbWrap = document.createElement("div");
-      refThumbWrap.style.cssText = "width:62px;height:62px;flex-shrink:0;border-radius:6px;overflow:hidden;background:#020617;border:1px solid #334155;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:10px;text-align:center;";
-      if (refInfo.primary && refInfo.primary.url) {
-        const rImg = document.createElement("img");
-        rImg.src = refInfo.primary.url + "?t=" + Date.now();
-        rImg.alt = `${c.name} reference`;
-        rImg.style.cssText = "width:100%;height:100%;object-fit:cover;cursor:zoom-in;";
-        rImg.addEventListener("click", () => window.open(refInfo.primary.url, "_blank"));
-        refThumbWrap.appendChild(rImg);
+      refBox.style.cssText = "display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;background:#0a0d14;border:1px solid #232d3f;border-radius:6px;flex-wrap:wrap;";
+      const thumbsWrap = document.createElement("div");
+      thumbsWrap.style.cssText = "display:flex;align-items:center;gap:6px;flex-shrink:0;";
+      const makeThumb = (url, labelTxt, borderCol) => {
+        const box = document.createElement("div");
+        box.style.cssText = `position:relative;width:64px;height:64px;flex-shrink:0;border-radius:6px;overflow:hidden;background:#020617;border:1px solid ${borderCol};display:flex;align-items:center;justify-content:center;color:#64748b;font-size:10px;text-align:center;`;
+        if (url) {
+          const im = document.createElement("img");
+          im.src = url + "?t=" + Date.now();
+          im.alt = `${c.name} ${labelTxt}`;
+          im.style.cssText = "width:100%;height:100%;object-fit:cover;cursor:zoom-in;";
+          im.addEventListener("click", () => window.open(url, "_blank"));
+          box.appendChild(im);
+          if (labelTxt) {
+            const tag = document.createElement("span");
+            tag.textContent = labelTxt;
+            tag.style.cssText = "position:absolute;bottom:0;left:0;right:0;background:rgba(2,6,23,.78);color:#e2e8f0;font-size:9px;text-align:center;padding:1px 2px;";
+            box.appendChild(tag);
+          }
+        } else {
+          box.textContent = labelTxt || "No Ref";
+        }
+        return box;
+      };
+      if (refInfo.step08 && refInfo.step10) {
+        thumbsWrap.appendChild(makeThumb(refInfo.step08.url, "Photo", "#f59e0b"));
+        const arr = document.createElement("span");
+        arr.textContent = "→";
+        arr.style.cssText = "color:#94a3b8;font-weight:700;font-size:12px;";
+        thumbsWrap.appendChild(arr);
+        thumbsWrap.appendChild(makeThumb(refInfo.step10.url, "Film Style", "#34d399"));
+      } else if (refInfo.primary && refInfo.primary.url) {
+        thumbsWrap.appendChild(makeThumb(refInfo.primary.url, refInfo.step08 ? "Photo" : "Front", refInfo.step08 ? "#f59e0b" : "#334155"));
       } else {
-        refThumbWrap.textContent = "No Ref";
+        thumbsWrap.appendChild(makeThumb("", "No Ref", "#334155"));
       }
-      refBox.appendChild(refThumbWrap);
+      refBox.appendChild(thumbsWrap);
 
       const refMeta = document.createElement("div");
-      refMeta.style.cssText = "flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;";
+      refMeta.style.cssText = "flex:1;min-width:160px;display:flex;flex-direction:column;gap:4px;";
       const refLbl = document.createElement("div");
       refLbl.style.cssText = "font-size:11px;color:#e2e8f0;font-weight:600;";
       refLbl.textContent = refInfo.step08
-        ? "📷 Reference Picture Uploaded (used in Step 10 & Single Prompts)"
-        : (refInfo.step10 ? "📷 Using Step 10 Front View (upload custom photo to override)" : "📷 Cast Reference Picture (optional)");
+        ? (refInfo.step10 ? "📷 Photo Imported & Styled (Step 08 → Step 10)" : "📷 Reference Photo Uploaded (ready to convert to film style)")
+        : (refInfo.step10 ? "📷 Using Step 10 Front View (import a photo to override)" : "📷 Cast Reference Picture (optional)");
       refMeta.appendChild(refLbl);
 
       const refBtns = document.createElement("div");
@@ -4446,28 +4548,31 @@
       btnUploadRef.type = "button";
       btnUploadRef.className = "btn btn--secondary";
       btnUploadRef.style.cssText = "padding:3px 9px;font-size:11px;";
-      btnUploadRef.textContent = refInfo.step08 ? "📷 Replace Ref Photo" : "📷 Upload Ref Photo";
+      btnUploadRef.textContent = refInfo.step08 ? "📷 Replace Photo & Convert" : "📷 Import Photo & Convert";
+      btnUploadRef.title = "Import a reference photo and immediately convert it into your film's visual style";
       btnUploadRef.addEventListener("click", () => refFileIn.click());
       refFileIn.addEventListener("change", () => {
         const f = refFileIn.files && refFileIn.files[0];
         if (!f) return;
         const reader = new FileReader();
         reader.onload = async () => {
-          btnUploadRef.disabled = true;
-          btnUploadRef.textContent = "Uploading…";
+          const stopBusy = startBusyFeedback(btnUploadRef, refBox, `Importing & converting ${c.name}…`);
           try {
             await callApi("/api/v2_character_ref_upload", {
               project: slug,
               character: c.name,
               image_base64: reader.result,
-              set_as_front: true,
+              convert_now: true,
+              style_id: c.style_override || "",
+              style_strength: 0.75,
+              engine: _currentV2VisualEngine(),
             });
             if (window.loadPCastRefs) window.loadPCastRefs();
             await loadV2Cast();
           } catch (err) {
-            alert("Reference upload failed: " + (err.message || err));
-            btnUploadRef.disabled = false;
-            btnUploadRef.textContent = "📷 Upload Ref Photo";
+            alert("Reference import & convert failed: " + (err.message || err));
+          } finally {
+            stopBusy();
           }
         };
         reader.readAsDataURL(f);
@@ -4476,6 +4581,31 @@
       refBtns.appendChild(refFileIn);
 
       if (refInfo.step08) {
+        const btnConvertRef = document.createElement("button");
+        btnConvertRef.type = "button";
+        btnConvertRef.className = "btn btn--primary";
+        btnConvertRef.style.cssText = "padding:3px 9px;font-size:11px;";
+        btnConvertRef.textContent = refInfo.step10 ? "↺ Re-convert to Film Style" : "🎨 Convert to Film Style";
+        btnConvertRef.addEventListener("click", async () => {
+          const stopBusy = startBusyFeedback(btnConvertRef, refBox, `Converting ${c.name} to film style…`);
+          try {
+            await callApi("/api/v2_turnaround_restyle", {
+              project: slug,
+              character: c.name,
+              style_id: c.style_override || "",
+              use_cast_ref: true,
+              engine: _currentV2VisualEngine(),
+            });
+            if (window.loadPCastRefs) window.loadPCastRefs();
+            await loadV2Cast();
+          } catch (err) {
+            alert("Conversion failed: " + (err.message || err));
+          } finally {
+            stopBusy();
+          }
+        });
+        refBtns.appendChild(btnConvertRef);
+
         const btnDelRef = document.createElement("button");
         btnDelRef.type = "button";
         btnDelRef.className = "btn btn--ghost";
@@ -4757,6 +4887,98 @@
       });
     }
     if (btnReload) btnReload.addEventListener("click", () => loadV2Cast());
+
+    // Step 08 Top Import Photo & Convert to Film Style panel (mirrors Step 11 Sets Import)
+    const btnCastImpToggle = $("bV2CastImportToggle");
+    const castImpForm = $("v2CastImportForm");
+    const btnCastImpCancel = $("bV2CastImportCancel");
+    const castImpFile = $("v2CastImportFile");
+    const castImpPrev = $("v2CastImportPreview");
+    const castImpStr = $("v2CastImportStrength");
+    const castImpStrVal = $("v2CastImportStrengthVal");
+    const btnCastImpConv = $("bV2CastImportConvert");
+    const btnCastImpOnly = $("bV2CastImportOnly");
+    const castImpMsg = $("v2CastImportMsg");
+    let pendingCastImpDataUrl = "";
+    let pendingCastImpFilename = "";
+
+    if (castImpStr && castImpStrVal) {
+      castImpStr.addEventListener("input", () => { castImpStrVal.textContent = Number(castImpStr.value).toFixed(2); });
+    }
+    if (btnCastImpToggle && castImpForm) {
+      btnCastImpToggle.addEventListener("click", () => {
+        const show = castImpForm.classList.contains("hidden") || castImpForm.style.display === "none";
+        castImpForm.classList.toggle("hidden", !show);
+        castImpForm.style.display = show ? "flex" : "none";
+      });
+    }
+    if (btnCastImpCancel && castImpForm) {
+      btnCastImpCancel.addEventListener("click", () => {
+        castImpForm.classList.add("hidden");
+        castImpForm.style.display = "none";
+      });
+    }
+    if (castImpFile) {
+      castImpFile.addEventListener("change", () => {
+        const f = castImpFile.files && castImpFile.files[0];
+        if (!f) return;
+        pendingCastImpFilename = f.name;
+        const reader = new FileReader();
+        reader.onload = () => {
+          pendingCastImpDataUrl = String(reader.result || "");
+          if (castImpPrev) {
+            castImpPrev.src = pendingCastImpDataUrl;
+            castImpPrev.style.display = "block";
+          }
+          if (castImpMsg) castImpMsg.textContent = `Ready to import "${f.name}"`;
+        };
+        reader.readAsDataURL(f);
+      });
+    }
+    async function runTopCastImport(convertNow) {
+      const selProj = $("proj");
+      const slug = (selProj && selProj.value) || activeProject || "";
+      const charName = ($("v2CastImportChar") && $("v2CastImportChar").value) ? $("v2CastImportChar").value.trim() : "";
+      const styleId = ($("v2CastImportStyle") && $("v2CastImportStyle").value) ? $("v2CastImportStyle").value.trim() : "";
+      const styleNotes = ($("v2CastImportNotes") && $("v2CastImportNotes").value) ? $("v2CastImportNotes").value.trim() : "";
+      if (!slug) { if (castImpMsg) castImpMsg.textContent = "Pick a book in Step 01 first."; return; }
+      if (!charName) { if (castImpMsg) castImpMsg.textContent = "Select a character first."; return; }
+      if (!pendingCastImpDataUrl) { if (castImpMsg) castImpMsg.textContent = "Choose a reference photo file first."; return; }
+      const trigBtn = convertNow ? btnCastImpConv : btnCastImpOnly;
+      const stopBusy = startBusyFeedback(trigBtn, castImpForm, convertNow ? `Converting photo for ${charName}…` : `Importing photo for ${charName}…`);
+      if (castImpMsg) castImpMsg.textContent = convertNow ? `Importing & converting photo for "${charName}"…` : `Importing photo for "${charName}"…`;
+      try {
+        const res = await callApi("/api/v2_character_ref_upload", {
+          project: slug,
+          character: charName,
+          filename: pendingCastImpFilename || "reference.png",
+          image_base64: pendingCastImpDataUrl,
+          convert_now: convertNow,
+          set_as_front: !convertNow,
+          style_id: styleId,
+          style_notes: styleNotes,
+          style_strength: castImpStr ? parseFloat(castImpStr.value) : 0.75,
+          engine: _currentV2VisualEngine(),
+        });
+        pendingCastImpDataUrl = "";
+        pendingCastImpFilename = "";
+        if (castImpFile) castImpFile.value = "";
+        if (castImpPrev) { castImpPrev.src = ""; castImpPrev.style.display = "none"; }
+        if (castImpMsg) {
+          castImpMsg.textContent = convertNow
+            ? `✓ Imported & converted "${charName}" into ${res.style_name || "film style"}!`
+            : `✓ Imported reference photo for "${charName}"!`;
+        }
+        if (window.loadPCastRefs) window.loadPCastRefs();
+        await loadV2Cast();
+      } catch (err) {
+        if (castImpMsg) castImpMsg.textContent = "Import failed: " + (err.message || err);
+      } finally {
+        stopBusy();
+      }
+    }
+    if (btnCastImpConv) btnCastImpConv.addEventListener("click", () => runTopCastImport(true));
+    if (btnCastImpOnly) btnCastImpOnly.addEventListener("click", () => runTopCastImport(false));
 
     const btnCustomToggle = $("bV2CastCustomTypeToggle");
     const customForm = $("v2CastCustomTypeForm");
@@ -5871,21 +6093,50 @@
           btnBase.type = "button";
           btnBase.className = "btn " + (vw.is_baseline ? "btn--primary" : "btn--ghost");
           btnBase.style.cssText = vw.is_baseline ? "background:#059669;border-color:#10b981;" : "color:#6ee7b7;";
-          btnBase.textContent = vw.is_baseline ? "📌 Baseline ✓ (Update)" : "📌 Use as Baseline";
+          btnBase.textContent = vw.is_baseline ? "📌 Baseline ✓ (Update & Sync)" : "📌 Use as Baseline";
           btnBase.title = vw.is_baseline
-            ? "Click to update the locked Baseline snapshot to this view's latest image"
-            : `Set "${vw.label}" as ${loc.name}'s Baseline so future re-runs & other views lock to this image`;
+            ? "Update the locked Baseline snapshot, analyze the set image to text, and sync Steps 07, 11, 12 & 17"
+            : `Set "${vw.label}" as ${loc.name}'s Baseline, analyze its visual layout to text, and sync Steps 07, 11, 12 & 17`;
           btnBase.addEventListener("click", async () => {
-            btnBase.disabled = true;
+            const stopBusy = startBusyFeedback(btnBase, vItem, `Pinning baseline & reading set layout → syncing Steps 07/12/17…`);
+            msg.textContent = `Pinning "${vw.label}" as Baseline & translating set image to text for Steps 07, 12 & 17…`;
             try {
-              await callApi("/api/v2_set_baseline", { project: slug, name: loc.name, view_id: vw.id });
+              const res = await callApi("/api/v2_set_baseline", { project: slug, name: loc.name, view_id: vw.id });
+              const vs = (res && res.vision_sync) || {};
               await loadV2Locations();
+              if (vs.ok) {
+                msg.textContent = `✓ Baseline pinned & synced from image (${vs.engine}): ${(vs.updated_steps || []).join(" · ")}`;
+              }
             } catch (err) {
               msg.textContent = "Baseline failed: " + (err.message || err);
-              btnBase.disabled = false;
+            } finally {
+              stopBusy();
             }
           });
           vAct.appendChild(btnBase);
+
+          if (vw.is_baseline) {
+            const btnVisionSync = document.createElement("button");
+            btnVisionSync.type = "button";
+            btnVisionSync.className = "btn btn--secondary";
+            btnVisionSync.style.cssText = "font-size:11px;";
+            btnVisionSync.textContent = "🔍 Sync Text from Baseline";
+            btnVisionSync.title = "Analyze this baselined set image to text and align Step 07 Continuity, Step 12 Shot List, and Step 17 Keyframe Prompts";
+            btnVisionSync.addEventListener("click", async () => {
+              const stopBusy = startBusyFeedback(btnVisionSync, vItem, `Analyzing ${loc.name} baseline image → syncing Steps 07/12/17…`);
+              msg.textContent = `Translating "${loc.name}" baselined image into set description & aligning Steps 07, 12 & 17…`;
+              try {
+                const res = await callApi("/api/v2_set_analyze_sync", { project: slug, name: loc.name });
+                await loadV2Locations();
+                msg.textContent = `✓ Synced from ${res.image_analyzed} (${res.engine}): ${(res.updated_steps || []).join(" · ")}`;
+              } catch (err) {
+                msg.textContent = "Image-to-text sync failed: " + (err.message || err);
+              } finally {
+                stopBusy();
+              }
+            });
+            vAct.appendChild(btnVisionSync);
+          }
         }
 
         if (vw.has_converted) {
@@ -6273,37 +6524,62 @@
       noteEl.innerHTML = bits.join(" &middot; ") || `${sc.id} — ${shots.length} shot(s)`;
     }
 
+    const shotTaStyle = "width:100%;min-height:86px;padding:6px 8px;background:#0a0d14;color:#e2e8f0;border:1px solid #334155;border-radius:4px;font-size:11px;line-height:1.45;resize:vertical;font-family:inherit;box-sizing:border-box;";
+
     shots.forEach((s, idx) => {
       const tr = document.createElement("tr");
       tr.style.borderBottom = "1px solid #1e293b";
 
       const tdN = document.createElement("td");
-      tdN.style.cssText = "padding:8px;font-weight:700;color:#f59e0b;white-space:nowrap;";
+      tdN.style.cssText = "padding:8px;font-weight:700;color:#f59e0b;white-space:nowrap;vertical-align:top;";
       tdN.textContent = `Shot ${s.n || idx + 1}`;
 
       const tdFrame = document.createElement("td");
-      tdFrame.style.cssText = "padding:8px;white-space:nowrap;";
+      tdFrame.style.cssText = "padding:8px;white-space:nowrap;vertical-align:top;";
       tdFrame.textContent = [s.type || "Shot", s.lens_mm ? `${s.lens_mm}mm` : ""].filter(Boolean).join(" · ");
 
       const tdCam = document.createElement("td");
-      tdCam.style.cssText = "padding:8px;font-size:var(--text-xs);color:#94a3b8;min-width:160px;";
-      tdCam.textContent = [s.height, s.movement, s.lighting].filter(Boolean).join(", ") || "Standard";
+      tdCam.style.cssText = "padding:8px;width:36%;min-width:260px;vertical-align:top;";
+      const camText = (s.camera_notes && String(s.camera_notes).trim())
+        ? String(s.camera_notes).trim()
+        : ([s.height, s.movement, s.lighting].filter(Boolean).join(", ") || "Standard");
+      if (v2ShotSourceKind === "shot_list") {
+        const camTa = document.createElement("textarea");
+        camTa.className = "v2-shot-camera-input";
+        camTa.rows = 4;
+        camTa.value = camText;
+        camTa.placeholder = "Camera height, movement, lighting & motion notes...";
+        camTa.setAttribute("aria-label", `Shot ${s.n || idx + 1} Camera and Motion`);
+        camTa.style.cssText = shotTaStyle;
+        camTa.addEventListener("change", () => v2ShotEdit(sc.id, s.n, { action: "edit", fields: { camera_motion: camTa.value } }));
+        tdCam.appendChild(camTa);
+      } else {
+        tdCam.style.fontSize = "var(--text-xs)";
+        tdCam.style.color = "#94a3b8";
+        tdCam.textContent = camText;
+      }
 
       const tdAct = document.createElement("td");
-      tdAct.style.cssText = "padding:8px;min-width:240px;";
+      tdAct.style.cssText = "padding:8px;width:36%;min-width:260px;vertical-align:top;";
+      const subjActText = s.composition
+        ? `Subject: ${s.composition}\nAction: ${s.action || ""}`
+        : (s.action || s.prompt || "");
       if (v2ShotSourceKind === "shot_list") {
-        const inp = document.createElement("input");
-        inp.type = "text";
-        inp.value = s.action || "";
-        inp.style.cssText = "width:100%;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);";
-        inp.addEventListener("change", () => v2ShotEdit(sc.id, s.n, { action: "edit", fields: { action: inp.value } }));
-        tdAct.appendChild(inp);
+        const actTa = document.createElement("textarea");
+        actTa.className = "v2-shot-action-input";
+        actTa.rows = 4;
+        actTa.value = subjActText;
+        actTa.placeholder = "Subject: framing & visual placement\nAction: what happens in the shot...";
+        actTa.setAttribute("aria-label", `Shot ${s.n || idx + 1} Subject and Action`);
+        actTa.style.cssText = shotTaStyle;
+        actTa.addEventListener("change", () => v2ShotEdit(sc.id, s.n, { action: "edit", fields: { subject_action: actTa.value } }));
+        tdAct.appendChild(actTa);
       } else {
-        tdAct.textContent = s.action || s.prompt || "";
+        tdAct.textContent = subjActText;
       }
 
       const tdSec = document.createElement("td");
-      tdSec.style.padding = "8px";
+      tdSec.style.cssText = "padding:8px;vertical-align:top;";
       if (v2ShotSourceKind === "shot_list") {
         const secInp = document.createElement("input");
         secInp.type = "number";
@@ -6319,7 +6595,9 @@
       }
 
       const tdBtns = document.createElement("td");
-      tdBtns.style.cssText = "padding:8px;white-space:nowrap;display:flex;gap:4px;";
+      tdBtns.style.cssText = "padding:8px;white-space:nowrap;vertical-align:top;";
+      const btnWrap = document.createElement("div");
+      btnWrap.style.cssText = "display:flex;gap:4px;flex-wrap:wrap;";
       if (v2ShotSourceKind === "shot_list") {
         const mk = (lbl, fn, disabled = false) => {
           const b = document.createElement("button");
@@ -6331,13 +6609,14 @@
           b.addEventListener("click", fn);
           return b;
         };
-        tdBtns.appendChild(mk("↑", () => v2ShotEdit(sc.id, s.n, { action: "move", to: s.n - 1 }), s.n <= 1));
-        tdBtns.appendChild(mk("↓", () => v2ShotEdit(sc.id, s.n, { action: "move", to: s.n + 1 }), s.n >= shots.length));
-        tdBtns.appendChild(mk("+", () => v2ShotEdit(sc.id, s.n, { action: "add" })));
-        tdBtns.appendChild(mk("×", () => { if (confirm(`Delete shot ${s.n}?`)) v2ShotEdit(sc.id, s.n, { action: "delete" }); }, shots.length <= 1));
+        btnWrap.appendChild(mk("↑", () => v2ShotEdit(sc.id, s.n, { action: "move", to: s.n - 1 }), s.n <= 1));
+        btnWrap.appendChild(mk("↓", () => v2ShotEdit(sc.id, s.n, { action: "move", to: s.n + 1 }), s.n >= shots.length));
+        btnWrap.appendChild(mk("+", () => v2ShotEdit(sc.id, s.n, { action: "add" })));
+        btnWrap.appendChild(mk("×", () => { if (confirm(`Delete shot ${s.n}?`)) v2ShotEdit(sc.id, s.n, { action: "delete" }); }, shots.length <= 1));
       } else {
-        tdBtns.innerHTML = `<span style="font-size:var(--text-xs);color:#64748b">CSV shot</span>`;
+        btnWrap.innerHTML = `<span style="font-size:var(--text-xs);color:#64748b">CSV shot</span>`;
       }
+      tdBtns.appendChild(btnWrap);
 
       [tdN, tdFrame, tdCam, tdAct, tdSec, tdBtns].forEach(td => tr.appendChild(td));
       tbody.appendChild(tr);
@@ -6469,6 +6748,131 @@
         if (currentStep === 12) loadV2ShotList();
       });
     }
+
+    initV2EarlyPromptAudit();
+  }
+
+  function initV2EarlyPromptAudit() {
+    document.querySelectorAll(".v2-early-audit-btn").forEach((btn) => {
+      if (btn.dataset.auditBound) return;
+      btn.dataset.auditBound = "1";
+      btn.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) {
+          alert("Pick or save a book in Step 01 first.");
+          return;
+        }
+        const stepNum = Number(btn.getAttribute("data-audit-step") || 0);
+        const outEl = $(`v2EarlyAuditOut${stepNum}`);
+        const origLabel = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "⏳ Auditing…";
+        if (outEl) {
+          outEl.classList.remove("hidden");
+          outEl.style.borderColor = "#f59e0b";
+          outEl.textContent = `Running AI prompt continuity audit for Step ${String(stepNum).padStart(2, "0")}…`;
+        }
+        try {
+          const payload = { project: slug, step: stepNum, use_llm: true, auto_apply: true, record_bidirectional: true };
+          if (stepNum === 12 && v2ShotScenes[v2ShotActiveSceneIdx]) {
+            payload.scene = v2ShotScenes[v2ShotActiveSceneIdx].id || "";
+          }
+          const res = await callApi("/api/v2_early_prompt_audit", payload);
+          if (outEl) {
+            const issues = Array.isArray(res.issues) ? res.issues : [];
+            const scorecard = Array.isArray(res.scorecard) ? res.scorecard : [];
+            const blindSpots = Array.isArray(res.blind_spots) ? res.blind_spots : [];
+            const hasFail = scorecard.some(c => String(c.rating || "").toLowerCase() === "fail") || issues.some(it => it.ambiguous || it.severity === "critical");
+            const okColor = hasFail ? "#f87171" : (issues.length ? "#f59e0b" : "#22c55e");
+            outEl.style.borderColor = okColor;
+            outEl.textContent = "";
+
+            const head = document.createElement("div");
+            head.style.cssText = `font-weight:700;color:${okColor};margin-bottom:${(scorecard.length || issues.length || blindSpots.length) ? "6px" : "0"}`;
+            head.textContent = res.message || `Step ${stepNum} audited.`;
+            outEl.appendChild(head);
+
+            // 1. Per-criterion Scorecard (Pass / Needs Work / Fail)
+            if (scorecard.length) {
+              const scBar = document.createElement("div");
+              scBar.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px";
+              scorecard.forEach((scItem) => {
+                const rating = String(scItem.rating || "Pass");
+                const rLow = rating.toLowerCase();
+                const bg = rLow === "fail" ? "rgba(239,68,68,0.16)" : (rLow === "needs work" ? "rgba(245,158,11,0.16)" : "rgba(34,197,94,0.14)");
+                const bd = rLow === "fail" ? "#ef4444" : (rLow === "needs work" ? "#f59e0b" : "#22c55e");
+                const fg = rLow === "fail" ? "#fca5a5" : (rLow === "needs work" ? "#fde68a" : "#86efac");
+                const pill = document.createElement("span");
+                pill.title = String(scItem.reason || "");
+                pill.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:${bg};border:1px solid ${bd};color:${fg};font-size:11px;font-weight:600`;
+                pill.textContent = `${scItem.criterion || "Check"}: ${rating}`;
+                scBar.appendChild(pill);
+              });
+              outEl.appendChild(scBar);
+            }
+
+            // 2. Severity-ordered Issues & Targeted Fixes / Ambiguities
+            if (issues.length) {
+              const ul = document.createElement("ul");
+              ul.style.cssText = "margin:0;padding-left:16px;display:flex;flex-direction:column;gap:3px;";
+              issues.slice(0, 12).forEach((it) => {
+                const li = document.createElement("li");
+                const sev = String(it.severity || "major").toUpperCase();
+                const sevColor = sev === "CRITICAL" ? "#f87171" : (sev === "MINOR" ? "#94a3b8" : "#fbbf24");
+                const sevTag = document.createElement("span");
+                sevTag.style.cssText = `font-weight:700;color:${sevColor};margin-right:4px`;
+                sevTag.textContent = `[${sev}]`;
+                li.appendChild(sevTag);
+                const stateTag = it.ambiguous ? "[Needs Decision] " : (it.fixed ? "[Auto-fixed] " : "[Check] ");
+                const riskTxt = it.risk ? ` — Risk: ${it.risk}` : "";
+                li.appendChild(document.createTextNode(`${stateTag}${it.target ? it.target + ": " : ""}${it.issue || ""}${riskTxt}`));
+                ul.appendChild(li);
+              });
+              if (issues.length > 12) {
+                const more = document.createElement("li");
+                more.textContent = `…and ${issues.length - 12} more item(s).`;
+                ul.appendChild(more);
+              }
+              outEl.appendChild(ul);
+            }
+
+            // 3. Blind Spots & Unverified Assumptions
+            if (blindSpots.length) {
+              const bsBox = document.createElement("div");
+              bsBox.style.cssText = "margin-top:6px;padding-top:6px;border-top:1px dashed #334155;color:#94a3b8;font-size:11px";
+              const bsTitle = document.createElement("div");
+              bsTitle.style.cssText = "font-weight:700;color:#cbd5e1;margin-bottom:2px";
+              bsTitle.textContent = "Blind Spots & Assumptions:";
+              bsBox.appendChild(bsTitle);
+              const bUl = document.createElement("ul");
+              bUl.style.cssText = "margin:0;padding-left:16px;display:flex;flex-direction:column;gap:2px";
+              blindSpots.slice(0, 6).forEach((b) => {
+                const li = document.createElement("li");
+                li.textContent = String(b || "");
+                bUl.appendChild(li);
+              });
+              bsBox.appendChild(bUl);
+              outEl.appendChild(bsBox);
+            }
+          }
+          if (stepNum === 12) await loadV2ShotList();
+          else if (stepNum === 7 && typeof loadV2Continuity === "function") await loadV2Continuity();
+          else if (stepNum === 6 && typeof loadV2Screenplay === "function") await loadV2Screenplay();
+          else if (stepNum === 5 && typeof loadV2Beats === "function") await loadV2Beats();
+          else if (stepNum === 3 && typeof loadV2Coverage === "function") await loadV2Coverage();
+        } catch (err) {
+          if (outEl) {
+            outEl.classList.remove("hidden");
+            outEl.style.borderColor = "#ef4444";
+            outEl.textContent = `Audit failed: ${err.message || err}`;
+          }
+        } finally {
+          btn.disabled = false;
+          btn.textContent = origLabel;
+        }
+      });
+    });
   }
 
   // ===== STEP 14: VOICE CASTING & DIALECTS =====
@@ -7046,7 +7450,7 @@
     if (!filtered.length) {
       const empty = document.createElement("div");
       empty.className = "direct-story-card";
-      empty.style.color = "#94a3b8";
+      empty.style.cssText = "color:#94a3b8;grid-column:1 / -1";
       empty.textContent = "No dialogue lines in this selection.";
       list.appendChild(empty);
       return;
@@ -7060,12 +7464,13 @@
       const card = document.createElement("div");
       card.className = "direct-story-card v2-dlg-card";
       card.dataset.lineId = line.id;
+      card.style.cssText = "display:flex;flex-direction:column;gap:8px;height:100%;min-width:0;box-sizing:border-box;padding:12px";
 
       // Header row
       const hdr = document.createElement("div");
-      hdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px";
+      hdr.style.cssText = "display:flex;flex-direction:column;gap:6px";
       const left = document.createElement("div");
-      left.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:8px";
+      left.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:6px";
       const strong = document.createElement("strong");
       strong.style.color = "#f59e0b";
       strong.textContent = `${line.id} · ${line.character.toUpperCase()}`;
@@ -7246,18 +7651,20 @@
       // Editable line textarea
       const ta = document.createElement("textarea");
       ta.className = "v2-dlg-text";
-      ta.rows = 2;
+      ta.rows = 3;
       ta.value = line.text || "";
-      ta.style.cssText = "width:100%;padding:8px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-sm);margin-bottom:8px;resize:vertical;";
+      ta.setAttribute("aria-label", `Spoken dialogue text for ${line.id}`);
+      ta.style.cssText = "width:100%;padding:8px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-sm);resize:vertical;box-sizing:border-box;";
       card.appendChild(ta);
 
       // Row 1: Engine-specific Voice selector (+ Kokoro Blend selector) + Character Voice Persona
       const voiceRow = document.createElement("div");
-      voiceRow.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px";
+      voiceRow.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center";
 
       const selVoice = document.createElement("select");
       selVoice.className = "v2-dlg-voice";
-      selVoice.style.cssText = "padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs);min-width:210px";
+      selVoice.setAttribute("aria-label", `Voice for ${line.id}`);
+      selVoice.style.cssText = "flex:1 1 160px;min-width:0;max-width:100%;padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
       let voiceOpts = GEMINI_VOICES;
       let activeVal = line.gemini_voice || defaultGeminiForKokoro(line.voice);
       if (eng === "kokoro") {
@@ -7279,7 +7686,8 @@
       if (eng === "kokoro") {
         const selBlend = document.createElement("select");
         selBlend.className = "v2-dlg-blend";
-        selBlend.style.cssText = "padding:5px 8px;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+        selBlend.setAttribute("aria-label", `Blend voice for ${line.id}`);
+        selBlend.style.cssText = "flex:1 1 150px;min-width:0;max-width:100%;padding:5px 8px;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
         const noneOpt = document.createElement("option");
         noneOpt.value = "";
         noneOpt.textContent = "Blend: None (single voice)";
@@ -7297,19 +7705,21 @@
       const personaIn = document.createElement("input");
       personaIn.type = "text";
       personaIn.className = "v2-dlg-persona";
-      personaIn.placeholder = "Voice Persona (e.g. energetic 5-year-old boy, warm gentle mother, gravelly space captain)…";
+      personaIn.setAttribute("aria-label", `Voice persona for ${line.id}`);
+      personaIn.placeholder = "Voice Persona (e.g. energetic 5-year-old boy, warm gentle mother)…";
       personaIn.value = line.persona || "";
-      personaIn.style.cssText = "flex:1;min-width:220px;padding:5px 8px;background:#0f172a;color:#fde68a;border:1px solid #475569;border-radius:4px;font-size:var(--text-xs)";
+      personaIn.style.cssText = "flex:1 1 180px;min-width:0;padding:5px 8px;background:#0f172a;color:#fde68a;border:1px solid #475569;border-radius:4px;font-size:var(--text-xs)";
       voiceRow.appendChild(personaIn);
       card.appendChild(voiceRow);
 
       // Row 2: Per-scene Tone, Speed, and Delivery Direction Note
       const ctrl = document.createElement("div");
-      ctrl.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px";
+      ctrl.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center";
 
       const selEmo = document.createElement("select");
       selEmo.className = "v2-dlg-emotion";
-      selEmo.style.cssText = "padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+      selEmo.setAttribute("aria-label", `Scene tone for ${line.id}`);
+      selEmo.style.cssText = "flex:1 1 120px;min-width:0;padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
       ["natural", "excited", "warm", "whisper", "dramatic", "sad", "curious", "playful", "urgent", "sleepy", "amazed"].forEach(em => {
         const opt = document.createElement("option");
         opt.value = em;
@@ -7321,7 +7731,8 @@
 
       const selSpd = document.createElement("select");
       selSpd.className = "v2-dlg-speed";
-      selSpd.style.cssText = "padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+      selSpd.setAttribute("aria-label", `Speech speed for ${line.id}`);
+      selSpd.style.cssText = "flex:0 1 105px;min-width:0;padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
       [0.8, 0.9, 1.0, 1.1, 1.2, 1.3].forEach(sp => {
         const opt = document.createElement("option");
         opt.value = String(sp);
@@ -7334,21 +7745,22 @@
       const noteIn = document.createElement("input");
       noteIn.type = "text";
       noteIn.className = "v2-dlg-note";
-      noteIn.placeholder = "Scene delivery direction (e.g. waving to camera, soft whisper)…";
+      noteIn.setAttribute("aria-label", `Delivery direction note for ${line.id}`);
+      noteIn.placeholder = "Scene delivery direction (e.g. waving, soft whisper)…";
       noteIn.value = line.note || "";
-      noteIn.style.cssText = "flex:1;min-width:160px;padding:5px 8px;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
+      noteIn.style.cssText = "flex:1 1 150px;min-width:0;padding:5px 8px;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
       ctrl.appendChild(noteIn);
       card.appendChild(ctrl);
 
-      // Audio player bar
+      // Audio player bar (pinned to bottom of each tile for aligned grid rows)
       const playerWrap = document.createElement("div");
-      playerWrap.style.cssText = "display:flex;align-items:center;gap:10px;background:#0a0d14;padding:6px 10px;border-radius:6px";
+      playerWrap.style.cssText = "margin-top:auto;display:flex;align-items:center;gap:8px;background:#0a0d14;padding:6px 8px;border-radius:6px";
       if (line.has_audio && line.audio_url) {
         const aud = document.createElement("audio");
         aud.controls = true;
         aud.preload = "none";
         aud.src = line.audio_url;
-        aud.style.cssText = "flex:1;height:30px";
+        aud.style.cssText = "width:100%;height:30px";
         playerWrap.appendChild(aud);
       } else {
         const ph = document.createElement("span");
@@ -9310,6 +9722,30 @@
         const open = localBox.style.display === "none" || !localBox.style.display;
         localBox.style.display = open ? "flex" : "none";
         if (open) loadV2LocalConsistencyPanel();
+      });
+    }
+    const btnContAudit = $("bV2KfContAudit");
+    if (btnContAudit) {
+      btnContAudit.addEventListener("click", async () => {
+        const slug = v2KfState.project || ($("proj")?.value || "").trim();
+        if (!slug) { setV2KfStatus("Select a book in Step 01 first.", true); return; }
+        const curSc = v2KfState.activeScene || "";
+        const stopBusy = startBusyFeedback(btnContAudit, $("v2KfGrid"), `Auditing shot continuity & scale (${curSc || "ALL"})…`);
+        setV2KfStatus(`Auditing shot-to-shot prop persistence, grounded surfaces & character/prop scale (${curSc || "all scenes"})…`);
+        try {
+          const res = await callApi("/api/v2_shot_continuity_audit", { project: slug, scene: curSc, record_bidirectional: true });
+          await loadV2Keyframes();
+          if (typeof loadV2WorkflowSync === "function") await loadV2WorkflowSync(slug);
+          setV2KfStatus(
+            res.fixes_applied
+              ? `✓ Continuity Audit (${res.engine}): ${res.fixes_applied} fix(es) applied & synced → ${(res.updated_steps || []).join(" · ")}`
+              : `✓ Continuity Audit (${res.engine}): All ${res.scenes_audited} scene(s) passed with no prop or scale conflicts.`
+          );
+        } catch (err) {
+          setV2KfStatus("Continuity audit failed: " + (err.message || err), true);
+        } finally {
+          stopBusy();
+        }
       });
     }
     const btnPlateAudit = $("bV2KfPlateAudit");

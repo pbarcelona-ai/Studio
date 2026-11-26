@@ -75,13 +75,14 @@ def test_bidirectional_sync_requires_tool_run_and_approval_all_the_way_back_to_o
     assert g10["banner"]["phase"] == "needs_run"
     assert "Turnarounds" in g10["banner"]["instruction"]
 
-    # 3. Trying to click Approve BEFORE running Step 10's tool MUST BE BLOCKED (banner stays active!)
+    # 3. Trying to click Approve BEFORE running Step 10's tool MUST BE BLOCKED and state the specific Step 10 action!
     blk = routes_post._v2_workflow_sync_event(
         _Post({"project": slug, "action": "approve", "step": 10, "current_step": 10})
     )  # type: ignore[arg-type]
     assert blk["blocked_needs_run"] is True
     assert blk["advanced"] is False
     assert blk["queue"]["active"] is True
+    assert "Generate" in blk["required_action"] and "Restyle" in blk["required_action"]
 
     # 4. User runs Step 10 tool -> transitions to `needs_approve` and tells user to hit the Approval button!
     td10 = routes_post._v2_workflow_sync_event(

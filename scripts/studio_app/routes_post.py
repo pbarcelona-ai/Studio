@@ -1,5 +1,6 @@
 """POST routes of the JSON API (uploads are streamed by handler.py instead)."""
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -1071,7 +1072,6 @@ def _v2_voice_profile_apply(r: Request):
 @route("POST", "/api/v2_dialogue_upload")
 def _v2_dialogue_upload(r: Request):
     """Save a user-uploaded custom audio take (base64 WAV/MP3/M4A/AIFF) for a single dialogue line."""
-    import base64
     import tempfile
 
     slug = str(r.body.get("project") or "").strip()
@@ -1083,11 +1083,9 @@ def _v2_dialogue_upload(r: Request):
     safe_id = "".join(c for c in lid if c.isalnum() or c in "-_")
     if not safe_id:
         raise PlanError("invalid line id")
-    if "," in b64 and b64.startswith("data:"):
-        b64 = b64.split(",", 1)[1]
-    raw = base64.b64decode(b64)
-    if len(raw) < 64:
-        raise PlanError("uploaded audio file is empty")
+    from studio_app import upload_validation
+
+    raw, _audio_ext = upload_validation.decode_verified_base64(b64, kind="audio", min_bytes=64)
 
     pd = pdir(slug, "book")
     out_dir = pd / "audio" / "dialogue"
@@ -1119,7 +1117,6 @@ def _v2_dialogue_upload(r: Request):
 @route("POST", "/api/v2_voice_baseline_set")
 def _v2_voice_baseline_set(r: Request):
     """Lock a rendered dialogue take or uploaded audio clip as a character's permanent voice baseline (or clear it)."""
-    import base64
     import tempfile
 
     slug = str(r.body.get("project") or "").strip()
@@ -1174,12 +1171,10 @@ def _v2_voice_baseline_set(r: Request):
         shutil.copyfile(src_wav, dest_wav)
         source_label = safe_id
     elif b64:
+        from studio_app import upload_validation
+
         filename = str(r.body.get("filename") or "baseline.wav").strip()
-        if "," in b64 and b64.startswith("data:"):
-            b64 = b64.split(",", 1)[1]
-        raw = base64.b64decode(b64)
-        if len(raw) < 64:
-            raise PlanError("uploaded baseline audio file is empty")
+        raw, _audio_ext = upload_validation.decode_verified_base64(b64, kind="audio", min_bytes=64)
         if raw[:4] == b"RIFF":
             dest_wav.write_bytes(raw)
         else:
@@ -2390,7 +2385,6 @@ def _v2_sound_design_save(r: Request):
 @route("POST", "/api/v2_sound_design_render")
 def _v2_sound_design_render(r: Request):
     """Render or upload Step 16 master Foley/Score OR a specific scene's Foley WAV."""
-    import base64
     import tempfile
 
     slug = str(r.body.get("project") or "").strip()
@@ -2411,10 +2405,10 @@ def _v2_sound_design_render(r: Request):
 
     b64 = str(r.body.get("audio_base64") or "").strip()
     if b64:
+        from studio_app import upload_validation
+
         filename = str(r.body.get("filename") or f"{sub}.wav").strip()
-        if "," in b64 and b64.startswith("data:"):
-            b64 = b64.split(",", 1)[1]
-        raw = base64.b64decode(b64)
+        raw, _audio_ext = upload_validation.decode_verified_base64(b64, kind="audio", min_bytes=64)
         if raw[:4] == b"RIFF":
             wav_path.write_bytes(raw)
         else:
@@ -2964,7 +2958,21 @@ def _try_comfyui_image(
             )
             uploaded_init: str | None = None
             eff_denoise = 1.0
-            if init_strength is not None and effective_init is not None:
+            # For 4-step FLUX.2 Klein with ReferenceMultiLatent, high-strength style conversion (>= 0.55)
+            # works far better starting from EmptyFlux2LatentImage (full 4 steps) instead of double-locking
+            # the raw photo latent with only 2 partial denoise steps. Tight edits (< 0.55) keep VAEEncode init.
+            same_as_ref = bool(
+                uploaded_refs
+                and effective_init is not None
+                and valid_refs
+                and effective_init.resolve() == valid_refs[0].resolve()
+            )
+            use_init_latent = (
+                init_strength is not None
+                and effective_init is not None
+                and not (spec["kind"] == "flux2" and same_as_ref and float(init_strength) >= 0.55)
+            )
+            if use_init_latent and effective_init is not None and init_strength is not None:
                 uploaded_init = runner.upload_image(effective_init)
                 eff_denoise = max(0.05, min(1.0, float(init_strength)))
 
@@ -3451,7 +3459,6 @@ def _find_character_turnaround_refs(
 @route("POST", "/api/v2_keyframe_render")
 def _v2_keyframe_render(r: Request):
     """Generate or upload a storyboard keyframe PNG in <project>/keyframes/<shot_id>.png."""
-    import base64
 
     slug = str(r.body.get("project") or "").strip()
     shot_id = "".join(c for c in str(r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
@@ -3485,16 +3492,23 @@ def _v2_keyframe_render(r: Request):
 
     b64 = str(r.body.get("image_base64") or "").strip()
     if b64:
-        if "," in b64 and b64.startswith("data:"):
-            b64 = b64.split(",", 1)[1]
-        raw = base64.b64decode(b64)
-        if len(raw) < 100:
-            raise PlanError("uploaded image is empty")
+        from studio_app import upload_validation
+
+        raw, _img_ext = upload_validation.decode_verified_base64(b64, kind="image", min_bytes=64)
         out_png.write_bytes(raw)
         return {"status": "ok", "id": shot_id, "image_url": rel_url, "model": "uploaded"}
 
     if not prompt:
         raise PlanError("prompt is required to generate a keyframe")
+
+    if bool(r.body.get("async", False)):
+        from studio_app import render_jobs
+
+        sync_body = {k: v for k, v in r.body.items() if k != "async"}
+        return render_jobs.submit_render_job(
+            f"keyframe:{slug}:{shot_id}",
+            lambda: _v2_keyframe_render(Request(query=r.query, body=sync_body)),
+        )
 
     # Collect Step 10 character turnarounds, Step 08 cast photos, Step 11 set plate,
     # pinned Scene Anchor, and same-scene previous keyframe continuity using the shared Step 17 context builder.
@@ -3553,6 +3567,28 @@ def _v2_keyframe_render(r: Request):
     style_negatives: str = ref_pack["style_negatives"]
 
     final_prompt = f"{ref_legend}{continuity_prefix}{prompt}"
+    # On interior shots mentioning rain/streaks/rivulets, collapse repeated rain-streak tokens
+    # so CFG=1 models (FLUX.2 Klein) do NOT bleed droplets onto the camera lens, TV, or floor
+    # and do NOT invent extra windows where hallways belong.
+    if "DRY INDOOR ROOM & ARCHITECTURE LOCK" in continuity_prefix:
+        final_prompt = re.sub(
+            r"\bwith rain streaks running down its panes\b",
+            "showing gray rainy overcast daylight outdoors",
+            final_prompt,
+            flags=re.IGNORECASE,
+        )
+        final_prompt = re.sub(
+            r"\brain runs down the glass in steady rivulets[^.]*",
+            "gray overcast rainy weather is visible outdoors beyond the existing windowpane while the room interior stays completely dry",
+            final_prompt,
+            flags=re.IGNORECASE,
+        )
+        final_prompt = re.sub(
+            r"\brain[- ]streaked\b|\brain streaks\b|\bsteady rivulets\b",
+            "overcast rainy",
+            final_prompt,
+            flags=re.IGNORECASE,
+        )
     req_engine = str(r.body.get("engine") or "auto").strip().lower()
     use_edit_model = continuity_mode in ("same_angle", "incremental") or init_strength is not None
     suggested_angle_move = str(ref_pack.get("suggested_angle_move") or "") if continuity_mode == "scene_cut" else ""
@@ -4142,6 +4178,7 @@ def _v2_workflow_sync_event(r: Request):
         "banner": banner,
         "advanced": res["advanced"],
         "blocked_needs_run": res["blocked_needs_run"],
+        "required_action": res.get("required_action", ""),
         "completed": res["completed"],
         "next_step": res["next_step"],
         "origin_step": res["origin_step"],
@@ -4280,6 +4317,70 @@ def _v2_keyframe_sync_prompts(r: Request):
         "skipped_locked": skipped_locked,
         "scene": target_scene or "ALL",
     }
+
+
+@route("POST", "/api/v2_shot_continuity_audit")
+def _v2_shot_continuity_audit(r: Request):
+    """Audit shot-to-shot continuity, prop persistence, grounded surfaces, and character/prop scale; feed fixes back to Steps 12, 17 & Bi-Directional Sync."""
+    from studio_app import shot_continuity_audit
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    res = shot_continuity_audit.run_project_shot_continuity_audit(
+        pd,
+        slug,
+        target_scene=str(r.body.get("scene") or "").strip(),
+        use_llm=bool(r.body.get("use_llm", True)),
+        record_bidirectional=bool(r.body.get("record_bidirectional", True)),
+    )
+    if not res.get("ok"):
+        raise PlanError(str(res.get("error") or "Shot continuity audit failed."))
+    return {"status": "ok", **res}
+
+
+@route("POST", "/api/v2_early_prompt_audit")
+def _v2_early_prompt_audit(r: Request):
+    """Run early-stage AI/deterministic prompt continuity audit for Steps 3, 4, 5, 6, 7, 12, or 'all'."""
+    from studio_app import early_prompt_audit
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    raw_step = r.body.get("step", "all")
+    use_llm = bool(r.body.get("use_llm", True))
+    auto_apply = bool(r.body.get("auto_apply", True))
+    record_bi = bool(r.body.get("record_bidirectional", True))
+    target_scene = str(r.body.get("scene") or "").strip()
+
+    if str(raw_step).strip().lower() == "all":
+        res = early_prompt_audit.audit_all_early_steps(
+            pd,
+            slug,
+            target_scene=target_scene,
+            use_llm=use_llm,
+            auto_apply=auto_apply,
+            record_bidirectional=record_bi,
+        )
+    else:
+        try:
+            step_num = int(raw_step)
+        except (TypeError, ValueError) as e:
+            raise PlanError(f"Invalid step: {raw_step!r}") from e
+        res = early_prompt_audit.audit_step(
+            pd,
+            slug,
+            step_num,
+            target_scene=target_scene,
+            use_llm=use_llm,
+            auto_apply=auto_apply,
+            record_bidirectional=record_bi,
+        )
+    if not res.get("ok"):
+        raise PlanError(str(res.get("error") or "Early prompt audit failed."))
+    return {"status": "ok", **res}
 
 
 @route("POST", "/api/v2_keyframe_prompts_save")
@@ -4749,7 +4850,6 @@ def _v2_sync_upstream(r: Request):
 @route("POST", "/api/v2_turnaround_render")
 def _v2_turnaround_render(r: Request):
     """Generate or upload a character turnaround view (front, three_quarter, profile) per outfit state in assets/turnarounds/."""
-    import base64
 
     slug = str(r.body.get("project") or "").strip()
     char_name = str(r.body.get("character") or "").strip()
@@ -4768,13 +4868,20 @@ def _v2_turnaround_render(r: Request):
 
     b64 = str(r.body.get("image_base64") or "").strip()
     if b64:
-        if "," in b64 and b64.startswith("data:"):
-            b64 = b64.split(",", 1)[1]
-        raw = base64.b64decode(b64)
-        if len(raw) < 100:
-            raise PlanError("uploaded turnaround image is empty")
+        from studio_app import upload_validation
+
+        raw, _img_ext = upload_validation.decode_verified_base64(b64, kind="image", min_bytes=64)
         out_png.write_bytes(raw)
         return {"status": "ok", "character": char_name, "outfit_id": outfit_id, "view": view, "image_url": rel_url, "model": "uploaded"}
+
+    if bool(r.body.get("async", False)):
+        from studio_app import render_jobs
+
+        sync_body = {k: v for k, v in r.body.items() if k != "async"}
+        return render_jobs.submit_render_job(
+            f"turnaround:{slug}:{char_name}:{view}",
+            lambda: _v2_turnaround_render(Request(query=r.query, body=sync_body)),
+        )
 
     desc = str(r.body.get("desc") or "").strip()
     wardrobe = str(r.body.get("wardrobe") or "").strip()
@@ -4833,34 +4940,44 @@ def _v2_turnaround_render(r: Request):
         ref_source = f"{char_name} (Front View)"
         ref_reason = "front_view_angle_rotation"
     else:
-        # 1. Same-character identity lock: if ANY picture already exists for this character
-        #    (another outfit OR a costume/scene variant like CAPTAIN TOMMY <-> TOMMY, FIRST OFFICER JUDAH <-> JUDAH),
-        #    use it as the visual reference so the character keeps the exact same face/body across all costumes/scenes.
-        canon_refs = character_identity.find_canonical_character_refs(
-            t_dir,
-            char_name,
-            prefer_outfit=outfit_id,
-            exclude_path=out_png,
-            known_names=cast_names,
-            overrides=overrides,
-            limit=1,
-        )
-        # Also check Step 08 uploaded cast reference photos for this character/canonical identity
+        # 1a. Explicit Step 08 uploaded cast reference photo for THIS exact character slug takes top priority
+        #     so uploading a real photo for e.g. "Security Officer Kibble" is never overridden by another variant ("kibble_front.png").
+        canon_refs: list[tuple[Path, str]] = []
+        cast_ref_dir = pd / "assets" / "cast_refs"
+        if cast_ref_dir.is_dir():
+            for ext in (".png", ".jpg", ".jpeg", ".webp"):
+                exact_ref = cast_ref_dir / f"{safe}_ref{ext}"
+                if exact_ref.is_file() and exact_ref.stat().st_size > 100:
+                    canon_refs = [(exact_ref, f"{char_name} (Step 08 Reference)")]
+                    ref_reason = "uploaded_cast_photo_restyle"
+                    break
+
+        # 1b. Same-character identity lock: if ANY picture already exists for this character
+        #     (another outfit OR a costume/scene variant like CAPTAIN TOMMY <-> TOMMY, FIRST OFFICER JUDAH <-> JUDAH),
+        #     use it as the visual reference so the character keeps the exact same face/body across all costumes/scenes.
         if not canon_refs:
-            cast_ref_dir = pd / "assets" / "cast_refs"
-            if cast_ref_dir.is_dir():
-                for cand_slug in dict.fromkeys((safe, canon_id)):
-                    for ext in (".png", ".jpg", ".jpeg", ".webp"):
-                        cand_p = cast_ref_dir / f"{cand_slug}_ref{ext}"
-                        if cand_p.is_file() and cand_p.stat().st_size > 100:
-                            canon_refs = [(cand_p, f"{char_name} (Step 08 Reference)")]
-                            break
-                    if canon_refs:
-                        break
+            canon_refs = character_identity.find_canonical_character_refs(
+                t_dir,
+                char_name,
+                prefer_outfit=outfit_id,
+                exclude_path=out_png,
+                known_names=cast_names,
+                overrides=overrides,
+                limit=1,
+            )
+        # 1c. Canonical-slug Step 08 uploaded cast reference photo fallback
+        if not canon_refs and cast_ref_dir.is_dir() and canon_id != safe:
+            for ext in (".png", ".jpg", ".jpeg", ".webp"):
+                cand_p = cast_ref_dir / f"{canon_id}_ref{ext}"
+                if cand_p.is_file() and cand_p.stat().st_size > 100:
+                    canon_refs = [(cand_p, f"{char_name} (Step 08 Reference)")]
+                    ref_reason = "uploaded_cast_photo_restyle"
+                    break
         if canon_refs:
             ref_imgs = [p for p, _src in canon_refs]
             ref_source = canon_refs[0][1]
-            ref_reason = "same_character_costume_change"
+            if ref_reason != "uploaded_cast_photo_restyle":
+                ref_reason = "same_character_costume_change"
         else:
             # 2. Separate character with a different canonical name:
             #    ONLY allowed to look alike if descriptions explicitly state they are twins!
@@ -4909,6 +5026,13 @@ def _v2_turnaround_render(r: Request):
         if req_engine in ("gemini", "cloud"):
             if ref_imgs and view in ("three_quarter", "profile"):
                 ref_note = f" Using the attached Front View reference image of {char_name}, keep the EXACT SAME face, hair, body, and clothing, rendered as ONE single figure from a {view_desc}."
+            elif ref_imgs and ref_reason == "uploaded_cast_photo_restyle":
+                restyle_hint = str(style_obj.get("restyle_prompt") or f"Complete style transformation into {look_desc}")
+                ref_note = (
+                    f" UPLOADED REFERENCE PHOTO STYLE TRANSFORMATION: {restyle_hint}. "
+                    f"Translate the person/subject shown in Image 1 ({char_name}) — preserving their recognizable likeness, hairstyle, glasses/accessories, and outfit — "
+                    f"completely into the film's stylized visual look ({look_desc}, NOT a raw photograph), rendered as ONE single full-body figure from a {view_desc}."
+                )
             elif ref_imgs and ref_reason == "same_character_costume_change":
                 ref_note = (
                     f" CHARACTER IDENTITY LOCK: The attached image shows this EXACT SAME character ({canon_label}). "
@@ -4938,6 +5062,14 @@ def _v2_turnaround_render(r: Request):
                 f"Keep the exact same character ({char_name}) from the reference image — identical face, hair, skin, body proportions, clothing, footwear, and {look_desc} style — "
                 f"rotated to show a solo full-body {view_desc}, standing alone centered on the same plain solid warm light-gray seamless studio backdrop, full body head to toe, soft even studio lighting. "
                 f"{desc}.{wardrobe_clause}"
+            )
+        if ref_imgs and ref_reason == "uploaded_cast_photo_restyle":
+            restyle_hint = str(style_obj.get("restyle_prompt") or f"Complete style transformation into {look_desc}")
+            return (
+                f"{restyle_hint}. Transform the person/subject in Image 1 ({char_name}) completely into this stylized character look — "
+                f"preserving their recognizable likeness, hairstyle, expression, glasses/accessories, and outfit while converting every surface into {look_desc} "
+                f"(NOT a real-world photograph, NOT realistic human skin). {desc}.{wardrobe_clause} "
+                f"Solo full-body {view_desc} standing alone centered head to toe on a clean solid warm light-gray studio backdrop, soft even studio lighting."
             )
         if ref_imgs and ref_reason == "same_character_costume_change":
             return (
@@ -5329,6 +5461,28 @@ def _ensure_set_view_entry(doc: dict[str, Any], set_name: str, view_id: str = "m
     return srec, found
 
 
+_ENV_STYLE_DROP_RE = re.compile(
+    r"\b("
+    r"eyes?|eyebrows?|eyelashes?|pupils?|faces?|facial|mouths?|noses?|ears?|smiles?|"
+    r"hair|hairpieces?|hands?|fingers?|legs?|arms?|limbs?|anatomy|skin|"
+    r"characters?|minifigures?|actors?|humans?|people|persons?|figures?|figurines?|"
+    r"puppets?|dolls?|creatures?|sprites?|costumes?|wardrobes?|clothing|outfits?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _sanitize_style_for_environment(style_pos: str) -> str:
+    """Strip character/anatomy clauses (e.g. 'large expressive eyes', 'minifigure face') so empty set plates never hallucinate eyes or characters."""
+    raw = str(style_pos or "").strip()
+    if not raw:
+        return ""
+    kept = [part.strip() for part in raw.split(",") if part.strip() and not _ENV_STYLE_DROP_RE.search(part)]
+    if kept:
+        return ", ".join(kept)
+    return "stylized animated feature film environment art, cohesive materials, warm global illumination"
+
+
 def _resolve_set_film_style(pd: Path) -> tuple[str, str, str, bool]:
     """Return `(look_id, style_pos, style_neg, is_photorealistic)` honoring Step 09 global_params.json positives/negatives."""
     import character_types_registry as ctr
@@ -5351,7 +5505,8 @@ def _resolve_set_film_style(pd: Path) -> tuple[str, str, str, bool]:
         except Exception as e:
             log.debug("global_params.json read failed in _resolve_set_film_style: %s", e)
     st = ctr.get_style(look)
-    style_pos = gp_pos or str((st or {}).get("positives") or "cinematic wide establishing shot, 35mm lens, warm practical lighting")
+    raw_pos = gp_pos or str((st or {}).get("positives") or "cinematic wide establishing shot, 35mm lens, warm practical lighting")
+    style_pos = _sanitize_style_for_environment(raw_pos)
     style_neg = gp_neg or str((st or {}).get("negatives") or "")
     is_photo = look == "live_action" and "photorealistic" not in style_neg.lower()
     return look, style_pos, style_neg, is_photo
@@ -5417,17 +5572,19 @@ def _render_set_view_plate(
         if is_photo:
             init_strength = float(style_strength) if style_strength is not None else 0.52
             directives.append(
-                f"REFERENCE PHOTO MATCH (Image {len(ref_imgs)}): Preserve the exact architecture, room layout, window/door placement, furniture arrangement, and camera angle from Image {len(ref_imgs)}."
+                f"REFERENCE PHOTO MATCH (Image {len(ref_imgs)}): Preserve ONLY the exact subject, structure, layout, proportions, and camera perspective shown in Image {len(ref_imgs)}. "
+                "STRICT FIDELITY: Do NOT add any new objects, eyes, faces, stickers, labels, buttons, knobs, characters, or extra details that are not present in Image 1."
             )
         else:
             # Real-world photo -> stylized film (e.g. 3D Pixar / 2D / claymation) conversion!
             init_strength = float(style_strength) if style_strength is not None else 0.68
             directives.append(
-                f"STYLE CONVERSION FROM IMPORTED REFERENCE PHOTO (Image {len(ref_imgs)}): Keep the exact room architecture, spatial layout, window/door positions, furniture arrangement, and camera perspective from Image {len(ref_imgs)}, "
-                f"while COMPLETELY CONVERTING every surface, material, texture, prop, and light source into the film's visual style ({style_pos}). "
-                "Do NOT leave it looking like a raw real-world photograph; render it fully as a cohesive film set plate."
+                f"STYLE CONVERSION FROM IMPORTED REFERENCE PHOTO (Image {len(ref_imgs)}): Preserve ONLY the exact subject, geometry, spatial layout, proportions, and camera perspective already shown in Image {len(ref_imgs)}, "
+                f"while COMPLETELY transforming every surface, wall, floor, material, texture, prop, and light source into stylized animated movie art ({style_pos}) with soft bevelled CGI edges, painterly stylized materials, and warm animated film lighting — NOT a real-world photograph, NOT photorealistic photography. "
+                f"STRICT FIDELITY: Do NOT add any new objects, eyes, googly eyes, faces, wall art, framed pictures, stickers, labels, buttons, knobs, extra props, characters, or creatures that are not in Image {len(ref_imgs)}. "
+                "Keep plain surfaces clean and faithful to the reference photo; render it cohesively in the film's art style without inventing new items."
             )
-            style_neg = ", ".join(x for x in (style_neg, "raw photograph, unstyled real photo, camera snapshot") if x)
+            style_neg = ", ".join(x for x in (style_neg, "raw photograph, unstyled real photo, camera snapshot, real estate photography") if x)
 
     if baseline_img is not None and (ref_img is None or baseline_img.resolve() != ref_img.resolve()):
         ref_imgs.append(baseline_img)
@@ -5468,9 +5625,9 @@ def _render_set_view_plate(
             else "IMPORTANT COMPOSITION: Leave open empty chairs, open tabletop space, and clear foreground/sky gaps where 2D cartoon characters will live. "
         )
         bits.append(gap_clause + "No people, no characters, empty set plate only.")
-        style_neg = ", ".join(x for x in (style_neg, "people, characters, cartoons, crowded foreground") if x)
+        style_neg = ", ".join(x for x in (style_neg, "people, characters, cartoons, crowded foreground, eyes, googly eyes, faces, anthropomorphic, stickers, decals, extra objects") if x)
     else:
-        style_neg = ", ".join(x for x in (style_neg, "people, characters, person, crowd") if x)
+        style_neg = ", ".join(x for x in (style_neg, "people, characters, person, crowd, eyes, googly eyes, faces, anthropomorphic, stickers, decals, extra objects") if x)
 
     prompt = ". ".join(b.rstrip(". ") for b in bits if b)
     model_used = _render_keyframe_local_or_gemini(
@@ -5583,23 +5740,16 @@ def _v2_set_view_save(r: Request):
 @route("POST", "/api/v2_set_ref_upload")
 def _v2_set_ref_upload(r: Request):
     """Import a reference photo and associate it with a Step 11 location + view; optionally convert it into the film's style right away."""
-    import base64
 
     slug = str(r.body.get("project") or "").strip()
     name = str(r.body.get("name") or "").strip()
     b64 = str(r.body.get("image_base64") or "").strip()
-    filename = str(r.body.get("filename") or "reference.png").strip()
     if not slug or not name or not b64:
         raise PlanError("project, set name, and image_base64 are required")
-    if "," in b64 and b64.startswith("data:"):
-        b64 = b64.split(",", 1)[1]
-    raw = base64.b64decode(b64)
-    if len(raw) < 100:
-        raise PlanError("uploaded reference picture is empty")
+    from studio_app import upload_validation
 
-    ext = Path(filename).suffix.lower()
-    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
-        ext = ".png"
+    raw, detected_ext = upload_validation.decode_verified_base64(b64, kind="image", min_bytes=64)
+    ext = detected_ext if detected_ext in (".png", ".jpg", ".webp") else ".png"
 
     pd = pdir(slug, "book")
     safe = _safe_set_slug(name)
@@ -5792,13 +5942,73 @@ def _v2_set_baseline(r: Request):
     srec["baseline_view_id"] = vid
     srec["baseline_snapshot"] = snap_rel
     _save_sets_views_doc(pd, doc)
+
+    vision_sync: dict[str, Any] = {"ok": False, "updated_steps": []}
+    if bool(r.body.get("auto_analyze", True)):
+        try:
+            from studio_app import set_vision_sync
+            vision_sync = set_vision_sync.sync_baselined_set_from_image(
+                pd,
+                slug,
+                name,
+                snap_path,
+                reconcile_shots=bool(r.body.get("reconcile_shots", True)),
+            )
+        except Exception as e:
+            log.debug("Auto set vision sync skipped for %s: %s", name, e)
+
     return {
         "status": "ok",
         "name": name,
         "baseline_view_id": vid,
         "baseline_label": vrec.get("label") or vid,
         "baseline_url": f"/file/{slug}/{snap_rel}",
+        "vision_sync": vision_sync,
     }
+
+
+@route("POST", "/api/v2_set_analyze_sync")
+def _v2_set_analyze_sync(r: Request):
+    """Run image-to-text analysis on a Step 11 baselined (or active) set image and feed it back to Steps 07, 11, 12, and 17."""
+    from studio_app import set_vision_sync
+
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    if not slug or not name:
+        raise PlanError("project and set name are required")
+
+    pd = pdir(slug, "book")
+    safe = _safe_set_slug(name)
+    doc = _load_sets_views_doc(pd)
+    srec, main_v = _ensure_set_view_entry(doc, name, "main")
+
+    # Resolve the best visual set plate to analyze (prefer pinned baseline -> converted main -> legacy file -> imported ref)
+    img_path: Path | None = None
+    for cand_rel in (
+        str(srec.get("baseline_snapshot") or "").strip(),
+        str(main_v.get("converted_image") or "").strip(),
+        f"assets/sets/{safe}_baseline.png",
+        f"assets/sets/{safe}.png",
+        str(main_v.get("ref_image") or "").strip(),
+    ):
+        if cand_rel:
+            p = pd / cand_rel
+            if p.is_file() and p.stat().st_size > 100:
+                img_path = p
+                break
+    if img_path is None:
+        raise PlanError(f"No baselined or rendered set image found for '{name}'. Import or generate a set plate first.")
+
+    res = set_vision_sync.sync_baselined_set_from_image(
+        pd,
+        slug,
+        name,
+        img_path,
+        reconcile_shots=bool(r.body.get("reconcile_shots", True)),
+    )
+    if not res.get("ok"):
+        raise PlanError(str(res.get("error") or "Could not analyze set image."))
+    return {"status": "ok", "name": name, "image_analyzed": img_path.name, **res}
 
 
 @route("POST", "/api/v2_set_restore")
@@ -6264,7 +6474,6 @@ def _character_types_custom(r: Request):
 @route("POST", "/api/v2_character_ref_upload")
 def _v2_character_ref_upload(r: Request):
     """Upload a Step 08 reference picture for a cast member and make it available to Step 10, Step 17, and Single Prompts."""
-    import base64
     import character_identity
 
     slug = str(r.body.get("project") or "").strip()
@@ -6272,11 +6481,9 @@ def _v2_character_ref_upload(r: Request):
     b64 = str(r.body.get("image_base64") or "").strip()
     if not slug or not char_name or not b64:
         raise PlanError("project, character, and image_base64 are required")
-    if "," in b64 and b64.startswith("data:"):
-        b64 = b64.split(",", 1)[1]
-    raw = base64.b64decode(b64)
-    if len(raw) < 100:
-        raise PlanError("uploaded reference image is empty")
+    from studio_app import upload_validation
+
+    raw, _img_ext = upload_validation.decode_verified_base64(b64, kind="image", min_bytes=64)
 
     pd = pdir(slug, "book")
     safe = character_identity.safe_char_slug(char_name)
@@ -6285,12 +6492,13 @@ def _v2_character_ref_upload(r: Request):
     ref_png = ref_dir / f"{safe}_ref.png"
     ref_png.write_bytes(raw)
 
-    # Also copy into Step 10 Front View if none exists yet (or explicitly requested), so Turnarounds immediately lock onto it
+    # Also copy into Step 10 Front View if none exists yet (or explicitly requested), unless convert_now will generate the stylized Front View
     t_dir = pd / "assets" / "turnarounds"
     t_dir.mkdir(parents=True, exist_ok=True)
     front_png = t_dir / f"{safe}_front.png"
+    convert_now = bool(r.body.get("convert_now", False))
     seeded_front = False
-    if bool(r.body.get("set_as_front", False)) or not (front_png.is_file() and front_png.stat().st_size > 100):
+    if not convert_now and (bool(r.body.get("set_as_front", False)) or not (front_png.is_file() and front_png.stat().st_size > 100)):
         front_png.write_bytes(raw)
         seeded_front = True
 
@@ -6304,13 +6512,65 @@ def _v2_character_ref_upload(r: Request):
         existing["reference_images"] = refs_list
         character_tokens.save_character(existing)
 
-    return {
+    out: dict[str, Any] = {
         "status": "ok",
         "character": char_name,
         "image_url": f"/file/{slug}/assets/cast_refs/{safe}_ref.png",
+        "ref_url": f"/file/{slug}/assets/cast_refs/{safe}_ref.png",
         "rel_path": rel_repo,
         "seeded_front": seeded_front,
     }
+
+    if convert_now:
+        import character_types_registry as ctr
+
+        req_style = str(r.body.get("style_id") or r.body.get("target_style") or "").strip()
+        if not req_style and isinstance(existing, dict):
+            req_style = str(existing.get("style_override") or "").strip()
+        if not req_style:
+            book_look, _sp, _sn, _ip = _resolve_set_film_style(pd)
+            req_style = book_look or "pixar_3d"
+        st = ctr.get_style(req_style) or ctr.get_style("pixar_3d") or {"id": req_style, "name": req_style, "positives": req_style, "negatives": ""}
+
+        raw_ss = r.body.get("style_strength")
+        eff_strength: float = 0.75
+        if raw_ss is not None and str(raw_ss).strip() != "":
+            try:
+                eff_strength = max(0.35, min(0.95, float(raw_ss)))
+            except (TypeError, ValueError):
+                eff_strength = 0.75
+
+        notes = str(r.body.get("style_notes") or r.body.get("notes") or "").strip()
+        notes_clause = f" Additional details: {notes}." if notes else ""
+        restyle_base = str(st.get("restyle_prompt") or f"Complete style transformation into {st['name']} style: {st['positives']}")
+        prompt = (
+            f"{restyle_base}. Transform the person/character in Image 1 ({char_name}) completely into {st['name']} style — "
+            "translate their recognizable likeness, hairstyle, expression, glasses/accessories, and exact outfit into stylized animated character design "
+            f"(NOT a real-world photograph, NOT realistic human skin or camera photography).{notes_clause} "
+            "Centered full-body straight-on front-facing view standing alone head to toe on a clean solid light-gray studio backdrop, no text or numbers."
+        )
+        req_engine = str(r.body.get("engine") or "auto").strip().lower()
+        model_used = _render_keyframe_local_or_gemini(
+            prompt,
+            front_png,
+            aspect_ratio="1:1",
+            ref_images=[ref_png],
+            engine=req_engine,
+            view="front",
+            seed=-1,
+            init_strength=eff_strength,
+            init_image=ref_png,
+            require_ref=True,
+            bypass_cache=True,
+            extra_negative=str(st.get("negatives") or ""),
+        )
+        out["converted_url"] = f"/file/{slug}/assets/turnarounds/{safe}_front.png"
+        out["model"] = model_used
+        out["style_id"] = str(st.get("id") or req_style)
+        out["style_name"] = str(st.get("name") or req_style)
+        out["seeded_front"] = True
+
+    return out
 
 
 @route("POST", "/api/v2_character_ref_delete")
@@ -6351,14 +6611,17 @@ def _v2_turnaround_restyle(r: Request):
     char_name = str(r.body.get("character") or "").strip()
     style_id = str(r.body.get("style_id") or r.body.get("target_style") or "").strip()
     outfit_id = "".join(c for c in str(r.body.get("outfit_id") or "default").strip().lower() if c.isalnum() or c in "_-") or "default"
-    if not slug or not char_name or not style_id:
-        raise PlanError("project, character, and style_id are required")
+    if not slug or not char_name:
+        raise PlanError("project and character are required")
 
+    pd = pdir(slug, "book")
+    if not style_id:
+        book_look, _sp, _sn, _ip = _resolve_set_film_style(pd)
+        style_id = book_look or "pixar_3d"
     st = ctr.get_style(style_id)
     if not st:
         raise PlanError(f"Unknown visual style: {style_id}")
 
-    pd = pdir(slug, "book")
     safe = character_identity.safe_char_slug(char_name)
     t_dir = pd / "assets" / "turnarounds"
     fname = f"{safe}_front.png" if outfit_id == "default" else f"{safe}_{outfit_id}_front.png"
@@ -6375,14 +6638,23 @@ def _v2_turnaround_restyle(r: Request):
     # Copy original front view to temp ref so we can overwrite target_png cleanly
     import tempfile
     req_engine = str(r.body.get("engine") or "auto").strip().lower()
-    restyle_base = str(st.get("restyle_prompt") or f"Turn this image into {st['name']} style: {st['positives']}")
+    restyle_base = str(st.get("restyle_prompt") or f"Complete style transformation into {st['name']} style: {st['positives']}")
     prompt = (
-        f"{restyle_base}. Keep the exact same character ({char_name}), identical face, hair, clothing, pose, and centered full-body front-facing framing "
-        "standing alone on a plain solid neutral studio backdrop, head to toe, no text or numbers."
+        f"{restyle_base}. Transform the person/character in Image 1 ({char_name}) completely into {st['name']} style — "
+        "translate their recognizable likeness, hairstyle, expression, glasses/accessories, and exact outfit into stylized animated character design "
+        "(NOT a real-world photograph, NOT realistic human skin or camera photography). "
+        "Centered full-body straight-on front-facing view standing alone head to toe on a clean solid light-gray studio backdrop, no text or numbers."
     )
+    # Prefer the character's uploaded Step 08 reference photo when explicitly requested or when target front view is missing
+    cast_ref_dir = pd / "assets" / "cast_refs"
+    uploaded_cast_ref = next(
+        (cast_ref_dir / f"{safe}_ref{ext}" for ext in (".png", ".jpg", ".jpeg", ".webp") if (cast_ref_dir / f"{safe}_ref{ext}").is_file()),
+        None,
+    )
+    source_img = uploaded_cast_ref if (bool(r.body.get("use_cast_ref", False)) and uploaded_cast_ref is not None) else target_png
     with tempfile.TemporaryDirectory(prefix="neon-restyle-") as tmp_dir:
         src_ref = Path(tmp_dir) / "source_front.png"
-        src_ref.write_bytes(target_png.read_bytes())
+        src_ref.write_bytes(source_img.read_bytes())
         model_used = _render_keyframe_local_or_gemini(
             prompt,
             target_png,
@@ -6409,7 +6681,6 @@ def _v2_turnaround_restyle(r: Request):
 @route("POST", "/api/v2_single_prompt_render")
 def _v2_single_prompt_render(r: Request):
     """Direct reference-aware Single Prompt generator (Image or Video) using a cast reference photo or uploaded image."""
-    import base64
     import time as _time
     import character_types_registry as ctr
     import post_tools
@@ -6439,14 +6710,12 @@ def _v2_single_prompt_render(r: Request):
     refs_dir = set_dir / "refs"
 
     def _save_b64_ref(raw_b64: str, idx: int) -> None:
+        from studio_app import upload_validation
+
         s = str(raw_b64 or "").strip()
         if not s:
             return
-        if "," in s and s.startswith("data:"):
-            s = s.split(",", 1)[1]
-        raw = base64.b64decode(s)
-        if len(raw) < 100:
-            raise PlanError("uploaded reference image is empty")
+        raw, _img_ext = upload_validation.decode_verified_base64(s, kind="image", min_bytes=64)
         refs_dir.mkdir(parents=True, exist_ok=True)
         rp = refs_dir / f"ref_{stamp}_{idx}.png"
         rp.write_bytes(raw)
@@ -7164,7 +7433,6 @@ def _v2_lufs_normalize(r: Request):
 @route("POST", "/api/v2_editing_style_analyze")
 def _v2_editing_style_analyze(r: Request):
     """Analyze 1-3 reference MP4 videos (uploaded base64, local path, or permitted URL via yt-dlp) into Editing Style Guide.md."""
-    import base64
     import re
     import editing_style_analyzer as esa
 
@@ -7179,11 +7447,9 @@ def _v2_editing_style_analyze(r: Request):
     # 1. Uploaded video file via base64
     b64 = str(r.body.get("video_base64") or "").strip()
     if b64:
-        if "," in b64 and b64.startswith("data:"):
-            b64 = b64.split(",", 1)[1]
-        raw = base64.b64decode(b64)
-        if len(raw) < 200:
-            raise PlanError("uploaded reference video is empty")
+        from studio_app import upload_validation
+
+        raw, _vid_ext = upload_validation.decode_verified_base64(b64, kind="video", min_bytes=128)
         raw_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(r.body.get("filename") or "reference.mp4")).strip("_") or "reference.mp4"
         if not raw_name.lower().endswith((".mp4", ".mov", ".mkv", ".webm")):
             raw_name += ".mp4"

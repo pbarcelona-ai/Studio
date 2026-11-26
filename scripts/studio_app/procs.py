@@ -56,6 +56,54 @@ def _win_alive(pid: int) -> bool:
         k32.CloseHandle(h)
 
 
+def process_start_id(pid: int) -> str:
+    """Stable process start-time token for `pid` to prevent PID-reuse false attachment/termination."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1:
+        return ""
+    if sys.platform == "win32":
+        import ctypes
+
+        class _FILETIME(ctypes.Structure):
+            _fields_ = [("dwLowDateTime", ctypes.c_uint32), ("dwHighDateTime", ctypes.c_uint32)]
+
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return ""
+        try:
+            ct, et, kt, ut = _FILETIME(), _FILETIME(), _FILETIME(), _FILETIME()
+            if k32.GetProcessTimes(h, ctypes.byref(ct), ctypes.byref(et), ctypes.byref(kt), ctypes.byref(ut)):
+                return f"win:{ct.dwHighDateTime}:{ct.dwLowDateTime}"
+        finally:
+            k32.CloseHandle(h)
+        return ""
+    proc_stat = Path(f"/proc/{pid}/stat")
+    if proc_stat.is_file():
+        try:
+            raw = proc_stat.read_text(encoding="utf-8", errors="replace")
+            after_comm = raw.rsplit(")", 1)[-1].split()
+            if len(after_comm) > 19:
+                return f"linux:{after_comm[19]}"
+        except OSError:
+            return ""
+    try:
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout.strip()
+        return f"ps:{out}" if out else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def pid_matches(pid, expected_start_id: str = "") -> bool:
+    """True when `pid` is alive AND (when `expected_start_id` is recorded) still has the exact same start identity."""
+    if not pid_alive(pid):
+        return False
+    exp = str(expected_start_id or "").strip()
+    if not exp:
+        return True
+    cur = process_start_id(int(pid))
+    return bool(cur) and cur == exp
+
+
 def group_of(pid: int) -> int:
     """The process group to stop for pid (on Windows the pid itself: taskkill /T follows its children)."""
     if sys.platform == "win32":

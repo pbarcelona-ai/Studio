@@ -175,8 +175,9 @@ def check_notes(d) -> None:
 
 # ---------------------------------------------------------------------------------------------- the job
 class ReadItIn:
-    def __init__(self, pdir: Path, ask: Ask, say: Callable[[str], None] = print) -> None:
+    def __init__(self, pdir: Path, ask: Ask, say: Callable[[str], None] = print, *, use_llm_audit: bool = False) -> None:
         self.pdir, self.ask, self._say = pdir, ask, say
+        self.use_llm_audit = bool(use_llm_audit)
         self.dir = folder(pdir)
         self.settings = production.load(pdir)
         self.recipe = crew.recipe(self.settings["recipe"]) if self.settings["recipe"] else {}
@@ -292,9 +293,12 @@ class ReadItIn:
         need = ", ".join(EPISODE_BEATS if self.series else FILM_BEATS)
         shape = "one act per episode, each with a hook, rising stakes and a cliffhanger" if self.series else "three acts"
         return self.ask(f"Write the beat sheet: {shape}, with numbered beats. It must name these beats: {need}. Give each act a 'share' of the "
-                        "runtime (the shares add up to 1). " + self.rules() +
+                        "runtime (the shares add up to 1). For EVERY beat, include 'viewer_expectation' (what concrete information or visual payoff "
+                        "the viewer expects here) and 'open_loop' (the unanswered question, curiosity gap, or dramatic tension that pulls the viewer "
+                        "into the next beat; empty only on the final closing beat). " + self.rules() +
                         ' Reply as JSON: {"acts": [{"n": 1, "name": "Act One", "purpose": "...", "share": 0.25, "beats": [{"n": 1, "name": '
-                        f'"Opening image", "description": "..."}}]}}]}}\n\nADAPTATION PLAN:\n{json.dumps(plan, ensure_ascii=False)}\n\n{story}',
+                        '"Opening image", "description": "...", "viewer_expectation": "...", "open_loop": "..."}]}]}\n\n'
+                        f"ADAPTATION PLAN:\n{json.dumps(plan, ensure_ascii=False)}\n\n{story}",
                         "screenwriter", "read it in: beat sheet", beats_checker(self.series))
 
     def treatment(self, story: str, beats: dict) -> dict:
@@ -318,6 +322,9 @@ class ReadItIn:
                     "character's clothes in a new scene. "
                     "EXACT SCENE & LOCATION CONTINUITY: Keep the exact same location heading, spatial layout, key furniture, props, and lighting across "
                     "consecutive scenes in the same place unless the story explicitly transitions characters to a new location. "
+                    "NATURAL HUMAN DIALOGUE (NO AI CLICHES): Write dialogue the way real people speak aloud — plain, direct, character-specific phrasing "
+                    "with natural contractions and subtext. Never use robotic AI filler or clichés ('welcome back', 'folks', 'embarking', 'enchanting', "
+                    "'delve', 'tapestry', 'testament', 'unleash', or excessive em-dashes). "
                     "SMOOTH SCENE-BY-SCENE & MULTI-STORYLINE FLOW: Every scene must flow seamlessly into the next with strong narrative momentum; "
                     "jumps between separate storylines or subplots within the overall story are allowed, but must use smooth, motivated transitions "
                     "(visual match, sound bridge, thematic echo, or clean establishing handoff) so the story always reads and plays effortlessly.")
@@ -338,14 +345,21 @@ class ReadItIn:
             r = len(rounds) + 1
             script = script_text(scenes)
             self.say("critique", f"Your script doctor is reading draft {r}")
-            doctor = self.ask("Critique this screenplay draft: structure, pacing, dialogue, and how clearly everything is VISUAL. Give a score from 1 to "
-                              "10 and specific notes, each with its scene number (0 for the whole script). " + self.rules() +
-                              ' Reply as JSON: {"score": 7, "notes": [{"scene": 3, "note": "..."}]}\n\n' + script, "script_doctor",
+            doctor = self.ask("Audit this screenplay draft objectively (no vague praise or filler): structure, pacing, open-loop momentum, natural human dialogue "
+                              "(flag robotic AI clichés), and visual clarity. Give an overall score 1-10, a per-criterion scorecard (Pass / Needs Work / Fail), "
+                              "severity-ordered notes ('critical'|'major'|'minor' with scene number, risk, and whether intent is ambiguous — NEVER guess intent), "
+                              "and a list of blind_spots (unverified assumptions or missing context). " + self.rules() +
+                              ' Reply as JSON: {"score": 7, "scorecard": [{"criterion": "Structure & Pacing", "rating": "Pass|Needs Work|Fail", "reason": "..."}], '
+                              '"notes": [{"scene": 3, "severity": "critical|major|minor", "note": "...", "risk": "...", "ambiguous": false}], '
+                              '"blind_spots": ["..."]}\n\n' + script, "script_doctor",
                               f"read it in: critique round {r}", check_notes)
             self.say("critique", f"Your director is reading draft {r}")
-            director = self.ask("As the director, give notes on this draft: can every scene be shot, is the emotional line clear, are the "
-                                "characters playable? Score 1-10 and notes with scene numbers (0 = whole script). " + self.rules() +
-                                ' Reply as JSON: {"score": 7, "notes": [{"scene": 3, "note": "..."}]}\n\n' + script, "director",
+            director = self.ask("As the director, audit this draft objectively: can every scene be filmed clearly, are visual/prop/location details grounded, "
+                                "is the emotional line playable? Give score 1-10, a per-criterion scorecard (Pass / Needs Work / Fail), severity-ordered notes "
+                                "(with scene number, risk, and ambiguous flag instead of guessing intent), and blind_spots. " + self.rules() +
+                                ' Reply as JSON: {"score": 7, "scorecard": [{"criterion": "Filmability & Visual Clarity", "rating": "Pass|Needs Work|Fail", "reason": "..."}], '
+                                '"notes": [{"scene": 3, "severity": "critical|major|minor", "note": "...", "risk": "...", "ambiguous": false}], '
+                                '"blind_spots": ["..."]}\n\n' + script, "director",
                                 f"read it in: critique round {r}", check_notes)
             rounds.append({"round": r, "doctor": doctor, "director": director})
             write_json(self.dir / "critique.json", rounds)
@@ -414,6 +428,12 @@ class ReadItIn:
         if src["screenplay_only"]:
             return self.run_existing(src)
         cov = self.stage("coverage", lambda: self.coverage(src))
+        # Early prompt consistency audit right after Step 03 Coverage is generated
+        import contextlib
+        with contextlib.suppress(Exception):
+            from studio_app import early_prompt_audit
+            early_prompt_audit.audit_step(self.pdir, self.pdir.name, 3, use_llm=self.use_llm_audit, auto_apply=True, record_bidirectional=False)
+            cov = read_json(self.dir / "coverage.json", cov) or cov
         grown = self.stage("development", lambda: self.development(src, cov) or {"skipped": True})
         story = self._story(src, cov, None if grown.get("skipped") else grown)
         plan = self.stage("plan", lambda: self.plan(story))
@@ -449,6 +469,12 @@ class ReadItIn:
             self.finish("critique")
         write_json(self.dir / "screenplay.json", {"title": cov.get("logline", ""), "scenes": scenes})
         aplan = self.result(scenes, cov, acts, plan, treatment)
+        # Early prompt consistency audits right after Step 05 Beats & Step 06 Screenplay are generated
+        import contextlib
+        with contextlib.suppress(Exception):
+            from studio_app import early_prompt_audit
+            early_prompt_audit.audit_step(self.pdir, self.pdir.name, 5, use_llm=self.use_llm_audit, auto_apply=True, record_bidirectional=False)
+            early_prompt_audit.audit_step(self.pdir, self.pdir.name, 6, use_llm=self.use_llm_audit, auto_apply=True, record_bidirectional=False)
         self.finish("result")
         last = rounds[-1] if rounds else {}
         summary = {"scenes": len(scenes), "minutes": round(sum(float(s["block"]["seconds"]) for s in scenes) / 60, 1), "rounds": len(rounds),
@@ -582,7 +608,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     ask = fake_ask(pdir) if a.engine == "fake" else llm_ask(pdir, a.engine, a.model)
     try:
-        ReadItIn(pdir, ask, lambda t: print(t, flush=True)).run(force=a.force)
+        ReadItIn(pdir, ask, lambda t: print(t, flush=True), use_llm_audit=(a.engine != "fake")).run(force=a.force)
     except (ReadError, sources.SourceError, adaptation.AdaptationError, screenplay.ScreenplayError) as e:
         print(f"Read it in stopped: {e}", flush=True)
         return 1
