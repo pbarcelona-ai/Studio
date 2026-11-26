@@ -170,7 +170,7 @@ def make_contact_sheet(frames: list[tuple[float, Path]], dest: Path, cols: int =
 
 
 def inspect_video(video: Path, contact_sheet: Path | None = None, samples: int = 8, max_av_drift: float = 0.5,
-                  ffmpeg_bin: str | None = None) -> dict[str, Any]:
+                  ffmpeg_bin: str | None = None, *, strict_sync_ms: float = 40.0, check_lufs: bool = False) -> dict[str, Any]:
     """Run full QA on `video` and return {"ok", "errors", "warnings", "metrics", "frames", "contact_sheet"}."""
     ff = ffmpeg_bin or find_ffmpeg()
     metrics = probe_media(ff, video)
@@ -178,6 +178,19 @@ def inspect_video(video: Path, contact_sheet: Path | None = None, samples: int =
     warnings: list[str] = []
     frame_reports: list[dict[str, Any]] = []
     sheet_out: str | None = None
+
+    drift_ms = round(float(metrics.get("av_drift") or 0.0) * 1000.0, 1)
+    metrics["av_drift_ms"] = drift_ms
+    metrics["strict_sync_ok"] = (not metrics["has_audio"]) or (drift_ms <= float(strict_sync_ms))
+    if check_lufs and metrics["has_audio"]:
+        try:
+            import audio_first_clock
+            lufs_res = audio_first_clock.measure_loudness_lufs(video, ffmpeg_bin=ff)
+            if lufs_res.get("ok"):
+                metrics["integrated_lufs"] = lufs_res.get("integrated_lufs")
+                metrics["true_peak_db"] = lufs_res.get("true_peak_db")
+        except Exception as e:
+            warnings.append(f"LUFS measurement unavailable: {e}")
 
     if not metrics["has_video"]:
         errors.append("no readable video stream found")

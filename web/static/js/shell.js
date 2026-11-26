@@ -71,7 +71,7 @@ function activateWorkspaceTab(rawKey, updateHash = true) {
         const host = document.getElementById('canvasStudioHost');
         if (host) {
             _canvasMounted = true;
-            try { window.mountCanvasStudio(host, {}); } catch (e) {}
+            try { window.__canvasStudioInstance = window.mountCanvasStudio(host, {}); } catch (e) {}
         }
     } else if (tabName === 'models' && !_packsMounted && typeof window.initPacksVram === 'function') {
         const host = document.getElementById('packsVramHost');

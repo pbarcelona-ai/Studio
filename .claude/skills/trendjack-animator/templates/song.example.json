@@ -1,0 +1,106 @@
+{
+  "_note": "FICTIONAL EXAMPLE of a sung ad (drama song format). Copy to <your ad folder>/ad.json and replace everything. Times are song seconds; set them after the song step (adtool.py words / lines). Generation runs through the Starpop MCP tools; 'refs' holds the Starpop media references (image:<uuid>, audio:<uuid>) so every step can be rerun. The song is made by the user on suno.com in the browser and saved as song/take1.mp3, never inside Starpop.",
+  "name": "<CODE>.2-song-ad-skipped-a-page-v1",
+  "audio": "song",
+  "look": "3D animated feature film, stylized CGI in the look of a modern big-studio animated movie: soft subsurface skin, big expressive eyes, appealing rounded shapes, cinematic lighting, highly polished render.",
+  "product_photo": "refs/product.jpg",
+  "song": {
+    "title": "Acme - Grandpa skipped a page",
+    "vocal_gender": "m",
+    "style": "The song opens with the vocal: the very first sound at 0:00 is the voice singing the first word, zero seconds of instrumental before it. Warm uplifting acoustic pop, SUNG THROUGHOUT, warm friendly mature male vocal, very clear English pronunciation, crisp enunciation, every word understood, no vocal runs. Happy and heartfelt, 116 bpm, steady beat from the first word, bright hopeful lift on the last three lines, short instrumental ending after the last line, warm polished mix. Sung in English. Sing every line exactly once, in order. Avoid: slow, sad, ballad, long intro, instrumental intro, rap, spoken word, autotune, ad-libs, EDM.",
+    "lyrics": "[Verse - vocal starts at 0:00, no intro]\n\"Grandpa skipped a page!\" she laughed.\nThe words were just a blur.\nMy son came with a lamp.\n\"It's bright. That's the point.\"\n[Chorus]\nNow I read every word.\n\"Read it again!\" she begs.\nTry Acme for thirty nights.\n[Short instrumental ending]"
+  },
+  "cut": {
+    "take": 1,
+    "t_start": 1.4,
+    "t_end": 17.0,
+    "fade_out": 0.4,
+    "_note": "t_start = at most 0.5 s before the first sung word; t_end = about 0.4 s after the last."
+  },
+  "caption_replace": {},
+  "captions": {
+    "on": true,
+    "y": 1300,
+    "size": 64,
+    "max_words": 4,
+    "max_width": 680,
+    "font": null,
+    "small_words": [
+      "the",
+      "a",
+      "an",
+      "and",
+      "to",
+      "of",
+      "in",
+      "on",
+      "for",
+      "with",
+      "but",
+      "or",
+      "at",
+      "by",
+      "so"
+    ],
+    "no_end_words": []
+  },
+  "sheets": {
+    "grandpa": "Character sheet. One character shown four times on a clean light-grey background: close-up face portrait, full body front view, full body three-quarter view facing left, full body three-quarter view facing right. Neutral friendly expression. Character: a man about 65, short white hair, round glasses, neat white moustache, kind face, slightly stocky; green cardigan over a cream shirt, brown trousers, brown slippers. Same exact character in all four views, consistent face, hair, outfit and proportions. No text, no logos.",
+    "family": "Character line-up sheet on a clean light-grey background: two characters standing side by side in full body front view, each with a close-up face portrait above them. (1) A man about 38, short brown hair, short beard, navy jacket over a grey sweater, jeans. (2) A girl about 6, red curly hair in a ponytail, yellow dress with white dots. Neutral friendly expressions, consistent faces and outfits between portrait and full body. No text, no logos."
+  },
+  "shots": [
+    {
+      "id": "s1",
+      "start": 1.4,
+      "end": 3.2,
+      "lyric": "\"Grandpa skipped a page!\"",
+      "refs": ["grandpa", "family"],
+      "still": "The grandfather is exactly the man from the attached character sheet: a man about 65, short white hair, round glasses, neat white moustache, green cardigan. The girl is exactly as on the attached family sheet: about 6, red curly ponytail, yellow dress with white dots. Setting: a cosy living room in the evening, one dim floor lamp, the girl's bedroom door open behind. Medium close-up at eye level: the grandfather squints at a picture book held far from his face while the girl, on his lap, points at the page and laughs. No text anywhere in the image.",
+      "motion": "Camera: slow push-in from a medium shot to a close-up of the grandfather squinting at the book. The girl points at the page and laughs; the grandfather moves the book further away.",
+      "seconds": 3,
+      "clip_start": 0.45,
+      "still_ref": null,
+      "clip_ref": null,
+      "lipsync": true,
+      "_lipsync_note": "Lip-sync shot: cut the song from start to end with ffmpeg, upload the slice to Starpop, animate the still with that audio slice; clip_start defaults to 0."
+    },
+    {
+      "id": "s3",
+      "start": 5.0,
+      "end": 6.8,
+      "lyric": "My son came with a lamp.",
+      "refs": ["grandpa", "family", "product"],
+      "still": "His son is exactly as on the attached family sheet: a man about 38, short brown hair, short beard, navy jacket. The lamp is copied exactly from the attached product photo. Setting: the same living room, front door open to a rainy evening. Over the grandfather's shoulder: his son steps in holding the lamp in both hands, smiling. No text anywhere in the image.",
+      "motion": "Camera: slow dolly forward over the grandfather's shoulder toward the son and the lamp. The son steps in and lifts the lamp a little toward his father.",
+      "seconds": 3,
+      "still_ref": null,
+      "clip_ref": null
+    },
+    {
+      "id": "s7",
+      "start": 15.1,
+      "end": 17.0,
+      "lyric": "Try Acme for thirty nights.",
+      "refs": ["grandpa", "product"],
+      "still": "The grandfather is exactly the man from the attached character sheet: a man about 65, short white hair, round glasses, neat white moustache, green cardigan. The lamp is copied exactly from the attached product photo. Setting: the same living room, warm light from the new lamp. Low angle: the lamp glowing on the side table in the foreground, the grandfather in his armchair behind it reading the picture book easily, smiling. No text anywhere in the image.",
+      "motion": "Camera: low slow dolly toward the side table, ending close on the glowing lamp. The grandfather turns a page and smiles.",
+      "seconds": 3,
+      "caption_y": 640,
+      "clip_model": "minimax-h3-max",
+      "still_ref": null,
+      "clip_ref": null
+    }
+  ],
+  "models": {
+    "sheet": "gpt-image-2",
+    "still": "nano-banana-2.1",
+    "still_resolution": "1K",
+    "clip": "minimax-h3-max-turbo",
+    "clip_strong": "minimax-h3-max",
+    "clip_resolution": "768p",
+    "lipsync_clip": "minimax-h3-max"
+  },
+  "refs": {
+    "product": "image:<uuid of the uploaded product photo>"
+  }
+}

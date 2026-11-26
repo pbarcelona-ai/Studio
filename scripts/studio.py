@@ -28,4 +28,30 @@ from studio_app.server import main
 from studio_app.single_prompts import prompt_plan  # noqa: F401
 
 if __name__ == "__main__":
-    main()
+    import os
+    import traceback
+
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)
+    except SystemExit as exc:
+        code = exc.code
+        if code not in (None, 0) and os.environ.get("STUDIO_PAUSE_ON_ERROR") == "1":
+            if isinstance(code, str) and code:
+                print(code, file=sys.stderr, flush=True)
+            with_prompt = sys.stdin is not None and sys.stdin.isatty()
+            if with_prompt:
+                try:
+                    input("\nPress Enter to close...")
+                except (EOFError, KeyboardInterrupt):
+                    pass
+        raise
+    except Exception:
+        traceback.print_exc()
+        if os.environ.get("STUDIO_PAUSE_ON_ERROR") == "1" and sys.stdin is not None and sys.stdin.isatty():
+            try:
+                input("\nPress Enter to close...")
+            except (EOFError, KeyboardInterrupt):
+                pass
+        sys.exit(1)

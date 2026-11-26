@@ -63,7 +63,7 @@ CHARACTERS_ROOT = PROJECTS / "characters"      # shared between books: <series>/
 # ===== COMPREHENSIVE TRAIT SYSTEM =====
 
 class CharacterArchetype(str, Enum):
-    """Character archetypes: plain human and the "any book" kinds, plus those for biblical and epic stories."""
+    """Character archetypes: everyday humans, animals, toys, sci-fi, fantasy, plus biblical and epic stories."""
     HUMAN = "human"                    # Mortal humans
     HUMAN_PRE_FALL = "human_pre_fall"  # Pre-Fall humans (Eden state)
     HUMAN_PROPHET = "human_prophet"    # Prophetic figures
@@ -81,6 +81,64 @@ class CharacterArchetype(str, Enum):
     SUPERNATURAL = "supernatural"          # Any book: a ghost, spirit, god or magical being
     FALLEN_ANGEL = "fallen_angel"          # Satan/demons
     FALLEN_DISGUISED = "fallen_disguised"  # Satan in disguise
+    # Expanded general-purpose character archetypes
+    INFANT_TODDLER = "infant_toddler"
+    TEEN = "teen"
+    ELDER = "elder"
+    CHIBI = "chibi"
+    HISTORICAL = "historical"
+    ASTRONAUT = "astronaut"
+    FANTASY_HERO = "fantasy_hero"
+    SUPERHERO = "superhero"
+    DOMESTIC_PET = "domestic_pet"
+    WILD_MAMMAL = "wild_mammal"
+    AVIAN = "avian"
+    MARINE = "marine"
+    REPTILE = "reptile"
+    INSECT = "insect"
+    ANTHRO_ANIMAL = "anthro_animal"
+    RAG_DOLL = "rag_doll"
+    ACTION_FIGURE = "action_figure"
+    MINIFIGURE = "minifigure"
+    PUPPET = "puppet"
+    LIVING_OBJECT = "living_object"
+    ANDROID = "android"
+    MECHA = "mecha"
+    ALIEN = "alien"
+    HOLOGRAM = "hologram"
+    WINGED_DRAGON = "winged_dragon"
+    FAIRY = "fairy"
+    ELF_DWARF_ORC = "elf_dwarf_orc"
+    MERFOLK = "merfolk"
+    ELEMENTAL = "elemental"
+    GHOST_SPIRIT = "ghost_spirit"
+    KAIJU = "kaiju"
+    SHAPESHIFTER = "shapeshifter"
+    # 2D Hybrid, Storybook, Graphic & Classic Genre archetypes
+    VINTAGE_CARTOON_SIDEKICK = "vintage_cartoon_sidekick"
+    WOODLAND_CRITTER = "woodland_critter"
+    TALKING_SONGBIRD = "talking_songbird"
+    DRAWN_PROP = "drawn_prop"
+    CHALKBOARD_MASCOT = "chalkboard_mascot"
+    LINE_FIGURE = "line_figure"
+    PIXEL_HERO = "pixel_hero"
+    SHADOW_SILHOUETTE = "shadow_silhouette"
+    PAPER_DOLL = "paper_doll"
+    CLOCKWORK_AUTOMATON = "clockwork_automaton"
+    NOIR_DETECTIVE = "noir_detective"
+    SPACE_PILOT = "space_pilot"
+    PIRATE_ADVENTURER = "pirate_adventurer"
+    WIZARD_MAGE = "wizard_mage"
+    ROYAL_MONARCH = "royal_monarch"
+    STEAMPUNK_INVENTOR = "steampunk_inventor"
+    CHEF_INNKEEPER = "chef_innkeeper"
+    VILLAIN_MASTERMIND = "villain_mastermind"
+    SUPERHERO_SIDEKICK = "superhero_sidekick"
+    COWBOY_WESTERN = "cowboy_western"
+    SAMURAI_NINJA = "samurai_ninja"
+    KNIGHT_PALADIN = "knight_paladin"
+    FRIENDLY_GIANT = "friendly_giant"
+    MUSICAL_MASCOT = "musical_mascot"
 
 
 # Archetype field requirements
@@ -188,6 +246,28 @@ ARCHETYPE_CONFIG = {
         "optional_fields": ["accessories", "posture", "light_color", "aura"],
     },
 }
+
+# Populate expanded archetypes from character_types_registry so ARCHETYPE_CONFIG stays single-sourced
+def _register_expanded_archetypes() -> None:
+    try:
+        import character_types_registry as _ctr
+    except ImportError:
+        return
+    for item in _ctr.BUILTIN_ARCHETYPES:
+        try:
+            arch = CharacterArchetype(item["id"])
+        except ValueError:
+            continue
+        if arch not in ARCHETYPE_CONFIG:
+            ARCHETYPE_CONFIG[arch] = {
+                "required_physical": list(item.get("required_physical") or []),
+                "optional_physical": list(item.get("optional_physical") or []),
+                "required_fields": list(item.get("required_fields") or []),
+                "optional_fields": list(item.get("optional_fields") or []),
+            }
+
+
+_register_expanded_archetypes()
 
 # Valid value sets for dropdowns/validation
 VALID_VALUES = {

@@ -18,6 +18,7 @@ import math
 import re
 from pathlib import Path
 
+import character_types_registry as _ctr
 import crew
 
 PRODUCTS = {      # key: (letter, title, made once per style?)
@@ -34,7 +35,7 @@ WHY = {("animatic", "storyboard"): "The animatic is made from the storyboard pic
        ("film", "storyboard"): "The film's clips start from the storyboard pictures, so the storyboard was added.",
        ("marketing", "film"): "The trailer is cut from the film's clips, so the film was added.",
        ("marketing", "storyboard"): "The marketing kit needs the storyboard (for the poster and the clips), so it was added."}
-STYLES = {
+STYLES: dict[str, tuple[str, str]] = {
     "realistic": ("Realistic live action", "photographic live action, natural skin and fabric, real-world lighting, cinema camera"),
     "claymation": ("Claymation", "plasticine stop-motion: clay skin with faint fingerprints, handmade sets, soft studio lights, slight frame jitter"),
     "pixar_3d": ("3D animated (Pixar-style)", "stylised 3D animation: appealing shapes, subsurface skin, soft global illumination, rich colour"),
@@ -49,7 +50,19 @@ STYLES = {
     "tin_toy": ("Vintage tin-toy macro", "vintage wind-up tin-toy macro photography: chipped enamel paint, stamped metal panels, rivets, brass winding keys, directional studio light, shallow macro depth of field"),
     "ukiyo_e": ("Ukiyo-e woodblock print", "Japanese Ukiyo-e woodblock print: fine dark ink outlines, carved hatching, flat faded indigo, vermilion and ochre pigments, aged washi-paper grain, subtle print imperfections"),
     "midcentury_2d": ("Mid-century 2D cartoon", "hand-painted mid-century 2D cartoon: stylized geometric shapes, dry-gouache textures, simplified elongated anatomy, muted earthy palette, subtle paper grain"),
+    "fabric_collage": ("Fabric-collage appliqué", "handmade textile-collage artwork: layered felt, printed cotton, linen, embroidery thread and yarn, visible blanket stitches, frayed edges, soft shadows between appliqué layers"),
 }
+
+
+def refresh_styles() -> dict[str, tuple[str, str]]:
+    """Sync `STYLES` with all built-in + custom styles from `character_types_registry`."""
+    for sid, val in _ctr.production_styles_dict().items():
+        if sid not in STYLES or sid not in ("realistic", "claymation", "pixar_3d", "anime", "watercolour", "comic_ink", "felt", "noir", "glazed_ceramic", "painted_sign", "scratchboard", "tin_toy", "ukiyo_e", "midcentury_2d", "fabric_collage"):
+            STYLES[sid] = val
+    return STYLES
+
+
+refresh_styles()
 ASPECTS = ("16:9", "9:16", "1:1", "4:3")
 RATINGS = {"all": "All ages", "8": "8+", "13": "13+", "adult": "Adult"}
 FAITHFULNESS = {"strict": "Strict", "balanced": "Balanced", "free": "Free"}

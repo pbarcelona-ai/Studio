@@ -393,7 +393,15 @@ def _global_params(r: Request):
     project = r.body.get("project", "")
     if not project:
         raise HttpError(400, "project is required")
-    save_global_params(project, r.body.get("positives", ""), r.body.get("negatives", ""))
+    hm = r.body.get("hybrid_mode")
+    save_global_params(
+        project,
+        r.body.get("positives", ""),
+        r.body.get("negatives", ""),
+        look=str(r.body.get("look", "") or ""),
+        motion_cadence=str(r.body.get("motion_cadence", "") or ""),
+        hybrid_mode=hm if isinstance(hm, dict) else None,
+    )
     return {"saved": True}
 
 
@@ -480,9 +488,31 @@ def _book_slug(b: dict) -> str:
 
 
 def _ch_save(b):
+    import continuity_sync
+
     char = b.get("character", {})
+    series = str(char.get("series") or b.get("series") or "").strip()
+    cname = str(char.get("name") or "").strip()
+    prev = character_tokens.load_character(series, cname) if (series and cname) else None
     char["stages"] = clean_stages(char.get("stages"))
-    return {"saved": True, "path": str(character_tokens.save_character(char))}
+    saved_path = str(character_tokens.save_character(char))
+    sync_report: dict[str, Any] = {"updated_steps": [], "changes": [], "preserved": []}
+    if series and cname and SLUG_RE.match(series) and pdir(series, "book").is_dir():
+        old_tok = str((prev or {}).get("visual_token") or (prev or {}).get("description") or "")
+        new_tok = str(char.get("visual_token") or char.get("description") or "")
+        old_v = str((prev or {}).get("voice") or "")
+        new_v = str(char.get("voice") or "")
+        sync_report = continuity_sync.sync_character_profile(
+            pdir(series, "book"),
+            series,
+            name=cname,
+            old_token=old_tok,
+            new_token=new_tok,
+            old_voice=old_v,
+            new_voice=new_v,
+            source_step="step08",
+        )
+    return {"saved": True, "path": saved_path, "sync_report": sync_report}
 
 
 def _ch_use_reference(b):
@@ -500,6 +530,10 @@ def _ch_update_lora(b):
 
 def _ch_create(b):
     char = character_tokens.create_character_from_description(b.get("series", ""), b.get("name", ""), b.get("description", ""), b.get("visual_token", ""))
+    if b.get("archetype"):
+        char["archetype"] = str(b.get("archetype")).strip()
+    if b.get("style_override") is not None:
+        char["style_override"] = str(b.get("style_override") or "").strip()
     return {"created": True, "character": char, "path": str(character_tokens.save_character(char))}
 
 
@@ -913,44 +947,61 @@ def _voice_library_save_entry(character: str, entry: dict, src_wav: Path | None 
     return cur
 
 
-@route("POST", "/api/v2_voice_profile_apply")
-def _v2_voice_profile_apply(r: Request):
-    """Save a character's voice profile (voice, blend, persona, speed) for ALL scenes while leaving per-line emotion/tone untouched."""
-    slug = str(r.body.get("project") or "").strip()
-    character = str(r.body.get("character") or "").strip()
-    if not slug or not character:
-        raise PlanError("project and character are required")
+def _norm_voice_char(name: str) -> str:
+    """Normalize a screenplay speaker name by stripping parenthetical tags like (V.O.), (O.S.), (CONT'D)."""
+    import re as _re
 
-    pd = pdir(slug, "book")
-    pd.mkdir(parents=True, exist_ok=True)
+    return _re.sub(r"\s*\([^)]*\)\s*", " ", str(name or "")).strip().lower()
+
+
+def _apply_voice_profile_to_character(
+    pd: Path,
+    slug: str,
+    character: str,
+    incoming_fields: dict[str, Any],
+    *,
+    vdata: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], int, dict[str, Any]]:
+    """Save a character's voice profile into voice_cast.json and propagate it to EVERY dialogue line
+    spoken by that character across all scenes (preserving each line's emotion/tone and delivery note)."""
     vc_path = pd / "voice_cast.json"
-    vdata: dict[str, Any] = {}
-    if vc_path.is_file():
-        try:
-            vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            vdata = {}
+    if vdata is None:
+        vdata = {}
+        if vc_path.is_file():
+            try:
+                vdata = json.loads(vc_path.read_text(encoding="utf-8")) or {}
+            except Exception:
+                vdata = {}
     raw_cast = vdata.get("cast")
     cast: dict[str, Any] = raw_cast if isinstance(raw_cast, dict) else {}
     raw_profiles = vdata.get("profiles")
     profiles: dict[str, Any] = raw_profiles if isinstance(raw_profiles, dict) else {}
 
-    existing_key = next((k for k in profiles if k.lower() == character.lower()), character)
+    target_norm = _norm_voice_char(character)
+    existing_key = next(
+        (k for k in profiles if k.lower() == character.lower() or _norm_voice_char(k) == target_norm),
+        character,
+    )
     raw_prof = profiles.get(existing_key)
     prof: dict[str, Any] = dict(raw_prof) if isinstance(raw_prof, dict) else {}
     for field in ("gemini_voice", "kokoro_voice", "kokoro_blend", "macos_voice", "persona"):
-        if field in r.body and r.body[field] is not None:
-            prof[field] = str(r.body[field]).strip()
-    if r.body.get("kokoro_voice"):
-        cast_key = next((k for k in cast if k.lower() == character.lower()), character)
-        cast[cast_key] = str(r.body["kokoro_voice"]).strip()
+        if field in incoming_fields and incoming_fields[field] is not None:
+            prof[field] = str(incoming_fields[field]).strip()
+    if incoming_fields.get("speed") is not None:
+        try:
+            prof["speed"] = max(0.5, min(1.8, float(incoming_fields["speed"])))
+        except (TypeError, ValueError):
+            pass
+    if prof.get("kokoro_voice"):
+        cast_key = next(
+            (k for k in cast if k.lower() == character.lower() or _norm_voice_char(k) == target_norm),
+            character,
+        )
+        cast[cast_key] = str(prof["kokoro_voice"]).strip()
     profiles[existing_key] = prof
     vdata["cast"] = cast
     vdata["profiles"] = profiles
     vc_path.write_text(json.dumps(vdata, indent=2), encoding="utf-8")
-
-    # Also save character voice profile to global cross-film library for future films
-    _voice_library_save_entry(existing_key, {**prof, "source_project": slug})
 
     # Propagate profile to every dialogue line spoken by this character, WITHOUT touching each line's emotion/tone or note
     dl_path = pd / "dialogue_lines.json"
@@ -978,7 +1029,8 @@ def _v2_voice_profile_apply(r: Request):
                 if not isinstance(el, dict) or el.get("type") != "dialogue":
                     continue
                 idx += 1
-                if str(el.get("character") or "").strip().lower() != character.lower():
+                el_char = str(el.get("character") or "").strip()
+                if el_char.lower() != character.lower() and _norm_voice_char(el_char) != target_norm:
                     continue
                 lid = f"{sc_id}-{idx:02d}"
                 raw_cur = saved_lines.get(lid)
@@ -986,6 +1038,8 @@ def _v2_voice_profile_apply(r: Request):
                 for field in ("gemini_voice", "kokoro_voice", "kokoro_blend", "macos_voice", "persona"):
                     if field in prof:
                         cur[field] = prof[field]
+                if "speed" in prof:
+                    cur["speed"] = prof["speed"]
                 if prof.get("kokoro_voice"):
                     cur["voice"] = prof["kokoro_voice"]
                 # Preserve per-line emotion/tone and delivery note untouched!
@@ -994,6 +1048,23 @@ def _v2_voice_profile_apply(r: Request):
 
     ddata["lines"] = saved_lines
     dl_path.write_text(json.dumps(ddata, indent=2), encoding="utf-8")
+    return prof, updated_count, vdata
+
+
+@route("POST", "/api/v2_voice_profile_apply")
+def _v2_voice_profile_apply(r: Request):
+    """Save a character's voice profile (voice, blend, persona, speed) for ALL scenes while leaving per-line emotion/tone untouched."""
+    slug = str(r.body.get("project") or "").strip()
+    character = str(r.body.get("character") or "").strip()
+    if not slug or not character:
+        raise PlanError("project and character are required")
+
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    prof, updated_count, _vdata = _apply_voice_profile_to_character(pd, slug, character, r.body)
+
+    # Also save character voice profile to global cross-film library for future films
+    _voice_library_save_entry(character, {**prof, "source_project": slug})
     return {"status": "ok", "character": character, "profile": prof, "updated_lines": updated_count}
 
 
@@ -1131,11 +1202,30 @@ def _v2_voice_baseline_set(r: Request):
     else:
         raise PlanError("Provide either from_line_id or audio_base64 to set a character voice baseline.")
 
+    # Collect voice profile settings from the request, falling back to the source line's saved settings
+    profile_fields: dict[str, Any] = {}
+    if from_line:
+        dl_path = pd / "dialogue_lines.json"
+        if dl_path.is_file():
+            try:
+                dl_doc = json.loads(dl_path.read_text(encoding="utf-8")) or {}
+                src_line_cfg = (dl_doc.get("lines") or {}).get(from_line)
+                if isinstance(src_line_cfg, dict):
+                    for fld in ("gemini_voice", "kokoro_voice", "kokoro_blend", "macos_voice", "persona", "speed"):
+                        if src_line_cfg.get(fld) is not None and src_line_cfg.get(fld) != "":
+                            profile_fields[fld] = src_line_cfg[fld]
+            except Exception as e:
+                log.debug("dialogue_lines.json read for baseline profile failed: %s", e)
+    for fld in ("gemini_voice", "kokoro_voice", "kokoro_blend", "macos_voice", "persona", "speed"):
+        if fld in r.body and r.body[fld] is not None:
+            profile_fields[fld] = r.body[fld]
+
+    # Save & automatically propagate the baselined character's voice profile to every line of that character across all scenes
+    prof, updated_lines, vdata = _apply_voice_profile_to_character(
+        pd, slug, existing_key, profile_fields, vdata=vdata
+    )
+
     # Also persist this baseline WAV & metadata into the global cross-film voice library
-    raw_profiles_map = vdata.get("profiles")
-    profiles_map: dict[str, Any] = raw_profiles_map if isinstance(raw_profiles_map, dict) else {}
-    raw_prof = profiles_map.get(existing_key)
-    prof: dict[str, Any] = raw_prof if isinstance(raw_prof, dict) else {}
     _voice_library_save_entry(
         existing_key,
         {
@@ -1153,6 +1243,7 @@ def _v2_voice_baseline_set(r: Request):
         "text": sample_text,
         "saved_to_library": True,
         "source_project": slug,
+        "profile": prof,
     }
     cleared_list = [c for c in (vdata.get("cleared_baselines") or []) if c.lower() != existing_key.lower()]
     vdata["cleared_baselines"] = cleared_list
@@ -1161,12 +1252,15 @@ def _v2_voice_baseline_set(r: Request):
     return {
         "status": "ok",
         "character": existing_key,
+        "profile": prof,
+        "updated_lines": updated_lines,
         "baseline": {
             "file": rel_file,
             "source": source_label,
             "text": sample_text,
             "saved_to_library": True,
             "source_project": slug,
+            "profile": prof,
             "audio_url": f"/file/{slug}/{rel_file}",
         },
     }
@@ -1653,8 +1747,331 @@ def _v2_dialogue_render(r: Request):
     return {"status": "ok", "engine": engine, "rendered": rendered}
 
 
-def _synth_foley_wav(wav_path: Path, prompt: str, preset: str, duration: int = 10):
-    """Synthesize a distinct stereo foley soundscape driven directly by the chosen preset."""
+_STOCK_FOLEY_PROMPTS = {
+    "space_adventure": {
+        "starship bridge hum, cockpit console telemetry chimes, and clean sci-fi instrumentation.",
+        "starship bridge hum, cockpit console chimes, space ambiance",
+    },
+    "spaceship_voices": {
+        "a low spaceship hum and distant voices in background",
+        "low warm spaceship cabin hum with muffled distant crew voices murmuring in the background.",
+    },
+    "rainy_home": {
+        "steady rain pattering on a living room window, individual droplets on glass, and soft distant thunder.",
+        "rain pattering on window, warm indoor room ambiance",
+    },
+    "soft_rain_room": {
+        "subtle muffled distant rain outside a quiet cozy room (not hitting the window), gentle soft indoor room tone.",
+    },
+    "cosmic_storm": {
+        "sweeping atmospheric wind gusts, sparkling ice-ring crystal chimes, and deep planetary resonance.",
+        "atmospheric wind gusts, shimmering ice particles, planetary rumble",
+    },
+    "action_launch": {
+        "building rocket engine roar, heavy sub-bass ignition rumble, and rising thruster turbine whine.",
+        "rockets burning, spaceship hull shaking, heavy ignition rumble",
+    },
+    "forest_nature": {
+        "gentle evening breeze with rhythmic distant night crickets and quiet outdoor air.",
+        "evening breeze and gentle outdoor ambient air",
+    },
+    "silent": {
+        "silent (no ambient sfx or foley).",
+        "silent",
+    },
+}
+
+
+def _parse_custom_foley_layers(prompt: str) -> tuple[list[str], float]:
+    """Parse a free-text SFX description into acoustic synthesis layers and a gain multiplier."""
+    low = " ".join(str(prompt or "").strip().lower().split())
+    if not low:
+        return [], 1.0
+    if any(w in low for w in ("no sound", "no sfx", "muted", "mute only")) or low in ("silent", "silence", "none", "mute"):
+        return ["silent"], 0.0
+
+    # Volume / intensity modifier (ignore "distant" when it only modifies "voices"/"thunder")
+    low_no_distant_src = low.replace("distant voices", "").replace("distant voice", "").replace("distant thunder", "")
+    gain = 1.0
+    if any(w in low_no_distant_src for w in ("very quiet", "barely audible", "whisper", "very subtle", "ultra soft")):
+        gain = 0.25
+    elif any(w in low_no_distant_src for w in ("subtle", "soft", "quiet", "gentle", "distant", "faint", "muffled", "low volume", "light")):
+        gain = 0.38
+    elif any(w in low_no_distant_src for w in ("loud", "heavy", "intense", "booming", "roaring", "strong")):
+        gain = 1.30
+
+    layers: list[str] = []
+    if any(w in low for w in ("fireplace", "hearth", "campfire", "fire", "crackl", "flame", "ember")):
+        layers.append("fireplace")
+    if any(w in low for w in ("rain", "drizzle", "downpour", "shower", "droplet", "patter")):
+        if any(w in low for w in ("window", "glass", "tap", "hitting")) and not any(w in low for w in ("not hitting", "no window", "no glass")):
+            layers.append("window_rain")
+        else:
+            layers.append("soft_rain")
+    if any(w in low for w in ("thunder", "lightning")) and "no thunder" not in low:
+        layers.append("thunder")
+    if any(w in low for w in ("ocean", "wave", "surf", "beach", "sea", "tide")):
+        layers.append("ocean")
+    if any(w in low for w in ("river", "stream", "brook", "waterfall", "water", "fountain", "splash")):
+        layers.append("water_stream")
+    if any(w in low for w in ("wind", "breeze", "gust", "howl", "blizzard", "whoosh", "storm")):
+        layers.append("wind")
+    if any(w in low for w in ("footstep", "footsteps", "walking", "steps", "boots", "gravel", "crunch", "march")):
+        layers.append("footsteps")
+    if any(w in low for w in ("clock", "tick", "ticking", "watch")):
+        layers.append("clock")
+    if any(w in low for w in ("heartbeat", "heart beat", "pulse")):
+        layers.append("heartbeat")
+    if any(w in low for w in ("door", "knock", "creak", "wood")):
+        layers.append("door_knock")
+    if any(w in low for w in ("cricket", "cicada", "insect", "night")):
+        layers.append("crickets")
+    if any(w in low for w in ("bird", "birds", "chirp", "songbird", "morning", "forest", "meadow", "park", "garden")):
+        layers.append("birds")
+    if any(w in low for w in ("chime", "bell", "crystal", "sparkle", "magic", "shimmer", "ice ring", "fairy")):
+        layers.append("chimes")
+    if any(w in low for w in ("rocket", "launch", "thruster", "ignition", "jet", "explosion", "rumble", "earthquake", "shake")):
+        layers.append("rocket_rumble")
+    if any(w in low for w in ("spaceship", "starship", "bridge", "cockpit", "engine hum", "reactor", "cabin hum", "ship hum", "low hum", "hull hum")):
+        layers.append("cabin_hum")
+    if any(w in low for w in ("voice", "voices", "chatter", "murmur", "talking", "crowd", "crew", "intercom", "comms", "pa system")):
+        layers.append("distant_voices")
+    if any(w in low for w in ("telemetry", "sonar", "radar", "beep", "console")):
+        layers.append("telemetry")
+    if any(w in low for w in ("room", "indoor", "cozy", "home", "house", "library", "hall", "office", "ambient")):
+        layers.append("room_tone")
+
+    if not layers:
+        layers.append("warm_ambience")
+    return layers, gain
+
+
+def _synth_custom_text_foley_wav(wav_path: Path, prompt: str, duration: int = 10) -> list[str]:
+    """Synthesize a custom multi-layer stereo foley soundscape directly from the user's text description."""
+    import math
+    import random
+    import struct
+    import wave
+
+    sr = 22050
+    dur = max(4, min(30, int(duration or 10)))
+    n = sr * dur
+    layers, gain = _parse_custom_foley_layers(prompt)
+    if layers == ["silent"] or gain <= 0.0:
+        with wave.open(str(wav_path), "wb") as wf:
+            wf.setnchannels(2)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(bytes(n * 4))
+        return ["silent"]
+
+    rng = random.Random(hash("custom:" + prompt.strip().lower()) & 0xFFFFFFFF)
+    layer_set = set(layers)
+    lp1_l = lp1_r = lp2_l = lp2_r = 0.0
+    hp_prev_l = hp_prev_r = 0.0
+    frames = bytearray()
+
+    # Pre-schedule transient events (crackles, droplets, birds, chimes, footsteps, knocks)
+    events: list[tuple[float, str, float, float, float]] = []  # (t, kind, freq, decay, pan)
+    if "fireplace" in layer_set:
+        for _ in range(int(dur * 7)):
+            events.append((rng.uniform(0.1, dur - 0.1), "crackle", rng.uniform(1400.0, 4200.0), rng.uniform(55.0, 120.0), rng.uniform(0.25, 0.75)))
+    if "window_rain" in layer_set:
+        for _ in range(int(dur * 6)):
+            events.append((rng.uniform(0.1, dur - 0.2), "ping", rng.uniform(950.0, 2100.0), rng.uniform(30.0, 55.0), rng.uniform(0.15, 0.85)))
+    if "chimes" in layer_set:
+        for _ in range(int(dur * 2.5)):
+            f = rng.choice([880.0, 1046.5, 1318.5, 1567.98, 2093.0])
+            events.append((rng.uniform(0.2, dur - 0.4), "ping", f, rng.uniform(3.0, 6.0), rng.uniform(0.15, 0.85)))
+    if "birds" in layer_set:
+        for _ in range(int(dur * 1.4)):
+            events.append((rng.uniform(0.3, dur - 0.4), "bird", rng.uniform(2200.0, 3600.0), 14.0, rng.uniform(0.1, 0.9)))
+    if "footsteps" in layer_set:
+        t_step = 0.35
+        side = 0
+        while t_step < dur - 0.3:
+            events.append((t_step, "step", rng.uniform(110.0, 165.0), 26.0, 0.42 if side % 2 == 0 else 0.58))
+            t_step += rng.uniform(0.46, 0.56)
+            side += 1
+    if "clock" in layer_set:
+        t_ck = 0.25
+        tick_i = 0
+        while t_ck < dur - 0.15:
+            events.append((t_ck, "tick", 1950.0 if tick_i % 2 == 0 else 1550.0, 95.0, 0.5))
+            t_ck += 0.5
+            tick_i += 1
+    if "door_knock" in layer_set:
+        for kt in (0.7, 1.05, 1.4, dur * 0.6, dur * 0.6 + 0.35):
+            if kt < dur - 0.2:
+                events.append((kt, "step", 155.0, 32.0, 0.5))
+    events.sort(key=lambda x: x[0])
+    ev_idx = 0
+    active: list[tuple[float, str, float, float, float]] = []
+
+    # Pre-schedule muffled distant conversational utterances (natural phrases + pauses, 3 distinct speakers)
+    # Each phrase: (t_start, t_end, base_f0, syl_rate, pan, amp, formant_f)
+    voice_phrases: list[tuple[float, float, float, float, float, float, float]] = []
+    if "distant_voices" in layer_set:
+        speakers = [
+            (118.0, 4.2, 0.28, 0.13, 540.0),   # Low male voice softly left
+            (196.0, 4.9, 0.72, 0.11, 760.0),   # Soft female voice softly right
+            (138.0, 3.8, 0.48, 0.09, 620.0),   # Distant corridor voice center
+        ]
+        for sp_idx, (f0, srate, span, samp, ff) in enumerate(speakers):
+            cursor = 0.35 + sp_idx * 0.85 + rng.uniform(0.0, 0.45)
+            while cursor < dur - 0.6:
+                plen = rng.uniform(0.9, 2.3)
+                voice_phrases.append((cursor, min(dur - 0.2, cursor + plen), f0 * rng.uniform(0.94, 1.06), srate * rng.uniform(0.9, 1.12), span, samp, ff))
+                cursor += plen + rng.uniform(0.7, 2.1)
+    v_lp_l = v_lp_r = v_lp2_l = v_lp2_r = 0.0
+
+    norm_scale = gain / math.sqrt(max(1, len(layer_set)))
+    for i in range(n):
+        t = i / sr
+        env = min(1.0, t / 0.5) * min(1.0, (dur - t) / 0.5)
+        sig_l = sig_r = 0.0
+
+        while ev_idx < len(events) and events[ev_idx][0] <= t:
+            active.append(events[ev_idx])
+            ev_idx += 1
+
+        nl, nr = rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)
+        lp1_l = lp1_l * 0.84 + nl * 0.16
+        lp1_r = lp1_r * 0.84 + nr * 0.16
+        lp2_l = lp2_l * 0.92 + lp1_l * 0.08
+        lp2_r = lp2_r * 0.92 + lp1_r * 0.08
+        hp_l = nl - hp_prev_l
+        hp_r = nr - hp_prev_r
+        hp_prev_l, hp_prev_r = nl, nr
+
+        if "soft_rain" in layer_set:
+            sig_l += lp1_l * 0.16
+            sig_r += lp1_r * 0.16
+        if "window_rain" in layer_set:
+            sig_l += (lp1_l * 0.34 + hp_l * 0.02)
+            sig_r += (lp1_r * 0.34 + hp_r * 0.02)
+        if "thunder" in layer_set:
+            th = 0.20 * max(0.0, math.sin(2 * math.pi * 0.13 * t - 0.9)) * (lp2_l * 1.4 + 0.5 * math.sin(2 * math.pi * 46.0 * t))
+            sig_l += th
+            sig_r += th * 0.92
+        if "fireplace" in layer_set:
+            flick = 0.75 + 0.25 * math.sin(2 * math.pi * 0.7 * t)
+            sig_l += lp2_l * 0.35 * flick
+            sig_r += lp2_r * 0.35 * flick
+        if "ocean" in layer_set:
+            wave_env = 0.18 + 0.42 * (0.5 + 0.5 * math.sin(2 * math.pi * 0.16 * t)) ** 2
+            sig_l += lp1_l * wave_env
+            sig_r += lp1_r * wave_env * 0.94
+        if "water_stream" in layer_set:
+            babble = 0.22 + 0.08 * math.sin(2 * math.pi * 1.3 * t)
+            sig_l += lp1_l * babble
+            sig_r += lp1_r * babble
+        if "wind" in layer_set:
+            sw = 0.25 + 0.25 * (0.5 + 0.5 * math.sin(2 * math.pi * 0.21 * t))
+            wh = 0.07 * sw * math.sin(2 * math.pi * (290.0 + 70.0 * math.sin(2 * math.pi * 0.14 * t)) * t)
+            sig_l += lp1_l * sw + wh * 0.8
+            sig_r += lp1_r * sw + wh * 1.1
+        if "crickets" in layer_set:
+            gate = 1.0 if (t % 0.9) < 0.26 else 0.0
+            pulse = 0.5 + 0.5 * math.sin(2 * math.pi * 24.0 * t)
+            cr = 0.09 * gate * pulse * math.sin(2 * math.pi * 4100.0 * t)
+            sig_l += cr * 0.65
+            sig_r += cr * 1.05
+        if "heartbeat" in layer_set:
+            hb_t = t % 0.95
+            lub = 0.32 * math.exp(-hb_t * 22.0) * math.sin(2 * math.pi * 58.0 * hb_t)
+            dub = 0.22 * math.exp(-max(0.0, hb_t - 0.22) * 26.0) * math.sin(2 * math.pi * 50.0 * max(0.0, hb_t - 0.22)) if hb_t > 0.22 else 0.0
+            sig_l += lub + dub
+            sig_r += lub + dub
+        if "rocket_rumble" in layer_set:
+            ramp = min(1.0, 0.3 + 0.7 * (t / dur))
+            sig_l += lp2_l * 0.72 * ramp + 0.22 * ramp * math.sin(2 * math.pi * 42.0 * t)
+            sig_r += lp2_r * 0.72 * ramp + 0.22 * ramp * math.sin(2 * math.pi * 42.0 * t)
+        if "cabin_hum" in layer_set:
+            # Deep smooth warm spaceship hull/reactor hum + soft ventilation air (zero beeps)
+            lfo = 0.88 + 0.12 * math.sin(2 * math.pi * 0.17 * t)
+            hum = (
+                0.22 * math.sin(2 * math.pi * 55.0 * t)
+                + 0.12 * math.sin(2 * math.pi * 82.41 * t)
+                + 0.06 * math.sin(2 * math.pi * 110.0 * t)
+            ) * lfo
+            sig_l += hum + lp2_l * 0.16
+            sig_r += hum * 0.96 + lp2_r * 0.16
+        if "distant_voices" in layer_set:
+            vl_raw = vr_raw = 0.0
+            for vt0, vt1, vf0, vsrate, vpan, vamp, vff in voice_phrases:
+                if vt0 <= t <= vt1:
+                    dt_v = t - vt0
+                    plen_v = max(0.2, vt1 - vt0)
+                    phr_env = min(1.0, dt_v / 0.12) * min(1.0, (vt1 - t) / 0.18)
+                    # Natural syllable cadence with slight vowel variation
+                    syl_phase = dt_v * vsrate
+                    syl_env = max(0.0, math.sin(math.pi * (syl_phase % 1.0))) ** 1.6
+                    # Gentle pitch contour (slight rise/fall over each phrase)
+                    pitch = vf0 * (1.0 + 0.09 * math.sin(2 * math.pi * (dt_v / plen_v) * 1.2) + 0.03 * math.sin(2 * math.pi * 5.2 * dt_v))
+                    # Soft vocal-tract formant harmonic blend + faint whispered consonant air
+                    voiced = (
+                        0.45 * math.sin(2 * math.pi * pitch * t)
+                        + 0.35 * math.sin(2 * math.pi * (pitch * 2.0) * t)
+                        + 0.28 * math.sin(2 * math.pi * vff * t) * math.sin(2 * math.pi * pitch * t)
+                        + 0.14 * lp1_l * (0.5 + 0.5 * math.sin(2 * math.pi * 11.0 * dt_v))
+                    )
+                    v_sig = vamp * phr_env * syl_env * voiced
+                    vl_raw += v_sig * (1.0 - vpan)
+                    vr_raw += v_sig * vpan
+            # Double low-pass muffle so voices sit smoothly behind walls / in the distance
+            v_lp_l = v_lp_l * 0.78 + vl_raw * 0.22
+            v_lp_r = v_lp_r * 0.78 + vr_raw * 0.22
+            v_lp2_l = v_lp2_l * 0.72 + v_lp_l * 0.28
+            v_lp2_r = v_lp2_r * 0.72 + v_lp_r * 0.28
+            sig_l += v_lp2_l * 1.45
+            sig_r += v_lp2_r * 1.45
+        if "telemetry" in layer_set:
+            cyc = t % 1.8
+            if 0.25 < cyc < 0.38:
+                be = math.sin(math.pi * (cyc - 0.25) / 0.13)
+                bp = 0.14 * be * math.sin(2 * math.pi * 987.77 * t)
+                sig_l += bp * 0.7
+                sig_r += bp
+        if "room_tone" in layer_set or "warm_ambience" in layer_set:
+            sig_l += lp2_l * 0.10
+            sig_r += lp2_r * 0.10
+
+        if active:
+            keep = []
+            for st_t, ekind, efreq, edec, epan in active:
+                dt = t - st_t
+                if dt < 0.55:
+                    if ekind == "crackle":
+                        v = 0.18 * math.exp(-dt * edec) * (nl if epan < 0.5 else nr)
+                    elif ekind == "bird":
+                        chirp_f = efreq + 650.0 * math.sin(2 * math.pi * 16.0 * dt)
+                        v = 0.10 * math.exp(-dt * edec) * math.sin(2 * math.pi * chirp_f * dt)
+                    elif ekind == "step":
+                        v = 0.26 * math.exp(-dt * edec) * (0.6 * math.sin(2 * math.pi * efreq * dt) + 0.4 * lp1_l)
+                    elif ekind == "tick":
+                        v = 0.14 * math.exp(-dt * edec) * math.sin(2 * math.pi * efreq * dt)
+                    else:
+                        v = 0.11 * math.exp(-dt * edec) * math.sin(2 * math.pi * efreq * dt)
+                    sig_l += v * (1.0 - epan)
+                    sig_r += v * epan
+                    keep.append((st_t, ekind, efreq, edec, epan))
+            active = keep
+
+        sig_l = max(-0.95, min(0.95, sig_l * norm_scale * env))
+        sig_r = max(-0.95, min(0.95, sig_r * norm_scale * env))
+        frames.extend(struct.pack("<hh", int(sig_l * 32767), int(sig_r * 32767)))
+
+    with wave.open(str(wav_path), "wb") as wf:
+        wf.setnchannels(2)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(bytes(frames))
+    return layers
+
+
+def _synth_foley_wav(wav_path: Path, prompt: str, preset: str, duration: int = 10) -> list[str]:
+    """Synthesize a distinct stereo foley soundscape. Custom user text overrides the pulldown preset."""
     import math
     import random
     import struct
@@ -1664,6 +2081,29 @@ def _synth_foley_wav(wav_path: Path, prompt: str, preset: str, duration: int = 1
     dur = max(4, min(30, int(duration or 10)))
     n = sr * dur
     mode = (preset or "space_adventure").strip().lower()
+    clean_prompt = " ".join(str(prompt or "").strip().lower().split())
+
+    # Custom text overrides the pulldown whenever mode=="custom" OR user typed non-stock custom text
+    if mode == "spaceship_voices":
+        return _synth_custom_text_foley_wav(wav_path, prompt or "a low spaceship hum and distant voices in background", dur)
+    if mode.startswith(("story_", "lib_")):
+        eff_p = prompt.strip()
+        if not eff_p and mode.startswith("lib_"):
+            found_lib = next((x for x in _sfx_library_load() if x.get("id") == mode), None)
+            if found_lib:
+                eff_p = str(found_lib.get("prompt") or "")
+        return _synth_custom_text_foley_wav(wav_path, eff_p or mode.replace("_", " "), dur)
+    stock_set = _STOCK_FOLEY_PROMPTS.get(mode, set())
+    if mode == "custom" or (clean_prompt and mode not in ("silent", "none", "mute") and clean_prompt not in stock_set):
+        return _synth_custom_text_foley_wav(wav_path, prompt, dur)
+
+    if mode in ("silent", "none", "mute"):
+        with wave.open(str(wav_path), "wb") as wf:
+            wf.setnchannels(2)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(bytes(n * 4))
+        return ["silent"]
     rng = random.Random(hash(mode + ":" + prompt) & 0xFFFFFFFF)
 
     lp1_l = lp1_r = lp2_l = lp2_r = 0.0
@@ -1701,6 +2141,13 @@ def _synth_foley_wav(wav_path: Path, prompt: str, preset: str, duration: int = 1
             thunder = 0.14 * max(0.0, math.sin(2 * math.pi * 0.11 * t - 1.0)) * (math.sin(2 * math.pi * 44.0 * t) + 0.6 * math.sin(2 * math.pi * 58.0 * t))
             sig_l += lp1_l * 0.42 + thunder
             sig_r += lp1_r * 0.42 + thunder * 0.92
+        elif mode == "soft_rain_room":
+            # Exact same warm stereo rain as rainy_home, slightly muffled and much lower volume (zero glass taps, zero sine tones/beeps)
+            nl, nr = rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)
+            lp1_l = lp1_l * 0.80 + nl * 0.20
+            lp1_r = lp1_r * 0.80 + nr * 0.20
+            sig_l += lp1_l * 0.095
+            sig_r += lp1_r * 0.095
         elif mode == "cosmic_storm":
             # Sweeping stereo howling wind (LFO-modulated resonant noise) + deep planetary sub-drone + ice chimes
             nl, nr = rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)
@@ -1776,6 +2223,7 @@ def _synth_foley_wav(wav_path: Path, prompt: str, preset: str, duration: int = 1
         wf.setsampwidth(2)
         wf.setframerate(sr)
         wf.writeframes(bytes(frames))
+    return [mode]
 
 
 def _synth_score_wav(wav_path: Path, mood: str, duration: int = 12):
@@ -1788,6 +2236,13 @@ def _synth_score_wav(wav_path: Path, mood: str, duration: int = 12):
     dur = max(6, min(30, int(duration or 12)))
     n = sr * dur
     m = (mood or "wonder").strip().lower()
+    if m in ("none", "silent", "mute"):
+        with wave.open(str(wav_path), "wb") as wf:
+            wf.setnchannels(2)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(bytes(n * 4))
+        return
     frames = bytearray()
 
     for i in range(n):
@@ -1982,9 +2437,10 @@ def _v2_sound_design_render(r: Request):
 
     prompt = str(r.body.get("prompt") or "").strip()
     duration = int(r.body.get("duration") or (10 if kind == "foley" else 12))
+    synth_layers: list[str] = []
     if kind == "foley":
         preset = str(r.body.get("preset") or "space_adventure").strip()
-        _synth_foley_wav(wav_path, prompt, preset, duration)
+        synth_layers = _synth_foley_wav(wav_path, prompt, preset, duration)
     else:
         mood = str(r.body.get("mood") or "wonder").strip()
         _synth_score_wav(wav_path, mood, duration)
@@ -2013,7 +2469,266 @@ def _v2_sound_design_render(r: Request):
             ("preset" if kind == "foley" else "mood"): str(r.body.get("preset") or r.body.get("mood") or ""),
         }
     sd_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
-    return {"status": "ok", "kind": kind, "scene": scene_id, "audio_url": rel_url, "duration": duration}
+    return {"status": "ok", "kind": kind, "scene": scene_id, "audio_url": rel_url, "duration": duration, "layers": synth_layers}
+
+
+SFX_LIBRARY_DIR = PROJECTS / "characters" / "_sfx_library"
+
+
+def _sfx_library_load() -> list[dict[str, str]]:
+    """Load reusable cross-story SFX presets saved by the user."""
+    lib_file = SFX_LIBRARY_DIR / "presets.json"
+    if lib_file.is_file():
+        try:
+            data = json.loads(lib_file.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return [x for x in data if isinstance(x, dict) and x.get("id") and x.get("prompt")]
+        except Exception as e:
+            log.debug("sfx library load failed: %s", e)
+    return []
+
+
+def _sfx_library_save(label: str, prompt: str, source_project: str = "") -> dict[str, str]:
+    """Save or update a reusable cross-story SFX preset in the shared library."""
+    clean_lbl = str(label or "").strip()[:60]
+    clean_prompt = str(prompt or "").strip()[:400]
+    if not clean_prompt:
+        raise PlanError("Enter an SFX description first.")
+    if not clean_lbl:
+        clean_lbl = clean_prompt[:36].rstrip(" ,.;:")
+    safe_id = "lib_" + ("".join(c if c.isalnum() else "_" for c in clean_lbl.lower()).strip("_")[:28] or "custom")
+    entry = {
+        "id": safe_id,
+        "label": clean_lbl,
+        "prompt": clean_prompt,
+        "group": "Reusable Library",
+        "source_project": source_project,
+    }
+    SFX_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+    items = [x for x in _sfx_library_load() if x.get("id") != safe_id]
+    items.insert(0, entry)
+    (SFX_LIBRARY_DIR / "presets.json").write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
+    return entry
+
+
+def _auto_scene_sfx_profile(heading: str, hint: str) -> tuple[str, str, str]:
+    """Derive (preset_id, sfx_cue, score_mood) dynamically from a scene's actual heading & action."""
+    low = (heading + " " + hint).lower()
+    if any(w in low for w in ("launch", "blast", "liftoff", "ignition", "thruster", "rocket")):
+        return "action_launch", "Rockets burning, spaceship hull shaking, heavy ignition rumble", "epic"
+    if any(w in low for w in ("tavern", "inn", "hearth", "fireplace", "campfire", "pub", "feast")):
+        return "story_hearth", "Crackling warm fireplace, soft distant voices murmuring, cozy wooden room", "cozy"
+    if any(w in low for w in ("ocean", "sea", "ship deck", "harbor", "beach", "waves", "surf", "pirate", "sail")):
+        return "story_ocean", "Rolling ocean waves, gentle sea breeze, distant gulls", "wonder"
+    if any(w in low for w in ("spaceship", "starship", "cockpit", "bridge", "airlock", "space station", "orbit")):
+        return "spaceship_voices", "A low spaceship hum and distant voices in background", "wonder"
+    if any(w in low for w in ("ring", "ice", "geyser", "crater", "titan", "enceladus", "saturn", "blizzard", "glacier")):
+        return "cosmic_storm", "Atmospheric wind gusts, shimmering ice particles, planetary rumble", "mysterious"
+    if any(w in low for w in ("rain", "storm", "thunder")):
+        return "soft_rain_room", "Subtle muffled distant rain outside a quiet cozy room, gentle soft indoor room tone", "cozy"
+    if any(w in low for w in ("forest", "woods", "meadow", "park", "garden", "trail", "jungle", "tree", "river", "stream")):
+        return "forest_nature", "Gentle breeze through trees, soft distant birds and quiet woodland air", "playful"
+    if any(w in low for w in ("market", "street", "alley", "crowd", "village", "town", "station", "hall", "plaza")):
+        return "story_crowd", "Soft distant crowd voices murmuring, occasional footsteps, natural open ambiance", "wonder"
+    if any(w in low for w in ("living room", "kitchen", "bedroom", "home", "house", "library", "study", "office", "attic")):
+        return "story_quiet_room", "Quiet cozy indoor room tone, soft distant ambient air, subtle wood creaks", "cozy"
+    if heading.strip().upper().startswith("EXT."):
+        return "forest_nature", "Gentle outdoor breeze and soft natural open air", "wonder"
+    return "story_quiet_room", "Quiet indoor room ambiance, subtle warm air", "cozy"
+
+
+def _auto_scene_sfx_cue(heading: str, hint: str) -> str:
+    """Derive the default Step 16 scene SFX cue description from the scene's actual setting."""
+    return _auto_scene_sfx_profile(heading, hint)[1]
+
+
+def build_story_sfx_presets(pd: Path, slug: str) -> list[dict[str, str]]:
+    """Build dynamic Step 16 SFX presets determined from the current story + reusable cross-story library."""
+    presets: list[dict[str, str]] = [
+        {"id": "custom", "label": "✏️ Custom (Override with Text)", "prompt": "", "group": "Core"},
+        {"id": "silent", "label": "🔇 Silent (No SFX)", "prompt": "Silent (no ambient SFX or foley).", "group": "Core"},
+    ]
+    seen_ids: set[str] = {"custom", "silent"}
+    seen_prompts: set[str] = set()
+
+    def _add(pid: str, label: str, prompt: str, group: str) -> None:
+        norm_p = " ".join(prompt.strip().lower().split())
+        if pid in seen_ids or (norm_p and norm_p in seen_prompts):
+            return
+        seen_ids.add(pid)
+        if norm_p:
+            seen_prompts.add(norm_p)
+        presets.append({"id": pid, "label": label, "prompt": prompt, "group": group})
+
+    # 1. Story-specific presets derived from THIS book's actual screenplay scenes & locations
+    sp_dir = pd / "screenplay"
+    story_buckets: dict[str, tuple[str, str]] = {}  # preset_id -> (label, prompt)
+    loc_names: list[str] = []
+    if sp_dir.is_dir():
+        for sp_file in sorted(sp_dir.glob("scene-*.json")):
+            try:
+                sc = json.loads(sp_file.read_text(encoding="utf-8")) or {}
+            except Exception as e:
+                log.debug("skipping unreadable scene %s in build_story_sfx_presets: %s", sp_file.name, e)
+                continue
+            heading = str(sc.get("heading") or "").strip()
+            actions = [str(el.get("text") or "").strip() for el in (sc.get("elements") or []) if isinstance(el, dict) and el.get("type") == "action"]
+            hint = (" ".join(actions))[:200]
+            pid, cue, _mood = _auto_scene_sfx_profile(heading, hint)
+            # Clean readable location name from heading (e.g. "INT. COZY TAVERN - NIGHT" -> "Cozy Tavern")
+            loc_lbl = heading
+            for pfx in ("INT./EXT.", "EXT./INT.", "INT.", "EXT."):
+                if loc_lbl.upper().startswith(pfx):
+                    loc_lbl = loc_lbl[len(pfx):].strip()
+                    break
+            if " - " in loc_lbl:
+                loc_lbl = loc_lbl.split(" - ", 1)[0].strip()
+            loc_title = loc_lbl.title()[:32] if loc_lbl else pid.replace("_", " ").title()
+            if loc_title and loc_title.lower() not in [x.lower() for x in loc_names]:
+                loc_names.append(loc_title)
+            if pid not in story_buckets:
+                story_buckets[pid] = (f"📖 {loc_title}", cue)
+
+    # Also inspect saved per-scene custom cues in sound_design_v2.json so user's story cues are reusable across scenes
+    sd_path = pd / "sound_design_v2.json"
+    if sd_path.is_file():
+        try:
+            sd = json.loads(sd_path.read_text(encoding="utf-8")) or {}
+            for _sid, sinfo in (sd.get("scenes") or {}).items():
+                if isinstance(sinfo, dict):
+                    c_txt = str(sinfo.get("sfx_cue") or "").strip()
+                    c_pre = str(sinfo.get("sfx_preset") or "").strip()
+                    if c_txt and c_pre and c_pre not in ("custom", "silent") and c_pre not in story_buckets:
+                        story_buckets[c_pre] = (f"📖 {c_txt[:34]}", c_txt)
+        except Exception as e:
+            log.debug("sound_design_v2.json read for presets failed: %s", e)
+
+    for pid, (lbl, cue) in story_buckets.items():
+        _add(pid, lbl, cue, "This Story")
+
+    # 2. User-saved Reusable SFX Library (shared across all stories!)
+    for item in _sfx_library_load():
+        _add(
+            str(item["id"]),
+            f"📚 {item.get('label') or item['id']}",
+            str(item["prompt"]),
+            "Reusable Library",
+        )
+
+    # 3. Genre-neutral universal fallbacks (always useful for any story; no forced space-only presets)
+    _add("soft_rain_room", "Soft Distant Rain & Quiet Room", "Subtle muffled distant rain outside a quiet cozy room (not hitting the window), gentle soft indoor room tone.", "Universal")
+    _add("rainy_home", "Rain on Window & Cozy Room", "Steady rain pattering on a living room window, individual droplets on glass, and soft distant thunder.", "Universal")
+    _add("forest_nature", "Quiet Night & Nature Breeze", "Gentle evening breeze with rhythmic distant night crickets and quiet outdoor air.", "Universal")
+    _add("story_hearth", "Cozy Fireplace & Distant Voices", "Crackling warm fireplace, soft distant voices murmuring, cozy wooden room.", "Universal")
+    return presets
+
+
+@route("POST", "/api/v2_sound_preset_save")
+def _v2_sound_preset_save(r: Request):
+    """Save a custom SFX preset to the reusable cross-story SFX library."""
+    slug = str(r.body.get("project") or "").strip()
+    label = str(r.body.get("label") or "").strip()
+    prompt = str(r.body.get("prompt") or "").strip()
+    saved = _sfx_library_save(label, prompt, source_project=slug)
+    presets = build_story_sfx_presets(pdir(slug, "book"), slug) if slug else []
+    return {"status": "ok", "saved": saved, "presets": presets}
+
+
+@route("POST", "/api/v2_sound_sfx_propagate")
+def _v2_sound_sfx_propagate(r: Request):
+    """Save a scene's SFX (cue, preset, score mood, and WAV audio) and propagate it to every scene
+    that shares the same SFX description."""
+    slug = str(r.body.get("project") or "").strip()
+    source_scene = "".join(c for c in str(r.body.get("source_scene") or "").strip() if c.isalnum() or c in "-_")
+    if not slug or not source_scene:
+        raise PlanError("project and source_scene are required")
+
+    sfx_cue = str(r.body.get("sfx_cue") if r.body.get("sfx_cue") is not None else "").strip()
+    has_match_cue = "match_cue" in r.body and r.body.get("match_cue") is not None
+    match_cue = str(r.body.get("match_cue") if has_match_cue else sfx_cue).strip()
+    sfx_preset = str(r.body.get("sfx_preset") or "space_adventure").strip()
+    score_mood = str(r.body.get("score_mood") or "").strip()
+    duration = int(r.body.get("duration") or 8)
+    render_source = bool(r.body.get("render_source", False))
+
+    def _norm(s: str) -> str:
+        return " ".join(str(s or "").strip().lower().split())
+
+    norm_match = _norm(match_cue)
+    norm_sfx = _norm(sfx_cue)
+    match_keys = {k for k in (norm_match, norm_sfx) if k}
+    match_empty = (norm_match == "" and norm_sfx == "")
+
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    sd_path = pd / "sound_design_v2.json"
+    cur: dict[str, Any] = {}
+    if sd_path.is_file():
+        try:
+            cur = json.loads(sd_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            cur = {}
+    raw_sc = cur.get("scenes")
+    sc_map: dict[str, Any] = dict(raw_sc) if isinstance(raw_sc, dict) else {}
+
+    # Discover all scenes in screenplay and find every scene sharing the same SFX description
+    matched_scenes: list[str] = [source_scene]
+    sp_dir = pd / "screenplay"
+    if sp_dir.is_dir():
+        for sp_file in sorted(sp_dir.glob("scene-*.json")):
+            try:
+                sc = json.loads(sp_file.read_text(encoding="utf-8")) or {}
+            except Exception as e:
+                log.debug("skipping unreadable scene %s: %s", sp_file.name, e)
+                continue
+            sc_id = str(sc.get("scene") or sp_file.stem.replace("scene-", ""))
+            if sc_id in matched_scenes:
+                continue
+            heading = str(sc.get("heading") or "")
+            actions = [str(el.get("text") or "").strip() for el in (sc.get("elements") or []) if isinstance(el, dict) and el.get("type") == "action"]
+            hint = (" ".join(actions))[:180]
+            raw_ov = sc_map.get(sc_id)
+            ov: dict[str, Any] = raw_ov if isinstance(raw_ov, dict) else {}
+            eff_cue = str(ov["sfx_cue"]) if "sfx_cue" in ov else _auto_scene_sfx_cue(heading, hint)
+            eff_norm = _norm(eff_cue)
+            if (match_empty and eff_norm == "") or (match_keys and eff_norm in match_keys):
+                matched_scenes.append(sc_id)
+
+    # Ensure source WAV exists (render once if missing or if preset/text was changed before propagating)
+    foley_dir = pd / "audio" / "foley"
+    foley_dir.mkdir(parents=True, exist_ok=True)
+    src_wav = foley_dir / f"scene_{source_scene}.wav"
+    if render_source or not (src_wav.is_file() and src_wav.stat().st_size > 100):
+        _synth_foley_wav(src_wav, sfx_cue, sfx_preset, duration)
+
+    audio_urls: dict[str, str] = {}
+    for sid in matched_scenes:
+        raw_prev = sc_map.get(sid)
+        prev: dict[str, Any] = dict(raw_prev) if isinstance(raw_prev, dict) else {}
+        prev["sfx_cue"] = sfx_cue
+        prev["sfx_preset"] = sfx_preset
+        if score_mood:
+            prev["score_mood"] = score_mood
+        sc_map[sid] = prev
+
+        dest_wav = foley_dir / f"scene_{sid}.wav"
+        if sid != source_scene and src_wav.is_file() and src_wav.stat().st_size > 100:
+            shutil.copyfile(src_wav, dest_wav)
+        if dest_wav.is_file() and dest_wav.stat().st_size > 100:
+            audio_urls[sid] = f"/file/{slug}/audio/foley/scene_{sid}.wav"
+
+    cur["scenes"] = sc_map
+    sd_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
+    return {
+        "status": "ok",
+        "source_scene": source_scene,
+        "updated_scenes": matched_scenes,
+        "count": len(matched_scenes),
+        "sfx_cue": sfx_cue,
+        "sfx_preset": sfx_preset,
+        "score_mood": score_mood,
+        "audio_urls": audio_urls,
+    }
 
 
 def _inspect_keyframe_physics(png_path: Path, shot_prompt: str, api_key: str) -> dict:
@@ -2117,22 +2832,69 @@ def _synthesize_local_preview_png(prompt: str, out_png: Path, aspect_ratio: str 
     return "local_storyboard_synth"
 
 
+def _inspect_keyframe_free_first(
+    png_path: Path,
+    prompt: str,
+    req_engine: str,
+    api_key: str,
+    ref_image: Path | None = None,
+) -> dict[str, Any]:
+    """Run 100% free-first visual QA: local sanity -> free Ollama Vision QA -> Gemini ONLY if engine=='gemini'."""
+    from studio_app import local_vision_qa
+
+    sanity = _inspect_keyframe_local_qa(png_path)
+    if not sanity.get("passed"):
+        return {**sanity, "engine": "local_sanity"}
+
+    # Always prefer free local Ollama Vision QA when running locally or in auto mode
+    if req_engine != "gemini":
+        ollama_qa = local_vision_qa.inspect_keyframe_with_ollama(png_path, prompt, ref_image=ref_image)
+        if ollama_qa is not None:
+            return ollama_qa
+        return {**sanity, "engine": "local_sanity"}
+
+    # Paid Gemini Vision QA ONLY when user explicitly chose engine="gemini"
+    if api_key:
+        gqa = _inspect_keyframe_physics(png_path, prompt, api_key)
+        return {**gqa, "engine": "gemini_vision"}
+    return {**sanity, "engine": "local_sanity"}
+
+
 def _try_comfyui_image(
     prompt: str,
     out_png: Path,
     aspect_ratio: str = "16:9",
     ref_images: list[Path] | None = None,
     view: str = "",
+    angle_move: str = "",
+    *,
+    seed: int = -1,
+    init_strength: float | None = None,
+    init_image: Path | None = None,
+    require_ref: bool = False,
+    extra_negative: str = "",
+    single_subject: bool | None = None,
 ) -> str:
-    """Run ComfyUI apps locally: `apps/angles` (Qwen-Image-Edit) when rotating a character ref, else `apps/z-image` (Z-Image Turbo)."""
+    """Run ComfyUI locally: `apps/angles` for angle shifts, GGUF FLUX.2 Klein (multi-ref) / Z-Image Turbo, or `apps/z-image`."""
     import shutil
     import tempfile
+    from local_runners.comfyui_gguf_workflows import (
+        GGUF_MODEL_SPECS,
+        build_flux2_klein_gguf_workflow,
+        build_z_image_gguf_workflow,
+        compute_flux2_dimensions,
+        ready_gguf_models,
+        resolve_gguf_model_files,
+    )
+    from local_runners.comfyui_lifecycle import ensure_comfyui_started
     from local_runners.comfyui_runner import ComfyUIRunner
     from local_runners.sd_cli_runner import compute_dimensions
 
     runner = ComfyUIRunner()
     if not runner.is_installed():
-        return ""
+        boot = ensure_comfyui_started(root=ROOT, base_url=getattr(runner, "base_url", None), wait_ready_s=45.0)
+        if not boot.get("ready") and not runner.is_installed():
+            return ""
     models_root = ROOT / "models"
 
     def _app_ready(app_name: str) -> tuple[Path, dict[str, Any]] | None:
@@ -2147,13 +2909,13 @@ def _try_comfyui_image(
                 return None
         return ad, mf
 
-    # Identity-locked multi-angle rotation via Qwen-Image-Edit when a reference image is provided
+    # 1. Identity-locked multi-angle rotation via Qwen-Image-Edit for Step 10 views OR Step 17 camera-angle changes
     valid_refs = [p for p in (ref_images or []) if p and p.is_file() and p.stat().st_size > 100]
-    if valid_refs and view in ("three_quarter", "profile"):
+    if valid_refs and (angle_move or view in ("three_quarter", "profile")):
         ready = _app_ready("angles")
         if ready is not None:
             ad, _ = ready
-            move_val = (
+            move_val = angle_move or (
                 "\u5c06\u955c\u5934\u5411\u5de6\u65cb\u8f6c45\u5ea6 Rotate the camera 45 degrees to the left."
                 if view == "three_quarter"
                 else "\u5c06\u955c\u5934\u5411\u5de6\u65cb\u8f6c45\u5ea6 Rotate the camera 90 degrees to a strict side profile."
@@ -2161,7 +2923,7 @@ def _try_comfyui_image(
             with tempfile.TemporaryDirectory(prefix="studio-comfy-angle-") as tmp_:
                 res = runner.run({
                     "app_dir": str(ad),
-                    "values": {"image": str(valid_refs[0]), "move": move_val, "details": prompt[:300], "seed": -1},
+                    "values": {"image": str(valid_refs[0]), "move": move_val, "details": prompt[:320], "seed": seed},
                     "output_dir": tmp_,
                 })
                 produced = Path(str(res.get("output_path") or ""))
@@ -2169,7 +2931,94 @@ def _try_comfyui_image(
                     out_png.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(produced, out_png)
                     return "comfyui:angles"
+        if angle_move:
+            # Do not fall through to non-angle generation when an explicit angle shift was requested
+            return ""
 
+    # 2. Local GGUF workflows (FLUX.2 Klein multi-ref OR Z-Image Turbo text-to-image) via ComfyUI-GGUF
+    gguf_ready = ready_gguf_models(models_root=models_root, require_ref_support=bool(valid_refs))
+    if gguf_ready and runner.has_node("UnetLoaderGGUF") and runner.has_node("CLIPLoaderGGUF"):
+        chosen = gguf_ready[0]
+        files = resolve_gguf_model_files(chosen, models_root=models_root)
+        spec = GGUF_MODEL_SPECS[chosen]
+        if files is not None:
+            w, h = compute_flux2_dimensions(aspect_ratio)
+            is_single = (aspect_ratio == "1:1") if single_subject is None else bool(single_subject)
+            neg_prompt = (
+                "multiple views, turnaround sheet, character sheet, grid, collage, split screen, multiple people, duplicate figure, text, watermark"
+                if is_single
+                else "multiple views, turnaround sheet, character sheet, grid, collage, split screen, text, watermark"
+            )
+            if extra_negative.strip():
+                neg_prompt = f"{neg_prompt}, {extra_negative.strip()}"
+
+            uploaded_refs: list[str] = []
+            if valid_refs and spec.get("supports_ref_images"):
+                for rp in valid_refs[:4]:
+                    uploaded_refs.append(runner.upload_image(rp))
+
+            effective_init = (
+                init_image
+                if (init_image and init_image.is_file() and init_image.stat().st_size > 100)
+                else (valid_refs[0] if (valid_refs and init_strength is not None) else None)
+            )
+            uploaded_init: str | None = None
+            eff_denoise = 1.0
+            if init_strength is not None and effective_init is not None:
+                uploaded_init = runner.upload_image(effective_init)
+                eff_denoise = max(0.05, min(1.0, float(init_strength)))
+
+            if spec["kind"] == "flux2":
+                wf = build_flux2_klein_gguf_workflow(
+                    prompt=prompt,
+                    unet_name=files["unet"],
+                    clip_name=files["clip"],
+                    vae_name=files["vae"],
+                    width=w,
+                    height=h,
+                    steps=int(spec["steps"]),
+                    cfg=float(spec["cfg"]),
+                    seed=seed,
+                    ref_image_names=uploaded_refs,
+                    init_image_name=uploaded_init,
+                    denoise=eff_denoise,
+                    negative_prompt=neg_prompt,
+                )
+            else:
+                wf = build_z_image_gguf_workflow(
+                    prompt=prompt,
+                    unet_name=files["unet"],
+                    clip_name=files["clip"],
+                    vae_name=files["vae"],
+                    width=w,
+                    height=h,
+                    steps=int(spec["steps"]),
+                    cfg=float(spec["cfg"]),
+                    seed=seed,
+                    init_image_name=uploaded_init,
+                    denoise=eff_denoise,
+                )
+
+            with tempfile.TemporaryDirectory(prefix="studio-comfy-gguf-") as tmp_:
+                res = runner.run_workflow(
+                    wf,
+                    output_dir=Path(tmp_),
+                    app_id=f"gguf-{chosen}",
+                    model_cache_key=f"{chosen}:{files['unet']}:{files['clip']}:{files['vae']}",
+                    min_vram_gb=float(spec.get("vram_gb") or 6.0),
+                    declared_nodes=["9"],
+                )
+                produced = Path(str(res.get("output_path") or ""))
+                if produced.is_file() and produced.stat().st_size > 100:
+                    out_png.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(produced, out_png)
+                    return f"comfyui:{chosen}"
+
+    if require_ref and valid_refs:
+        # Never fall through to text-only z-image when reference images are required
+        return ""
+
+    # 3. Legacy safetensors `apps/z-image` text-to-image fallback
     ready_z = _app_ready("z-image")
     if ready_z is None:
         return ""
@@ -2178,7 +3027,7 @@ def _try_comfyui_image(
     with tempfile.TemporaryDirectory(prefix="studio-comfy-") as tmp_:
         res = runner.run({
             "app_dir": str(app_dir),
-            "values": {"prompt": prompt, "width": w, "height": h, "steps": 8, "seed": -1},
+            "values": {"prompt": prompt, "width": w, "height": h, "steps": 8, "seed": seed},
             "output_dir": tmp_,
         })
         produced = Path(str(res.get("output_path") or ""))
@@ -2197,10 +3046,14 @@ def _try_sd_cli_image(
     ref_images: list[Path] | None = None,
     seed: int = -1,
     init_strength: float | None = None,
+    init_image: Path | None = None,
+    mask_image: Path | None = None,
+    prefer_edit: bool = False,
     require_ref: bool = False,
     extra_negative: str = "",
+    single_subject: bool | None = None,
 ) -> str:
-    """Run local `sd-cli` with the best installed model on disk."""
+    """Run local `sd-cli` with the best installed free model on disk (FLUX.1 Kontext Dev / FLUX.2 Klein 9B / 4B)."""
     from local_runners.sd_cli_runner import SdCliRunner
 
     runner = SdCliRunner()
@@ -2209,15 +3062,25 @@ def _try_sd_cli_image(
     valid_refs = [p for p in (ref_images or []) if p and p.is_file() and p.stat().st_size > 100]
     chosen = (model_id or "").removeprefix("sd_cli:").strip()
     if not chosen:
-        # When visual reference images are provided (e.g. Front View -> 3/4 / Profile or same-character costume change), prefer a reference-capable model like FLUX.2-klein-4B
-        ref_ready = runner.ready_models(require_ref_support=True) if valid_refs else []
+        if valid_refs:
+            try:
+                ref_ready = runner.ready_models(require_ref_support=True, prefer_edit=prefer_edit)
+            except TypeError:
+                ref_ready = runner.ready_models(require_ref_support=True)
+        else:
+            ref_ready = []
         if require_ref and valid_refs and not ref_ready:
             return ""
         ready = ref_ready or runner.ready_models()
         if not ready:
             return ""
         chosen = ready[0]
-    neg_prompt = "multiple views, turnaround sheet, character sheet, grid, collage, split screen, multiple people, duplicate figure, text, watermark"
+    is_single = (aspect_ratio == "1:1") if single_subject is None else bool(single_subject)
+    neg_prompt = (
+        "multiple views, turnaround sheet, character sheet, grid, collage, split screen, multiple people, duplicate figure, text, watermark"
+        if is_single
+        else "multiple views, turnaround sheet, character sheet, grid, collage, split screen, text, watermark"
+    )
     if extra_negative.strip():
         neg_prompt = f"{neg_prompt}, {extra_negative.strip()}"
     spec: dict[str, Any] = {
@@ -2229,10 +3092,13 @@ def _try_sd_cli_image(
         "output_path": str(out_png),
     }
     if valid_refs:
-        spec["ref_images"] = [str(p) for p in valid_refs[:2]]
-        if init_strength is not None:
-            spec["init_image"] = str(valid_refs[0])
-            spec["strength"] = init_strength
+        spec["ref_images"] = [str(p) for p in valid_refs[:4]]
+    effective_init = init_image if (init_image and init_image.is_file() and init_image.stat().st_size > 100) else (valid_refs[0] if valid_refs else None)
+    if init_strength is not None and effective_init is not None:
+        spec["init_image"] = str(effective_init)
+        spec["strength"] = float(init_strength)
+    if mask_image is not None and mask_image.is_file() and mask_image.stat().st_size > 100:
+        spec["mask_image"] = str(mask_image)
     res = runner.run(spec)
     if out_png.is_file() and out_png.stat().st_size > 100:
         return f"sd_cli:{res.get('model') or chosen}"
@@ -2247,8 +3113,12 @@ def _render_keyframe_local_or_gemini(
     engine: str = "auto",
     *,
     view: str = "",
+    angle_move: str = "",
     seed: int = -1,
     init_strength: float | None = None,
+    init_image: Path | None = None,
+    mask_image: Path | None = None,
+    prefer_edit: bool = False,
     require_ref: bool = False,
     bypass_cache: bool = False,
     extra_negative: str = "",
@@ -2271,6 +3141,12 @@ def _render_keyframe_local_or_gemini(
         "prompt": prompt,
         "aspect_ratio": aspect_ratio,
         "engine": eng,
+        "seed": seed,
+        "init_strength": init_strength,
+        "init_image": str(init_image) if init_image else "",
+        "mask_image": str(mask_image) if mask_image else "",
+        "angle_move": angle_move,
+        "prefer_edit": prefer_edit,
         "refs": ref_fingerprints,
     }
     if asset_cache_enabled() and not bypass_cache:
@@ -2286,7 +3162,30 @@ def _render_keyframe_local_or_gemini(
     model_used = ""
     if prefer_local:
         def _run_comfy() -> str:
-            return _try_comfyui_image(prompt, out_png, aspect_ratio, ref_images=ref_images, view=view)
+            try:
+                return _try_comfyui_image(
+                    prompt,
+                    out_png,
+                    aspect_ratio,
+                    ref_images=ref_images,
+                    view=view,
+                    angle_move=angle_move,
+                    seed=seed,
+                    init_strength=init_strength,
+                    init_image=init_image,
+                    require_ref=require_ref,
+                    extra_negative=extra_negative,
+                    single_subject=(aspect_ratio == "1:1"),
+                )
+            except TypeError:
+                return _try_comfyui_image(
+                    prompt,
+                    out_png,
+                    aspect_ratio,
+                    ref_images=ref_images,
+                    view=view,
+                    angle_move=angle_move,
+                )
 
         def _run_sd() -> str:
             return _try_sd_cli_image(
@@ -2296,22 +3195,41 @@ def _render_keyframe_local_or_gemini(
                 ref_images=ref_images,
                 seed=seed,
                 init_strength=init_strength,
+                init_image=init_image,
+                mask_image=mask_image,
+                prefer_edit=prefer_edit,
                 require_ref=require_ref,
                 extra_negative=extra_negative,
+                single_subject=(aspect_ratio == "1:1"),
             )
 
-        attempts = (_run_sd, _run_comfy) if eng == "sd_cli" else (_run_comfy, _run_sd)
+        # Route priority:
+        # - Explicit angle_move or character rotation -> try ComfyUI `apps/angles` (Qwen-Image-Edit) first, then sd-cli Kontext/FLUX.2
+        # - Reference images or native --mask -> try sd-cli first (if available), automatically falling back to ComfyUI GGUF FLUX.2 Klein multi-ref
+        has_valid_refs = any(p and p.is_file() and p.stat().st_size > 100 for p in (ref_images or []))
+        has_mask = bool(mask_image and mask_image.is_file() and mask_image.stat().st_size > 100)
+        wants_comfy_angles = bool(angle_move or view in ("three_quarter", "profile")) and has_valid_refs and eng != "sd_cli"
+        prefer_sd_for_refs = (has_valid_refs or has_mask) and not wants_comfy_angles and eng != "comfyui"
+        attempts = (_run_sd, _run_comfy) if (eng == "sd_cli" or prefer_sd_for_refs) else (_run_comfy, _run_sd)
+        sd_blocked_policy = False
         for fn in attempts:
             try:
                 model_used = fn()
                 if model_used:
                     break
             except Exception as e:
+                if getattr(e, "winerror", None) == 4551 or "Application Control policy" in str(e):
+                    sd_blocked_policy = True
                 log.warning("local image runner %s failed: %s", fn.__name__, e)
 
         if not model_used:
             if api_key and eng == "auto":
                 model_used = _render_keyframe_gemini(prompt, out_png, aspect_ratio=aspect_ratio, ref_images=ref_images)
+            elif sd_blocked_policy:
+                raise PlanError(
+                    "Local sd-cli was blocked by Windows Application Control and the local ComfyUI engine could not be reached "
+                    "at http://127.0.0.1:8188 (check .local_ai/ComfyUI/comfyui_autostart.log or restart Studio)."
+                )
             else:
                 model_used = _synthesize_local_preview_png(prompt, out_png, aspect_ratio=aspect_ratio, ref_images=ref_images)
     else:
@@ -2578,24 +3496,30 @@ def _v2_keyframe_render(r: Request):
     if not prompt:
         raise PlanError("prompt is required to generate a keyframe")
 
-    # 1. Check for the immediately preceding rendered keyframe & its text in the SAME scene
-    import difflib
+    # Collect Step 10 character turnarounds, Step 08 cast photos, Step 11 set plate,
+    # pinned Scene Anchor, and same-scene previous keyframe continuity using the shared Step 17 context builder.
+    from studio_app import keyframe_context
 
-    ref_imgs: list[Path] = []
-    prev_shot_ref = ""
-    continuity_mode = "none"
-    continuity_prefix = ""
-
+    saved_prompts_map: dict[str, Any] = dict(meta.get("prompts") or {})
+    raw_anchors = meta.get("anchors") or {}
+    anchors_map: dict[str, str] = (
+        {str(k): str(v) for k, v in raw_anchors.items() if str(k).strip() and str(v).strip()}
+        if isinstance(raw_anchors, dict)
+        else {}
+    )
     sc_id = shot_id.split("-")[0] if "-" in shot_id else ""
-    sh_num = int(shot_id.split("-")[1]) if ("-" in shot_id and shot_id.split("-")[1].isdigit()) else 0
+    use_anchor = bool(r.body.get("use_anchor", True))
+    anchor_shot_id = anchors_map.get(sc_id, "") if use_anchor else ""
 
-    saved_prompts_map: dict[str, Any] = {}
-    meta_path = pd / "keyframes_v2.json"
-    if meta_path.is_file():
+    raw_strength = r.body.get("init_strength")
+    user_strength: float | None = None
+    if raw_strength is not None and str(raw_strength).strip().lower() not in ("", "auto", "none"):
         try:
-            saved_prompts_map = (json.loads(meta_path.read_text(encoding="utf-8")) or {}).get("prompts") or {}
-        except Exception as e:
-            log.debug("keyframes_v2.json read failed: %s", e)
+            user_strength = float(raw_strength)
+        except (TypeError, ValueError):
+            user_strength = None
+
+    fresh_seed = bool(r.body.get("fresh_seed", False))
 
     sl_data: dict[str, Any] = {}
     sl_path = pd / "shots" / "shotlist.json"
@@ -2605,75 +3529,53 @@ def _v2_keyframe_render(r: Request):
         except Exception as e:
             log.debug("shotlist.json read failed: %s", e)
 
-    if sc_id and sh_num > 1:
-        # Walk backwards within the same scene to find the closest rendered previous keyframe
-        for prev_n in range(sh_num - 1, 0, -1):
-            cand_id = f"{sc_id}-{prev_n:02d}"
-            cand_png = kf_dir / f"{cand_id}.png"
-            if cand_png.is_file() and cand_png.stat().st_size > 200:
-                prev_shot_ref = cand_id
-                ref_imgs.append(cand_png)
-                prev_text = str(saved_prompts_map.get(cand_id) or "").strip()
-                if not prev_text and sl_data:
-                    for sc in sl_data.get("scenes") or []:
-                        if str(sc.get("id") or "") == sc_id:
-                            for sh in sc.get("shots") or []:
-                                if int(sh.get("n") or 0) == prev_n:
-                                    prev_text = f"{sh.get('type', '')} {sh.get('composition', '')} {sh.get('action', '')}".strip()
-                                    break
-                            break
-                sim = difflib.SequenceMatcher(None, prev_text.lower(), prompt.lower()).ratio() if prev_text else 0.5
-                if sim >= 0.55:
-                    continuity_mode = "incremental"
-                    continuity_prefix = (
-                        f"SHOT-TO-SHOT CONTINUITY (SMALL INCREMENTAL CHANGE from previous keyframe {cand_id}): "
-                        f"The first attached image is the immediately preceding shot ({cand_id}). "
-                        f"Maintain the EXACT SAME room layout, lighting, furniture positions, camera world, character faces, and clothing from {cand_id}. "
-                        f"Make ONLY the small incremental pose, expression, or framing adjustment described in the new shot below.\n"
-                        f"Previous shot ({cand_id}) text: {prev_text[:280]}\n"
-                        f"Current shot ({shot_id}) text: "
-                    )
-                else:
-                    continuity_mode = "scene_cut"
-                    continuity_prefix = (
-                        f"SHOT-TO-SHOT CONTINUITY (CAMERA/ACTION CHANGE within the SAME scene as previous keyframe {cand_id}): "
-                        f"The first attached image is the previous shot ({cand_id}) in this same scene. "
-                        f"Keep the EXACT SAME character identities, clothing colors, room palette, props, and lighting from {cand_id}, "
-                        f"while executing the specific camera angle, framing, or blocking change described in the new shot below.\n"
-                        f"Previous shot ({cand_id}) text: {prev_text[:280]}\n"
-                        f"Current shot ({shot_id}) text: "
-                    )
-                break
+    kf_ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+    ref_pack = keyframe_context.collect_render_references(
+        kf_ctx,
+        shot_id,
+        prompt,
+        sl_data,
+        kf_dir,
+        saved_prompts_map,
+        anchor_shot_id=anchor_shot_id,
+        user_strength=user_strength,
+    )
+    ref_imgs: list[Path] = ref_pack["ref_imgs"]
+    init_image: Path | None = ref_pack["init_image"]
+    init_strength: float | None = ref_pack["init_strength"]
+    seed_to_use: int = -1 if fresh_seed else int(ref_pack["scene_seed"])
+    prev_shot_ref: str = ref_pack["prev_shot_ref"]
+    anchor_shot_ref: str = ref_pack["anchor_shot_ref"]
+    continuity_mode: str = ref_pack["continuity_mode"]
+    continuity_prefix: str = ref_pack["continuity_prefix"]
+    ref_legend: str = ref_pack["ref_legend"]
+    char_refs_used: list[dict[str, str]] = ref_pack["char_refs_used"]
+    style_negatives: str = ref_pack["style_negatives"]
 
-    # 2. Also attach existing Step 10 turnaround reference images for characters appearing in this shot
-    if sl_data and sc_id:
-        try:
-            for sc in sl_data.get("scenes") or []:
-                if str(sc.get("id") or "") == sc_id:
-                    for sh in sc.get("shots") or []:
-                        if int(sh.get("n") or 0) == sh_num:
-                            for ch in sh.get("characters") or []:
-                                if len(ref_imgs) < 4:
-                                    ref_imgs.extend(_find_character_turnaround_refs(pd, str(ch), limit=1))
-                            break
-                    break
-        except Exception as e:
-            log.debug("turnaround ref lookup failed: %s", e)
-
-    final_prompt = continuity_prefix + prompt if continuity_prefix else prompt
+    final_prompt = f"{ref_legend}{continuity_prefix}{prompt}"
     req_engine = str(r.body.get("engine") or "auto").strip().lower()
+    use_edit_model = continuity_mode in ("same_angle", "incremental") or init_strength is not None
+    suggested_angle_move = str(ref_pack.get("suggested_angle_move") or "") if continuity_mode == "scene_cut" else ""
     model_used = _render_keyframe_local_or_gemini(
         final_prompt,
         out_png,
         aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"),
         ref_images=ref_imgs,
         engine=req_engine,
+        angle_move=suggested_angle_move,
+        seed=seed_to_use,
+        init_strength=init_strength,
+        init_image=init_image,
+        prefer_edit=use_edit_model,
+        bypass_cache=fresh_seed,
+        extra_negative=style_negatives,
     )
 
-    # Active Physics & Solid-Object Clipping QA + automatic 1-pass repair if any violation is detected
+    # Free-First Visual QA (local sanity -> free local Ollama Vision QA -> Gemini ONLY if engine=="gemini")
     import run_gemini_omni
-    api_key = run_gemini_omni.get_gemini_api_key()
-    qa = _inspect_keyframe_physics(out_png, prompt, api_key) if (api_key and req_engine not in ("local", "computer", "sd_cli", "comfyui")) else _inspect_keyframe_local_qa(out_png)
+    api_key = run_gemini_omni.get_gemini_api_key() if req_engine == "gemini" else ""
+    qa_ref_img = init_image or (ref_imgs[0] if ref_imgs else None)
+    qa = _inspect_keyframe_free_first(out_png, prompt, req_engine, api_key, ref_image=qa_ref_img)
     physics_repaired = False
     if not qa.get("passed") and qa.get("issues"):
         issues_str = "; ".join(qa["issues"][:4])
@@ -2692,9 +3594,14 @@ def _v2_keyframe_render(r: Request):
                 aspect_ratio=str(r.body.get("aspect_ratio") or "16:9"),
                 ref_images=repair_refs,
                 engine=req_engine,
+                seed=seed_to_use,
+                init_strength=0.45,
+                init_image=out_png,
+                prefer_edit=True,
+                extra_negative=style_negatives,
             )
             physics_repaired = True
-            qa = _inspect_keyframe_physics(out_png, prompt, api_key) if (api_key and req_engine not in ("local", "computer", "sd_cli", "comfyui")) else _inspect_keyframe_local_qa(out_png)
+            qa = _inspect_keyframe_free_first(out_png, prompt, req_engine, api_key, ref_image=qa_ref_img)
         except Exception as e:
             log.debug("physics repair pass failed: %s", e)
 
@@ -2704,11 +3611,674 @@ def _v2_keyframe_render(r: Request):
         "image_url": rel_url,
         "model": model_used,
         "refs_used": len(ref_imgs),
+        "char_refs_used": char_refs_used,
+        "set_ref_used": ref_pack.get("set_ref_used"),
+        "resolved_characters": ref_pack["resolved_characters"],
         "prev_shot_ref": prev_shot_ref,
+        "anchor_shot_ref": anchor_shot_ref,
+        "primary_ref_id": ref_pack["primary_ref_id"],
+        "seed_used": seed_to_use,
+        "init_strength_used": init_strength,
         "continuity_mode": continuity_mode,
+        "qa_engine": qa.get("engine") or "local_sanity",
         "physics_passed": bool(qa.get("passed", True)),
         "physics_repaired": physics_repaired,
         "physics_issues": qa.get("issues") or [],
+        "continuity_issues": qa.get("continuity_issues") or [],
+    }
+
+
+@route("POST", "/api/v2_keyframe_anchor")
+def _v2_keyframe_anchor(r: Request):
+    """Pin or clear a Scene Anchor (Master Plate) keyframe in keyframes_v2.json to eliminate chain drift."""
+    slug = str(r.body.get("project") or "").strip()
+    sc_id = "".join(c for c in str(r.body.get("scene") or "").strip() if c.isalnum() or c in "-_")
+    shot_id = "".join(c for c in str(r.body.get("shot_id") or r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
+    if not slug or not sc_id:
+        raise PlanError("project and scene are required")
+
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    if shot_id:
+        cand = pd / "keyframes" / f"{shot_id}.png"
+        if not (cand.is_file() and cand.stat().st_size > 200):
+            raise PlanError(f"Render keyframe {shot_id} first before pinning it as the Scene Anchor.")
+
+    meta_path = pd / "keyframes_v2.json"
+    meta: dict[str, Any] = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            meta = {}
+    raw_anchors = meta.get("anchors")
+    anchors: dict[str, str] = dict(raw_anchors) if isinstance(raw_anchors, dict) else {}
+    if shot_id:
+        anchors[sc_id] = shot_id
+    else:
+        anchors.pop(sc_id, None)
+    meta["anchors"] = anchors
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return {"status": "ok", "scene": sc_id, "anchor_shot_id": anchors.get(sc_id, "")}
+
+
+@route("POST", "/api/v2_keyframe_clone_edit")
+def _v2_keyframe_clone_edit(r: Request):
+    """Clone a previous shot or Scene Anchor into <shot_id>.png, optionally applying a low-strength targeted action edit."""
+    import shutil
+    from studio_app import keyframe_context
+
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = "".join(c for c in str(r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
+    source_id = "".join(c for c in str(r.body.get("source_id") or "").strip() if c.isalnum() or c in "-_")
+    edit_inst = str(r.body.get("edit_instruction") or "").strip()
+    apply_edit = bool(r.body.get("apply_edit", True))
+    req_engine = str(r.body.get("engine") or "auto").strip().lower()
+    try:
+        strength = max(0.18, min(0.85, float(r.body.get("strength") or 0.38)))
+    except (TypeError, ValueError):
+        strength = 0.38
+
+    if not slug or not shot_id:
+        raise PlanError("project and id are required")
+
+    pd = pdir(slug, "book")
+    kf_dir = pd / "keyframes"
+    kf_dir.mkdir(parents=True, exist_ok=True)
+    out_png = kf_dir / f"{shot_id}.png"
+
+    meta_path = pd / "keyframes_v2.json"
+    meta: dict[str, Any] = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            meta = {}
+    if shot_id in (meta.get("locked") or []):
+        raise PlanError(f"Keyframe {shot_id} is locked. Unlock it first before cloning over it.")
+
+    sc_id = shot_id.split("-")[0] if "-" in shot_id else ""
+    sh_num = int(shot_id.split("-")[1]) if ("-" in shot_id and shot_id.split("-")[1].isdigit()) else 0
+
+    # Auto-pick source frame: explicit source_id -> previous rendered shot -> pinned scene anchor
+    src_png: Path | None = None
+    if source_id:
+        cand = kf_dir / f"{source_id}.png"
+        if cand.is_file() and cand.stat().st_size > 200:
+            src_png = cand
+    if src_png is None and sc_id and sh_num > 1:
+        for pn in range(sh_num - 1, 0, -1):
+            cid = f"{sc_id}-{pn:02d}"
+            cand = kf_dir / f"{cid}.png"
+            if cand.is_file() and cand.stat().st_size > 200:
+                source_id = cid
+                src_png = cand
+                break
+    if src_png is None and sc_id:
+        raw_anchors = meta.get("anchors")
+        if isinstance(raw_anchors, dict):
+            aid = str(raw_anchors.get(sc_id) or "").strip()
+            if aid and aid != shot_id:
+                cand = kf_dir / f"{aid}.png"
+                if cand.is_file() and cand.stat().st_size > 200:
+                    source_id = aid
+                    src_png = cand
+    if src_png is None:
+        raise PlanError("No rendered previous shot or Scene Anchor found in this scene to clone from.")
+
+    shutil.copy2(src_png, out_png)
+    rel_url = f"/file/{slug}/keyframes/{shot_id}.png"
+    if not apply_edit or not edit_inst:
+        return {
+            "status": "ok",
+            "id": shot_id,
+            "source_id": source_id,
+            "image_url": rel_url,
+            "model": f"cloned:{source_id}",
+            "strength_used": 0.0,
+        }
+
+    sl_data: dict[str, Any] = {}
+    sl_path = pd / "shots" / "shotlist.json"
+    if sl_path.is_file():
+        try:
+            sl_data = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+        except Exception as e:
+            log.debug("shotlist.json read failed in clone_edit: %s", e)
+
+    base_prompt = str(r.body.get("prompt") or (meta.get("prompts") or {}).get(shot_id) or edit_inst).strip()
+    kf_ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+    ref_pack = keyframe_context.collect_render_references(
+        kf_ctx,
+        shot_id,
+        f"{base_prompt}. {edit_inst}",
+        sl_data,
+        kf_dir,
+        dict(meta.get("prompts") or {}),
+    )
+    # Put cloned source frame as Image 1 (and init_image), followed by up to 3 character turnarounds
+    char_turnarounds = [p for p in ref_pack["ref_imgs"] if p != src_png and p != out_png][:3]
+    clone_refs = [out_png] + char_turnarounds
+    turn_note = (
+        " Additional attached images are the locked Step 10 character turnarounds — match their exact faces and outfits."
+        if char_turnarounds
+        else ""
+    )
+    clone_prompt = (
+        f"LOCKED-CAMERA CLONE & TARGETED ACTION EDIT (cloned from {source_id}):\n"
+        f"Image 1 is the EXACT locked camera frame from {source_id}.{turn_note}\n"
+        "Keep the ENTIRE background, walls, windows, furniture positions, props, camera angle, and lighting PIXEL-CONSISTENT with Image 1.\n"
+        f"Apply ONLY this character/action update for {shot_id}: {edit_inst}\n\n"
+        f"Shot context: {base_prompt}"
+    )
+    model_used = _render_keyframe_local_or_gemini(
+        clone_prompt,
+        out_png,
+        aspect_ratio="16:9",
+        ref_images=clone_refs,
+        engine=req_engine,
+        seed=int(ref_pack["scene_seed"]),
+        init_strength=strength,
+        init_image=out_png,
+        prefer_edit=True,
+        bypass_cache=True,
+        extra_negative=ref_pack["style_negatives"],
+    )
+    return {
+        "status": "ok",
+        "id": shot_id,
+        "source_id": source_id,
+        "image_url": rel_url,
+        "model": model_used,
+        "strength_used": strength,
+        "char_refs_used": ref_pack["char_refs_used"],
+    }
+
+
+@route("POST", "/api/v2_keyframe_mask_inpaint")
+def _v2_keyframe_mask_inpaint(r: Request):
+    """Pixel-locked masked inpainting for a Step 17 keyframe using Canvas Studio box/lasso regions.
+
+    Generates the requested edit with the keyframe + Step 10 turnarounds, then alpha-composites
+    ONLY inside the feathered mask onto the original PNG so outside background pixels stay 100% identical.
+    """
+    import tempfile
+    from PIL import Image, ImageDraw, ImageFilter
+    from studio_app import keyframe_context
+
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = "".join(c for c in str(r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
+    inpaint_prompt = str(r.body.get("prompt") or "").strip()
+    regions = r.body.get("regions") or []
+    req_engine = str(r.body.get("engine") or "auto").strip().lower()
+    try:
+        strength = max(0.25, min(0.95, float(r.body.get("strength") or 0.72)))
+    except (TypeError, ValueError):
+        strength = 0.72
+    try:
+        raw_feather = r.body.get("feather_px")
+        feather_px = max(0, min(64, int(18 if raw_feather is None else raw_feather)))
+    except (TypeError, ValueError):
+        feather_px = 18
+
+    if not slug or not shot_id or not inpaint_prompt:
+        raise PlanError("project, id, and prompt are required for masked inpainting")
+    if not isinstance(regions, list) or not regions:
+        raise PlanError("Draw at least one Box or Lasso region on Canvas Studio before running Masked Inpaint.")
+
+    pd = pdir(slug, "book")
+    kf_dir = pd / "keyframes"
+    out_png = kf_dir / f"{shot_id}.png"
+    if not (out_png.is_file() and out_png.stat().st_size > 200):
+        raise PlanError(f"Keyframe {shot_id} does not exist yet.")
+
+    meta_path = pd / "keyframes_v2.json"
+    meta: dict[str, Any] = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            meta = {}
+    if shot_id in (meta.get("locked") or []):
+        raise PlanError(f"Keyframe {shot_id} is locked. Unlock it first before inpainting.")
+
+    orig_im = Image.open(out_png).convert("RGBA")
+    w, h = orig_im.size
+
+    # Build normalized-coordinate mask from Canvas Studio box/lasso regions
+    mask = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(mask)
+    drawn_any = False
+    for reg in regions:
+        if not isinstance(reg, dict):
+            continue
+        rtype = str(reg.get("type") or "").lower()
+        if rtype == "box" and isinstance(reg.get("bbox"), dict):
+            bb = reg["bbox"]
+            x0 = int(max(0.0, min(1.0, float(bb.get("x", 0.0)))) * w)
+            y0 = int(max(0.0, min(1.0, float(bb.get("y", 0.0)))) * h)
+            bw = int(max(0.0, min(1.0, float(bb.get("width", 0.0)))) * w)
+            bh = int(max(0.0, min(1.0, float(bb.get("height", 0.0)))) * h)
+            if bw > 2 and bh > 2:
+                draw.rectangle([x0, y0, min(w, x0 + bw), min(h, y0 + bh)], fill=255)
+                drawn_any = True
+        elif rtype == "lasso" and isinstance(reg.get("points"), list) and len(reg["points"]) >= 3:
+            pts = [
+                (
+                    int(max(0.0, min(1.0, float(pt.get("x", 0.0)))) * w),
+                    int(max(0.0, min(1.0, float(pt.get("y", 0.0)))) * h),
+                )
+                for pt in reg["points"]
+                if isinstance(pt, dict)
+            ]
+            if len(pts) >= 3:
+                draw.polygon(pts, fill=255)
+                drawn_any = True
+
+    if not drawn_any:
+        raise PlanError("Marked mask region is too small. Draw a larger Box or Lasso area on the canvas.")
+
+    raw_mask = mask.copy()
+    if feather_px > 0:
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=feather_px))
+
+    # Render candidate edit into a temp file using original keyframe + native --mask + character turnarounds
+    sl_data: dict[str, Any] = {}
+    sl_path = pd / "shots" / "shotlist.json"
+    if sl_path.is_file():
+        try:
+            sl_data = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+        except Exception as e:
+            log.debug("shotlist.json read failed in mask_inpaint: %s", e)
+
+    kf_ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+    ref_pack = keyframe_context.collect_render_references(
+        kf_ctx, shot_id, inpaint_prompt, sl_data, kf_dir, dict(meta.get("prompts") or {})
+    )
+    extra_refs = [p for p in ref_pack["ref_imgs"] if p != out_png][:3]
+    inpaint_refs = [out_png] + extra_refs
+    full_prompt = (
+        f"MASKED REGION INPAINT ON KEYFRAME ({shot_id}):\n"
+        "Image 1 is the exact locked keyframe. Keep the exact lighting, camera perspective, color grading, and style of Image 1. "
+        f"Inside the edited region, seamlessly render: {inpaint_prompt}"
+    )
+
+    with tempfile.TemporaryDirectory(prefix="neon-inpaint-") as tmp_:
+        cand_png = Path(tmp_) / f"{shot_id}_cand.png"
+        cand_mask = Path(tmp_) / f"{shot_id}_mask.png"
+        # Save binary grayscale mask for native sd-cli `--mask` diffusion inpainting
+        raw_mask.save(cand_mask, format="PNG")
+        model_used = _render_keyframe_local_or_gemini(
+            full_prompt,
+            cand_png,
+            aspect_ratio="16:9",
+            ref_images=inpaint_refs,
+            engine=req_engine,
+            seed=int(ref_pack["scene_seed"]),
+            init_strength=strength,
+            init_image=out_png,
+            mask_image=cand_mask,
+            prefer_edit=True,
+            bypass_cache=True,
+            extra_negative=ref_pack["style_negatives"],
+        )
+        gen_im = Image.open(cand_png).convert("RGBA")
+        if gen_im.size != (w, h):
+            gen_im = gen_im.resize((w, h), Image.Resampling.LANCZOS)
+        # Composite ONLY inside feathered mask — every outside pixel stays 100% pixel-identical!
+        composited = Image.composite(gen_im, orig_im, mask).convert("RGB")
+        composited.save(out_png, format="PNG")
+
+    return {
+        "status": "ok",
+        "id": shot_id,
+        "image_url": f"/file/{slug}/keyframes/{shot_id}.png",
+        "model": f"mask_inpaint:{model_used}",
+        "native_mask_used": True,
+        "regions_applied": len(regions),
+        "char_refs_used": ref_pack["char_refs_used"],
+    }
+
+
+@route("POST", "/api/v2_keyframe_angle_shift")
+def _v2_keyframe_angle_shift(r: Request):
+    """Generate a new camera angle of the Scene Anchor / previous shot / Step 11 Set Plate via ComfyUI `apps/angles` (Qwen-Image-Edit) with free local Kontext/FLUX.2 fallback."""
+    from studio_app import keyframe_context
+
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = "".join(c for c in str(r.body.get("id") or "").strip() if c.isalnum() or c in "-_")
+    move_key = str(r.body.get("move") or "rotate_left_45").strip().lower()
+    details = str(r.body.get("details") or r.body.get("prompt") or "").strip()
+    source_id = "".join(c for c in str(r.body.get("source_id") or "").strip() if c.isalnum() or c in "-_")
+    req_engine = str(r.body.get("engine") or "auto").strip().lower()
+
+    if not slug or not shot_id:
+        raise PlanError("project and id are required")
+    move_entry = keyframe_context.ANGLES_CAMERA_MOVES.get(move_key)
+    if not move_entry:
+        raise PlanError(f"Unknown camera move '{move_key}'")
+    move_label, move_value = move_entry
+
+    pd = pdir(slug, "book")
+    kf_dir = pd / "keyframes"
+    kf_dir.mkdir(parents=True, exist_ok=True)
+    out_png = kf_dir / f"{shot_id}.png"
+
+    meta_path = pd / "keyframes_v2.json"
+    meta: dict[str, Any] = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            meta = {}
+    if shot_id in (meta.get("locked") or []):
+        raise PlanError(f"Keyframe {shot_id} is locked. Unlock it first.")
+
+    sc_id = shot_id.split("-")[0] if "-" in shot_id else ""
+    sh_num = int(shot_id.split("-")[1]) if ("-" in shot_id and shot_id.split("-")[1].isdigit()) else 0
+
+    sl_data: dict[str, Any] = {}
+    sl_path = pd / "shots" / "shotlist.json"
+    if sl_path.is_file():
+        try:
+            sl_data = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+        except Exception as e:
+            log.debug("shotlist.json read failed in angle_shift: %s", e)
+
+    kf_ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+    heading = ""
+    for sc in sl_data.get("scenes") or []:
+        if str(sc.get("id") or sc.get("scene") or "") == sc_id:
+            heading = str(sc.get("heading") or "")
+            break
+
+    # Pick source room/frame: explicit source_id -> pinned Scene Anchor -> previous rendered shot -> Step 11 Set Plate
+    src_png: Path | None = None
+    src_label = ""
+    if source_id:
+        cand = kf_dir / f"{source_id}.png"
+        if cand.is_file() and cand.stat().st_size > 200:
+            src_png, src_label = cand, source_id
+    if src_png is None and sc_id:
+        raw_anchors = meta.get("anchors")
+        if isinstance(raw_anchors, dict):
+            aid = str(raw_anchors.get(sc_id) or "").strip()
+            if aid and aid != shot_id:
+                cand = kf_dir / f"{aid}.png"
+                if cand.is_file() and cand.stat().st_size > 200:
+                    src_png, src_label = cand, f"Anchor {aid}"
+    if src_png is None and sc_id and sh_num > 1:
+        for pn in range(sh_num - 1, 0, -1):
+            cid = f"{sc_id}-{pn:02d}"
+            cand = kf_dir / f"{cid}.png"
+            if cand.is_file() and cand.stat().st_size > 200:
+                src_png, src_label = cand, cid
+                break
+    if src_png is None and heading:
+        _ltok, set_p, _lnames = keyframe_context.match_location_context(kf_ctx, heading)
+        if set_p and set_p.is_file():
+            src_png, src_label = set_p, f"Set Plate ({set_p.stem})"
+    if src_png is None:
+        raise PlanError("Render a Step 11 Set Plate or an earlier keyframe in this scene first before shifting camera angle.")
+
+    ref_pack = keyframe_context.collect_render_references(
+        kf_ctx, shot_id, details, sl_data, kf_dir, dict(meta.get("prompts") or {})
+    )
+    extra_chars = [p for p in ref_pack["ref_imgs"] if p != src_png and p != out_png][:3]
+    angle_refs = [src_png] + extra_chars
+
+    angle_prompt = (
+        f"CAMERA ANGLE SHIFT ({move_label}) OF THE EXACT SAME ROOM & CHARACTERS FROM {src_label}: "
+        f"{move_value} Keep the EXACT SAME room layout, wall colors, furniture, lighting, and character identities/outfits from Image 1. "
+        f"{details}"
+    ).strip()
+
+    model_used = _render_keyframe_local_or_gemini(
+        angle_prompt,
+        out_png,
+        aspect_ratio="16:9",
+        ref_images=angle_refs,
+        engine=req_engine,
+        angle_move=move_value,
+        seed=int(ref_pack["scene_seed"]),
+        prefer_edit=True,
+        bypass_cache=True,
+        extra_negative=ref_pack["style_negatives"],
+    )
+    return {
+        "status": "ok",
+        "id": shot_id,
+        "source": src_label,
+        "move": move_key,
+        "move_label": move_label,
+        "image_url": f"/file/{slug}/keyframes/{shot_id}.png",
+        "model": model_used,
+        "char_refs_used": ref_pack["char_refs_used"],
+    }
+
+
+_LOCAL_MODEL_DOWNLOADS: dict[str, dict[str, Any]] = {}
+
+
+def get_local_model_download_status() -> dict[str, dict[str, Any]]:
+    return {k: dict(v) for k, v in _LOCAL_MODEL_DOWNLOADS.items()}
+
+
+@route("POST", "/api/v2_workflow_sync_event")
+def _v2_workflow_sync_event(r: Request):
+    """Handle bi-directional workflow events: `preview`, `modify`, `tool_done`, or `approve`."""
+    from studio_app import workflow_sync
+
+    slug = str(r.body.get("project") or "").strip()
+    action = str(r.body.get("action") or "").strip().lower()
+    if not slug or action not in ("preview", "modify", "tool_done", "approve"):
+        raise PlanError("project and valid action (preview, modify, tool_done, approve) are required")
+
+    pd = pdir(slug, "book")
+    step_num = int(r.body.get("step") or 1)
+    cur_step = int(r.body.get("current_step") or step_num)
+
+    if action in ("preview", "modify"):
+        summary = str(r.body.get("summary") or f"Modified Step {step_num:02d}").strip()
+        raw_origin = r.body.get("origin_step")
+        origin_step = int(raw_origin) if raw_origin else step_num
+        include_upstream = bool(r.body.get("include_upstream", False))
+        raw_up = r.body.get("upstream_steps")
+        raw_down = r.body.get("downstream_steps")
+        exp_up = [int(x) for x in raw_up] if isinstance(raw_up, list) else None
+        exp_down = [int(x) for x in raw_down] if isinstance(raw_down, list) else None
+        if action == "preview":
+            prev = workflow_sync.preview_modification(
+                pd,
+                slug,
+                step_num,
+                summary,
+                origin_step=origin_step,
+                include_upstream=include_upstream,
+                explicit_upstream=exp_up,
+                explicit_downstream=exp_down,
+            )
+            banner = workflow_sync.summarize_banner_state(prev["queue"], cur_step)
+            return {
+                "status": "ok",
+                "queue": prev["queue"],
+                "banner": banner,
+                "plan_chain": prev["plan_chain"],
+                "plan_lines": prev["plan_lines"],
+            }
+        doc = workflow_sync.record_modification(
+            pd,
+            slug,
+            step_num,
+            summary,
+            origin_step=origin_step,
+            include_upstream=include_upstream,
+            explicit_upstream=exp_up,
+            explicit_downstream=exp_down,
+        )
+        plan = workflow_sync.format_action_plan(doc.get("items") or [], int(doc.get("origin_step") or step_num))
+        banner = workflow_sync.summarize_banner_state(doc, cur_step)
+        return {
+            "status": "ok",
+            "queue": doc,
+            "banner": banner,
+            "plan_chain": plan["plan_chain"],
+            "plan_lines": plan["plan_lines"],
+        }
+
+    if action == "tool_done":
+        tool_label = str(r.body.get("tool_label") or "").strip()
+        doc = workflow_sync.mark_tool_performed(pd, slug, step_num, tool_label=tool_label)
+        banner = workflow_sync.summarize_banner_state(doc, cur_step)
+        return {"status": "ok", "queue": doc, "banner": banner}
+
+    # action == "approve"
+    res = workflow_sync.approve_step(pd, slug, step_num)
+    next_cur = int(res["next_step"] or cur_step)
+    banner = workflow_sync.summarize_banner_state(res["queue"], next_cur)
+    return {
+        "status": "ok",
+        "queue": res["queue"],
+        "banner": banner,
+        "advanced": res["advanced"],
+        "blocked_needs_run": res["blocked_needs_run"],
+        "completed": res["completed"],
+        "next_step": res["next_step"],
+        "origin_step": res["origin_step"],
+    }
+
+
+@route("POST", "/api/v2_local_consistency_download")
+def _v2_local_consistency_download(r: Request):
+    """Download free open-weight GGUF consistency models (flux1-kontext-dev / flux2-klein-9b) into models/sd_cli/ in the background."""
+    import threading
+    import urllib.request
+    from local_runners.sd_cli_runner import SdCliRunner
+
+    model_id = str(r.body.get("model_id") or "").strip()
+    runner = SdCliRunner()
+    catalog = {m["id"]: m for m in runner.describe_consistency_models()}
+    if model_id not in catalog:
+        raise PlanError(f"Unknown free consistency model '{model_id}'")
+
+    info = catalog[model_id]
+    if info["ready"]:
+        return {"status": "ready", "model_id": model_id, "message": f"{info['label']} is already installed."}
+
+    cur_job = _LOCAL_MODEL_DOWNLOADS.get(model_id)
+    if cur_job and cur_job.get("state") == "downloading":
+        return {"status": "downloading", "model_id": model_id, "job": dict(cur_job)}
+
+    missing = list(info.get("missing_files") or [])
+    if not missing:
+        return {"status": "ready", "model_id": model_id}
+
+    job_state: dict[str, Any] = {
+        "model_id": model_id,
+        "state": "downloading",
+        "current_file": str(missing[0]["file"]),
+        "files_done": 0,
+        "files_total": len(missing),
+        "bytes_done": 0,
+        "bytes_total": 0,
+        "pct": 0,
+        "error": "",
+    }
+    _LOCAL_MODEL_DOWNLOADS[model_id] = job_state
+
+    def _worker() -> None:
+        dest_dir = runner.models_dir
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            for idx, item in enumerate(missing):
+                fname = str(item["file"])
+                url = str(item["url"])
+                dest = dest_dir / fname
+                tmp_dest = dest_dir / f"{fname}.part"
+                job_state["current_file"] = fname
+                job_state["files_done"] = idx
+                req = urllib.request.Request(url, headers={"User-Agent": "PistachiosStudio/2.0"})
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    total = int(resp.headers.get("Content-Length") or 0)
+                    job_state["bytes_total"] = total
+                    done = 0
+                    with open(tmp_dest, "wb") as fh:
+                        while True:
+                            chunk = resp.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            fh.write(chunk)
+                            done += len(chunk)
+                            job_state["bytes_done"] = done
+                            if total > 0:
+                                job_state["pct"] = min(99, int(((idx + done / total) / len(missing)) * 100))
+                tmp_dest.replace(dest)
+            job_state["files_done"] = len(missing)
+            job_state["pct"] = 100
+            job_state["state"] = "done"
+        except Exception as exc:
+            job_state["state"] = "error"
+            job_state["error"] = str(exc)
+
+    threading.Thread(target=_worker, name=f"dl-{model_id}", daemon=True).start()
+    return {"status": "started", "model_id": model_id, "job": dict(job_state)}
+
+
+@route("POST", "/api/v2_keyframe_sync_prompts")
+def _v2_keyframe_sync_prompts(r: Request):
+    """Rebuild & persist Step 17 prompts from latest Steps 08-12 for one scene or all unlocked scenes."""
+    from studio_app import keyframe_context
+
+    slug = str(r.body.get("project") or "").strip()
+    target_scene = str(r.body.get("scene") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+
+    pd = pdir(slug, "book")
+    sl_path = pd / "shots" / "shotlist.json"
+    if not sl_path.is_file():
+        raise PlanError("No shotlist.json found — generate Step 12 Shot List first.")
+    sl_data = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+
+    meta_path = pd / "keyframes_v2.json"
+    meta: dict[str, Any] = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            meta = {}
+    locked_ids = {str(x) for x in (meta.get("locked") or [])}
+    prompts: dict[str, Any] = dict(meta.get("prompts") or {})
+
+    ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+    updated_count = 0
+    skipped_locked = 0
+    for sc in sl_data.get("scenes") or []:
+        if not isinstance(sc, dict):
+            continue
+        sc_id = str(sc.get("id") or sc.get("scene") or "S001")
+        if target_scene and sc_id != target_scene:
+            continue
+        heading = str(sc.get("heading") or "")
+        for idx, sh in enumerate(sc.get("shots") or [], start=1):
+            if not isinstance(sh, dict):
+                continue
+            n = int(sh.get("n") or idx)
+            sid = f"{sc_id}-{n:02d}"
+            if sid in locked_ids:
+                skipped_locked += 1
+                continue
+            info = keyframe_context.build_shot_keyframe_info(sh, sc_id, heading, ctx)
+            prompts[sid] = info["default_prompt"]
+            updated_count += 1
+
+    meta["prompts"] = prompts
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return {
+        "status": "ok",
+        "updated": updated_count,
+        "skipped_locked": skipped_locked,
+        "scene": target_scene or "ALL",
     }
 
 
@@ -2770,21 +4340,51 @@ def _v2_keyframe_edit(r: Request):
     if shot_id in (meta.get("locked") or []):
         raise PlanError(f"Keyframe {shot_id} is locked. Unlock it first before modifying.")
 
+    from studio_app import keyframe_context
+
+    sl_data: dict[str, Any] = {}
+    sl_path = pd / "shots" / "shotlist.json"
+    if sl_path.is_file():
+        try:
+            sl_data = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+        except Exception as e:
+            log.debug("shotlist.json read failed in keyframe_edit: %s", e)
+    kf_ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+    ref_pack = keyframe_context.collect_render_references(
+        kf_ctx, shot_id, base_prompt, sl_data, pd / "keyframes", dict(meta.get("prompts") or {})
+    )
+    extra_turnaround_refs = [p for p in ref_pack["ref_imgs"] if p != out_png][:3]
+    edit_refs = [out_png] + extra_turnaround_refs
+    extra_ref_note = (
+        " Additional attached images are the locked Step 10 character turnaround references — preserve those exact faces and outfits."
+        if extra_turnaround_refs else ""
+    )
+
     cascade_lines = "\n".join(f"{i}. {txt}" for i, txt in enumerate(edits, start=1))
     edit_prompt = (
         f"TARGETED CASCADED IMAGE EDIT ON EXISTING KEYFRAME ({shot_id}):\n"
-        "The attached image is the current keyframe. Keep EVERYTHING in the attached image identical — "
+        f"Image 1 is the current keyframe.{extra_ref_note} Keep EVERYTHING in Image 1 identical — "
         "exact same camera angle, composition, room layout, lighting, character faces, proportions, and clothing — "
         f"and apply ONLY these ordered modifications:\n{cascade_lines}\n\n"
         f"Original shot context: {base_prompt}"
     )
     req_engine = str(r.body.get("engine") or "auto").strip().lower()
-    model_used = _render_keyframe_local_or_gemini(edit_prompt, out_png, aspect_ratio="16:9", ref_images=[out_png], engine=req_engine)
+    model_used = _render_keyframe_local_or_gemini(
+        edit_prompt,
+        out_png,
+        aspect_ratio="16:9",
+        ref_images=edit_refs,
+        engine=req_engine,
+        init_strength=0.48,
+        init_image=out_png,
+        prefer_edit=True,
+        extra_negative=ref_pack["style_negatives"],
+    )
 
-    # Run Physics QA on the edited image
+    # Free-First Visual QA on edited image (local sanity -> free Ollama Vision -> Gemini only if explicitly chosen)
     import run_gemini_omni
-    api_key = run_gemini_omni.get_gemini_api_key()
-    qa = _inspect_keyframe_physics(out_png, f"{base_prompt}. {'; '.join(edits)}", api_key) if (api_key and req_engine not in ("local", "computer", "sd_cli", "comfyui")) else _inspect_keyframe_local_qa(out_png)
+    api_key = run_gemini_omni.get_gemini_api_key() if req_engine == "gemini" else ""
+    qa = _inspect_keyframe_free_first(out_png, f"{base_prompt}. {'; '.join(edits)}", req_engine, api_key)
 
     # Persist the ordered cascade of modification boxes until the user clicks Lock
     pending = dict(meta.get("pending_edits") or {})
@@ -2914,7 +4514,9 @@ def _v2_keyframe_delete(r: Request):
 
 @route("POST", "/api/v2_wardrobe_states_save")
 def _v2_wardrobe_states_save(r: Request):
-    """Save scene/location-specific wardrobe states for a character into wardrobe_states.json."""
+    """Save scene/location-specific wardrobe states for a character and sync real-time across Steps 07, 10, 12, and 17."""
+    import continuity_sync
+
     slug = str(r.body.get("project") or "").strip()
     character = str(r.body.get("character") or "").strip()
     states = r.body.get("states")
@@ -2930,6 +4532,7 @@ def _v2_wardrobe_states_save(r: Request):
         except Exception:
             cur = {}
     key = next((k for k in cur if k.lower() == character.lower()), character)
+    prev_states = list(cur.get(key) or []) if isinstance(cur.get(key), list) else []
     clean_states = []
     for st in states:
         if not isinstance(st, dict):
@@ -2941,7 +4544,33 @@ def _v2_wardrobe_states_save(r: Request):
             clean_states.append({"scenes": sc, "location": loc, "wardrobe": w})
     cur[key] = clean_states
     ws_path.write_text(json.dumps(cur, indent=2), encoding="utf-8")
-    return {"status": "ok", "character": key, "states": clean_states}
+
+    # Surgically sync ONLY the wardrobe entries that were added or modified
+    prev_by_scene = {
+        str(st.get("scenes") or "").strip().lower(): str(st.get("wardrobe") or "").strip()
+        for st in prev_states if isinstance(st, dict)
+    }
+    sync_report: dict[str, Any] = {"updated_steps": [], "changes": [], "preserved": []}
+    for st in clean_states:
+        sc_spec = st["scenes"]
+        new_w = st["wardrobe"]
+        old_w = prev_by_scene.get(sc_spec.lower(), "")
+        if new_w and new_w != old_w:
+            r_sync = continuity_sync.sync_scene_wardrobe(
+                pd,
+                slug,
+                character=key,
+                scene_spec=sc_spec,
+                location=st["location"],
+                wardrobe_text=new_w,
+                old_wardrobe=old_w,
+                source_step="step08",
+            )
+            for fld in ("updated_steps", "changes", "preserved"):
+                for item in r_sync.get(fld) or []:
+                    if item not in sync_report[fld]:
+                        sync_report[fld].append(item)
+    return {"status": "ok", "character": key, "states": clean_states, "sync_report": sync_report}
 
 
 @route("POST", "/api/v2_wardrobe_state_delete")
@@ -2987,7 +4616,20 @@ def _v2_wardrobe_state_delete(r: Request):
                 if src.is_file():
                     src.replace(dst)
 
-    return {"status": "ok", "character": character, "removed": removed, "remaining": len(states)}
+    import continuity_sync
+    sync_report: dict[str, Any] = {"updated_steps": [], "changes": [], "preserved": []}
+    if isinstance(removed, dict) and str(removed.get("scenes") or "").strip():
+        sync_report = continuity_sync.sync_scene_wardrobe(
+            pd,
+            slug,
+            character=key or character,
+            scene_spec=str(removed.get("scenes") or ""),
+            location=str(removed.get("location") or ""),
+            wardrobe_text="",
+            old_wardrobe=str(removed.get("wardrobe") or ""),
+            source_step="step08",
+        )
+    return {"status": "ok", "character": character, "removed": removed, "remaining": len(states), "sync_report": sync_report}
 
 
 @route("POST", "/api/v2_sync_upstream")
@@ -3137,6 +4779,20 @@ def _v2_turnaround_render(r: Request):
     desc = str(r.body.get("desc") or "").strip()
     wardrobe = str(r.body.get("wardrobe") or "").strip()
     look = str(r.body.get("look") or "pixar_3d").strip()
+    # Honor per-character visual style override (mixed-media films) if saved on Step 08 dossier
+    char_style_override = str(r.body.get("style_override") or "").strip()
+    if not char_style_override:
+        try:
+            saved_ch = character_tokens.load_character(slug, char_name)
+            if isinstance(saved_ch, dict) and str(saved_ch.get("style_override") or "").strip():
+                char_style_override = str(saved_ch["style_override"]).strip()
+        except Exception as e:
+            log.debug("style_override lookup failed: %s", e)
+    effective_look = char_style_override or look
+    import character_types_registry as ctr
+    style_obj = ctr.get_style(effective_look) or {}
+    look_desc = str(style_obj.get("positives") or effective_look)
+    style_neg = str(style_obj.get("negatives") or "")
     view_desc = {
         "front": "straight-on front view facing the camera",
         "three_quarter": "three-quarter angle view turned slightly to the side",
@@ -3189,6 +4845,18 @@ def _v2_turnaround_render(r: Request):
             overrides=overrides,
             limit=1,
         )
+        # Also check Step 08 uploaded cast reference photos for this character/canonical identity
+        if not canon_refs:
+            cast_ref_dir = pd / "assets" / "cast_refs"
+            if cast_ref_dir.is_dir():
+                for cand_slug in dict.fromkeys((safe, canon_id)):
+                    for ext in (".png", ".jpg", ".jpeg", ".webp"):
+                        cand_p = cast_ref_dir / f"{cand_slug}_ref{ext}"
+                        if cand_p.is_file() and cand_p.stat().st_size > 100:
+                            canon_refs = [(cand_p, f"{char_name} (Step 08 Reference)")]
+                            break
+                    if canon_refs:
+                        break
         if canon_refs:
             ref_imgs = [p for p, _src in canon_refs]
             ref_source = canon_refs[0][1]
@@ -3261,34 +4929,35 @@ def _v2_turnaround_render(r: Request):
                 ref_note = distinct_clause
             return (
                 f"A single standalone full-body character portrait of {char_name} shown from a {view_desc}. "
-                f"{desc}.{ref_note}{wardrobe_clause} Style: {look}. Clean solid neutral studio backdrop, clearly showing the exact outfit and face, consistent soft studio lighting."
+                f"{desc}.{ref_note}{wardrobe_clause} Style: {look_desc}. Clean solid neutral studio backdrop, clearly showing the exact outfit and face, consistent soft studio lighting."
             )
 
         # Keep local positive prompts free of "turnaround sheet / grid / duplicate" words (CFG=1 models ignore "NO"!)
         if ref_imgs and view in ("three_quarter", "profile"):
             return (
-                f"Keep the exact same character ({char_name}) from the reference image — identical face, hair, skin, body proportions, clothing, footwear, and {look} style — "
+                f"Keep the exact same character ({char_name}) from the reference image — identical face, hair, skin, body proportions, clothing, footwear, and {look_desc} style — "
                 f"rotated to show a solo full-body {view_desc}, standing alone centered on the same plain solid warm light-gray seamless studio backdrop, full body head to toe, soft even studio lighting. "
                 f"{desc}.{wardrobe_clause}"
             )
         if ref_imgs and ref_reason == "same_character_costume_change":
             return (
-                f"Keep the exact same character ({canon_label}) from the reference image — identical face, head shape, eyes, nose, hair/fur, skin tone, age, body proportions, and {look} style — "
+                f"Keep the exact same character ({canon_label}) from the reference image — identical face, head shape, eyes, nose, hair/fur, skin tone, age, body proportions, and {look_desc} style — "
                 f"now shown as a solo full-body {view_desc} wearing ONLY this new costume and scene appearance, replacing the clothing and accessories from the reference image: "
                 f"{desc}.{wardrobe_clause} Standing alone centered on a plain solid warm light-gray seamless studio backdrop, full body head to toe, soft even studio lighting."
             )
         if ref_imgs and ref_reason == "explicit_twin":
             return (
-                f"Show the twin character ({char_name}) keeping the same twin facial likeness and {look} style from the reference image, "
+                f"Show the twin character ({char_name}) keeping the same twin facial likeness and {look_desc} style from the reference image, "
                 f"as a solo full-body {view_desc} with this exact outfit and details: {desc}.{wardrobe_clause} "
                 f"Standing alone centered on a plain solid warm light-gray seamless studio backdrop, full body head to toe, soft even studio lighting."
             )
         return (
             f"A solo full-body studio photograph of one single character ({char_name}) standing centered alone in frame, {view_desc}. "
-            f"{desc}.{distinct_clause}{wardrobe_clause} Style: {look}. Plain solid warm light-gray seamless studio backdrop, full body head to toe, soft even studio lighting."
+            f"{desc}.{distinct_clause}{wardrobe_clause} Style: {look_desc}. Plain solid warm light-gray seamless studio backdrop, full body head to toe, soft even studio lighting."
         )
 
     prompt = _build_turnaround_prompt(distinct_cues)
+    combined_neg = ", ".join(x for x in (distinct_neg, style_neg) if x)
     is_reroll = out_png.is_file() and out_png.stat().st_size > 100
     # Use canonical identity key in base seed so same-character variants share lighting/aesthetic while distinct characters stay uncorrelated
     char_seed = -1 if is_reroll else (int.from_bytes(hashlib.sha256(f"{slug}:{canon_id}:{safe}:{outfit_id}".encode()).digest()[:4], "little") % 2_000_000_000)
@@ -3298,7 +4967,7 @@ def _v2_turnaround_render(r: Request):
         view=view, seed=char_seed, init_strength=None,
         require_ref=must_use_ref,
         bypass_cache=is_reroll,
-        extra_negative=distinct_neg,
+        extra_negative=combined_neg,
     )
 
     # Non-twin distinctness verification: if a new distinct character's Front View came out
@@ -3546,6 +5215,592 @@ def _v2_set_order(r: Request):
     return {"status": "ok", "order": order, "deleted": deleted}
 
 
+@route("POST", "/api/v2_set_save")
+def _v2_set_save(r: Request):
+    """Save Step 11 location/set details to disk and sync real-time to Step 07 Continuity Book, Step 12, and Step 17."""
+    import continuity_sync
+
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    description = str(r.body.get("description") or "").strip()
+    lighting = str(r.body.get("lighting") or "").strip()
+    if not slug or not name:
+        raise PlanError("project and set name are required")
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    custom_path = pd / "sets_custom.json"
+    cur: dict[str, Any] = {}
+    if custom_path.is_file():
+        try:
+            raw = json.loads(custom_path.read_text(encoding="utf-8")) or {}
+            if isinstance(raw, dict):
+                cur = raw
+        except Exception as e:
+            log.debug("sets_custom.json read failed: %s", e)
+    k = name.lower()
+    raw_prev_entry = cur.get(k)
+    prev_entry: dict[str, Any] = raw_prev_entry if isinstance(raw_prev_entry, dict) else {}
+    old_desc = str(prev_entry.get("description") or "")
+    reserve_2d_gaps = bool(r.body.get("reserve_2d_gaps", prev_entry.get("reserve_2d_gaps", False)))
+    gap_notes = str(r.body.get("gap_notes") if "gap_notes" in r.body else prev_entry.get("gap_notes", "")).strip()
+    cur[k] = {
+        "name": name,
+        "description": description,
+        "lighting": lighting,
+        "reserve_2d_gaps": reserve_2d_gaps,
+        "gap_notes": gap_notes,
+    }
+    custom_path.write_text(json.dumps(cur, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    sync_report = continuity_sync.sync_location_change(
+        pd,
+        slug,
+        name=name,
+        old_desc=old_desc,
+        new_desc=description,
+        lighting=lighting,
+        source_step="step11",
+    )
+    return {
+        "status": "ok",
+        "name": name,
+        "description": description,
+        "lighting": lighting,
+        "reserve_2d_gaps": reserve_2d_gaps,
+        "gap_notes": gap_notes,
+        "sync_report": sync_report,
+    }
+
+
+def _safe_set_slug(name: str) -> str:
+    return "".join(c if c.isalnum() else "_" for c in str(name or "").lower()).strip("_") or "set"
+
+
+def _safe_view_id(raw_id: str) -> str:
+    return "".join(c if c.isalnum() else "_" for c in str(raw_id or "").lower()).strip("_") or "main"
+
+
+def _load_sets_views_doc(pd: Path) -> dict[str, Any]:
+    vp = pd / "sets_views.json"
+    if vp.is_file():
+        try:
+            doc = json.loads(vp.read_text(encoding="utf-8"))
+            if isinstance(doc, dict) and isinstance(doc.get("sets"), dict):
+                return doc
+        except Exception as e:
+            log.debug("sets_views.json read failed: %s", e)
+    return {"sets": {}}
+
+
+def _save_sets_views_doc(pd: Path, doc: dict[str, Any]) -> None:
+    pd.mkdir(parents=True, exist_ok=True)
+    (pd / "sets_views.json").write_text(json.dumps(doc, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _ensure_set_view_entry(doc: dict[str, Any], set_name: str, view_id: str = "main", view_label: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
+    """Ensure `<set_name>` and `<view_id>` exist inside `sets_views.json`."""
+    sets_map: dict[str, Any] = doc.setdefault("sets", {})
+    key = set_name.strip().lower()
+    srec = sets_map.get(key)
+    if not isinstance(srec, dict):
+        srec = {"name": set_name.strip(), "baseline_view_id": "", "baseline_snapshot": "", "views": []}
+        sets_map[key] = srec
+    views_list: list[dict[str, Any]] = srec.setdefault("views", [])
+    # Always ensure primary "main" view exists first
+    if not any(isinstance(v, dict) and v.get("id") == "main" for v in views_list):
+        views_list.insert(0, {"id": "main", "label": "Establishing View", "notes": "", "ref_image": "", "converted_image": ""})
+    vid = _safe_view_id(view_id)
+    found: dict[str, Any] | None = None
+    for v in views_list:
+        if isinstance(v, dict) and v.get("id") == vid:
+            found = v
+            break
+    if found is None:
+        found = {
+            "id": vid,
+            "label": view_label.strip() or ("Establishing View" if vid == "main" else vid.replace("_", " ").title()),
+            "notes": "",
+            "ref_image": "",
+            "converted_image": "",
+        }
+        views_list.append(found)
+    elif view_label.strip():
+        found["label"] = view_label.strip()
+    return srec, found
+
+
+def _resolve_set_film_style(pd: Path) -> tuple[str, str, str, bool]:
+    """Return `(look_id, style_pos, style_neg, is_photorealistic)` honoring Step 09 global_params.json positives/negatives."""
+    import character_types_registry as ctr
+
+    look = "pixar_3d"
+    gp_pos = ""
+    gp_neg = ""
+    gp_path = pd / "global_params.json"
+    if gp_path.is_file():
+        try:
+            gp = json.loads(gp_path.read_text(encoding="utf-8")) or {}
+            raw_hm = gp.get("hybrid_mode")
+            hm: dict[str, Any] = raw_hm if isinstance(raw_hm, dict) else {}
+            if hm.get("enabled"):
+                look = str(hm.get("world_style") or "live_action")
+            else:
+                gp_pos = str(gp.get("positives") or "").strip()
+                gp_neg = str(gp.get("negatives") or "").strip()
+                look = str(gp.get("look") or ("live_action" if ("live action" in gp_pos.lower() and "photorealistic" not in gp_neg.lower()) else "pixar_3d"))
+        except Exception as e:
+            log.debug("global_params.json read failed in _resolve_set_film_style: %s", e)
+    st = ctr.get_style(look)
+    style_pos = gp_pos or str((st or {}).get("positives") or "cinematic wide establishing shot, 35mm lens, warm practical lighting")
+    style_neg = gp_neg or str((st or {}).get("negatives") or "")
+    is_photo = look == "live_action" and "photorealistic" not in style_neg.lower()
+    return look, style_pos, style_neg, is_photo
+
+
+def _render_set_view_plate(
+    slug: str,
+    pd: Path,
+    name: str,
+    *,
+    view_id: str = "main",
+    view_label: str = "",
+    view_notes: str = "",
+    desc: str = "",
+    lighting: str = "",
+    reserve_2d_gaps: bool = False,
+    gap_notes: str = "",
+    req_engine: str = "auto",
+    use_ref: bool = True,
+    use_baseline: bool = True,
+    style_strength: float | None = None,
+) -> dict[str, Any]:
+    """Core Step 11 set/view renderer supporting imported photo style-conversion AND baselined view anchoring."""
+    safe = _safe_set_slug(name)
+    vid = _safe_view_id(view_id)
+    doc = _load_sets_views_doc(pd)
+    srec, vrec = _ensure_set_view_entry(doc, name, vid, view_label=view_label)
+    if view_notes:
+        vrec["notes"] = view_notes
+
+    out_rel = f"assets/sets/{safe}.png" if vid == "main" else f"assets/sets/{safe}__view_{vid}.png"
+    out_png = pd / out_rel
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+
+    _look, style_pos, style_neg, is_photo = _resolve_set_film_style(pd)
+
+    # Check for imported reference photo on THIS view
+    ref_rel = str(vrec.get("ref_image") or "").strip()
+    ref_img: Path | None = None
+    if use_ref and ref_rel:
+        cand_r = pd / ref_rel
+        if cand_r.is_file() and cand_r.stat().st_size > 100:
+            ref_img = cand_r
+
+    # Check for pinned Baseline image on THIS location
+    base_rel = str(srec.get("baseline_snapshot") or "").strip()
+    base_vid = str(srec.get("baseline_view_id") or "").strip()
+    baseline_img: Path | None = None
+    if use_baseline and base_rel:
+        cand_b = pd / base_rel
+        if cand_b.is_file() and cand_b.stat().st_size > 100:
+            baseline_img = cand_b
+
+    # Assemble visual references + img2img anchor + style-conversion / baseline-lock prompt
+    ref_imgs: list[Path] = []
+    init_img: Path | None = None
+    init_strength: float | None = None
+    directives: list[str] = []
+
+    if ref_img is not None:
+        ref_imgs.append(ref_img)
+        init_img = ref_img
+        if is_photo:
+            init_strength = float(style_strength) if style_strength is not None else 0.52
+            directives.append(
+                f"REFERENCE PHOTO MATCH (Image {len(ref_imgs)}): Preserve the exact architecture, room layout, window/door placement, furniture arrangement, and camera angle from Image {len(ref_imgs)}."
+            )
+        else:
+            # Real-world photo -> stylized film (e.g. 3D Pixar / 2D / claymation) conversion!
+            init_strength = float(style_strength) if style_strength is not None else 0.68
+            directives.append(
+                f"STYLE CONVERSION FROM IMPORTED REFERENCE PHOTO (Image {len(ref_imgs)}): Keep the exact room architecture, spatial layout, window/door positions, furniture arrangement, and camera perspective from Image {len(ref_imgs)}, "
+                f"while COMPLETELY CONVERTING every surface, material, texture, prop, and light source into the film's visual style ({style_pos}). "
+                "Do NOT leave it looking like a raw real-world photograph; render it fully as a cohesive film set plate."
+            )
+            style_neg = ", ".join(x for x in (style_neg, "raw photograph, unstyled real photo, camera snapshot") if x)
+
+    if baseline_img is not None and (ref_img is None or baseline_img.resolve() != ref_img.resolve()):
+        ref_imgs.append(baseline_img)
+        if init_img is None:
+            # Re-running the baselined view itself uses tight img2img lock; another view of the same location uses baseline as style/room reference
+            if base_vid == vid:
+                init_img = baseline_img
+                init_strength = float(style_strength) if style_strength is not None else 0.48
+                directives.append(
+                    f"LOCKED BASELINE REFINEMENT (Image {len(ref_imgs)}): Refine this set view while keeping the EXACT architecture, color palette, materials, lighting mood, and visual style of the baselined image (Image {len(ref_imgs)})."
+                )
+            else:
+                directives.append(
+                    f"SAME-LOCATION BASELINE CONTINUITY (Image {len(ref_imgs)} is the baselined view '{base_vid}' of {name}): "
+                    f"Match the EXACT same wall colors, flooring, furniture design, materials, lighting temperature, and film art style as Image {len(ref_imgs)}, shown from the new view '{vrec.get('label') or vid}'."
+                )
+        else:
+            directives.append(
+                f"BASELINE STYLE & PALETTE LOCK (Image {len(ref_imgs)} is the baselined view of {name}): "
+                f"Convert Image 1's architecture into the EXACT color palette, wall/floor materials, lighting, and film art style established in Image {len(ref_imgs)}."
+            )
+
+    view_lbl = str(vrec.get("label") or "").strip()
+    view_desc = str(vrec.get("notes") or "").strip()
+    view_heading = f"{name} — {view_lbl}" if (view_lbl and vid != "main") else name
+    bits: list[str] = list(directives) + [
+        f"Wide establishing set plate of {view_heading}",
+        view_desc,
+        desc,
+        f"Lighting: {lighting}" if lighting else "",
+        style_pos,
+        "Empty environment set plate, no people, no characters in frame",
+    ]
+    if reserve_2d_gaps:
+        gap_clause = (
+            f"IMPORTANT COMPOSITION: Keep clear empty spaces reserved for 2D cartoon characters to be added later ({gap_notes}). "
+            if gap_notes
+            else "IMPORTANT COMPOSITION: Leave open empty chairs, open tabletop space, and clear foreground/sky gaps where 2D cartoon characters will live. "
+        )
+        bits.append(gap_clause + "No people, no characters, empty set plate only.")
+        style_neg = ", ".join(x for x in (style_neg, "people, characters, cartoons, crowded foreground") if x)
+    else:
+        style_neg = ", ".join(x for x in (style_neg, "people, characters, person, crowd") if x)
+
+    prompt = ". ".join(b.rstrip(". ") for b in bits if b)
+    model_used = _render_keyframe_local_or_gemini(
+        prompt,
+        out_png,
+        aspect_ratio="16:9",
+        ref_images=ref_imgs if ref_imgs else None,
+        engine=req_engine,
+        seed=-1,
+        init_strength=init_strength,
+        init_image=init_img,
+        prefer_edit=bool(ref_imgs),
+        bypass_cache=True,
+        extra_negative=style_neg,
+    )
+
+    vrec["converted_image"] = out_rel
+    _save_sets_views_doc(pd, doc)
+
+    return {
+        "status": "ok",
+        "name": name,
+        "view_id": vid,
+        "view_label": vrec.get("label") or view_lbl,
+        "image_url": f"/file/{slug}/{out_rel}",
+        "converted_url": f"/file/{slug}/{out_rel}",
+        "ref_url": f"/file/{slug}/{ref_rel}" if ref_img else "",
+        "used_ref_photo": bool(ref_img),
+        "used_baseline": bool(baseline_img),
+        "baseline_view_id": base_vid if baseline_img else "",
+        "rel_path": f"projects/books/{slug}/{out_rel}",
+        "model": model_used,
+        "reserve_2d_gaps": reserve_2d_gaps,
+    }
+
+
+@route("POST", "/api/v2_set_render")
+def _v2_set_render(r: Request):
+    """Generate or style-convert a Step 11 establishing set plate / view (honoring imported ref photos & pinned baselines)."""
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    if not slug or not name:
+        raise PlanError("project and set name are required")
+    pd = pdir(slug, "book")
+    pd.mkdir(parents=True, exist_ok=True)
+    raw_ss = r.body.get("style_strength")
+    style_strength: float | None = None
+    if raw_ss is not None and str(raw_ss).strip() != "":
+        try:
+            style_strength = max(0.25, min(0.95, float(raw_ss)))
+        except (TypeError, ValueError):
+            style_strength = None
+    return _render_set_view_plate(
+        slug,
+        pd,
+        name,
+        view_id=str(r.body.get("view_id") or "main").strip(),
+        view_label=str(r.body.get("view_label") or "").strip(),
+        view_notes=str(r.body.get("view_notes") or "").strip(),
+        desc=str(r.body.get("description") or "").strip(),
+        lighting=str(r.body.get("lighting") or "").strip(),
+        reserve_2d_gaps=bool(r.body.get("reserve_2d_gaps", False)),
+        gap_notes=str(r.body.get("gap_notes") or "").strip(),
+        req_engine=str(r.body.get("engine") or "auto").strip().lower(),
+        use_ref=bool(r.body.get("use_ref", True)),
+        use_baseline=bool(r.body.get("use_baseline", True)),
+        style_strength=style_strength,
+    )
+
+
+@route("POST", "/api/v2_set_view_save")
+def _v2_set_view_save(r: Request):
+    """Add, update, or delete a named view on a Step 11 location (for multi-view sets like living room / kitchen)."""
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    if not slug or not name:
+        raise PlanError("project and set name are required")
+    pd = pdir(slug, "book")
+    doc = _load_sets_views_doc(pd)
+    raw_vid = str(r.body.get("view_id") or "").strip()
+    label = str(r.body.get("label") or "").strip()
+    notes = str(r.body.get("notes") or "").strip()
+    delete_flag = bool(r.body.get("delete", False))
+
+    vid = _safe_view_id(raw_vid or label or "view")
+    srec, vrec = _ensure_set_view_entry(doc, name, vid, view_label=label)
+
+    if delete_flag:
+        if vid == "main":
+            raise PlanError("The primary Establishing View cannot be deleted.")
+        srec["views"] = [v for v in (srec.get("views") or []) if v.get("id") != vid]
+        if srec.get("baseline_view_id") == vid:
+            srec["baseline_view_id"] = ""
+            srec["baseline_snapshot"] = ""
+        for rel_k in ("ref_image", "converted_image"):
+            rel = str(vrec.get(rel_k) or "").strip()
+            if rel:
+                (pd / rel).unlink(missing_ok=True)
+        _save_sets_views_doc(pd, doc)
+        return {"status": "ok", "deleted": vid, "name": name}
+
+    if label:
+        vrec["label"] = label
+    if "notes" in r.body:
+        vrec["notes"] = notes
+    _save_sets_views_doc(pd, doc)
+    return {"status": "ok", "name": name, "view": vrec}
+
+
+@route("POST", "/api/v2_set_ref_upload")
+def _v2_set_ref_upload(r: Request):
+    """Import a reference photo and associate it with a Step 11 location + view; optionally convert it into the film's style right away."""
+    import base64
+
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    b64 = str(r.body.get("image_base64") or "").strip()
+    filename = str(r.body.get("filename") or "reference.png").strip()
+    if not slug or not name or not b64:
+        raise PlanError("project, set name, and image_base64 are required")
+    if "," in b64 and b64.startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    raw = base64.b64decode(b64)
+    if len(raw) < 100:
+        raise PlanError("uploaded reference picture is empty")
+
+    ext = Path(filename).suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        ext = ".png"
+
+    pd = pdir(slug, "book")
+    safe = _safe_set_slug(name)
+    raw_vid = str(r.body.get("view_id") or "").strip()
+    view_label = str(r.body.get("view_label") or "").strip()
+    vid = _safe_view_id(raw_vid or view_label or "main")
+
+    refs_dir = pd / "assets" / "sets" / "refs"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+    # Remove any old extension variants for this view's ref photo
+    for old_ext in (".png", ".jpg", ".jpeg", ".webp"):
+        old_p = refs_dir / f"{safe}_{vid}_ref{old_ext}"
+        if old_p.is_file():
+            old_p.unlink(missing_ok=True)
+    ref_rel = f"assets/sets/refs/{safe}_{vid}_ref{ext}"
+    (pd / ref_rel).write_bytes(raw)
+
+    doc = _load_sets_views_doc(pd)
+    _srec, vrec = _ensure_set_view_entry(doc, name, vid, view_label=view_label)
+    vrec["ref_image"] = ref_rel
+    if r.body.get("view_notes"):
+        vrec["notes"] = str(r.body.get("view_notes") or "").strip()
+    _save_sets_views_doc(pd, doc)
+
+    out: dict[str, Any] = {
+        "status": "ok",
+        "name": name,
+        "view_id": vid,
+        "view_label": vrec.get("label") or view_label,
+        "ref_url": f"/file/{slug}/{ref_rel}",
+        "ref_rel": ref_rel,
+    }
+
+    if bool(r.body.get("convert_now", False)):
+        raw_ss = r.body.get("style_strength")
+        style_strength: float | None = None
+        if raw_ss is not None and str(raw_ss).strip() != "":
+            try:
+                style_strength = max(0.25, min(0.95, float(raw_ss)))
+            except (TypeError, ValueError):
+                style_strength = None
+        conv = _render_set_view_plate(
+            slug,
+            pd,
+            name,
+            view_id=vid,
+            view_label=str(vrec.get("label") or ""),
+            view_notes=str(vrec.get("notes") or ""),
+            desc=str(r.body.get("description") or "").strip(),
+            lighting=str(r.body.get("lighting") or "").strip(),
+            reserve_2d_gaps=bool(r.body.get("reserve_2d_gaps", False)),
+            gap_notes=str(r.body.get("gap_notes") or "").strip(),
+            req_engine=str(r.body.get("engine") or "auto").strip().lower(),
+            use_ref=True,
+            use_baseline=bool(r.body.get("use_baseline", True)),
+            style_strength=style_strength,
+        )
+        out["converted_url"] = conv["converted_url"]
+        out["model"] = conv["model"]
+        out["used_baseline"] = conv["used_baseline"]
+    return out
+
+
+@route("POST", "/api/v2_set_ref_delete")
+def _v2_set_ref_delete(r: Request):
+    """Remove the imported reference photo from a Step 11 location view without deleting the view."""
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    vid = _safe_view_id(str(r.body.get("view_id") or "main"))
+    if not slug or not name:
+        raise PlanError("project and set name are required")
+    pd = pdir(slug, "book")
+    doc = _load_sets_views_doc(pd)
+    _srec, vrec = _ensure_set_view_entry(doc, name, vid)
+    rel = str(vrec.get("ref_image") or "").strip()
+    if rel:
+        (pd / rel).unlink(missing_ok=True)
+    vrec["ref_image"] = ""
+    _save_sets_views_doc(pd, doc)
+    return {"status": "ok", "name": name, "view_id": vid}
+
+
+@route("POST", "/api/v2_set_image_delete")
+def _v2_set_image_delete(r: Request):
+    """Delete ONLY the generated/converted set plate image for one Step 11 view without deleting the set, view, or imported reference photo."""
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    vid = _safe_view_id(str(r.body.get("view_id") or "main"))
+    if not slug or not name:
+        raise PlanError("project and set name are required")
+
+    pd = pdir(slug, "book")
+    safe = _safe_set_slug(name)
+    doc = _load_sets_views_doc(pd)
+    srec, vrec = _ensure_set_view_entry(doc, name, vid)
+
+    removed = 0
+    targets: list[Path] = []
+    conv_rel = str(vrec.get("converted_image") or "").strip()
+    if conv_rel:
+        targets.append(pd / conv_rel)
+    sets_dir = pd / "assets" / "sets"
+    base_stem = safe if vid == "main" else f"{safe}__view_{vid}"
+    for ext in (".png", ".jpg", ".jpeg", ".webp"):
+        targets.append(sets_dir / f"{base_stem}{ext}")
+
+    seen: set[Path] = set()
+    for p in targets:
+        try:
+            rp = p.resolve()
+            if rp in seen:
+                continue
+            seen.add(rp)
+            if p.is_file():
+                p.unlink(missing_ok=True)
+                removed += 1
+        except OSError:
+            continue
+
+    vrec["converted_image"] = ""
+    cleared_baseline = False
+    if str(srec.get("baseline_view_id") or "") == vid:
+        snap_rel = str(srec.get("baseline_snapshot") or "").strip()
+        if snap_rel:
+            (pd / snap_rel).unlink(missing_ok=True)
+        srec["baseline_view_id"] = ""
+        srec["baseline_snapshot"] = ""
+        cleared_baseline = True
+
+    _save_sets_views_doc(pd, doc)
+    return {
+        "status": "ok",
+        "name": name,
+        "view_id": vid,
+        "removed": removed,
+        "cleared_baseline": cleared_baseline,
+    }
+
+
+@route("POST", "/api/v2_set_baseline")
+def _v2_set_baseline(r: Request):
+    """Pin any Step 11 view as the location's Baseline image (snapshotted so future re-runs & other views lock to it), or clear baseline."""
+    import shutil
+
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    raw_vid = str(r.body.get("view_id") or "").strip()
+    if not slug or not name:
+        raise PlanError("project and set name are required")
+
+    pd = pdir(slug, "book")
+    safe = _safe_set_slug(name)
+    doc = _load_sets_views_doc(pd)
+    srec, _main = _ensure_set_view_entry(doc, name, "main")
+
+    # Clear baseline when view_id is empty
+    if not raw_vid:
+        old_snap = str(srec.get("baseline_snapshot") or "").strip()
+        if old_snap:
+            (pd / old_snap).unlink(missing_ok=True)
+        srec["baseline_view_id"] = ""
+        srec["baseline_snapshot"] = ""
+        _save_sets_views_doc(pd, doc)
+        return {"status": "ok", "name": name, "baseline_view_id": "", "baseline_url": ""}
+
+    vid = _safe_view_id(raw_vid)
+    srec, vrec = _ensure_set_view_entry(doc, name, vid)
+
+    # Prefer the view's converted film-style plate (fallback to legacy assets/sets/<safe>.png for main, or imported ref)
+    src_path: Path | None = None
+    for cand_rel in (
+        str(vrec.get("converted_image") or "").strip(),
+        f"assets/sets/{safe}.png" if vid == "main" else f"assets/sets/{safe}__view_{vid}.png",
+        str(vrec.get("ref_image") or "").strip(),
+    ):
+        if cand_rel:
+            p = pd / cand_rel
+            if p.is_file() and p.stat().st_size > 100:
+                src_path = p
+                break
+
+    if src_path is None:
+        raise PlanError(f"Generate or import an image for view '{vrec.get('label') or vid}' before setting it as baseline.")
+
+    snap_rel = f"assets/sets/{safe}_baseline.png"
+    snap_path = pd / snap_rel
+    snap_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src_path, snap_path)
+
+    srec["baseline_view_id"] = vid
+    srec["baseline_snapshot"] = snap_rel
+    _save_sets_views_doc(pd, doc)
+    return {
+        "status": "ok",
+        "name": name,
+        "baseline_view_id": vid,
+        "baseline_label": vrec.get("label") or vid,
+        "baseline_url": f"/file/{slug}/{snap_rel}",
+    }
+
+
 @route("POST", "/api/v2_set_restore")
 def _v2_set_restore(r: Request):
     """Unhide a previously deleted Step 11 set name when the user explicitly re-adds it."""
@@ -3694,11 +5949,28 @@ def _v2_audio_mix_render(r: Request):
         wf.setframerate(22050)
         wf.writeframes(bytes(frames))
 
+    lufs_info: dict[str, Any] = {}
+    if bool(r.body.get("normalize_lufs", False)):
+        import audio_first_clock
+        target_lufs = float(r.body.get("lufs", -14.0))
+        norm_tmp = out_dir / "master_mix_norm.wav"
+        norm_res = audio_first_clock.normalize_to_lufs(out_wav, norm_tmp, target_lufs=target_lufs)
+        if norm_res.get("ok") and norm_tmp.is_file():
+            norm_tmp.replace(out_wav)
+            lufs_info = {
+                "normalized": True,
+                "target_lufs": target_lufs,
+                "before_lufs": norm_res.get("before_lufs"),
+                "after_lufs": norm_res.get("after_lufs"),
+                "true_peak_db": norm_res.get("after_true_peak_db"),
+            }
+
     return {
         "status": "ok",
         "audio_url": f"/file/{slug}/audio/mix/master_mix.wav",
         "duration_sec": round(total_len / 22050.0, 1),
         "stems": {"dialogue_files": len(dlg_files), "foley": foley_file.is_file(), "score": score_file.is_file()},
+        "lufs_master": lufs_info,
     }
 
 
@@ -3834,12 +6106,43 @@ def _v2_export_make(r: Request):
             else:
                 sc_tmp.unlink(missing_ok=True)
 
+        captions_burned = 0
+        if bool(r.body.get("burn_captions")) and out_mp4.is_file():
+            import audio_first_clock
+            clock_json = pd / "exports" / "captions" / "audio_first_clock.json"
+            if clock_json.is_file():
+                try:
+                    cues = (json.loads(clock_json.read_text(encoding="utf-8")) or {}).get("cues") or []
+                except Exception:
+                    cues = []
+            else:
+                cues = audio_first_clock.build_audio_first_clock(slug, pd, use_whisper=False).get("cues") or []
+            if cues:
+                cap_tmp = films_dir / f".tmp_cap_{out_mp4.name}"
+                burn_res = audio_first_clock.burn_safe_captions_mp4(
+                    out_mp4, cap_tmp, cues, is_vertical=(target == "shorts_9x16")
+                )
+                if burn_res.get("ok") and cap_tmp.is_file() and cap_tmp.stat().st_size > 0:
+                    cap_tmp.replace(out_mp4)
+                    captions_burned = int(burn_res.get("cues_burned") or len(cues))
+                else:
+                    cap_tmp.unlink(missing_ok=True)
+
         return {
             "status": "ok",
             "target": target,
+            "captions_burned": captions_burned,
             "video_url": f"/file/{slug}/films/{out_mp4.name}",
             "download_url": f"/download/{slug}/films/{out_mp4.name}",
         }
+
+    if target == "pitch_pptx":
+        import studio_exports_office
+        return studio_exports_office.export_pitch_deck_pptx(slug, pd)
+
+    if target == "prod_xlsx":
+        import studio_exports_office
+        return studio_exports_office.export_production_sheet_xlsx(slug, pd)
 
     raise PlanError(f"Unknown export target: {target}")
 
@@ -3938,5 +6241,1026 @@ def _v2_video_render(r: Request):
         "engine": runner_used,
         "duration": duration,
     }
+
+
+@route("POST", "/api/character_types_custom")
+def _character_types_custom(r: Request):
+    """Create or update a custom visual style or custom character archetype."""
+    import character_types_registry as ctr
+    import production
+
+    kind = str(r.body.get("kind") or "style").strip().lower()
+    try:
+        if kind == "archetype":
+            saved = ctr.save_custom_archetype(r.body)
+        else:
+            saved = ctr.save_custom_style(r.body)
+            production.refresh_styles()
+    except ValueError as e:
+        raise PlanError(str(e)) from e
+    return {"status": "ok", "kind": kind, "saved": saved, "registry": ctr.registry_payload()}
+
+
+@route("POST", "/api/v2_character_ref_upload")
+def _v2_character_ref_upload(r: Request):
+    """Upload a Step 08 reference picture for a cast member and make it available to Step 10, Step 17, and Single Prompts."""
+    import base64
+    import character_identity
+
+    slug = str(r.body.get("project") or "").strip()
+    char_name = str(r.body.get("character") or "").strip()
+    b64 = str(r.body.get("image_base64") or "").strip()
+    if not slug or not char_name or not b64:
+        raise PlanError("project, character, and image_base64 are required")
+    if "," in b64 and b64.startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    raw = base64.b64decode(b64)
+    if len(raw) < 100:
+        raise PlanError("uploaded reference image is empty")
+
+    pd = pdir(slug, "book")
+    safe = character_identity.safe_char_slug(char_name)
+    ref_dir = pd / "assets" / "cast_refs"
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    ref_png = ref_dir / f"{safe}_ref.png"
+    ref_png.write_bytes(raw)
+
+    # Also copy into Step 10 Front View if none exists yet (or explicitly requested), so Turnarounds immediately lock onto it
+    t_dir = pd / "assets" / "turnarounds"
+    t_dir.mkdir(parents=True, exist_ok=True)
+    front_png = t_dir / f"{safe}_front.png"
+    seeded_front = False
+    if bool(r.body.get("set_as_front", False)) or not (front_png.is_file() and front_png.stat().st_size > 100):
+        front_png.write_bytes(raw)
+        seeded_front = True
+
+    # Register in character dossier JSON
+    repo_root = pd.parent.parent.parent
+    rel_repo = ref_png.relative_to(repo_root).as_posix()
+    existing = character_tokens.load_character(slug, char_name)
+    if isinstance(existing, dict):
+        refs_list = [str(x) for x in (existing.get("reference_images") or []) if str(x) != rel_repo]
+        refs_list.insert(0, rel_repo)
+        existing["reference_images"] = refs_list
+        character_tokens.save_character(existing)
+
+    return {
+        "status": "ok",
+        "character": char_name,
+        "image_url": f"/file/{slug}/assets/cast_refs/{safe}_ref.png",
+        "rel_path": rel_repo,
+        "seeded_front": seeded_front,
+    }
+
+
+@route("POST", "/api/v2_character_ref_delete")
+def _v2_character_ref_delete(r: Request):
+    """Remove an uploaded Step 08 cast reference picture."""
+    import character_identity
+
+    slug = str(r.body.get("project") or "").strip()
+    char_name = str(r.body.get("character") or "").strip()
+    if not slug or not char_name:
+        raise PlanError("project and character are required")
+    pd = pdir(slug, "book")
+    safe = character_identity.safe_char_slug(char_name)
+    ref_dir = pd / "assets" / "cast_refs"
+    removed = 0
+    if ref_dir.is_dir():
+        for p in ref_dir.glob(f"{safe}_ref.*"):
+            if p.is_file():
+                p.unlink(missing_ok=True)
+                removed += 1
+    existing = character_tokens.load_character(slug, char_name)
+    if isinstance(existing, dict):
+        existing["reference_images"] = [
+            str(x) for x in (existing.get("reference_images") or [])
+            if f"{safe}_ref." not in str(x)
+        ]
+        character_tokens.save_character(existing)
+    return {"status": "ok", "character": char_name, "removed": removed}
+
+
+@route("POST", "/api/v2_turnaround_restyle")
+def _v2_turnaround_restyle(r: Request):
+    """One-click restyle of an existing Step 10 Front View into any visual style using FLUX.2-klein-4B reference conditioning."""
+    import character_identity
+    import character_types_registry as ctr
+
+    slug = str(r.body.get("project") or "").strip()
+    char_name = str(r.body.get("character") or "").strip()
+    style_id = str(r.body.get("style_id") or r.body.get("target_style") or "").strip()
+    outfit_id = "".join(c for c in str(r.body.get("outfit_id") or "default").strip().lower() if c.isalnum() or c in "_-") or "default"
+    if not slug or not char_name or not style_id:
+        raise PlanError("project, character, and style_id are required")
+
+    st = ctr.get_style(style_id)
+    if not st:
+        raise PlanError(f"Unknown visual style: {style_id}")
+
+    pd = pdir(slug, "book")
+    safe = character_identity.safe_char_slug(char_name)
+    t_dir = pd / "assets" / "turnarounds"
+    fname = f"{safe}_front.png" if outfit_id == "default" else f"{safe}_{outfit_id}_front.png"
+    target_png = t_dir / fname
+    if not (target_png.is_file() and target_png.stat().st_size > 100):
+        # Fall back to legacy base front view
+        alt = t_dir / f"{safe}_front.png"
+        if alt.is_file() and alt.stat().st_size > 100:
+            target_png = alt
+            fname = alt.name
+        else:
+            raise PlanError(f"Generate or upload a Front View of {char_name} first before restyling.")
+
+    # Copy original front view to temp ref so we can overwrite target_png cleanly
+    import tempfile
+    req_engine = str(r.body.get("engine") or "auto").strip().lower()
+    restyle_base = str(st.get("restyle_prompt") or f"Turn this image into {st['name']} style: {st['positives']}")
+    prompt = (
+        f"{restyle_base}. Keep the exact same character ({char_name}), identical face, hair, clothing, pose, and centered full-body front-facing framing "
+        "standing alone on a plain solid neutral studio backdrop, head to toe, no text or numbers."
+    )
+    with tempfile.TemporaryDirectory(prefix="neon-restyle-") as tmp_dir:
+        src_ref = Path(tmp_dir) / "source_front.png"
+        src_ref.write_bytes(target_png.read_bytes())
+        model_used = _render_keyframe_local_or_gemini(
+            prompt,
+            target_png,
+            aspect_ratio="1:1",
+            ref_images=[src_ref],
+            engine=req_engine,
+            view="front",
+            seed=-1,
+            require_ref=True,
+            bypass_cache=True,
+            extra_negative=str(st.get("negatives") or ""),
+        )
+    return {
+        "status": "ok",
+        "character": char_name,
+        "outfit_id": outfit_id,
+        "style_id": st["id"],
+        "style_name": st["name"],
+        "image_url": f"/file/{slug}/assets/turnarounds/{fname}",
+        "model": model_used,
+    }
+
+
+@route("POST", "/api/v2_single_prompt_render")
+def _v2_single_prompt_render(r: Request):
+    """Direct reference-aware Single Prompt generator (Image or Video) using a cast reference photo or uploaded image."""
+    import base64
+    import time as _time
+    import character_types_registry as ctr
+    import post_tools
+    from local_runners.wan2gp_runner import Wan2GPRunner
+    from local_runners.wan_diffusers_runner import WanDiffusersRunner
+    from .gpus import gpu_profile
+
+    set_name = "".join(c if (c.isalnum() or c == "_") else "_" for c in str(r.body.get("set") or "my_prompts").strip().lower()).strip("_") or "my_prompts"
+    prompt_raw = str(r.body.get("prompt") or "").strip()
+    if not prompt_raw:
+        raise PlanError("Enter a prompt first.")
+    mode = str(r.body.get("mode") or "image").strip().lower()
+    if mode not in ("image", "video"):
+        raise PlanError("mode must be 'image' or 'video'")
+    aspect_ratio = str(r.body.get("aspect_ratio") or r.body.get("aspect") or ("16:9" if mode == "video" else "1:1")).strip()
+    neg_raw = str(r.body.get("negative_prompt") or r.body.get("negative") or "").strip()
+    style_id = str(r.body.get("style_id") or "").strip()
+    duration = max(2, min(16, int(r.body.get("duration") or r.body.get("duration_sec") or 4)))
+    req_engine = str(r.body.get("engine") or "auto").strip().lower()
+
+    set_dir = ROOT / "projects" / "prompts" / set_name
+    set_dir.mkdir(parents=True, exist_ok=True)
+    stamp = _time.strftime("%Y%m%d_%H%M%S")
+
+    # Resolve one or more reference images from uploaded base64(s) AND/OR cast/set reference path(s)
+    ref_pngs: list[Path] = []
+    refs_dir = set_dir / "refs"
+
+    def _save_b64_ref(raw_b64: str, idx: int) -> None:
+        s = str(raw_b64 or "").strip()
+        if not s:
+            return
+        if "," in s and s.startswith("data:"):
+            s = s.split(",", 1)[1]
+        raw = base64.b64decode(s)
+        if len(raw) < 100:
+            raise PlanError("uploaded reference image is empty")
+        refs_dir.mkdir(parents=True, exist_ok=True)
+        rp = refs_dir / f"ref_{stamp}_{idx}.png"
+        rp.write_bytes(raw)
+        ref_pngs.append(rp)
+
+    def _add_rel_ref(rel_str: str) -> None:
+        s = str(rel_str or "").strip()
+        if not s:
+            return
+        cand = (ROOT / s.lstrip("/")).resolve()
+        proj_root = (ROOT / "projects").resolve()
+        try:
+            cand.relative_to(proj_root)
+        except ValueError as e:
+            raise PlanError("reference image must be inside projects/") from e
+        if not (cand.is_file() and cand.stat().st_size > 100):
+            raise PlanError(f"reference image not found: {s}")
+        if cand not in ref_pngs:
+            ref_pngs.append(cand)
+
+    if r.body.get("image_base64"):
+        _save_b64_ref(str(r.body["image_base64"]), 0)
+    for idx_ex, ex_b64 in enumerate(r.body.get("extra_images_base64") or [], start=1):
+        _save_b64_ref(str(ex_b64), idx_ex)
+    if r.body.get("ref_path"):
+        _add_rel_ref(str(r.body["ref_path"]))
+    for rp_str in r.body.get("ref_paths") or []:
+        _add_rel_ref(str(rp_str))
+
+    ref_png: Path | None = ref_pngs[0] if ref_pngs else None
+
+    st = ctr.get_style(style_id) if style_id else None
+    style_pos = str(st.get("positives") or "") if st else ""
+    style_neg = str(st.get("negatives") or "") if st else ""
+    motion_cadence = str(st.get("motion_cadence") or "") if st else ""
+
+    full_neg = ", ".join(x for x in (neg_raw, style_neg) if x)
+    if len(ref_pngs) > 1:
+        img_prompt = (
+            f"Combine all {len(ref_pngs)} attached reference sheets/images seamlessly, preserving every character's exact face, outfit, proportions, and visual style (keeping real actors photorealistic and 2D cartoon characters hand-drawn where applicable). "
+            f"{prompt_raw}"
+        )
+    elif ref_png is not None:
+        img_prompt = (
+            "Keep the exact same character/subject identity, face, hair, clothing details, and proportions from the attached reference image. "
+            f"{prompt_raw}"
+        )
+    else:
+        img_prompt = prompt_raw
+    if style_pos:
+        img_prompt = f"{img_prompt}. Style: {style_pos}"
+
+    img_dir = set_dir / "images"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    out_img = img_dir / f"single_{stamp}.png"
+    img_url = f"/file/{set_name}/images/{out_img.name}"
+
+    if mode == "image":
+        model_used = _render_keyframe_local_or_gemini(
+            img_prompt,
+            out_img,
+            aspect_ratio=aspect_ratio,
+            ref_images=ref_pngs if ref_pngs else None,
+            engine=req_engine,
+            seed=-1,
+            require_ref=bool(ref_pngs),
+            bypass_cache=True,
+            extra_negative=full_neg,
+        )
+        return {
+            "status": "ok",
+            "mode": "image",
+            "set": set_name,
+            "url": img_url,
+            "image_url": img_url,
+            "model": model_used,
+            "style_id": style_id,
+            "used_reference": bool(ref_pngs),
+            "reference_count": len(ref_pngs),
+        }
+
+    # Mode == "video": build or reuse opening frame from reference image(s) + prompt, then animate
+    use_ref_directly = bool(r.body.get("use_ref_as_start_frame", False)) and ref_png is not None
+    start_frame: Path
+    start_frame_url = ""
+    img_model = ""
+    if use_ref_directly and ref_png is not None:
+        start_frame = ref_png
+    else:
+        img_model = _render_keyframe_local_or_gemini(
+            img_prompt,
+            out_img,
+            aspect_ratio=aspect_ratio,
+            ref_images=ref_pngs if ref_pngs else None,
+            engine=req_engine,
+            seed=-1,
+            require_ref=bool(ref_pngs),
+            bypass_cache=True,
+            extra_negative=full_neg,
+        )
+        start_frame = out_img
+        start_frame_url = img_url
+
+    vid_dir = set_dir / "videos"
+    vid_dir.mkdir(parents=True, exist_ok=True)
+    out_mp4 = vid_dir / f"single_{stamp}.mp4"
+    vid_url = f"/file/{set_name}/videos/{out_mp4.name}"
+    vid_prompt = f"{prompt_raw}. Motion cadence: {motion_cadence}" if motion_cadence else prompt_raw
+    prof = gpu_profile()
+    runner_used = ""
+
+    if prof.get("tier") != "mac_8g_lite":
+        if req_engine in ("auto", "wan_diffusers", "local"):
+            try:
+                w_runner = WanDiffusersRunner()
+                if w_runner.is_installed():
+                    w_runner.run({
+                        "operation": "image_to_video",
+                        "prompt": vid_prompt,
+                        "reference_image_path": str(start_frame),
+                        "duration_seconds": float(duration),
+                        "output_path": str(out_mp4),
+                        "profile": prof,
+                    })
+                    if out_mp4.is_file() and out_mp4.stat().st_size > 100:
+                        runner_used = "wan_diffusers"
+            except Exception as e:
+                log.warning("single prompt wan_diffusers failed: %s", e)
+        if not runner_used and req_engine in ("auto", "wan2gp", "local"):
+            try:
+                wgp = Wan2GPRunner()
+                if wgp.is_installed():
+                    wgp.run({
+                        "model_id": "wan2gp:wan22-i2v",
+                        "prompt": vid_prompt,
+                        "image_start": str(start_frame),
+                        "output_dir": str(vid_dir),
+                        "profile": prof,
+                    })
+                    if out_mp4.is_file() and out_mp4.stat().st_size > 100:
+                        runner_used = "wan2gp"
+            except Exception as e:
+                log.warning("single prompt wan2gp failed: %s", e)
+
+    if not runner_used or not out_mp4.is_file():
+        # Smooth camera Ken Burns / gentle push-in animatic fallback using FFmpeg so a playable MP4 is always returned
+        ffmpeg = post_tools._ffmpeg_bin()
+        frames = duration * 24
+        vf = (
+            f"scale=1280:720:force_original_aspect_ratio=decrease,"
+            f"pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
+            f"zoompan=z='min(zoom+0.0012,1.12)':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1280x720:fps=24"
+        )
+        cmd = [
+            ffmpeg, "-v", "error", "-y",
+            "-i", str(start_frame),
+            "-t", str(duration),
+            "-vf", vf,
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "24",
+            str(out_mp4),
+        ]
+        proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            raise PlanError(f"Video synthesis failed: {proc.stderr[-250:]}")
+        runner_used = "local_i2v_animatic"
+
+    return {
+        "status": "ok",
+        "mode": "video",
+        "set": set_name,
+        "url": vid_url,
+        "video_url": vid_url,
+        "start_frame_url": start_frame_url,
+        "image_model": img_model,
+        "model": runner_used,
+        "style_id": style_id,
+        "duration": duration,
+        "used_reference": bool(ref_pngs),
+        "reference_count": len(ref_pngs),
+    }
+
+
+@route("POST", "/api/v2_turnaround_sheet")
+def _v2_turnaround_sheet(r: Request):
+    """Generate a 4:3 3-Panel Pro Character Sheet (Front Close-Up Portrait | Full Body Front | Full Body Back)
+    following the 2D-Meets-Realism workflow — works from an uploaded photo (Realistic Sheet) OR for 2D/stylized cast."""
+    import character_identity
+    import character_types_registry as ctr
+
+    slug = str(r.body.get("project") or "").strip()
+    char_name = str(r.body.get("character") or "").strip()
+    if not slug or not char_name:
+        raise PlanError("project and character are required")
+    outfit_id = "".join(c for c in str(r.body.get("outfit_id") or "default").strip().lower() if c.isalnum() or c in "_-") or "default"
+    desc = str(r.body.get("desc") or "").strip()
+    wardrobe = str(r.body.get("wardrobe") or "").strip()
+    sheet_mode = str(r.body.get("sheet_mode") or "auto").strip().lower()
+    req_engine = str(r.body.get("engine") or "auto").strip().lower()
+
+    pd = pdir(slug, "book")
+    safe = character_identity.safe_char_slug(char_name)
+    t_dir = pd / "assets" / "turnarounds"
+    t_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{safe}_sheet.png" if outfit_id == "default" else f"{safe}_{outfit_id}_sheet.png"
+    out_png = t_dir / fname
+
+    # Resolve style: explicit style_id -> sheet_mode -> character style_override -> hybrid_mode -> book look
+    look = str(r.body.get("style_id") or "").strip()
+    gp_doc: dict[str, Any] = {}
+    gp_path = pd / "global_params.json"
+    if gp_path.is_file():
+        try:
+            gp_doc = json.loads(gp_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            gp_doc = {}
+    raw_hm_sh = gp_doc.get("hybrid_mode")
+    hm: dict[str, Any] = raw_hm_sh if isinstance(raw_hm_sh, dict) else {}
+
+    full_ch = character_tokens.load_character(slug, char_name)
+    if not look:
+        if sheet_mode == "realistic":
+            look = str(hm.get("live_style") or "live_action")
+        elif sheet_mode == "2d":
+            look = str(hm.get("cartoon_style") or "vintage_1940s_2d")
+        elif isinstance(full_ch, dict) and str(full_ch.get("style_override") or "").strip():
+            look = str(full_ch["style_override"]).strip()
+        elif hm.get("enabled"):
+            look = str(hm.get("cartoon_style") or "vintage_1940s_2d")
+        else:
+            look = str(r.body.get("look") or gp_doc.get("look") or "live_action")
+
+    st = ctr.get_style(look)
+    style_pos = str((st or {}).get("positives") or "photorealistic studio portrait")
+    style_neg = str((st or {}).get("negatives") or "")
+
+    # Gather best available reference image (Step 08 uploaded photo -> Step 10 Front View)
+    ref_list: list[Path] = []
+    cast_ref_dir = pd / "assets" / "cast_refs"
+    if cast_ref_dir.is_dir():
+        for cand in sorted(cast_ref_dir.glob(f"{safe}_ref.*")):
+            if cand.is_file() and cand.stat().st_size > 100:
+                ref_list.append(cand)
+                break
+    if not ref_list:
+        for cand in (t_dir / f"{safe}_{outfit_id}_front.png", t_dir / f"{safe}_front.png"):
+            if cand.is_file() and cand.stat().st_size > 100:
+                ref_list.append(cand)
+                break
+
+    subject = f"{char_name}"
+    if desc:
+        subject += f" ({desc})"
+    if wardrobe and wardrobe.lower() not in desc.lower():
+        subject += f", wearing {wardrobe}"
+
+    ref_clause = (
+        "Character sheet of the exact person/character in the reference photo: "
+        if ref_list
+        else f"Character sheet of {subject}: "
+    )
+    prompt = (
+        f"{ref_clause}"
+        "3-panel side-by-side layout on a flat neutral grey studio background: "
+        "left panel front close-up portrait, center panel full body front view, right panel full body back view. "
+        f"Subject details: {subject}. "
+        f"Style: {style_pos}. "
+        "Soft even studio light, exact same outfit, face, hair, and proportions in every view, clean panel dividers, no text labels, 4:3."
+    )
+    model_used = _render_keyframe_local_or_gemini(
+        prompt,
+        out_png,
+        aspect_ratio="4:3",
+        ref_images=ref_list if ref_list else None,
+        engine=req_engine,
+        view="front",
+        seed=-1,
+        require_ref=bool(ref_list),
+        bypass_cache=True,
+        extra_negative=", ".join(x for x in (style_neg, "text, labels, watermark, cropped head, mismatched outfit") if x),
+    )
+    return {
+        "status": "ok",
+        "character": char_name,
+        "outfit_id": outfit_id,
+        "style_id": look,
+        "sheet_url": f"/file/{slug}/assets/turnarounds/{fname}",
+        "rel_path": f"projects/books/{slug}/assets/turnarounds/{fname}",
+        "used_reference": bool(ref_list),
+        "model": model_used,
+    }
+
+
+@route("POST", "/api/v2_keyframe_hybrid_pass")
+def _v2_keyframe_hybrid_pass(r: Request):
+    """Two-Pass 2D-Meets-Realism Keyframe Renderer:
+    - pass_num=1: Render Live-Action Plate with planned empty spaces (FREE SPACE gaps) -> keyframes/<sid>_pass1.png
+    - pass_num=2: Lock Pass 1 + composite 2D cartoon cast sheets via multi-ref FLUX.2-klein-4B -> keyframes/<sid>.png"""
+    import character_types_registry as ctr
+
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = str(r.body.get("id") or "").strip()
+    pass_num = int(r.body.get("pass_num") or 1)
+    if not slug or not shot_id or pass_num not in (1, 2):
+        raise PlanError("project, id, and pass_num (1 or 2) are required")
+
+    pd = pdir(slug, "book")
+    kf_dir = pd / "keyframes"
+    kf_dir.mkdir(parents=True, exist_ok=True)
+    pass1_png = kf_dir / f"{shot_id}_pass1.png"
+    final_png = kf_dir / f"{shot_id}.png"
+
+    prompt_raw = str(r.body.get("prompt") or "").strip()
+    gap_notes = str(r.body.get("gap_notes") or "").strip()
+    placement_notes = str(r.body.get("placement_notes") or "").strip()
+    cartoon_refs_rel = [str(x).strip() for x in (r.body.get("cartoon_refs") or []) if str(x).strip()]
+    live_refs_rel = [str(x).strip() for x in (r.body.get("live_refs") or []) if str(x).strip()]
+    req_engine = str(r.body.get("engine") or "auto").strip().lower()
+
+    gp_doc: dict[str, Any] = {}
+    gp_path = pd / "global_params.json"
+    if gp_path.is_file():
+        try:
+            gp_doc = json.loads(gp_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            gp_doc = {}
+    raw_hm_sh = gp_doc.get("hybrid_mode")
+    hm: dict[str, Any] = raw_hm_sh if isinstance(raw_hm_sh, dict) else {}
+    cartoon_style_id = str(r.body.get("cartoon_style") or hm.get("cartoon_style") or "vintage_1940s_2d").strip()
+    live_st = ctr.get_style(str(hm.get("live_style") or "live_action"))
+    cartoon_st = ctr.get_style(cartoon_style_id)
+
+    def _resolve_book_refs(rels: list[str]) -> list[Path]:
+        out_p: list[Path] = []
+        for rel in rels:
+            cand = (pd / rel.lstrip("/")).resolve()
+            if not cand.is_file():
+                cand = (ROOT / rel.lstrip("/")).resolve()
+            if cand.is_file() and cand.stat().st_size > 100 and cand not in out_p:
+                out_p.append(cand)
+        return out_p
+
+    if pass_num == 1:
+        live_refs = _resolve_book_refs(live_refs_rel)
+        live_pos = str((live_st or {}).get("positives") or "cinematic 35mm live-action film still, warm practical lighting")
+        gap_txt = gap_notes or "the empty chair to the right, the open table foreground, and the open air above"
+        p1_prompt = (
+            f"PASS 1 LIVE-ACTION PLATE ONLY (NO CARTOONS YET): {prompt_raw}. "
+            f"Style: {live_pos}. "
+            f"IMPORTANT: Keep clear empty spaces reserved where 2D cartoon characters will be added in Pass 2: {gap_txt}. "
+            "Do NOT draw any 2D cartoons or animated creatures in this pass."
+        )
+        model_used = _render_keyframe_local_or_gemini(
+            p1_prompt,
+            pass1_png,
+            aspect_ratio="16:9",
+            ref_images=live_refs if live_refs else None,
+            engine=req_engine,
+            seed=-1,
+            require_ref=bool(live_refs),
+            bypass_cache=True,
+            extra_negative="cartoon, 2D animated character, illustration, anime, cgi monster",
+        )
+        return {
+            "status": "ok",
+            "pass_num": 1,
+            "id": shot_id,
+            "pass1_url": f"/file/{slug}/keyframes/{shot_id}_pass1.png",
+            "model": model_used,
+        }
+
+    # pass_num == 2: Lock Pass 1 + composite 2D cartoon characters from their sheets into the empty gaps
+    if not (pass1_png.is_file() and pass1_png.stat().st_size > 200):
+        raise PlanError(f"Run Pass 1 (Live Plate with Gaps) for {shot_id} first before bringing the 2D cast in.")
+
+    c_refs = _resolve_book_refs(cartoon_refs_rel)
+    all_refs = [pass1_png, *c_refs]
+    c_pos = str((cartoon_st or {}).get("positives") or "vintage 1940s hand-drawn 2D cartoon style, clean ink line art, flat muted colours, soft painted shading")
+    place_txt = placement_notes or gap_notes or "the planned empty spaces in the live-action scene, reacting naturally to the live actor"
+    p2_prompt = (
+        "PASS 2 HYBRID COMPOSITE: Keep the exact camera angle, lighting, real-world set, and photorealistic human actor from the first reference image (Pass 1 live plate) 100% locked and unchanged. "
+        f"Add the hand-drawn 2D cartoon characters from the remaining reference sheets into the empty spaces: {place_txt}. "
+        f"The added characters MUST stay strictly in {c_pos} with grounded contact shadows and warm bounce light matching the live room, while the real actor and environment remain 100% photorealistic live action. "
+        f"Scene action: {prompt_raw}"
+    )
+    model_used = _render_keyframe_local_or_gemini(
+        p2_prompt,
+        final_png,
+        aspect_ratio="16:9",
+        ref_images=all_refs,
+        engine=req_engine,
+        seed=-1,
+        require_ref=True,
+        bypass_cache=True,
+        extra_negative="turning the real person into a cartoon, turning 2D characters photorealistic, changing the background or camera framing",
+    )
+    return {
+        "status": "ok",
+        "pass_num": 2,
+        "id": shot_id,
+        "image_url": f"/file/{slug}/keyframes/{shot_id}.png",
+        "pass1_url": f"/file/{slug}/keyframes/{shot_id}_pass1.png",
+        "cartoon_ref_count": len(c_refs),
+        "model": model_used,
+    }
+
+
+@route("POST", "/api/v2_hybrid_video_prompts")
+def _v2_hybrid_video_prompts(r: Request):
+    """Generate ready-to-paste Two-Pass Hybrid Video Prompts (Pass 1 Real Plate with Gaps + Pass 2 Bring 2D Cast In,
+    animated on twos) formatted for Seedance 2.5 / Wan / Kling / Claude following 2D_Realism_Tutorial.pdf."""
+    import character_types_registry as ctr
+
+    slug = str(r.body.get("project") or "").strip()
+    scene_id = str(r.body.get("scene_id") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+
+    gp_doc: dict[str, Any] = {}
+    gp_path = pd / "global_params.json"
+    if gp_path.is_file():
+        try:
+            gp_doc = json.loads(gp_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            gp_doc = {}
+    raw_hm_sh = gp_doc.get("hybrid_mode")
+    hm: dict[str, Any] = raw_hm_sh if isinstance(raw_hm_sh, dict) else {}
+    cartoon_style_id = str(r.body.get("cartoon_style") or hm.get("cartoon_style") or "vintage_1940s_2d").strip()
+    c_st = ctr.get_style(cartoon_style_id) or {}
+    c_style_line = str(c_st.get("positives") or "vintage 1940s hand-drawn 2D cartoon style, clean ink line art, flat muted colours, soft painted shading")
+    on_twos = bool(hm.get("animate_on_twos", True))
+
+    # Load shots from shotlist.json
+    sl_path = pd / "shots" / "shotlist.json"
+    scenes: list[dict[str, Any]] = []
+    if sl_path.is_file():
+        try:
+            scenes = (json.loads(sl_path.read_text(encoding="utf-8")) or {}).get("scenes") or []
+        except Exception:
+            scenes = []
+
+    target_scene: dict[str, Any] | None = None
+    for sc in scenes:
+        if isinstance(sc, dict) and (not scene_id or str(sc.get("id") or sc.get("scene")) == scene_id):
+            target_scene = sc
+            break
+
+    heading = str((target_scene or {}).get("heading") or "Scene Location")
+    shots = list((target_scene or {}).get("shots") or [])[:6]
+    total_sec = int(round(sum(float(s.get("seconds") or 3.0) for s in shots if isinstance(s, dict)) or 12))
+
+    # Classify cast into Live-Action vs 2D Cartoon based on Step 08 style_override
+    live_cast: list[str] = []
+    cartoon_cast: list[str] = []
+    seen_names: set[str] = set()
+    for ch in character_tokens.list_characters(slug) or []:
+        if not isinstance(ch, dict) or not ch.get("name"):
+            continue
+        full_ch = character_tokens.load_character(slug, str(ch["name"])) or ch
+        cname = str(full_ch["name"]).strip()
+        if cname.lower() in seen_names:
+            continue
+        seen_names.add(cname.lower())
+        ov = str(full_ch.get("style_override") or "").strip().lower()
+        if ov in ("live_action", "realistic", "noir", "vintage_16mm"):
+            live_cast.append(cname)
+        elif ov:
+            cartoon_cast.append(cname)
+        else:
+            cartoon_cast.append(cname)
+
+    if not live_cast:
+        live_cast = ["Lead Actor"]
+    if not cartoon_cast:
+        cartoon_cast = ["Cartoon Companion"]
+
+    gap_notes = str(r.body.get("gap_notes") or "").strip()
+    if not gap_notes:
+        gap_notes = ", ".join(f"clear empty space for @{c.lower().replace(' ', '_')}" for c in cartoon_cast[:4])
+
+    shot_lines_p1: list[str] = []
+    shot_lines_p2: list[str] = []
+    for i, sh in enumerate(shots or [{"type": "MS", "lens_mm": 35, "movement": "slow push-in", "lighting": "warm practical light", "action": "reacting warmly to the room"}], start=1):
+        stype = str(sh.get("type") or "MS")
+        lens = sh.get("lens_mm") or 35
+        move = str(sh.get("movement") or "static")
+        light = str(sh.get("lighting") or "warm cinematic practical light")
+        act = str(sh.get("action") or sh.get("composition") or "").strip()
+        shot_lines_p1.append(
+            f"Shot {i} ({stype}, {lens}mm, {move}, {light}): {live_cast[0]} performs naturally in {heading} ({act}). Keep clear empty space reserved: {gap_notes}. No 2D characters yet."
+        )
+        tags = ", ".join(f"@{c.lower().replace(' ', '_')}" for c in cartoon_cast[:4])
+        shot_lines_p2.append(
+            f"Shot {i} (LOCK camera, cut, lighting & {live_cast[0]} exactly as in @video1): Add {tags} into the reserved empty spaces reacting to {live_cast[0]} ({act})."
+        )
+
+    pass1_prompt = (
+        f"=== PASS 1: REAL LIVE-ACTION VIDEO WITH GAPS ({total_sec}s, {len(shot_lines_p1)} shots) ===\n"
+        f"References: @image1 = Realistic 3-Panel Sheet ({', '.join(live_cast)}) · @image2 = Live-Action Set ({heading})\n\n"
+        f"Cinematic 35mm live-action scene ({total_sec} seconds) in {heading}. "
+        f"Keep clear empty spaces in every shot where 2D cartoons will be added later ({gap_notes}).\n"
+        + "\n".join(shot_lines_p1)
+    )
+    twos_note = "animated strictly on twos (12 fps)" if on_twos else "smooth hand-drawn cadence"
+    pass2_prompt = (
+        f"=== PASS 2: BRING THE 2D CAST IN (LOCKED TO @video1) ===\n"
+        f"References: @video1 = Pass 1 Raw Live-Action Clip · 2D Sheets: {', '.join('@' + c.lower().replace(' ', '_') for c in cartoon_cast)}\n\n"
+        f"Keep EVERY shot, cut timing, camera move, lighting, and {live_cast[0]} EXACTLY as in @video1 (zero changes to the real footage). "
+        f"Composite the 2D characters into the empty spaces. They MUST stay strictly in {c_style_line}, {twos_note}, reacting naturally to {live_cast[0]} with grounded contact shadows:\n"
+        + "\n".join(shot_lines_p2)
+    )
+    return {
+        "status": "ok",
+        "project": slug,
+        "scene_id": str((target_scene or {}).get("id") or scene_id or "S001"),
+        "cartoon_style": cartoon_style_id,
+        "live_cast": live_cast,
+        "cartoon_cast": cartoon_cast,
+        "pass1_prompt": pass1_prompt,
+        "pass2_prompt": pass2_prompt,
+    }
+
+
+@route("POST", "/api/v2_plate_audit")
+def _v2_plate_audit_post(r: Request):
+    """Build per-plate consistency contact sheets (`qa/plate_sheets/plate_*.jpg`) comparing every approved Step 10/11 plate against all Step 17 keyframes that used it."""
+    import plate_audit
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    return plate_audit.audit_project_plates(slug, pd)
+
+
+@route("POST", "/api/v2_beat_motion_prompt")
+def _v2_beat_motion_prompt(r: Request):
+    """Build a structured beat-by-beat timed Step 18 animation prompt (0.0-Xs beats + ESSENTIAL SEQUENCE + STYLE LOCK + AUDIO Foley cues)."""
+    import character_types_registry as ctr
+
+    slug = str(r.body.get("project") or "").strip()
+    shot_id = str(r.body.get("shot_id") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+
+    gp_doc: dict[str, Any] = {}
+    gp_path = pd / "global_params.json"
+    if gp_path.is_file():
+        try:
+            gp_doc = json.loads(gp_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            gp_doc = {}
+    style_id = str(r.body.get("style_id") or gp_doc.get("look") or "pixar_3d").strip()
+    st = ctr.get_style(style_id) or {}
+    style_name = str(st.get("name") or style_id)
+    motion_cadence = str(st.get("motion_cadence") or "smooth 24-fps cinema animation with grounded physics and zero morphing")
+    style_neg = str(st.get("negatives") or "morphing, extra limbs, duplicate characters, text, watermark")
+
+    # Find matching shot in shotlist.json
+    target_scene: dict[str, Any] | None = None
+    target_shot: dict[str, Any] | None = None
+    sl_path = pd / "shots" / "shotlist.json"
+    if sl_path.is_file():
+        try:
+            sl = json.loads(sl_path.read_text(encoding="utf-8")) or {}
+            for sc in sl.get("scenes") or []:
+                if not isinstance(sc, dict):
+                    continue
+                sc_id = str(sc.get("id") or sc.get("scene") or "S001")
+                for idx, sh in enumerate(sc.get("shots") or [], start=1):
+                    if not isinstance(sh, dict):
+                        continue
+                    sid = f"{sc_id}-{int(sh.get('n') or idx):02d}"
+                    if (shot_id and sid.upper() == shot_id.upper()) or (not shot_id and target_shot is None):
+                        target_scene = sc
+                        target_shot = sh
+                        shot_id = sid
+                        break
+                if target_shot is not None:
+                    break
+        except Exception as e:
+            log.debug("failed reading shotlist for beat prompt: %s", e)
+
+    dur = max(3.0, min(15.0, float(r.body.get("duration") or (target_shot or {}).get("seconds") or 6.0)))
+    heading = str((target_scene or {}).get("heading") or "Scene Location")
+    chars = [str(c) for c in ((target_shot or {}).get("characters") or []) if c]
+    char_str = ", ".join(chars) if chars else "the main subject"
+    cam_move = str((target_shot or {}).get("movement") or "locked camera").strip()
+    action = str(r.body.get("action") or (target_shot or {}).get("action") or (target_shot or {}).get("composition") or "performs the key story beat smoothly").strip()
+    expr = str((target_shot or {}).get("expression") or "natural expressive reaction").strip()
+    props = [str(p) for p in ((target_shot or {}).get("props") or []) if p]
+    prop_str = f", preserving {', '.join(props)}" if props else ""
+
+    t1 = round(dur * 0.22, 1)
+    t2 = round(dur * 0.55, 1)
+    t3 = round(dur * 0.80, 1)
+    cam_rule = (
+        "One continuous locked-camera shot with zero unintended pan, tilt, or zoom."
+        if cam_move.lower() in ("", "static", "locked", "locked camera")
+        else f"One continuous shot with smooth, controlled camera move: {cam_move}. No jump cuts."
+    )
+    foley_hint = str(r.body.get("audio_cue") or f"subtle natural ambient room tone for {heading.lower()}, crisp grounded footsteps/prop Foley matching physical contact. No music or extra dialogue.").strip()
+
+    prompt_text = (
+        f"Animate the uploaded keyframe ({shot_id or 'shot'}) into a {dur:.1f}-second {style_name} shot. "
+        f"Use the uploaded image as the exact opening frame. Preserve {char_str}, wardrobe, lighting, {heading}{prop_str}. "
+        f"{cam_rule}\n\n"
+        f"0.0–{t1:.1f} seconds — ANTICIPATION & SETUP\n"
+        f"{char_str} holds the opening composition, settles weight naturally, and begins the clear anticipation cue before main movement.\n\n"
+        f"{t1:.1f}–{t2:.1f} seconds — PRIMARY ACTION\n"
+        f"{action}. Keep hands, feet, and solid props physically grounded with zero sliding, clipping, or shape drift.\n\n"
+        f"{t2:.1f}–{t3:.1f} seconds — FOLLOW-THROUGH & REACTION\n"
+        f"Complete the motion cleanly with {expr}. Secondary motion (hair, fabric, props) settles naturally under gravity.\n\n"
+        f"{t3:.1f}–{dur:.1f} seconds — FINAL HOLD\n"
+        f"Hold the clean, readable ending pose so the cut lands cleanly on the beat.\n\n"
+        f"ESSENTIAL SEQUENCE: opening pose locked → anticipation → {action} → natural reaction & settle → clean hold.\n"
+        f"STYLE & CONSISTENCY RULES: {motion_cadence}. Avoid: {style_neg}, cuts, camera glitches, extra people, teleporting props, text, or watermarks.\n"
+        f"AUDIO: {foley_hint}"
+    )
+    return {
+        "status": "ok",
+        "project": slug,
+        "shot_id": shot_id or "S001-01",
+        "style_id": style_id,
+        "style_name": style_name,
+        "duration": dur,
+        "prompt": prompt_text,
+    }
+
+
+@route("POST", "/api/v2_audio_first_clock")
+def _v2_audio_first_clock(r: Request):
+    """Build Audio-First Clock word timings, frame-snapped cut timings, and Reels/Shorts safe-zone captions."""
+    import audio_first_clock
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    fps = int(r.body.get("fps") or 24)
+    use_whisper = bool(r.body.get("use_whisper", True))
+    return audio_first_clock.build_audio_first_clock(slug, pd, fps=fps, use_whisper=use_whisper)
+
+
+@route("POST", "/api/v2_caption_proofread")
+def _v2_caption_proofread(r: Request):
+    """Apply interactive Caption Proofread find-and-replace rules (e.g. `Cloud -> Claude`) and regenerate `safe_captions.srt`."""
+    import audio_first_clock
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    cap_dir = pd / "exports" / "captions"
+    clock_json = cap_dir / "audio_first_clock.json"
+    if not clock_json.is_file():
+        clock_data = audio_first_clock.build_audio_first_clock(slug, pd, use_whisper=False)
+    else:
+        clock_data = json.loads(clock_json.read_text(encoding="utf-8")) or {}
+
+    replacements = r.body.get("replacements")
+    if not isinstance(replacements, dict):
+        find_w = str(r.body.get("find") or "").strip()
+        rep_w = str(r.body.get("replace") or "").strip()
+        replacements = {find_w: rep_w} if find_w else {}
+
+    updated_cues, changed = audio_first_clock.apply_caption_proofread(clock_data.get("cues") or [], replacements)
+    clock_data["cues"] = updated_cues
+    clock_data["cue_count"] = len(updated_cues)
+    cap_dir.mkdir(parents=True, exist_ok=True)
+    clock_json.write_text(json.dumps(clock_data, indent=2), encoding="utf-8")
+    srt_path = cap_dir / "safe_captions.srt"
+    srt_path.write_text(audio_first_clock.cues_to_srt(updated_cues), encoding="utf-8")
+    return {
+        "status": "ok",
+        "project": slug,
+        "changed_cues": changed,
+        "cue_count": len(updated_cues),
+        "cues": updated_cues,
+        "srt_url": f"/file/{slug}/exports/captions/safe_captions.srt",
+    }
+
+
+@route("POST", "/api/v2_lufs_normalize")
+def _v2_lufs_normalize(r: Request):
+    """Measure and normalize Step 21's master audio mix to broadcast/social loudness (default -14 LUFS, 48 kHz)."""
+    import audio_first_clock
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    mix_wav = pd / "audio" / "mix" / "master_mix.wav"
+    if not mix_wav.is_file():
+        raise PlanError("No Step 21 master_mix.wav found yet. Mix your audio stems first.")
+    target_lufs = float(r.body.get("target_lufs", -14.0))
+    tmp_out = pd / "audio" / "mix" / "master_mix_lufs.wav"
+    res = audio_first_clock.normalize_to_lufs(mix_wav, tmp_out, target_lufs=target_lufs)
+    if not res.get("ok") or not tmp_out.is_file():
+        raise PlanError(str(res.get("error") or "LUFS normalization failed"))
+    tmp_out.replace(mix_wav)
+    return {
+        "status": "ok",
+        "project": slug,
+        "audio_url": f"/file/{slug}/audio/mix/master_mix.wav",
+        "target_lufs": target_lufs,
+        "before_lufs": res.get("before_lufs"),
+        "after_lufs": res.get("after_lufs"),
+        "after_true_peak_db": res.get("after_true_peak_db"),
+        "sample_rate": res.get("sample_rate", 48000),
+    }
+
+
+@route("POST", "/api/v2_editing_style_analyze")
+def _v2_editing_style_analyze(r: Request):
+    """Analyze 1-3 reference MP4 videos (uploaded base64, local path, or permitted URL via yt-dlp) into Editing Style Guide.md."""
+    import base64
+    import re
+    import editing_style_analyzer as esa
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    ref_dir = pd / "references"
+    ref_dir.mkdir(parents=True, exist_ok=True)
+
+    video_paths: list[Path] = []
+    # 1. Uploaded video file via base64
+    b64 = str(r.body.get("video_base64") or "").strip()
+    if b64:
+        if "," in b64 and b64.startswith("data:"):
+            b64 = b64.split(",", 1)[1]
+        raw = base64.b64decode(b64)
+        if len(raw) < 200:
+            raise PlanError("uploaded reference video is empty")
+        raw_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(r.body.get("filename") or "reference.mp4")).strip("_") or "reference.mp4"
+        if not raw_name.lower().endswith((".mp4", ".mov", ".mkv", ".webm")):
+            raw_name += ".mp4"
+        up_path = ref_dir / raw_name
+        up_path.write_bytes(raw)
+        video_paths.append(up_path)
+
+    # 2. Permitted URL via yt-dlp
+    ref_url = str(r.body.get("url") or "").strip()
+    if ref_url:
+        try:
+            dl_path = esa.download_reference_url(ref_url, ref_dir)
+            video_paths.append(dl_path)
+        except Exception as e:
+            raise PlanError(f"Reference download failed: {e}") from e
+
+    # 3. Existing local MP4s in references/ (or explicit local_path)
+    loc_p = str(r.body.get("local_path") or "").strip()
+    if loc_p and Path(loc_p).is_file():
+        video_paths.append(Path(loc_p))
+    if not video_paths:
+        video_paths = sorted(p for p in ref_dir.glob("*") if p.suffix.lower() in (".mp4", ".mov", ".mkv", ".webm"))
+    if not video_paths:
+        raise PlanError("Upload a reference MP4 video or paste a permitted video URL to analyze.")
+
+    use_whisper = bool(r.body.get("use_whisper", False))
+    try:
+        return esa.analyze_reference_videos(slug, pd, video_paths, use_whisper=use_whisper)
+    except Exception as e:
+        raise PlanError(f"Editing style analysis failed: {e}") from e
+
+
+@route("POST", "/api/v2_humanize_script")
+def _v2_humanize_script(r: Request):
+    """Run the Dialogue & Narration Humanizer pass across Step 06 screenplay / Step 15 spoken dialogue."""
+    import script_humanizer
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    apply_changes = bool(r.body.get("apply", True))
+    dialogue_only = bool(r.body.get("dialogue_only", False))
+    return script_humanizer.humanize_project_screenplay(
+        slug, pd, apply_changes=apply_changes, dialogue_only=dialogue_only
+    )
+
+
+@route("POST", "/api/v2_code_drawn_render")
+def _v2_code_drawn_render(r: Request):
+    """Render a deterministic code-drawn title card / explainer clip (MP4 + HTML twin) for Step 20/22."""
+    import code_drawn_templates
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    raw_bullets = r.body.get("bullets")
+    if isinstance(raw_bullets, str):
+        bullets = [ln.strip() for ln in raw_bullets.splitlines() if ln.strip()]
+    elif isinstance(raw_bullets, list):
+        bullets = [str(x).strip() for x in raw_bullets if str(x).strip()]
+    else:
+        bullets = []
+    try:
+        return code_drawn_templates.render_code_drawn_clip(
+            slug,
+            pd,
+            template_id=str(r.body.get("template_id") or "cinema_title_card").strip(),
+            title=str(r.body.get("title") or "").strip(),
+            subtitle=str(r.body.get("subtitle") or "").strip(),
+            bullets=bullets,
+            aspect=str(r.body.get("aspect") or "16:9").strip(),
+            duration=float(r.body.get("duration") or 4.0),
+            fps=int(r.body.get("fps") or 30),
+        )
+    except Exception as e:
+        raise PlanError(f"Code-drawn animation render failed: {e}") from e
 
 

@@ -24,6 +24,88 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _STEP_RE = re.compile(r"(?:step\s+(\d+)\s*/\s*(\d+)|(?<!\d)(\d+)\s*/\s*(\d+)\s*-\s*[\d.]+(?:s/it|it/s))", re.IGNORECASE)
 
 MODEL_CATALOG: dict[str, dict[str, Any]] = {
+    "flux1-kontext-dev": {
+        "kind": "flux_kontext",
+        "file": "flux1-kontext-dev-Q6_K.gguf",
+        "file_alternates": (
+            "flux1-kontext-dev-Q8_0.gguf",
+            "flux1-kontext-dev-Q6_K.gguf",
+            "flux1-kontext-dev-Q5_K_M.gguf",
+            "flux1-kontext-dev-Q4_K_M.gguf",
+            "flux1-kontext-dev-Q4_K_S.gguf",
+        ),
+        "clip_l": "clip_l.safetensors",
+        "t5xxl": "t5xxl_fp8_e4m3fn.safetensors",
+        "t5xxl_alternates": (
+            "t5xxl_fp8_e4m3fn.safetensors",
+            "t5xxl_fp8_e4m3fn_scaled.safetensors",
+            "t5xxl_fp16.safetensors",
+            "t5-v1_1-xxl-encoder-Q5_K_M.gguf",
+            "t5-v1_1-xxl-encoder-Q8_0.gguf",
+        ),
+        "vae": "ae.safetensors",
+        "base_size": 1024,
+        "steps": 20,
+        "cfg_scale": 1.0,
+        "guidance": 2.5,
+        "sampling_method": "euler",
+        "vram_gb": 11.5,
+        "supports_ref_images": True,
+        "supports_mask": True,
+        "best_for_edit": True,
+        "label": "FLUX.1 Kontext Dev (12B GGUF)",
+        "summary": "Best free local model for locked-camera edits, room continuity, and character identity preservation.",
+        "downloads": [
+            {
+                "file": "flux1-kontext-dev-Q6_K.gguf",
+                "url": "https://huggingface.co/QuantStack/FLUX.1-Kontext-dev-GGUF/resolve/main/flux1-kontext-dev-Q6_K.gguf",
+                "gb": 9.8,
+            },
+            {
+                "file": "clip_l.safetensors",
+                "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors",
+                "gb": 0.24,
+            },
+            {
+                "file": "t5xxl_fp8_e4m3fn.safetensors",
+                "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors",
+                "gb": 4.9,
+            },
+            {
+                "file": "ae.safetensors",
+                "url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors",
+                "gb": 0.32,
+            },
+        ],
+    },
+    "flux2-klein-9b": {
+        "kind": "flux2",
+        "file": "flux-2-klein-9b-Q8_0.gguf",
+        "file_alternates": (
+            "flux-2-klein-9b-Q8_0.gguf",
+            "flux-2-klein-9b-Q6_K.gguf",
+            "flux-2-klein-9b-Q5_K_M.gguf",
+            "flux-2-klein-9b-Q4_K_M.gguf",
+        ),
+        "llm": "Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf",
+        "vae": "flux2_ae.safetensors",
+        "base_size": 1024,
+        "steps": 4,
+        "cfg_scale": 1.0,
+        "sampling_method": "euler",
+        "vram_gb": 12.0,
+        "supports_ref_images": True,
+        "supports_mask": True,
+        "label": "FLUX.2 Klein 9B (GGUF)",
+        "summary": "Fast 4-step multi-reference upgrade over 4B Klein; reuses your existing Qwen3 LLM and FLUX.2 VAE.",
+        "downloads": [
+            {
+                "file": "flux-2-klein-9b-Q8_0.gguf",
+                "url": "https://huggingface.co/leejet/FLUX.2-klein-9B-GGUF/resolve/main/flux-2-klein-9b-Q8_0.gguf",
+                "gb": 9.4,
+            },
+        ],
+    },
     "flux2-klein-4b": {
         "kind": "flux2",
         "file": "flux-2-klein-4b-Q8_0.gguf",
@@ -35,6 +117,9 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "sampling_method": "euler",
         "vram_gb": 8.0,
         "supports_ref_images": True,
+        "supports_mask": True,
+        "label": "FLUX.2 Klein 4B (Installed)",
+        "summary": "Fast 4B multi-reference generator already installed on disk.",
     },
     "z-image-turbo": {
         "kind": "z-image",
@@ -201,13 +286,38 @@ class SdCliRunner(LocalRunner):
         exe = self._exe_path()
         return exe.is_file()
 
-    def ready_models(self, *, require_ref_support: bool = False) -> list[str]:
+    def _resolve_model_file(self, names: str | tuple[str, ...]) -> Path | None:
+        """Return the first existing weight file in `self.models_dir` from a filename or tuple of alternates."""
+        cands = (names,) if isinstance(names, str) else tuple(names)
+        for fname in cands:
+            p = self.models_dir / fname
+            if p.is_file():
+                return p
+        return None
+
+    def ready_models(
+        self,
+        *,
+        require_ref_support: bool = False,
+        prefer_edit: bool = False,
+    ) -> list[str]:
         """Return catalog model IDs whose required weight files exist in `self.models_dir`, ordered best-first."""
-        order: tuple[str, ...] = (
-            ("flux2-klein-4b",)
-            if require_ref_support
-            else ("z-image-turbo", "flux2-klein-4b", "z-image-base", "stable-diffusion-xl-base", "dreamshaper-8", "realistic-vision-v51", "anything-v5")
-        )
+        if require_ref_support and prefer_edit:
+            order: tuple[str, ...] = ("flux1-kontext-dev", "flux2-klein-9b", "flux2-klein-4b")
+        elif require_ref_support:
+            order = ("flux2-klein-9b", "flux1-kontext-dev", "flux2-klein-4b")
+        else:
+            order = (
+                "z-image-turbo",
+                "flux2-klein-9b",
+                "flux1-kontext-dev",
+                "flux2-klein-4b",
+                "z-image-base",
+                "stable-diffusion-xl-base",
+                "dreamshaper-8",
+                "realistic-vision-v51",
+                "anything-v5",
+            )
         ready: list[str] = []
         for mid in order:
             entry = MODEL_CATALOG.get(mid)
@@ -215,13 +325,50 @@ class SdCliRunner(LocalRunner):
                 continue
             if require_ref_support and not entry.get("supports_ref_images"):
                 continue
-            if not (self.models_dir / entry["file"]).is_file():
+            main_cands = entry.get("file_alternates") or entry["file"]
+            if self._resolve_model_file(main_cands) is None:
                 continue
             if entry["kind"] in ("z-image", "flux2"):
                 if not (self.models_dir / entry["llm"]).is_file() or not (self.models_dir / entry["vae"]).is_file():
                     continue
+            elif entry["kind"] == "flux_kontext":
+                t5_cands = entry.get("t5xxl_alternates") or entry["t5xxl"]
+                if (
+                    not (self.models_dir / entry["clip_l"]).is_file()
+                    or self._resolve_model_file(t5_cands) is None
+                    or not (self.models_dir / entry["vae"]).is_file()
+                ):
+                    continue
             ready.append(mid)
         return ready
+
+    def describe_consistency_models(self) -> list[dict[str, Any]]:
+        """Return install status and missing weight info for free local consistency models."""
+        out: list[dict[str, Any]] = []
+        ready_set = set(self.ready_models(require_ref_support=True))
+        for mid in ("flux1-kontext-dev", "flux2-klein-9b", "flux2-klein-4b"):
+            entry = MODEL_CATALOG[mid]
+            missing: list[dict[str, Any]] = []
+            for dl in entry.get("downloads") or []:
+                fname = str(dl["file"])
+                # Treat alternate quants as satisfying the main weight or t5xxl slot
+                if fname == entry.get("file") and self._resolve_model_file(entry.get("file_alternates") or fname):
+                    continue
+                if fname == entry.get("t5xxl") and self._resolve_model_file(entry.get("t5xxl_alternates") or fname):
+                    continue
+                if not (self.models_dir / fname).is_file():
+                    missing.append(dict(dl))
+            out.append({
+                "id": mid,
+                "label": entry.get("label") or mid,
+                "summary": entry.get("summary") or "",
+                "vram_gb": entry.get("vram_gb", 8.0),
+                "ready": mid in ready_set,
+                "missing_files": missing,
+                "missing_gb": round(sum(float(m.get("gb", 0.0)) for m in missing), 2),
+                "models_dir": str(self.models_dir),
+            })
+        return out
 
     def install(
         self,
@@ -290,9 +437,10 @@ class SdCliRunner(LocalRunner):
             raise ValueError(f"Unknown sd-cli model {raw_model!r}")
         entry = MODEL_CATALOG[raw_model]
 
-        model_file = self.models_dir / entry["file"]
-        if not model_file.is_file():
-            raise RuntimeError(f"Missing model file for {raw_model}: {model_file}")
+        main_cands = entry.get("file_alternates") or entry["file"]
+        model_file = self._resolve_model_file(main_cands)
+        if model_file is None:
+            raise RuntimeError(f"Missing model file for {raw_model}: {self.models_dir / entry['file']}")
 
         acquire_media_lease(media_vram_gb=float(entry.get("vram_gb", 4.0)), model_key=raw_model, profile=spec.get("profile"))
 
@@ -340,6 +488,28 @@ class SdCliRunner(LocalRunner):
                 argv.extend(["--sampling-method", str(entry["sampling_method"])])
             if entry["kind"] == "flux2":
                 argv.extend(["--flash-attn", "on"])
+        elif entry["kind"] == "flux_kontext":
+            clip_file = self.models_dir / entry["clip_l"]
+            t5_cands = entry.get("t5xxl_alternates") or entry["t5xxl"]
+            t5_file = self._resolve_model_file(t5_cands)
+            vae_file = self.models_dir / entry["vae"]
+            if not clip_file.is_file():
+                raise RuntimeError(f"Missing clip_l file for {raw_model}: {clip_file}")
+            if t5_file is None:
+                raise RuntimeError(f"Missing t5xxl file for {raw_model}: {self.models_dir / entry['t5xxl']}")
+            if not vae_file.is_file():
+                raise RuntimeError(f"Missing VAE file for {raw_model}: {vae_file}")
+            argv.extend([
+                "--diffusion-model", str(model_file),
+                "--clip_l", str(clip_file),
+                "--t5xxl", str(t5_file),
+                "--vae", str(vae_file),
+                "--flash-attn", "on",
+            ])
+            if entry.get("sampling_method"):
+                argv.extend(["--sampling-method", str(entry["sampling_method"])])
+            if entry.get("guidance") is not None:
+                argv.extend(["--guidance", str(float(spec.get("guidance") or entry["guidance"]))])
         else:
             argv.extend(["-m", str(model_file)])
 
@@ -359,6 +529,11 @@ class SdCliRunner(LocalRunner):
         init_img = str(spec.get("init_image") or "").strip()
         if init_img and Path(init_img).is_file():
             argv.extend(["-i", init_img, "--strength", str(float(spec.get("strength", 0.72)))])
+        mask_img = str(spec.get("mask_image") or "").strip()
+        if mask_img and Path(mask_img).is_file():
+            argv.extend(["--mask", mask_img])
+            if spec.get("img_cfg_scale") is not None:
+                argv.extend(["--img-cfg-scale", str(float(spec["img_cfg_scale"]))])
         if entry.get("supports_ref_images"):
             for ref_p in spec.get("ref_images") or []:
                 if ref_p and Path(str(ref_p)).is_file():

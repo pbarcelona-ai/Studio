@@ -221,12 +221,22 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
             cmd = [exe, "-p"] + (["--model", model] if model else []) + [
                 "--tools", "Read" if image else "", "--no-session-persistence"] + (["--allowedTools", "Read"] if image else []) + [ "--output-format", "json", "--system-prompt", system,
                 "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", "", "--disable-slash-commands"]
-            r = subprocess.run(cmd, input=prompt + feedback, text=True, capture_output=True, env=_env(), timeout=900, cwd=str(img_path) if image else None)
+            try:
+                r = subprocess.run(cmd, input=prompt + feedback, text=True, capture_output=True, env=_env(), timeout=900, cwd=str(img_path) if image else None)
+            except subprocess.TimeoutExpired:
+                last = RuntimeError(f"{cmd_name} timed out (possibly laptop sleep or transient network stall)")
+                feedback = ""
+                continue
             if r.returncode != 0:
                 last = RuntimeError(f"{cmd_name} exited {r.returncode}: {(r.stderr or r.stdout)[:300]}")
                 feedback = ""
                 continue
-            outer = json.loads(r.stdout)
+            try:
+                outer = json.loads(r.stdout)
+            except ValueError as e:
+                last = RuntimeError(f"{cmd_name} returned non-JSON wrapper: {e}")
+                feedback = ""
+                continue
             COST["usd"] += float(outer.get("total_cost_usd") or 0); COST["calls"] += 1
             if outer.get("is_error"):
                 last = RuntimeError(f"{cmd_name} error: {str(outer.get('result'))[:300]}")
@@ -251,8 +261,13 @@ def llm_json(prompt, system, model=None, engine="claude", validate=None, retries
                 out = Path(tmp) / "last.txt"
                 cmd = [exe, "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-o", str(out)] + \
                       (["-m", model] if model else []) + (["-i", str(img_path / img_name)] if image else []) + ["-"]
-                r = subprocess.run(cmd, input=f"{system}\n\n{prompt}{feedback}", text=True, capture_output=True,
-                                   env=_env(), cwd=tmp, timeout=900)
+                try:
+                    r = subprocess.run(cmd, input=f"{system}\n\n{prompt}{feedback}", text=True, capture_output=True,
+                                       env=_env(), cwd=tmp, timeout=900)
+                except subprocess.TimeoutExpired:
+                    last = RuntimeError(f"{cmd_name} timed out (possibly laptop sleep or transient network stall)")
+                    feedback = ""
+                    continue
                 text = out.read_text() if out.exists() else ""
             COST["calls"] += 1
             if r.returncode != 0 or not text.strip():

@@ -106,6 +106,64 @@
 
     root.appendChild(toolbar);
 
+    // Step 17 Pixel-Locked Masked Inpaint bar (shown when a keyframe is loaded from Step 17)
+    let activeKfMeta = null;
+    const inpaintBar = d.createElement("div");
+    inpaintBar.className = "cs-inpaint-bar";
+    inpaintBar.style.display = "none";
+
+    const inpaintTitle = d.createElement("strong");
+    inpaintTitle.style.color = "#7dd3fc";
+    inpaintTitle.textContent = "🖌️ Mask Inpaint";
+
+    const inpaintPrompt = d.createElement("input");
+    inpaintPrompt.type = "text";
+    inpaintPrompt.placeholder = "Draw a Box or Lasso over the area to change, then describe ONLY what should appear inside it…";
+
+    const inpaintStrength = d.createElement("select");
+    inpaintStrength.style.cssText = "padding:5px 7px;background:#020617;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:11.5px";
+    [
+      ["0.55", "Subtle (0.55)"],
+      ["0.72", "Standard (0.72)"],
+      ["0.88", "Strong (0.88)"],
+    ].forEach(([val, lbl]) => {
+      const o = d.createElement("option");
+      o.value = val;
+      o.textContent = lbl;
+      if (val === "0.72") o.selected = true;
+      inpaintStrength.appendChild(o);
+    });
+
+    const btnClearMask = d.createElement("button");
+    btnClearMask.type = "button";
+    btnClearMask.className = "btn btn--ghost";
+    btnClearMask.textContent = "🧹 Clear Mask";
+    btnClearMask.style.cssText = "padding:5px 9px;font-size:11.5px";
+
+    const btnRunInpaint = d.createElement("button");
+    btnRunInpaint.type = "button";
+    btnRunInpaint.className = "btn btn--primary";
+    btnRunInpaint.textContent = "✨ Inpaint Masked Region & Save";
+    btnRunInpaint.style.cssText = "padding:5px 11px;font-size:11.5px";
+
+    const btnBackStep17 = d.createElement("button");
+    btnBackStep17.type = "button";
+    btnBackStep17.className = "btn btn--secondary";
+    btnBackStep17.textContent = "⬅ Back to Step 17";
+    btnBackStep17.style.cssText = "padding:5px 9px;font-size:11.5px";
+
+    const inpaintMsg = d.createElement("span");
+    inpaintMsg.style.cssText = "font-size:11.5px;color:#34d399;width:100%";
+
+    inpaintBar.appendChild(inpaintTitle);
+    inpaintBar.appendChild(inpaintPrompt);
+    inpaintBar.appendChild(inpaintStrength);
+    inpaintBar.appendChild(btnClearMask);
+    inpaintBar.appendChild(btnRunInpaint);
+    inpaintBar.appendChild(btnBackStep17);
+    inpaintBar.appendChild(inpaintMsg);
+    root.appendChild(inpaintBar);
+
     // 7-category Color Grading sliders panel
     const gradingPanel = d.createElement("div");
     gradingPanel.className = "cs-grading-panel row";
@@ -652,7 +710,125 @@
       });
     }
 
-    return {
+    function clearRegions() {
+      state.markedRegions.length = 0;
+      while (regionsSvg.firstChild) regionsSvg.removeChild(regionsSvg.firstChild);
+    }
+
+    function loadKeyframe(meta) {
+      if (!meta || !meta.imageUrl) return;
+      activeKfMeta = {
+        project: String(meta.project || ""),
+        shotId: String(meta.shotId || ""),
+        imageUrl: String(meta.imageUrl || ""),
+        engine: String(meta.engine || "auto"),
+      };
+      clearRegions();
+      baseImg.onload = () => {
+        const nw = baseImg.naturalWidth || 1024;
+        const nh = baseImg.naturalHeight || 576;
+        const maxW = 960;
+        const scale = nw > maxW ? maxW / nw : 1;
+        const cw = Math.max(320, Math.round(nw * scale));
+        const ch = Math.max(180, Math.round(nh * scale));
+        canvas.width = cw;
+        canvas.height = ch;
+        baseImg.style.width = cw + "px";
+        baseImg.style.height = ch + "px";
+        regionsSvg.setAttribute("viewBox", "0 0 " + cw + " " + ch);
+        redrawObjects();
+      };
+      baseImg.src = activeKfMeta.imageUrl + (activeKfMeta.imageUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+      inpaintTitle.textContent = `🖌️ Mask Inpaint: ${activeKfMeta.shotId}`;
+      inpaintPrompt.value = String(meta.prompt || "");
+      inpaintMsg.style.color = "#94a3b8";
+      inpaintMsg.textContent = "Step 1: Draw a Box or Lasso over ONLY the region to change. Everything outside stays 100% pixel-identical.";
+      inpaintBar.style.display = "flex";
+      setActiveTool("box");
+    }
+
+    btnClearMask.addEventListener("click", () => {
+      clearRegions();
+      inpaintMsg.style.color = "#94a3b8";
+      inpaintMsg.textContent = "Mask cleared — draw a new Box or Lasso region.";
+    });
+
+    btnBackStep17.addEventListener("click", () => {
+      if (typeof w.__v2ActivateStep === "function") {
+        w.__v2ActivateStep(17);
+      }
+    });
+
+    btnRunInpaint.addEventListener("click", async () => {
+      if (!activeKfMeta || !activeKfMeta.project || !activeKfMeta.shotId) return;
+      const cw = Math.max(1, Number(canvas.width) || 1);
+      const ch = Math.max(1, Number(canvas.height) || 1);
+      const normRegions = state.markedRegions.map((reg) => {
+        if (reg.type === "box" && reg.bbox) {
+          return {
+            type: "box",
+            bbox: {
+              x: reg.bbox.x / cw,
+              y: reg.bbox.y / ch,
+              width: reg.bbox.width / cw,
+              height: reg.bbox.height / ch,
+            },
+          };
+        }
+        if (reg.type === "lasso" && Array.isArray(reg.points)) {
+          return {
+            type: "lasso",
+            points: reg.points.map((pt) => ({ x: pt.x / cw, y: pt.y / ch })),
+          };
+        }
+        return null;
+      }).filter(Boolean);
+
+      if (!normRegions.length) {
+        inpaintMsg.style.color = "#f87171";
+        inpaintMsg.textContent = "Draw a Box or Lasso region on the image first!";
+        return;
+      }
+      const pTxt = inpaintPrompt.value.trim();
+      if (!pTxt) {
+        inpaintMsg.style.color = "#f87171";
+        inpaintMsg.textContent = "Enter what should change inside the masked region.";
+        inpaintPrompt.focus();
+        return;
+      }
+
+      btnRunInpaint.disabled = true;
+      inpaintMsg.style.color = "#fbbf24";
+      inpaintMsg.textContent = `⏳ Inpainting masked region of ${activeKfMeta.shotId} (keeping background pixel-identical)…`;
+      try {
+        const resp = await fetch("/api/v2_keyframe_mask_inpaint", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project: activeKfMeta.project,
+            id: activeKfMeta.shotId,
+            prompt: pTxt,
+            regions: normRegions,
+            strength: parseFloat(inpaintStrength.value || "0.72"),
+            engine: activeKfMeta.engine || "auto",
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+        activeKfMeta.imageUrl = data.image_url;
+        baseImg.src = data.image_url + "?t=" + Date.now();
+        clearRegions();
+        inpaintMsg.style.color = "#34d399";
+        inpaintMsg.textContent = `✓ Saved pixel-locked masked inpaint for ${activeKfMeta.shotId} (${data.model})! Click ⬅ Back to Step 17 to inspect.`;
+      } catch (err) {
+        inpaintMsg.style.color = "#f87171";
+        inpaintMsg.textContent = "✗ Masked inpaint failed: " + (err.message || err);
+      } finally {
+        btnRunInpaint.disabled = false;
+      }
+    });
+
+    const api = {
       getState() {
         return {
           zoom: state.zoom,
@@ -668,10 +844,23 @@
       setGrading,
       addTextOverlay,
       exportComposite,
+      loadKeyframe,
+      clearRegions,
     };
+    w.__canvasStudioInstance = api;
+    return api;
   }
 
   window.mountCanvasStudio = mountCanvasStudio;
+  window.openKeyframeInCanvasStudio = function openKeyframeInCanvasStudio(meta) {
+    const host = document.getElementById("canvasStudioHost");
+    if (!window.__canvasStudioInstance && host) {
+      window.__canvasStudioInstance = mountCanvasStudio(host, {});
+    }
+    if (window.__canvasStudioInstance && typeof window.__canvasStudioInstance.loadKeyframe === "function") {
+      window.__canvasStudioInstance.loadKeyframe(meta);
+    }
+  };
   window.CanvasStudio = {
     mount: mountCanvasStudio,
   };

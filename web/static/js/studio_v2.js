@@ -239,7 +239,9 @@
       .v2-job-fill.done { background: #10b981; animation: none; }
       .v2-job-fill.err { background: #ef4444; animation: none; }
       .v2-job-fill.stopped { background: #64748b; animation: none; }
-      .v2-job-log { margin: 0; padding: 8px 10px; background: #020617; color: #cbd5e1; border: 1px solid #1e293b; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.45; max-height: 180px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+      .v2-job-log-card { margin-top: 14px; padding: 10px 12px; background: #070b12; border: 1px solid #263248; border-radius: 8px; display: flex; flex-direction: column; gap: 6px; }
+      .v2-job-log-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: #94a3b8; font-weight: 600; }
+      .v2-job-log { margin: 0; padding: 8px 10px; background: #020617; color: #cbd5e1; border: 1px solid #1e293b; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.45; max-height: 220px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
     `;
     document.head.appendChild(st);
   }
@@ -303,17 +305,39 @@
           <button type="button" class="btn btn--ghost v2-job-close hidden" style="padding:2px 7px;font-size:11px" title="Dismiss">✕</button>
         </div>
         <div class="v2-job-track"><div class="v2-job-fill"></div></div>
-        <pre class="v2-job-log">Starting AI worker…</pre>
       `;
       anchor.appendChild(panel);
     }
     panel.classList.remove("hidden");
 
+    // Mount the live AI log window at the bottom of the respective step tab (inside .step-zone-workspace, above .step-zone-dock)
+    const stepPanel = anchor.closest(".step-panel");
+    const logHost = (stepPanel && stepPanel.querySelector(".step-zone-workspace")) || stepPanel || anchor;
+    let logCard = logHost.querySelector(`.v2-job-log-card[data-job-key="${key}"]`);
+    if (!logCard) {
+      logCard = document.createElement("div");
+      logCard.className = "v2-job-log-card";
+      logCard.dataset.jobKey = key;
+      logCard.innerHTML = `
+        <div class="v2-job-log-head">
+          <span>📟 Live AI Log Output</span>
+          <span class="v2-job-log-status">Streaming…</span>
+        </div>
+        <pre class="v2-job-log">Starting AI worker…</pre>
+      `;
+      logHost.appendChild(logCard);
+    } else {
+      // Ensure the log window always sits at the very bottom of the step workspace
+      logHost.appendChild(logCard);
+    }
+    logCard.classList.remove("hidden");
+
     const dotEl = panel.querySelector(".v2-job-dot");
     const titleEl = panel.querySelector(".v2-job-title");
     const metaEl = panel.querySelector(".v2-job-meta");
     const fillEl = panel.querySelector(".v2-job-fill");
-    const logEl = panel.querySelector(".v2-job-log");
+    const logEl = logCard.querySelector(".v2-job-log");
+    const logStatusEl = logCard.querySelector(".v2-job-log-status");
     const btnStop = panel.querySelector(".v2-job-stop");
     const btnToggle = panel.querySelector(".v2-job-toggle");
     const btnClose = panel.querySelector(".v2-job-close");
@@ -323,8 +347,8 @@
     fillEl.className = "v2-job-fill";
     fillEl.style.width = "10%";
     titleEl.textContent = cfg.title || "Running AI job…";
+    if (logStatusEl) logStatusEl.textContent = "Streaming…";
     if (cfg.fresh !== false) logEl.textContent = "Starting AI worker…";
-    logEl.classList.remove("hidden");
     btnToggle.textContent = "Hide Log";
     btnStop.classList.remove("hidden");
     btnStop.disabled = false;
@@ -349,10 +373,14 @@
     _v2JobWatchers.set(key, state);
 
     btnToggle.onclick = () => {
-      const hidden = logEl.classList.toggle("hidden");
+      const hidden = logCard.classList.toggle("hidden");
       btnToggle.textContent = hidden ? "Show Log" : "Hide Log";
+      if (!hidden) logCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
     };
-    btnClose.onclick = () => { panel.classList.add("hidden"); };
+    btnClose.onclick = () => {
+      panel.classList.add("hidden");
+      logCard.classList.add("hidden");
+    };
     btnStop.onclick = async () => {
       btnStop.disabled = true;
       titleEl.textContent = "Stopping AI job…";
@@ -424,6 +452,7 @@
           fillEl.className = "v2-job-fill stopped";
           fillEl.style.width = "100%";
           titleEl.textContent = "Job stopped";
+          if (logStatusEl) logStatusEl.textContent = `Stopped (${_fmtElapsed(elapsed)})`;
           if (cfg.statusEl) cfg.statusEl.textContent = `⏹ Stopped after ${_fmtElapsed(elapsed)}.`;
           if (cfg.badgeEl) {
             cfg.badgeEl.textContent = "Stopped";
@@ -436,7 +465,8 @@
           fillEl.className = "v2-job-fill err";
           fillEl.style.width = "100%";
           titleEl.textContent = typeof r.exit_code === "number" ? `AI job exited with code ${r.exit_code}` : "AI job encountered an error";
-          if (cfg.statusEl) cfg.statusEl.textContent = "✗ AI job failed — check live log below.";
+          if (logStatusEl) logStatusEl.textContent = `Failed (${_fmtElapsed(elapsed)})`;
+          if (cfg.statusEl) cfg.statusEl.textContent = "✗ AI job failed — check live log at the bottom of this tab.";
           if (cfg.badgeEl) {
             cfg.badgeEl.textContent = "Error";
             cfg.badgeEl.className = "status-badge status-badge--drift";
@@ -448,6 +478,7 @@
           fillEl.className = "v2-job-fill done";
           fillEl.style.width = "100%";
           titleEl.textContent = `${cfg.doneTitle || "AI generation complete"} — reloaded automatically`;
+          if (logStatusEl) logStatusEl.textContent = `Completed (${_fmtElapsed(elapsed)})`;
           if (typeof cfg.onComplete === "function") {
             try { await cfg.onComplete(); } catch (e) {}
           }
@@ -565,26 +596,383 @@
     if (banner) banner.remove();
   }
 
-  // ===== UPSTREAM FEEDBACK SYNC (LATER STEP -> EARLIER STEPS WITH USER PERMISSION) =====
+  // ===== BI-DIRECTIONAL WORKFLOW SYNC QUEUE & PERSISTENT TOP BANNER =====
+  let v2WorkflowState = { project: "", queue: { active: false, items: [] }, banner: { active: false } };
+  let v2FurthestStep = 1;
+  let v2BiDirCompleteTimer = null;
+
+  // Map every Studio tool/edit endpoint to its owning step so running tools or making edits
+  // automatically updates the persistent bi-directional top banner.
+  const V2_API_WORKFLOW_MAP = [
+    [/\/api\/save_story|\/api\/v2_ingest_book/, { step: 1, label: "Updated story source", isEdit: true }],
+    [/\/api\/chapters_save|\/api\/chapter_shots/, { step: 2, label: "Updated chapters", isEdit: true }],
+    [/\/api\/readin|\/api\/read_it_in|\/api\/v2_coverage_save/, { step: 3, label: "Updated coverage", isEdit: true }],
+    [/\/api\/v2_scope_save/, { step: 4, label: "Updated format & runtime scope", isEdit: true }],
+    [/\/api\/v2_beats_save|\/api\/v2_story_breakdown|\/api\/adaptation/, { step: 5, label: "Updated story structure & beats", isEdit: true }],
+    [/\/api\/v2_screenplay_save|\/api\/screenplay|\/api\/v2_humanize_script/, { step: 6, label: "Updated screenplay", isEdit: true }],
+    [/\/api\/v2_continuity_save|\/api\/continuity_book|\/api\/continuity_bootstrap|\/api\/continuity_edit|\/api\/continuity_approve|\/api\/project_rules/, { step: 7, label: "Updated continuity book", isEdit: true }],
+    [/\/api\/characters(?:\?|$)|\/api\/cast_lock|\/api\/v2_cast_save|\/api\/v2_character_ref_upload|\/api\/v2_character_identity_link|\/api\/v2_wardrobe_states_save|\/api\/v2_wardrobe_save|\/api\/character_token/, { step: 8, label: "Updated cast / wardrobe", isEdit: true, includeUpstream: true }],
+    [/\/api\/global_params|\/api\/v2_style_apply/, { step: 9, label: "Updated visual style recipe", isEdit: true }],
+    [/\/api\/v2_turnaround_render|\/api\/v2_turnaround_sheet|\/api\/v2_turnaround_restyle/, { step: 10, label: "Updated character turnaround", isEdit: true }],
+    [/\/api\/v2_set_render|\/api\/v2_set_ref_upload|\/api\/v2_set_baseline|\/api\/v2_set_save|\/api\/v2_set_view_save|\/api\/v2_set_order/, { step: 11, label: "Updated location / set plate", isEdit: true }],
+    [/\/api\/shot_list|\/api\/shot_list_approve|\/api\/shot_edit|\/api\/v2_shots_save/, { step: 12, label: "Updated shot list", isEdit: true }],
+    [/\/api\/v2_voice_cast_save|\/api\/redo_audio|\/api\/v2_voice_profile_apply/, { step: 14, label: "Updated voice casting", isEdit: true }],
+    [/\/api\/v2_dialogue_render|\/api\/v2_dialogue_upload|\/api\/v2_dialogue_save|\/api\/v2_voice_baseline_set/, { step: 15, label: "Updated spoken dialogue", isEdit: true, includeUpstream: false }],
+    [/\/api\/v2_sound_design_render|\/api\/v2_sound_design_save|\/api\/v2_sound_preset_save|\/api\/v2_sound_sfx_propagate/, { step: 16, label: "Updated score / foley SFX", isEdit: true, includeUpstream: false }],
+    [/\/api\/v2_keyframe_render|\/api\/v2_keyframe_sync_prompts|\/api\/v2_keyframe_clone_edit|\/api\/v2_keyframe_mask_inpaint|\/api\/v2_keyframe_angle_shift|\/api\/v2_keyframe_hybrid_pass|\/api\/v2_keyframe_edit/, { step: 17, label: "Updated storyboard keyframe", isEdit: true, includeUpstream: false }],
+    [/\/api\/v2_video_render|\/api\/v2_local_video_render|\/api\/gemini_omni_generate/, { step: 18, label: "Updated video clip", isEdit: true }],
+    [/\/api\/v2_postprod_save|\/api\/v2_editing_style_analyze|\/api\/v2_code_drawn_render/, { step: 20, label: "Updated timeline sequence", isEdit: false }],
+    [/\/api\/v2_audio_mix_render|\/api\/v2_lufs_normalize/, { step: 21, label: "Updated audio stem mix", isEdit: true }],
+    [/\/api\/v2_export_make/, { step: 22, label: "Exported premiere video", isEdit: false }],
+  ];
+
+  function _activeBookSlug() {
+    const selProj = $("proj");
+    return (selProj && selProj.value) ? selProj.value.trim() : (activeProject || "");
+  }
+
+  function renderV2BiDirBanner(overrideBlockedMsg = "") {
+    const el = $("v2BiDirBanner");
+    if (!el) return;
+
+    // Clear all previous step-pill attention & approve pulse states
+    document.querySelectorAll(".step-pill.v2-needs-attention").forEach(p => p.classList.remove("v2-needs-attention"));
+    document.querySelectorAll(".btn-step-next.v2-approve-pulse").forEach(b => b.classList.remove("v2-approve-pulse"));
+
+    const q = (v2WorkflowState && v2WorkflowState.queue) || { active: false, items: [] };
+    const items = Array.isArray(q.items) ? q.items : [];
+    const pending = items.filter(it => it && it.status !== "done");
+    if (!q.active || !pending.length) {
+      if (!el.classList.contains("phase-completed")) {
+        el.style.display = "none";
+      }
+      return;
+    }
+
+    // Highlight every pending step pill in the top phase navigation bar
+    pending.forEach(it => {
+      const pill = document.querySelector(`.step-pill[data-step="${it.step}"]`);
+      if (pill) pill.classList.add("v2-needs-attention");
+    });
+
+    const target = pending[0];
+    const tStep = Number(target.step);
+    const doneCount = items.length - pending.length;
+    const originStep = Number(q.origin_step || tStep);
+    const onTarget = currentStep === tStep;
+    const phase = !onTarget ? "go_to_step" : (target.status === "needs_approve" ? "needs_approve" : "needs_run");
+
+    el.className = "v2-bidir-banner phase-" + phase + (overrideBlockedMsg ? " is-blocked-flash" : "");
+    el.style.display = "flex";
+    el.textContent = "";
+
+    const top = document.createElement("div");
+    top.className = "v2-bidir-banner__top";
+
+    const copy = document.createElement("div");
+    copy.className = "v2-bidir-banner__copy";
+
+    const headline = document.createElement("div");
+    headline.className = "v2-bidir-banner__headline";
+    const pill = document.createElement("span");
+    pill.className = "v2-bidir-banner__pill";
+    pill.textContent = `Sync ${doneCount + 1}/${items.length} · Return → Step ${String(originStep).padStart(2, "0")}`;
+    const hText = document.createElement("span");
+    if (phase === "needs_approve") {
+      hText.textContent = `✅ Step ${String(tStep).padStart(2, "0")} (${target.title}) Completed — Click the Approval Button to Continue!`;
+    } else if (phase === "needs_run") {
+      hText.textContent = `⚡ Action Required on Step ${String(tStep).padStart(2, "0")}: ${target.title}`;
+    } else {
+      hText.textContent = `🔄 Bi-Directional Update Required — Go to Step ${String(tStep).padStart(2, "0")} (${target.title})`;
+    }
+    headline.appendChild(pill);
+    headline.appendChild(hText);
+
+    const inst = document.createElement("div");
+    inst.className = "v2-bidir-banner__inst";
+    if (overrideBlockedMsg) {
+      inst.textContent = overrideBlockedMsg;
+    } else if (phase === "needs_approve") {
+      const nextAfter = pending[1];
+      const nextDesc = nextAfter
+        ? `Step ${String(nextAfter.step).padStart(2, "0")} (${nextAfter.title})`
+        : `finish syncing and return to Step ${String(originStep).padStart(2, "0")}`;
+      inst.textContent = `Tool run complete! Now click the "Approve & Next ➔" button at the bottom of Step ${String(tStep).padStart(2, "0")} to proceed to ${nextDesc}.`;
+    } else if (phase === "needs_run") {
+      inst.textContent = `${target.action}. When it finishes, this banner will prompt you to click the Approval button to move to the next step.`;
+    } else {
+      const reasonTxt = target.reason || q.change_summary || "a recent modification";
+      const chainTxt = pending.map(it => `Step ${String(it.step).padStart(2, "0")} (${it.title})`).join(" ➔ ");
+      inst.textContent = `Because of "${reasonTxt}", complete these steps in order: ${chainTxt}. Start now on Step ${String(tStep).padStart(2, "0")} (${target.action}), then click Approve & Next at each step.`;
+    }
+
+    copy.appendChild(headline);
+    copy.appendChild(inst);
+
+    const actions = document.createElement("div");
+    actions.className = "v2-bidir-banner__actions";
+    if (phase === "go_to_step") {
+      const btnGo = document.createElement("button");
+      btnGo.type = "button";
+      btnGo.className = "btn btn--primary";
+      btnGo.style.cssText = "padding:6px 13px;font-size:12px;font-weight:700;";
+      btnGo.textContent = `⬅ Go to Step ${String(tStep).padStart(2, "0")} Now`;
+      btnGo.addEventListener("click", () => activateStep(tStep));
+      actions.appendChild(btnGo);
+    } else if (phase === "needs_approve") {
+      const activePanel = document.querySelector(`.step-panel[data-step="${currentStep}"]`);
+      const nextBtn = activePanel ? activePanel.querySelector(".btn-step-next") : null;
+      if (nextBtn) nextBtn.classList.add("v2-approve-pulse");
+      const btnJumpApprove = document.createElement("button");
+      btnJumpApprove.type = "button";
+      btnJumpApprove.className = "btn btn--primary";
+      btnJumpApprove.style.cssText = "padding:6px 13px;font-size:12px;font-weight:700;background:#10b981;border-color:#34d399;color:#022c22;";
+      btnJumpApprove.textContent = "⬇ Jump to Approval Button";
+      btnJumpApprove.addEventListener("click", () => {
+        if (nextBtn) {
+          nextBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+          nextBtn.focus();
+        }
+      });
+      actions.appendChild(btnJumpApprove);
+    }
+
+    top.appendChild(copy);
+    top.appendChild(actions);
+    el.appendChild(top);
+
+    // Ordered step-by-step catch-up breadcrumb strip
+    const strip = document.createElement("div");
+    strip.className = "v2-bidir-steps";
+    items.forEach((it, idx) => {
+      const ch = document.createElement("button");
+      ch.type = "button";
+      const isCurTarget = it.step === tStep && it.status !== "done";
+      ch.className = "v2-bidir-chip" +
+        (it.status === "done" ? " is-done" : (isCurTarget ? (it.status === "needs_approve" ? " is-approve" : " is-active") : ""));
+      const icon = it.status === "done" ? "✓" : (it.status === "needs_approve" ? "✔ Approve" : (isCurTarget ? "●" : "○"));
+      ch.textContent = `${icon} ${it.short || ("Step " + it.step)}`;
+      ch.title = `${it.title}: ${it.status === "done" ? "Completed & Approved" : (it.status === "needs_approve" ? "Tool done — click Approve & Next" : it.action)}`;
+      ch.addEventListener("click", () => activateStep(Number(it.step)));
+      strip.appendChild(ch);
+      if (idx < items.length - 1) {
+        const arr = document.createElement("span");
+        arr.style.cssText = "color:#94a3b8;font-size:11px";
+        arr.textContent = "➔";
+        strip.appendChild(arr);
+      }
+    });
+    el.appendChild(strip);
+  }
+
+  function showV2BiDirCompletedBanner(originStep) {
+    const el = $("v2BiDirBanner");
+    if (!el) return;
+    if (v2BiDirCompleteTimer) clearTimeout(v2BiDirCompleteTimer);
+    el.className = "v2-bidir-banner phase-completed";
+    el.style.display = "flex";
+    el.textContent = "";
+    const row = document.createElement("div");
+    row.className = "v2-bidir-banner__top";
+    const msg = document.createElement("div");
+    msg.className = "v2-bidir-banner__headline";
+    msg.textContent = `✅ Bi-Directional Sync Complete — All required steps were re-run & approved! You are back at Step ${String(originStep || currentStep).padStart(2, "0")}.`;
+    const btnOk = document.createElement("button");
+    btnOk.type = "button";
+    btnOk.className = "btn btn--ghost";
+    btnOk.style.cssText = "padding:4px 10px;font-size:11px;color:#ecfdf5;";
+    btnOk.textContent = "Done";
+    btnOk.addEventListener("click", () => {
+      el.classList.remove("phase-completed");
+      el.style.display = "none";
+    });
+    row.appendChild(msg);
+    row.appendChild(btnOk);
+    el.appendChild(row);
+    v2BiDirCompleteTimer = setTimeout(() => {
+      if (el.classList.contains("phase-completed")) {
+        el.classList.remove("phase-completed");
+        el.style.display = "none";
+      }
+    }, 7000);
+  }
+
+  async function loadV2WorkflowSync(slugOverride = "") {
+    const slug = slugOverride || _activeBookSlug();
+    if (!slug) {
+      v2WorkflowState = { project: "", queue: { active: false, items: [] }, banner: { active: false } };
+      renderV2BiDirBanner();
+      return;
+    }
+    try {
+      const res = await rawCallApi(`/api/v2_workflow_sync?project=${encodeURIComponent(slug)}&current_step=${currentStep}`);
+      v2WorkflowState = {
+        project: slug,
+        queue: (res && res.queue) || { active: false, items: [] },
+        banner: (res && res.banner) || { active: false },
+      };
+      renderV2BiDirBanner();
+    } catch (e) {}
+  }
+
+  async function v2WorkflowRecordModification(slug, stepNum, summary, { includeUpstream = false, upstreamSteps = null, originStep = null, showPlanPopup = false } = {}) {
+    if (!slug || !stepNum) return null;
+    try {
+      const prevPendingSteps = ((v2WorkflowState && v2WorkflowState.queue && v2WorkflowState.queue.items) || [])
+        .filter(it => it && it.status !== "done")
+        .map(it => Number(it.step))
+        .join(",");
+      const payload = {
+        project: slug,
+        action: "modify",
+        step: stepNum,
+        current_step: currentStep,
+        summary: summary || `Modified Step ${String(stepNum).padStart(2, "0")}`,
+        origin_step: originStep || Math.max(v2FurthestStep, currentStep, stepNum),
+        include_upstream: Boolean(includeUpstream),
+      };
+      if (Array.isArray(upstreamSteps)) payload.upstream_steps = upstreamSteps;
+      const res = await rawCallApi("/api/v2_workflow_sync_event", payload);
+      if (res && res.queue) {
+        v2WorkflowState = { project: slug, queue: res.queue, banner: res.banner || { active: false } };
+        renderV2BiDirBanner();
+        const newPending = (res.queue.items || []).filter(it => it && it.status !== "done");
+        const newPendingSteps = newPending.map(it => Number(it.step)).join(",");
+        if (showPlanPopup && newPending.length > 0 && newPendingSteps !== prevPendingSteps && Array.isArray(res.plan_lines) && res.plan_lines.length) {
+          const firstStep = Number(newPending[0].step);
+          const roadmap = res.plan_lines.join("\n");
+          const goNow = await showInstallApprovalModal(
+            `🔄 Bi-Directional Update Required (${newPending.length} Step${newPending.length === 1 ? "" : "s"})`,
+            `Because you updated Step ${String(stepNum).padStart(2, "0")} (${summary || "change"}), complete these steps in order:\n\n${roadmap}\n\nClick OK to jump to Step ${String(firstStep).padStart(2, "0")} now, or Cancel to stay here (the top banner will stay pinned until all steps are completed & approved).`
+          );
+          if (goNow && firstStep && firstStep !== currentStep) {
+            activateStep(firstStep);
+          }
+        }
+      }
+      return res;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function v2WorkflowMarkToolDone(slug, stepNum, toolLabel = "") {
+    if (!slug || !stepNum) return;
+    try {
+      const res = await rawCallApi("/api/v2_workflow_sync_event", {
+        project: slug,
+        action: "tool_done",
+        step: stepNum,
+        current_step: currentStep,
+        tool_label: toolLabel,
+      });
+      if (res && res.queue) {
+        v2WorkflowState = { project: slug, queue: res.queue, banner: res.banner || { active: false } };
+        renderV2BiDirBanner();
+      }
+    } catch (e) {}
+  }
+
+  async function handleV2ApproveNextClick() {
+    const slug = _activeBookSlug();
+    const q = (v2WorkflowState && v2WorkflowState.queue) || { active: false, items: [] };
+    if (slug && q.active) {
+      try {
+        const res = await rawCallApi("/api/v2_workflow_sync_event", {
+          project: slug,
+          action: "approve",
+          step: currentStep,
+          current_step: currentStep,
+        });
+        if (res && res.queue) {
+          v2WorkflowState = { project: slug, queue: res.queue, banner: res.banner || { active: false } };
+        }
+        if (res && res.blocked_needs_run) {
+          renderV2BiDirBanner(
+            `⚠️ You must run the required tool on Step ${String(currentStep).padStart(2, "0")} BEFORE clicking Approve & Next!`
+          );
+          const banner = $("v2BiDirBanner");
+          if (banner) banner.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        if (res && res.completed) {
+          renderV2BiDirBanner();
+          const retStep = Number(res.origin_step || (currentStep + 1));
+          activateStep(retStep);
+          showV2BiDirCompletedBanner(retStep);
+          return;
+        }
+        if (res && res.advanced && res.next_step) {
+          activateStep(Number(res.next_step));
+          return;
+        }
+      } catch (e) {}
+    }
+    activateStep(currentStep + 1);
+  }
+
+  // ===== UPSTREAM FEEDBACK SYNC (LATER STEP -> EARLIER STEPS WITH FULL TRANSITIVE ROADMAP POPUP) =====
   async function proposeUpstreamSync({ project, kind, affectedStepNums, title, message, payload, onSynced }) {
     if (!project || !kind) return false;
-    const pills = (affectedStepNums || [])
+    // Preview the FULL transitive chain (e.g. Step 17 -> Step 12 -> Step 07 -> Step 12 -> Step 17) BEFORE showing the popup!
+    let previewLines = [];
+    let allAffectedNums = Array.isArray(affectedStepNums) ? affectedStepNums.slice() : [];
+    try {
+      const prev = await rawCallApi("/api/v2_workflow_sync_event", {
+        project,
+        action: "preview",
+        step: currentStep,
+        current_step: currentStep,
+        origin_step: currentStep,
+        summary: title || `Modified Step ${String(currentStep).padStart(2, "0")}`,
+        upstream_steps: affectedStepNums || [],
+      });
+      if (prev && Array.isArray(prev.plan_lines) && prev.plan_lines.length) {
+        previewLines = prev.plan_lines;
+      }
+      if (prev && prev.queue && Array.isArray(prev.queue.items)) {
+        allAffectedNums = prev.queue.items.map(it => Number(it.step)).filter(Boolean);
+      }
+    } catch (e) {}
+
+    const pills = allAffectedNums
       .map(n => document.querySelector(`.step-pill[data-step="${n}"]`))
       .filter(Boolean);
     pills.forEach(p => p.classList.add("v2-needs-attention"));
+
+    const roadmapBlock = previewLines.length
+      ? `\n\nFull step-by-step action plan required:\n${previewLines.join("\n")}`
+      : "";
     try {
       const ok = await showInstallApprovalModal(
-        title || "🔄 Update Earlier Step(s) to Match?",
-        message + "\n\nClick OK to update the earlier step(s) automatically, or Cancel to leave them unchanged."
+        title || "🔄 Bi-Directional Update Required",
+        message +
+          roadmapBlock +
+          "\n\nClick OK to sync upstream data and start this guided catch-up (or Cancel to leave these steps queued in the top banner for manual update)."
       );
-      if (!ok) return false;
+      if (!ok) {
+        await v2WorkflowRecordModification(project, currentStep, title || "Upstream change requires step update", {
+          upstreamSteps: affectedStepNums || [],
+          originStep: currentStep,
+        });
+        return false;
+      }
       const res = await rawCallApi("/api/v2_sync_upstream", { project, kind, approved: true, payload });
       if (typeof onSynced === "function") onSynced(res);
+      const qRes = await v2WorkflowRecordModification(project, currentStep, title || "Synced upstream change", {
+        upstreamSteps: affectedStepNums || [],
+        originStep: currentStep,
+      });
+      const firstPending = qRes && qRes.queue && (qRes.queue.items || []).find(it => it && it.status !== "done");
+      if (firstPending && Number(firstPending.step) !== currentStep) {
+        activateStep(Number(firstPending.step));
+      }
       return true;
     } catch (e) {
       return false;
     } finally {
       pills.forEach(p => p.classList.remove("v2-needs-attention"));
+      renderV2BiDirBanner();
     }
   }
 
@@ -611,6 +999,32 @@
     [/\/api\/run/, "Running studio pipeline step…"],
   ];
 
+  let _v2SyncToastTimer = null;
+  function _showV2SyncToast(report) {
+    if (!report || typeof report !== "object") return;
+    const steps = Array.isArray(report.updated_steps) ? report.updated_steps.filter(Boolean) : [];
+    const preserved = Array.isArray(report.preserved) ? report.preserved.filter(Boolean) : [];
+    if (!steps.length && !preserved.length) return;
+    let el = document.getElementById("v2RealTimeSyncToast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "v2RealTimeSyncToast";
+      el.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:9999;max-width:440px;padding:10px 14px;border-radius:10px;background:#0f172a;border:1px solid rgba(16,185,129,0.55);box-shadow:0 10px 28px rgba(0,0,0,0.45);color:#e2e8f0;font-size:12px;line-height:1.45;transition:opacity 0.25s ease;";
+      document.body.appendChild(el);
+    }
+    const parts = [];
+    if (steps.length) parts.push(`<strong style="color:#34d399">🔄 Synced real-time:</strong> ${steps.join(" · ")}`);
+    if (preserved.length) parts.push(`<span style="color:#94a3b8;font-size:11px">🔒 Preserved untouched: ${preserved.slice(0, 3).join(", ")}${preserved.length > 3 ? ` (+${preserved.length - 3} more)` : ""}</span>`);
+    el.innerHTML = parts.join("<br>");
+    el.style.opacity = "1";
+    el.style.display = "block";
+    if (_v2SyncToastTimer) clearTimeout(_v2SyncToastTimer);
+    _v2SyncToastTimer = setTimeout(() => {
+      el.style.opacity = "0";
+      setTimeout(() => { if (el.style.opacity === "0") el.style.display = "none"; }, 260);
+    }, 5200);
+  }
+
   async function callApi(url, body) {
     let stopBusy = null;
     if (body !== undefined) {
@@ -620,7 +1034,30 @@
       }
     }
     try {
-      return await rawCallApi(url, body);
+      const res = await rawCallApi(url, body);
+      if (body !== undefined && res && res.sync_report) {
+        _showV2SyncToast(res.sync_report);
+      }
+      if (body !== undefined && !url.includes("/api/v2_workflow_sync")) {
+        const wfHit = V2_API_WORKFLOW_MAP.find(([re]) => re.test(url));
+        const slugForWf = (body && (body.project || body.slug)) || _activeBookSlug();
+        if (wfHit && slugForWf) {
+          const meta = wfHit[1];
+          const q = (v2WorkflowState && v2WorkflowState.queue) || { active: false, items: [] };
+          const isPendingThisStep = Boolean(
+            q.active && (q.items || []).some(it => it && Number(it.step) === meta.step && it.status === "needs_run")
+          );
+          if (isPendingThisStep) {
+            v2WorkflowMarkToolDone(slugForWf, meta.step, meta.label);
+          } else if (meta.isEdit) {
+            v2WorkflowRecordModification(slugForWf, meta.step, meta.label, {
+              includeUpstream: Boolean(meta.includeUpstream),
+              showPlanPopup: true,
+            });
+          }
+        }
+      }
+      return res;
     } catch (err) {
       const msg = String((err && err.message) || err || "");
       if (url !== "/api/v2_install_engine") {
@@ -629,7 +1066,11 @@
           if (stopBusy) { stopBusy(); stopBusy = null; }
           const installed = await requestInstallWithApproval(hit.key, hit.label, hit.pkgs);
           if (installed) {
-            return await rawCallApi(url, body);
+            const retryRes = await rawCallApi(url, body);
+            if (body !== undefined && retryRes && retryRes.sync_report) {
+              _showV2SyncToast(retryRes.sync_report);
+            }
+            return retryRes;
           }
         }
       }
@@ -1359,6 +1800,7 @@
   function activateStep(stepNum) {
     const prevStep = currentStep;
     currentStep = Math.max(1, Math.min(V2_STEPS.length, stepNum));
+    if (currentStep > v2FurthestStep) v2FurthestStep = currentStep;
 
     // Ensure we are in pipeline mode so zero legacy cards render below the approve button
     document.body.classList.remove("mode-workbench");
@@ -1485,8 +1927,9 @@
       loadV2PostProd();
     }
 
-    // Check for storyline drift and load step autopilot
+    // Check for storyline drift, update bi-directional top banner, and load step autopilot
     checkStepStorylineDrift();
+    renderV2BiDirBanner();
     loadStepAutopilot();
   }
 
@@ -3672,6 +4115,102 @@
     }
   }
 
+  // ===== SHARED CHARACTER TYPES & VISUAL STYLES REGISTRY =====
+  let v2CharTypesCache = null;
+
+  async function loadV2CharacterTypes(force = false) {
+    if (v2CharTypesCache && !force) return v2CharTypesCache;
+    try {
+      const data = await callApi("/api/character_types");
+      if (data && Array.isArray(data.styles) && Array.isArray(data.archetypes)) {
+        v2CharTypesCache = data;
+        // Sync V2_STYLE_RECIPES map with full registry
+        data.styles.forEach(s => {
+          V2_STYLE_RECIPES[s.id] = {
+            id: s.id,
+            label: s.name || s.label || s.id,
+            icon: s.icon || "🎨",
+            category: s.category || "Custom",
+            summary: s.summary || "",
+            positives: s.positives || "",
+            negatives: s.negatives || "",
+            motion_cadence: s.motion_cadence || "",
+            sample_url: s.sample_url || "",
+            custom: Boolean(s.custom),
+          };
+        });
+        return v2CharTypesCache;
+      }
+    } catch (e) {}
+    return v2CharTypesCache || { styles: [], archetypes: [], style_categories: [], archetype_categories: [] };
+  }
+  window.loadV2CharacterTypes = loadV2CharacterTypes;
+
+  function populateArchetypeSelect(selEl, selectedVal = "") {
+    if (!selEl) return;
+    const reg = v2CharTypesCache || { archetypes: [], archetype_categories: [] };
+    selEl.textContent = "";
+    const optAuto = document.createElement("option");
+    optAuto.value = "";
+    optAuto.textContent = "Auto-detect from description";
+    selEl.appendChild(optAuto);
+
+    const byCat = new Map();
+    (reg.archetypes || []).forEach(a => {
+      const cat = a.category || "Other";
+      if (!byCat.has(cat)) byCat.set(cat, []);
+      byCat.get(cat).push(a);
+    });
+    const cats = (reg.archetype_categories && reg.archetype_categories.length)
+      ? reg.archetype_categories.filter(c => byCat.has(c)).concat([...byCat.keys()].filter(c => !reg.archetype_categories.includes(c)))
+      : [...byCat.keys()];
+    cats.forEach(cat => {
+      const grp = document.createElement("optgroup");
+      grp.label = cat;
+      (byCat.get(cat) || []).forEach(a => {
+        const opt = document.createElement("option");
+        opt.value = a.id;
+        opt.textContent = `${a.icon ? a.icon + " " : ""}${a.name || a.label || a.id}${a.custom ? " ★" : ""}`;
+        grp.appendChild(opt);
+      });
+      selEl.appendChild(grp);
+    });
+    if (selectedVal) selEl.value = selectedVal;
+  }
+
+  function populateStyleSelect(selEl, selectedVal = "", emptyLabel = "Book Default (Step 09)") {
+    if (!selEl) return;
+    const reg = v2CharTypesCache || { styles: [], style_categories: [] };
+    selEl.textContent = "";
+    if (emptyLabel !== null) {
+      const optDef = document.createElement("option");
+      optDef.value = "";
+      optDef.textContent = emptyLabel;
+      selEl.appendChild(optDef);
+    }
+    const byCat = new Map();
+    (reg.styles || []).forEach(s => {
+      const cat = s.category || "Other";
+      if (!byCat.has(cat)) byCat.set(cat, []);
+      byCat.get(cat).push(s);
+    });
+    const cats = (reg.style_categories && reg.style_categories.length)
+      ? reg.style_categories.filter(c => byCat.has(c)).concat([...byCat.keys()].filter(c => !reg.style_categories.includes(c)))
+      : [...byCat.keys()];
+    cats.forEach(cat => {
+      const grp = document.createElement("optgroup");
+      grp.label = cat;
+      (byCat.get(cat) || []).forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = `${s.icon ? s.icon + " " : ""}${s.name || s.label || s.id}${s.custom ? " ★" : ""}`;
+        grp.appendChild(opt);
+      });
+      selEl.appendChild(grp);
+    });
+    if (selectedVal) selEl.value = selectedVal;
+  }
+
   // ===== STEP 08: CAST & CHARACTERS =====
   async function loadV2Cast() {
     const selProj = $("proj");
@@ -3681,6 +4220,10 @@
     const badgeEl = $("v2CastBadge");
 
     if (!grid) return;
+
+    await loadV2CharacterTypes();
+    populateArchetypeSelect($("v2CastNewArchetype"), "");
+    populateStyleSelect($("v2CastNewStyle"), "", "Book Default (Step 09)");
 
     if (!slug) {
       grid.textContent = "";
@@ -3792,19 +4335,39 @@
       });
     } catch (e) {}
 
-    // 5. Load per-character scene/location wardrobe states
+    // 5. Load per-character scene/location wardrobe states & cast reference pictures
     let wardrobeStatesMap = {};
-    try {
-      const ws = await callApi(`/api/v2_wardrobe_states?project=${encodeURIComponent(slug)}`);
-      wardrobeStatesMap = (ws && ws.states) || {};
-    } catch (e) {}
+    let castRefsList = [];
+    await Promise.all([
+      (async () => {
+        try {
+          const ws = await callApi(`/api/v2_wardrobe_states?project=${encodeURIComponent(slug)}`);
+          wardrobeStatesMap = (ws && ws.states) || {};
+        } catch (e) {}
+      })(),
+      (async () => {
+        try {
+          const rr = await callApi(`/api/v2_cast_references?project=${encodeURIComponent(slug)}`);
+          castRefsList = (rr && Array.isArray(rr.references)) ? rr.references : [];
+        } catch (e) {}
+      })(),
+    ]);
+
+    const _normSlug = s => String(s || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    const findCharRefs = (charName) => {
+      const target = _normSlug(charName);
+      const step08 = castRefsList.find(r => r.source === "Step 08 Reference" && (_normSlug(r.character) === target || r.slug === target));
+      const step10 = castRefsList.find(r => r.source === "Step 10 Front View" && (_normSlug(r.character) === target || r.slug === target));
+      return { step08, step10, primary: step08 || step10 || null };
+    };
+    const archById = new Map(((v2CharTypesCache && v2CharTypesCache.archetypes) || []).map(a => [a.id, a]));
 
     const allChars = [...merged.values()].sort((a, b) =>
       String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
     );
     if (summaryEl) {
       summaryEl.innerHTML = `<strong style="color:#f59e0b">${allChars.length} character(s)</strong> found for <strong>${slug}</strong>` +
-        (allChars.length ? " — edit any dossier inline, save, delete, or add missing characters." : " — click <strong>➕ Add Character</strong> or <strong>🔄 Sync from Book</strong> to populate your cast.");
+        (allChars.length ? " — upload reference pictures, pick character types or mixed-media styles, edit dossiers, or add characters." : " — click <strong>➕ Add Character</strong> or <strong>🔄 Sync from Book</strong> to populate your cast.");
     }
     if (badgeEl) {
       badgeEl.textContent = allChars.length ? `✓ ${allChars.length} Characters` : "No Characters Yet";
@@ -3845,6 +4408,135 @@
       head.appendChild(title);
       head.appendChild(srcBadge);
       card.appendChild(head);
+
+      // Reference Picture Upload / Preview (Step 08 -> Step 10 & Single Prompts)
+      const refInfo = findCharRefs(c.name);
+      const refBox = document.createElement("div");
+      refBox.style.cssText = "display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;background:#0a0d14;border:1px solid #232d3f;border-radius:6px;";
+      const refThumbWrap = document.createElement("div");
+      refThumbWrap.style.cssText = "width:62px;height:62px;flex-shrink:0;border-radius:6px;overflow:hidden;background:#020617;border:1px solid #334155;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:10px;text-align:center;";
+      if (refInfo.primary && refInfo.primary.url) {
+        const rImg = document.createElement("img");
+        rImg.src = refInfo.primary.url + "?t=" + Date.now();
+        rImg.alt = `${c.name} reference`;
+        rImg.style.cssText = "width:100%;height:100%;object-fit:cover;cursor:zoom-in;";
+        rImg.addEventListener("click", () => window.open(refInfo.primary.url, "_blank"));
+        refThumbWrap.appendChild(rImg);
+      } else {
+        refThumbWrap.textContent = "No Ref";
+      }
+      refBox.appendChild(refThumbWrap);
+
+      const refMeta = document.createElement("div");
+      refMeta.style.cssText = "flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;";
+      const refLbl = document.createElement("div");
+      refLbl.style.cssText = "font-size:11px;color:#e2e8f0;font-weight:600;";
+      refLbl.textContent = refInfo.step08
+        ? "📷 Reference Picture Uploaded (used in Step 10 & Single Prompts)"
+        : (refInfo.step10 ? "📷 Using Step 10 Front View (upload custom photo to override)" : "📷 Cast Reference Picture (optional)");
+      refMeta.appendChild(refLbl);
+
+      const refBtns = document.createElement("div");
+      refBtns.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;";
+      const refFileIn = document.createElement("input");
+      refFileIn.type = "file";
+      refFileIn.accept = "image/*";
+      refFileIn.style.display = "none";
+      const btnUploadRef = document.createElement("button");
+      btnUploadRef.type = "button";
+      btnUploadRef.className = "btn btn--secondary";
+      btnUploadRef.style.cssText = "padding:3px 9px;font-size:11px;";
+      btnUploadRef.textContent = refInfo.step08 ? "📷 Replace Ref Photo" : "📷 Upload Ref Photo";
+      btnUploadRef.addEventListener("click", () => refFileIn.click());
+      refFileIn.addEventListener("change", () => {
+        const f = refFileIn.files && refFileIn.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          btnUploadRef.disabled = true;
+          btnUploadRef.textContent = "Uploading…";
+          try {
+            await callApi("/api/v2_character_ref_upload", {
+              project: slug,
+              character: c.name,
+              image_base64: reader.result,
+              set_as_front: true,
+            });
+            if (window.loadPCastRefs) window.loadPCastRefs();
+            await loadV2Cast();
+          } catch (err) {
+            alert("Reference upload failed: " + (err.message || err));
+            btnUploadRef.disabled = false;
+            btnUploadRef.textContent = "📷 Upload Ref Photo";
+          }
+        };
+        reader.readAsDataURL(f);
+      });
+      refBtns.appendChild(btnUploadRef);
+      refBtns.appendChild(refFileIn);
+
+      if (refInfo.step08) {
+        const btnDelRef = document.createElement("button");
+        btnDelRef.type = "button";
+        btnDelRef.className = "btn btn--ghost";
+        btnDelRef.style.cssText = "padding:3px 8px;font-size:11px;color:#f87171;";
+        btnDelRef.textContent = "🗑️ Remove Ref";
+        btnDelRef.addEventListener("click", async () => {
+          if (!confirm(`Remove uploaded reference photo for ${c.name}?`)) return;
+          btnDelRef.disabled = true;
+          try {
+            await callApi("/api/v2_character_ref_delete", { project: slug, character: c.name });
+            if (window.loadPCastRefs) window.loadPCastRefs();
+            await loadV2Cast();
+          } catch (err) {
+            alert("Could not remove reference: " + (err.message || err));
+            btnDelRef.disabled = false;
+          }
+        });
+        refBtns.appendChild(btnDelRef);
+      }
+      refMeta.appendChild(refBtns);
+      refBox.appendChild(refMeta);
+      card.appendChild(refBox);
+
+      // Character Type (42+ archetypes + custom) & Visual Style Override (30+ styles for mixed-media films)
+      const typeRow = document.createElement("div");
+      typeRow.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:4px;";
+      const archWrap = document.createElement("div");
+      const archLbl = document.createElement("label");
+      archLbl.className = "f";
+      archLbl.textContent = "Character Type";
+      const archSel = document.createElement("select");
+      archSel.style.cssText = "width:100%;padding:5px 7px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:11px;";
+      const savedArch = (c.rawChar && c.rawChar.archetype) || "";
+      populateArchetypeSelect(archSel, savedArch);
+      archWrap.appendChild(archLbl);
+      archWrap.appendChild(archSel);
+
+      const styleWrap = document.createElement("div");
+      const styleLbl = document.createElement("label");
+      styleLbl.className = "f";
+      styleLbl.textContent = "Style Override (Mixed-Media)";
+      const styleSel = document.createElement("select");
+      styleSel.style.cssText = "width:100%;padding:5px 7px;background:#0a0d14;color:#bae6fd;border:1px solid #334155;border-radius:6px;font-size:11px;";
+      const savedStyleOv = (c.rawChar && c.rawChar.style_override) || "";
+      populateStyleSelect(styleSel, savedStyleOv, "Book Default (Step 09)");
+      styleWrap.appendChild(styleLbl);
+      styleWrap.appendChild(styleSel);
+
+      typeRow.appendChild(archWrap);
+      typeRow.appendChild(styleWrap);
+      card.appendChild(typeRow);
+
+      const archHint = document.createElement("div");
+      archHint.style.cssText = "font-size:10px;color:#94a3b8;margin-bottom:4px;min-height:13px;";
+      const updateArchHint = () => {
+        const a = archById.get(archSel.value);
+        archHint.textContent = a && a.hint ? `💡 ${a.hint}` : "";
+      };
+      updateArchHint();
+      archSel.addEventListener("change", updateArchHint);
+      card.appendChild(archHint);
 
       const tokLabel = document.createElement("label");
       tokLabel.className = "f";
@@ -3990,6 +4682,8 @@
               name: c.name,
               description: descTa.value.trim(),
               visual_token: tokInput.value.trim(),
+              archetype: archSel.value || c.rawChar.archetype || "",
+              style_override: styleSel.value || "",
             };
             await callApi("/api/characters", { action: "save", character: updated });
           } else {
@@ -3999,6 +4693,8 @@
               name: c.name,
               description: descTa.value.trim(),
               visual_token: tokInput.value.trim(),
+              archetype: archSel.value || "",
+              style_override: styleSel.value || "",
             });
           }
           msg.textContent = "✓ Saved";
@@ -4062,6 +4758,49 @@
     }
     if (btnReload) btnReload.addEventListener("click", () => loadV2Cast());
 
+    const btnCustomToggle = $("bV2CastCustomTypeToggle");
+    const customForm = $("v2CastCustomTypeForm");
+    const btnCustomCancel = $("bV2CastCustomTypeCancel");
+    const btnCustomSave = $("bV2CastCustomTypeSave");
+    if (btnCustomToggle && customForm) {
+      btnCustomToggle.addEventListener("click", () => {
+        const show = customForm.classList.contains("hidden");
+        customForm.classList.toggle("hidden", !show);
+        customForm.style.display = show ? "flex" : "none";
+        if (show && $("v2CastCustomTypeName")) $("v2CastCustomTypeName").focus();
+      });
+    }
+    if (btnCustomCancel && customForm) {
+      btnCustomCancel.addEventListener("click", () => {
+        customForm.classList.add("hidden");
+        customForm.style.display = "none";
+      });
+    }
+    if (btnCustomSave) {
+      btnCustomSave.addEventListener("click", async () => {
+        const label = ($("v2CastCustomTypeName")?.value || "").trim();
+        const category = ($("v2CastCustomTypeCat")?.value || "Custom").trim();
+        const hint = ($("v2CastCustomTypeHint")?.value || "").trim();
+        const cMsg = $("v2CastCustomTypeMsg");
+        if (!label) { if (cMsg) cMsg.textContent = "Enter a character type name first."; return; }
+        btnCustomSave.disabled = true;
+        if (cMsg) cMsg.textContent = "Saving custom character type…";
+        try {
+          await callApi("/api/character_types_custom", { kind: "archetype", name: label, category, hint, icon: "✨" });
+          await loadV2CharacterTypes(true);
+          if ($("v2CastCustomTypeName")) $("v2CastCustomTypeName").value = "";
+          if ($("v2CastCustomTypeHint")) $("v2CastCustomTypeHint").value = "";
+          if (customForm) { customForm.classList.add("hidden"); customForm.style.display = "none"; }
+          if (cMsg) cMsg.textContent = "";
+          await loadV2Cast();
+        } catch (err) {
+          if (cMsg) cMsg.textContent = "Error: " + (err.message || err);
+        } finally {
+          btnCustomSave.disabled = false;
+        }
+      });
+    }
+
     if (btnCreate) {
       btnCreate.addEventListener("click", async () => {
         const selProj = $("proj");
@@ -4069,6 +4808,8 @@
         const name = ($("v2CastNewName") || {}).value ? $("v2CastNewName").value.trim() : "";
         const token = ($("v2CastNewToken") || {}).value ? $("v2CastNewToken").value.trim() : "";
         const desc = ($("v2CastNewDesc") || {}).value ? $("v2CastNewDesc").value.trim() : "";
+        const archetype = ($("v2CastNewArchetype") || {}).value || "";
+        const style_override = ($("v2CastNewStyle") || {}).value || "";
         const msg = $("v2CastAddMsg");
         if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
         if (!name) { alert("Enter a character name first."); return; }
@@ -4082,10 +4823,14 @@
             name,
             description: desc,
             visual_token: token,
+            archetype,
+            style_override,
           });
           if ($("v2CastNewName")) $("v2CastNewName").value = "";
           if ($("v2CastNewToken")) $("v2CastNewToken").value = "";
           if ($("v2CastNewDesc")) $("v2CastNewDesc").value = "";
+          if ($("v2CastNewArchetype")) $("v2CastNewArchetype").value = "";
+          if ($("v2CastNewStyle")) $("v2CastNewStyle").value = "";
           if (form) { form.classList.add("hidden"); form.style.display = "none"; }
           if (msg) msg.textContent = "";
           await loadV2Cast();
@@ -4161,11 +4906,88 @@
   };
 
   let v2SelectedLook = "live_action";
+  let v2StyleActiveCat = "All";
 
-  function selectV2Style(lookKey) {
+  function renderV2StyleCatalog() {
+    const catsEl = $("v2StyleCats");
+    const gridEl = $("v2StyleGrid");
+    if (!gridEl) return;
+    const allStyles = (v2CharTypesCache && Array.isArray(v2CharTypesCache.styles) && v2CharTypesCache.styles.length)
+      ? v2CharTypesCache.styles
+      : Object.entries(V2_STYLE_RECIPES).map(([id, r]) => ({ id, ...r }));
+
+    const catCounts = new Map();
+    allStyles.forEach(s => {
+      const c = s.category || "Custom";
+      catCounts.set(c, (catCounts.get(c) || 0) + 1);
+    });
+    const catList = ["All", ...((v2CharTypesCache && v2CharTypesCache.style_categories) || []).filter(c => catCounts.has(c)), ...[...catCounts.keys()].filter(c => !((v2CharTypesCache && v2CharTypesCache.style_categories) || []).includes(c))];
+
+    if (catsEl) {
+      catsEl.textContent = "";
+      catList.forEach(cat => {
+        const b = document.createElement("button");
+        b.type = "button";
+        const active = v2StyleActiveCat === cat;
+        b.className = "btn " + (active ? "btn--primary" : "btn--ghost");
+        b.style.cssText = "padding:3px 10px;font-size:11px;border-radius:999px;";
+        const cnt = cat === "All" ? allStyles.length : (catCounts.get(cat) || 0);
+        b.textContent = `${cat} (${cnt})`;
+        b.addEventListener("click", () => {
+          v2StyleActiveCat = cat;
+          renderV2StyleCatalog();
+        });
+        catsEl.appendChild(b);
+      });
+    }
+
+    const filtered = v2StyleActiveCat === "All"
+      ? allStyles
+      : allStyles.filter(s => (s.category || "Custom") === v2StyleActiveCat);
+
+    gridEl.textContent = "";
+    filtered.forEach(s => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "deliverable-card v2-style-card";
+      btn.dataset.look = s.id;
+      btn.setAttribute("role", "radio");
+      btn.setAttribute("aria-checked", String(s.id === v2SelectedLook));
+      btn.style.cssText = "text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:4px;";
+      if (s.sample_url) {
+        const thumb = document.createElement("img");
+        thumb.src = s.sample_url;
+        thumb.alt = `${s.name || s.label || s.id} style preview`;
+        thumb.loading = "lazy";
+        thumb.className = "v2-style-thumb";
+        btn.appendChild(thumb);
+      }
+      const t = document.createElement("span");
+      t.className = "deliverable-title";
+      t.textContent = `${s.icon ? s.icon + " " : ""}${s.name || s.label || s.id}${s.custom ? " ★" : ""}`;
+      const p = document.createElement("p");
+      p.className = "deliverable-desc";
+      p.textContent = s.summary || (s.positives || "").slice(0, 95);
+      btn.appendChild(t);
+      btn.appendChild(p);
+      btn.addEventListener("click", () => selectV2Style(s.id));
+      gridEl.appendChild(btn);
+    });
+    selectV2Style(v2SelectedLook, true);
+    const liveSel = $("v2HybridLiveStyle");
+    const cartSel = $("v2HybridCartoonStyle");
+    if (liveSel) populateStyleSelect(liveSel, liveSel.value || "live_action", null);
+    if (cartSel) populateStyleSelect(cartSel, cartSel.value || "vintage_1940s_2d", null);
+  }
+
+  function selectV2Style(lookKey, silent = false) {
     const key = V2_STYLE_RECIPES[lookKey] ? lookKey : "live_action";
     v2SelectedLook = key;
     const recipe = V2_STYLE_RECIPES[key];
+
+    if (key === "hybrid_2d_live_action" && !silent && $("v2HybridEnabled")) {
+      $("v2HybridEnabled").checked = true;
+    }
 
     document.querySelectorAll(".v2-style-card").forEach(card => {
       const isSelected = card.dataset.look === key;
@@ -4177,12 +4999,32 @@
 
     const badge = $("v2StyleBadge");
     if (badge) badge.textContent = `✓ ${recipe.label}`;
+    const prevBox = $("v2StylePreviewBox");
+    const prevImg = $("v2StylePreviewImg");
+    const prevTitle = $("v2StylePreviewTitle");
+    const prevCat = $("v2StylePreviewCat");
+    const prevDesc = $("v2StylePreviewDesc");
+    if (prevBox && prevImg) {
+      if (recipe.sample_url) {
+        prevBox.style.display = "flex";
+        prevImg.src = recipe.sample_url;
+        prevImg.alt = `${recipe.label} canned preview`;
+        prevImg.onclick = () => window.open(recipe.sample_url, "_blank");
+        if (prevTitle) prevTitle.textContent = `${recipe.icon ? recipe.icon + " " : ""}${recipe.label}`;
+        if (prevCat) prevCat.textContent = recipe.category || "Style";
+        if (prevDesc) prevDesc.textContent = recipe.summary || recipe.positives || "";
+      } else {
+        prevBox.style.display = "none";
+      }
+    }
     const pos = $("v2StylePos");
     const neg = $("v2StyleNeg");
-    if (pos) pos.value = recipe.positives;
-    if (neg) neg.value = recipe.negatives;
+    const mot = $("v2StyleMotion");
+    if (pos) pos.value = recipe.positives || "";
+    if (neg) neg.value = recipe.negatives || "";
+    if (mot) mot.value = recipe.motion_cadence || "";
     const msg = $("v2StyleMsg");
-    if (msg) msg.textContent = `Selected "${recipe.label}" — click 💾 Apply Style to Book to save to your project.`;
+    if (msg && !silent) msg.textContent = `Selected "${recipe.label}" — click 💾 Apply Style to Book to save to your project.`;
 
     // Sync with hidden legacy look radio if present and persist in localStorage
     const legacyRadio = document.querySelector(`input[name="look"][value="${key}"]`);
@@ -4191,14 +5033,10 @@
       legacyRadio.dispatchEvent(new Event("change"));
     }
     try { localStorage.setItem("studio_v2_look", key); } catch (e) {}
-    loadStepAutopilot();
+    if (!silent) loadStepAutopilot();
   }
 
   function initV2Styles() {
-    document.querySelectorAll(".v2-style-card").forEach(card => {
-      card.addEventListener("click", () => selectV2Style(card.dataset.look));
-    });
-
     const btnApply = $("bV2StyleApply");
     if (btnApply) {
       btnApply.addEventListener("click", async () => {
@@ -4209,12 +5047,24 @@
         btnApply.disabled = true;
         if (msg) msg.textContent = "Applying style to project…";
         try {
+          const hybEnabled = Boolean($("v2HybridEnabled") && $("v2HybridEnabled").checked);
+          const hybrid_mode = {
+            enabled: hybEnabled,
+            world_style: ($("v2HybridLiveStyle") || {}).value || "live_action",
+            live_style: ($("v2HybridLiveStyle") || {}).value || "live_action",
+            cartoon_style: ($("v2HybridCartoonStyle") || {}).value || "vintage_1940s_2d",
+            animate_on_twos: Boolean(!$("v2HybridTwos") || $("v2HybridTwos").checked),
+          };
           await callApi("/api/global_params", {
             project: slug,
+            look: v2SelectedLook,
             positives: ($("v2StylePos") || {}).value || "",
             negatives: ($("v2StyleNeg") || {}).value || "",
+            motion_cadence: ($("v2StyleMotion") || {}).value || "",
+            hybrid_mode,
           });
-          if (msg) msg.textContent = `✓ Applied "${V2_STYLE_RECIPES[v2SelectedLook].label}" to "${slug}".`;
+          const lbl = (V2_STYLE_RECIPES[v2SelectedLook] || {}).label || v2SelectedLook;
+          if (msg) msg.textContent = `✓ Applied "${lbl}"${hybEnabled ? " + 🎭 Hybrid 2D-Meets-Realism Mode" : ""} to "${slug}".`;
         } catch (err) {
           if (msg) msg.textContent = "Error: " + err.message;
         } finally {
@@ -4223,9 +5073,75 @@
       });
     }
 
+    const btnCustomToggle = $("bV2StyleCustomToggle");
+    const customForm = $("v2StyleCustomForm");
+    const btnCustomCancel = $("bV2StyleCustomCancel");
+    const btnCustomSave = $("bV2StyleCustomSave");
+    if (btnCustomToggle && customForm) {
+      btnCustomToggle.addEventListener("click", () => {
+        const show = customForm.classList.contains("hidden");
+        customForm.classList.toggle("hidden", !show);
+        customForm.style.display = show ? "flex" : "none";
+        if (show && $("v2StyleCustomLabel")) $("v2StyleCustomLabel").focus();
+      });
+    }
+    if (btnCustomCancel && customForm) {
+      btnCustomCancel.addEventListener("click", () => {
+        customForm.classList.add("hidden");
+        customForm.style.display = "none";
+      });
+    }
+    if (btnCustomSave) {
+      btnCustomSave.addEventListener("click", async () => {
+        const label = ($("v2StyleCustomLabel")?.value || "").trim();
+        const category = ($("v2StyleCustomCat")?.value || "Custom").trim();
+        const summary = ($("v2StyleCustomSummary")?.value || "").trim();
+        const positives = ($("v2StyleCustomPos")?.value || "").trim();
+        const negatives = ($("v2StyleCustomNeg")?.value || "").trim();
+        const motion_cadence = ($("v2StyleCustomMotion")?.value || "").trim();
+        const cMsg = $("v2StyleCustomMsg");
+        if (!label || !positives) {
+          if (cMsg) cMsg.textContent = "Enter both a Style Name and Image Prompt Keywords.";
+          return;
+        }
+        btnCustomSave.disabled = true;
+        if (cMsg) cMsg.textContent = "Saving custom style…";
+        try {
+          const res = await callApi("/api/character_types_custom", {
+            kind: "style",
+            name: label,
+            category,
+            summary,
+            positives,
+            negatives,
+            motion_cadence,
+            icon: "🎨",
+          });
+          await loadV2CharacterTypes(true);
+          const savedObj = res && (res.saved || res.item);
+          if (savedObj && savedObj.id) v2SelectedLook = savedObj.id;
+          v2StyleActiveCat = "All";
+          renderV2StyleCatalog();
+          if (window.loadPStyles) window.loadPStyles();
+          ["v2StyleCustomLabel", "v2StyleCustomSummary", "v2StyleCustomPos", "v2StyleCustomNeg", "v2StyleCustomMotion"].forEach(id => {
+            if ($(id)) $(id).value = "";
+          });
+          if (customForm) { customForm.classList.add("hidden"); customForm.style.display = "none"; }
+          if (cMsg) cMsg.textContent = "";
+        } catch (err) {
+          if (cMsg) cMsg.textContent = "Error: " + (err.message || err);
+        } finally {
+          btnCustomSave.disabled = false;
+        }
+      });
+    }
+
     let savedLook = "live_action";
     try { savedLook = localStorage.getItem("studio_v2_look") || "live_action"; } catch (e) {}
-    selectV2Style(savedLook);
+    v2SelectedLook = savedLook;
+    loadV2CharacterTypes().then(() => {
+      renderV2StyleCatalog();
+    });
   }
 
   // ===== STEP 11: LOCATIONS & SETS =====
@@ -4330,9 +5246,13 @@
     const merged = new Map();
     let hasContinuityBook = false;
 
-    // 0. Load deleted/hidden sets and custom set order so numbering stays consistent across reloads
+    // 0. Load deleted/hidden sets, custom set order, and disk-saved set edits
     const deletedSets = new Set();
     let savedOrder = [];
+    let diskCustomSets = [];
+    let diskSetImages = {};
+    let diskSetViews = {};
+    let filmStyleLabel = "Film Style";
     try {
       const hid = await callApi(`/api/v2_sets_hidden?project=${encodeURIComponent(slug)}`);
       ((hid && Array.isArray(hid.deleted)) ? hid.deleted : []).forEach(n => {
@@ -4341,6 +5261,18 @@
       });
       if (hid && Array.isArray(hid.order)) {
         savedOrder = hid.order.map(n => String(n || "").trim().toLowerCase()).filter(Boolean);
+      }
+      if (hid && Array.isArray(hid.custom)) {
+        diskCustomSets = hid.custom;
+      }
+      if (hid && hid.set_images && typeof hid.set_images === "object") {
+        diskSetImages = hid.set_images;
+      }
+      if (hid && hid.set_views && typeof hid.set_views === "object") {
+        diskSetViews = hid.set_views;
+      }
+      if (hid && hid.film_style_label) {
+        filmStyleLabel = String(hid.film_style_label);
       }
     } catch (e) {}
 
@@ -4361,8 +5293,8 @@
         existing.inContinuity = true;
         existing.name = clean;
       }
-      if (info.description && (!existing.description || info.inContinuity)) existing.description = info.description;
-      if (info.lighting && (!existing.lighting || info.inContinuity)) existing.lighting = info.lighting;
+      if (info.description && (!existing.description || info.inContinuity || info.prefer)) existing.description = info.description;
+      if (info.lighting && (!existing.lighting || info.inContinuity || info.prefer)) existing.lighting = info.lighting;
       merged.set(key, existing);
     };
 
@@ -4374,7 +5306,7 @@
       locs.forEach(loc => {
         if (!loc) return;
         const name = typeof loc === "string" ? loc : (loc.name || loc.location || "");
-        const desc = typeof loc === "object" ? (loc.description || loc.details || loc.visual_description || "") : "";
+        const desc = typeof loc === "object" ? (loc.description || loc.details || loc.visual_description || loc.token || "") : "";
         const light = typeof loc === "object" ? (loc.lighting || loc.atmosphere || loc.time_of_day || "") : "";
         upsert(name, { inContinuity: true, description: desc, lighting: light }, "Continuity Book");
       });
@@ -4385,8 +5317,9 @@
       const lk = await callApi(`/api/cast_lock?project=${encodeURIComponent(slug)}`);
       const scenes = (lk && Array.isArray(lk.scenes)) ? lk.scenes : [];
       scenes.forEach(s => {
-        if (s.place && s.place.name) {
-          upsert(s.place.name, { description: s.summary || "" }, "Scenes");
+        const pname = s.location || (s.place && s.place.name) || "";
+        if (pname) {
+          upsert(pname, { description: s.summary || "" }, "Scenes");
         }
       });
     } catch (e) {}
@@ -4405,9 +5338,17 @@
       });
     } catch (e) {}
 
-    // 4. Locally added custom sets
+    // 4. Persisted custom sets (disk + localStorage)
     getCustomSets(slug).forEach(cs => {
       upsert(cs.name, { description: cs.description || "", lighting: cs.lighting || "" }, "Custom");
+    });
+    diskCustomSets.forEach(cs => {
+      upsert(cs.name, { description: cs.description || "", lighting: cs.lighting || "", prefer: true }, "Saved Set");
+      const entry = merged.get(String(cs.name || "").trim().toLowerCase());
+      if (entry) {
+        entry.reserve_2d_gaps = Boolean(cs.reserve_2d_gaps);
+        entry.gap_notes = String(cs.gap_notes || "");
+      }
     });
 
     // Apply persisted set order and automatically assign contiguous Set 1..N numbering
@@ -4460,6 +5401,19 @@
     }
 
     const currentOrderKeys = allLocs.map(l => l.name.toLowerCase());
+    // Sync top "Import Reference Photo -> Associate with Location" selector
+    const impSetSel = $("v2LocImportSet");
+    if (impSetSel) {
+      const prevImp = impSetSel.value;
+      impSetSel.textContent = "";
+      allLocs.forEach((l, i) => {
+        const opt = document.createElement("option");
+        opt.value = l.name;
+        opt.textContent = `Set ${i + 1}: ${l.name}`;
+        impSetSel.appendChild(opt);
+      });
+      if (prevImp && allLocs.some(l => l.name === prevImp)) impSetSel.value = prevImp;
+    }
     let draggedLocKey = "";
 
     const clearDropHighlights = () => {
@@ -4612,6 +5566,389 @@
       card.appendChild(descLabel);
       card.appendChild(descTa);
 
+      // Step 11 Multi-View Reference Photo Import, Side-by-Side Film Style Conversion & Baseline Locking
+      const safeSetSlug = loc.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "set";
+      const legacyImgUrl = diskSetImages[safeSetSlug] || "";
+      const svData = diskSetViews[locKey] || { baseline_view_id: "", baseline_url: "", views: [] };
+      const viewsList = (Array.isArray(svData.views) && svData.views.length)
+        ? svData.views.slice()
+        : [{
+            id: "main",
+            label: "Establishing View",
+            notes: "",
+            has_ref: false,
+            ref_url: "",
+            has_converted: Boolean(legacyImgUrl),
+            converted_url: legacyImgUrl,
+            is_baseline: false,
+          }];
+      // Ensure main view picks up legacy plate URL if sets_views.json hadn't recorded it yet
+      viewsList.forEach(vw => {
+        if (vw.id === "main" && !vw.has_converted && legacyImgUrl) {
+          vw.has_converted = true;
+          vw.converted_url = legacyImgUrl;
+        }
+      });
+
+      const setPlateWrap = document.createElement("div");
+      setPlateWrap.style.cssText = "margin-top:6px;padding:8px;background:#0a0d14;border:1px solid #232d3f;border-radius:6px;display:flex;flex-direction:column;gap:6px;";
+      const gapLbl = document.createElement("label");
+      gapLbl.style.cssText = "display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#fde68a;font-weight:600;cursor:pointer;";
+      const gapChk = document.createElement("input");
+      gapChk.type = "checkbox";
+      gapChk.checked = Boolean(loc.reserve_2d_gaps);
+      gapLbl.appendChild(gapChk);
+      gapLbl.appendChild(document.createTextNode("🎭 Plan the Gaps: Reserve empty spaces for 2D cartoon cast (no people)"));
+      setPlateWrap.appendChild(gapLbl);
+
+      const gapInput = document.createElement("input");
+      gapInput.type = "text";
+      gapInput.value = loc.gap_notes || "";
+      gapInput.placeholder = "Where cartoons will live (e.g. empty chair on right, open tabletop foreground, open sky above)…";
+      gapInput.style.cssText = "width:100%;padding:5px 8px;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:11px;";
+      setPlateWrap.appendChild(gapInput);
+
+      // Show active Baseline banner if pinned on this location
+      if (svData.baseline_view_id) {
+        const bView = viewsList.find(v => v.id === svData.baseline_view_id);
+        const bBar = document.createElement("div");
+        bBar.className = "v2-set-baseline-bar";
+        const bTxt = document.createElement("span");
+        bTxt.textContent = `📌 Active Baseline: "${(bView && bView.label) || svData.baseline_view_id}" — re-runs & other views of ${loc.name} will use this baselined image`;
+        const bClr = document.createElement("button");
+        bClr.type = "button";
+        bClr.className = "btn btn--ghost";
+        bClr.style.cssText = "padding:2px 7px;font-size:10.5px;color:#fca5a5";
+        bClr.textContent = "✕ Clear Baseline";
+        bClr.addEventListener("click", async () => {
+          try {
+            await callApi("/api/v2_set_baseline", { project: slug, name: loc.name, view_id: "" });
+            await loadV2Locations();
+          } catch (err) {
+            msg.textContent = "Could not clear baseline: " + (err.message || err);
+          }
+        });
+        bBar.appendChild(bTxt);
+        bBar.appendChild(bClr);
+        setPlateWrap.appendChild(bBar);
+      }
+
+      // Views Header + Inline "+ Add View" for multi-view locations (e.g. Living Room, Kitchen)
+      const viewsHdr = document.createElement("div");
+      viewsHdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px;";
+      const vCountLbl = document.createElement("span");
+      vCountLbl.style.cssText = "font-size:11px;font-weight:700;color:#93c5fd;";
+      vCountLbl.textContent = `🏛 Set Views (${viewsList.length}) · Target Style: ${filmStyleLabel}`;
+      const btnAddView = document.createElement("button");
+      btnAddView.type = "button";
+      btnAddView.className = "btn btn--ghost";
+      btnAddView.style.cssText = "padding:3px 8px;font-size:11px;color:#93c5fd;";
+      btnAddView.textContent = "➕ Add View";
+      viewsHdr.appendChild(vCountLbl);
+      viewsHdr.appendChild(btnAddView);
+      setPlateWrap.appendChild(viewsHdr);
+
+      const addViewForm = document.createElement("div");
+      addViewForm.style.cssText = "display:none;gap:6px;flex-wrap:wrap;padding:6px;background:#0f172a;border:1px solid #334155;border-radius:6px;";
+      const avName = document.createElement("input");
+      avName.type = "text";
+      avName.placeholder = "View name (e.g. Kitchen Doorway, Window & Sofa)…";
+      avName.style.cssText = "flex:1;min-width:140px;padding:4px 7px;background:#020617;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:11px;";
+      const avNotes = document.createElement("input");
+      avNotes.type = "text";
+      avNotes.placeholder = "Camera angle / view details (optional)…";
+      avNotes.style.cssText = "flex:1;min-width:140px;padding:4px 7px;background:#020617;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:11px;";
+      const avSave = document.createElement("button");
+      avSave.type = "button";
+      avSave.className = "btn btn--primary";
+      avSave.style.cssText = "padding:4px 9px;font-size:11px;";
+      avSave.textContent = "Save View";
+      avSave.addEventListener("click", async () => {
+        const lbl = avName.value.trim();
+        if (!lbl) { avName.focus(); return; }
+        avSave.disabled = true;
+        try {
+          await callApi("/api/v2_set_view_save", {
+            project: slug,
+            name: loc.name,
+            label: lbl,
+            notes: avNotes.value.trim(),
+          });
+          await loadV2Locations();
+        } catch (err) {
+          msg.textContent = "Add view failed: " + (err.message || err);
+          avSave.disabled = false;
+        }
+      });
+      addViewForm.appendChild(avName);
+      addViewForm.appendChild(avNotes);
+      addViewForm.appendChild(avSave);
+      setPlateWrap.appendChild(addViewForm);
+      btnAddView.addEventListener("click", () => {
+        addViewForm.style.display = addViewForm.style.display === "none" ? "flex" : "none";
+        if (addViewForm.style.display === "flex") avName.focus();
+      });
+
+      // Render each view with Side-by-Side Imported Photo <-> Converted Film-Style Plate
+      const viewsContainer = document.createElement("div");
+      viewsContainer.className = "v2-set-views";
+      viewsList.forEach(vw => {
+        const vItem = document.createElement("div");
+        vItem.className = "v2-set-view-item" + (vw.is_baseline ? " is-baseline" : "");
+
+        const vHdr = document.createElement("div");
+        vHdr.className = "v2-set-view-hdr";
+        const vTitle = document.createElement("span");
+        vTitle.className = "v2-set-view-title";
+        vTitle.textContent = `${vw.is_baseline ? "📌 " : ""}${vw.label || vw.id}`;
+        const vTag = document.createElement("span");
+        vTag.style.cssText = "font-size:10px;color:#94a3b8;";
+        if (vw.has_ref && vw.has_converted) vTag.textContent = "📷 Ref Photo → 🎨 Converted";
+        else if (vw.has_ref) vTag.textContent = "📷 Ref Photo Ready (Click Convert)";
+        else if (vw.has_converted) vTag.textContent = "🎨 Generated Set Plate (No Ref Photo)";
+        else vTag.textContent = "Optional Ref Photo · Ready to Generate";
+        vHdr.appendChild(vTitle);
+        vHdr.appendChild(vTag);
+        vItem.appendChild(vHdr);
+
+        if (vw.notes) {
+          const vNoteEl = document.createElement("div");
+          vNoteEl.style.cssText = "font-size:10.5px;color:#94a3b8;";
+          vNoteEl.textContent = vw.notes;
+          vItem.appendChild(vNoteEl);
+        }
+
+        // Side-by-side comparison grid: Imported Reference Photo | Converted Film-Style Plate
+        const cmp = document.createElement("div");
+        cmp.className = "v2-set-compare";
+
+        // Left slot: Imported Reference Photo
+        const refSlot = document.createElement("div");
+        refSlot.className = "v2-set-img-slot";
+        const refLbl = document.createElement("div");
+        refLbl.className = "v2-set-img-slot__lbl";
+        refLbl.textContent = "📷 Imported Reference Photo";
+        const refBox = document.createElement("div");
+        refBox.className = "v2-set-img-slot__box";
+        if (vw.has_ref && vw.ref_url) {
+          const rImg = document.createElement("img");
+          rImg.src = vw.ref_url + "?t=" + Date.now();
+          rImg.alt = `${loc.name} ${vw.label} imported photo`;
+          rImg.title = "Click to view full imported reference photo";
+          rImg.addEventListener("click", () => window.open(vw.ref_url, "_blank"));
+          refBox.appendChild(rImg);
+        } else {
+          refBox.textContent = "No photo imported for this view (optional)";
+        }
+        refSlot.appendChild(refLbl);
+        refSlot.appendChild(refBox);
+
+        // Right slot: Converted Film-Style Image
+        const convSlot = document.createElement("div");
+        convSlot.className = "v2-set-img-slot";
+        const convLbl = document.createElement("div");
+        convLbl.className = "v2-set-img-slot__lbl";
+        convLbl.textContent = `🎨 Converted (${filmStyleLabel})`;
+        const convBox = document.createElement("div");
+        convBox.className = "v2-set-img-slot__box";
+        if (vw.has_converted && vw.converted_url) {
+          const cImg = document.createElement("img");
+          cImg.src = vw.converted_url + "?t=" + Date.now();
+          cImg.alt = `${loc.name} ${vw.label} converted set plate`;
+          cImg.title = "Click to view full converted set plate";
+          cImg.addEventListener("click", () => window.open(vw.converted_url, "_blank"));
+          convBox.appendChild(cImg);
+          if (vw.is_baseline) {
+            const bb = document.createElement("span");
+            bb.className = "v2-set-img-slot__badge";
+            bb.textContent = "📌 Baseline";
+            convBox.appendChild(bb);
+          }
+        } else {
+          convBox.textContent = vw.has_ref ? "Click Convert to Film Style →" : "Not generated yet";
+        }
+        convSlot.appendChild(convLbl);
+        convSlot.appendChild(convBox);
+
+        cmp.appendChild(refSlot);
+        cmp.appendChild(convSlot);
+        vItem.appendChild(cmp);
+
+        // Per-view action bar: Import Ref, Convert/Re-run, Set as Baseline, Remove Ref/View
+        const vAct = document.createElement("div");
+        vAct.className = "v2-set-view-actions";
+
+        const refIn = document.createElement("input");
+        refIn.type = "file";
+        refIn.accept = "image/*";
+        refIn.style.display = "none";
+        refIn.addEventListener("change", () => {
+          const f = refIn.files && refIn.files[0];
+          if (!f) return;
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const stopBusy = startBusyFeedback(btnImpView, vItem, `Importing ${f.name} & converting to ${filmStyleLabel}…`);
+            msg.textContent = `Importing "${f.name}" for ${loc.name} (${vw.label})…`;
+            try {
+              await callApi("/api/v2_set_ref_upload", {
+                project: slug,
+                name: loc.name,
+                view_id: vw.id,
+                view_label: vw.label,
+                view_notes: vw.notes || "",
+                filename: f.name,
+                image_base64: reader.result,
+                description: descTa.value.trim(),
+                lighting: lightInput.value.trim(),
+                reserve_2d_gaps: gapChk.checked,
+                gap_notes: gapInput.value.trim(),
+                convert_now: true,
+                engine: _currentV2VisualEngine(),
+              });
+              if (window.loadPCastRefs) window.loadPCastRefs();
+              await loadV2Locations();
+            } catch (err) {
+              msg.textContent = "Import & convert failed: " + (err.message || err);
+            } finally {
+              stopBusy();
+            }
+          };
+          reader.readAsDataURL(f);
+        });
+
+        const btnImpView = document.createElement("button");
+        btnImpView.type = "button";
+        btnImpView.className = "btn btn--ghost";
+        btnImpView.textContent = vw.has_ref ? "📷 Replace Photo" : "📷 Import Photo";
+        btnImpView.title = "Import a real reference photo for this view and convert it into your film's visual style";
+        btnImpView.addEventListener("click", () => refIn.click());
+        vAct.appendChild(btnImpView);
+        vAct.appendChild(refIn);
+
+        const btnConvView = document.createElement("button");
+        btnConvView.type = "button";
+        btnConvView.className = "btn " + (vw.has_converted ? "btn--secondary" : "btn--primary");
+        const hasBaseForRun = Boolean(svData.baseline_view_id);
+        if (vw.has_ref) {
+          btnConvView.textContent = vw.has_converted
+            ? (hasBaseForRun ? "↺ Re-convert (w/ Baseline)" : "↺ Re-convert Photo")
+            : (hasBaseForRun ? "🎨 Convert Photo (w/ Baseline)" : "🎨 Convert to Film Style");
+        } else {
+          btnConvView.textContent = vw.has_converted
+            ? (hasBaseForRun ? "↺ Re-run (w/ Baseline)" : "↺ Re-render Plate")
+            : (hasBaseForRun ? "✨ Generate (w/ Baseline)" : "🎨 Generate Set Plate");
+        }
+        btnConvView.addEventListener("click", async () => {
+          const stopBusy = startBusyFeedback(btnConvView, vItem, `Rendering ${loc.name} (${vw.label})…`);
+          msg.textContent = `Rendering ${loc.name} — ${vw.label}…`;
+          try {
+            await callApi("/api/v2_set_render", {
+              project: slug,
+              name: loc.name,
+              view_id: vw.id,
+              view_label: vw.label,
+              view_notes: vw.notes || "",
+              description: descTa.value.trim(),
+              lighting: lightInput.value.trim(),
+              reserve_2d_gaps: gapChk.checked,
+              gap_notes: gapInput.value.trim(),
+              use_ref: vw.has_ref,
+              use_baseline: true,
+              engine: _currentV2VisualEngine(),
+            });
+            if (window.loadPCastRefs) window.loadPCastRefs();
+            await loadV2Locations();
+          } catch (err) {
+            msg.textContent = "Render failed: " + (err.message || err);
+          } finally {
+            stopBusy();
+          }
+        });
+        vAct.appendChild(btnConvView);
+
+        if (vw.has_converted || vw.has_ref) {
+          const btnBase = document.createElement("button");
+          btnBase.type = "button";
+          btnBase.className = "btn " + (vw.is_baseline ? "btn--primary" : "btn--ghost");
+          btnBase.style.cssText = vw.is_baseline ? "background:#059669;border-color:#10b981;" : "color:#6ee7b7;";
+          btnBase.textContent = vw.is_baseline ? "📌 Baseline ✓ (Update)" : "📌 Use as Baseline";
+          btnBase.title = vw.is_baseline
+            ? "Click to update the locked Baseline snapshot to this view's latest image"
+            : `Set "${vw.label}" as ${loc.name}'s Baseline so future re-runs & other views lock to this image`;
+          btnBase.addEventListener("click", async () => {
+            btnBase.disabled = true;
+            try {
+              await callApi("/api/v2_set_baseline", { project: slug, name: loc.name, view_id: vw.id });
+              await loadV2Locations();
+            } catch (err) {
+              msg.textContent = "Baseline failed: " + (err.message || err);
+              btnBase.disabled = false;
+            }
+          });
+          vAct.appendChild(btnBase);
+        }
+
+        if (vw.has_converted) {
+          const btnDelImg = document.createElement("button");
+          btnDelImg.type = "button";
+          btnDelImg.className = "btn btn--ghost";
+          btnDelImg.style.color = "#f87171";
+          btnDelImg.textContent = "🗑️ Delete Image";
+          btnDelImg.title = `Delete ONLY the generated image for "${vw.label}" (keeps the set, view, and any imported reference photo)`;
+          btnDelImg.addEventListener("click", async () => {
+            btnDelImg.disabled = true;
+            try {
+              await callApi("/api/v2_set_image_delete", { project: slug, name: loc.name, view_id: vw.id });
+              if (window.loadPCastRefs) window.loadPCastRefs();
+              await loadV2Locations();
+            } catch (err) {
+              msg.textContent = "Delete image failed: " + (err.message || err);
+              btnDelImg.disabled = false;
+            }
+          });
+          vAct.appendChild(btnDelImg);
+        }
+
+        if (vw.has_ref) {
+          const btnRmRef = document.createElement("button");
+          btnRmRef.type = "button";
+          btnRmRef.className = "btn btn--ghost";
+          btnRmRef.style.color = "#fca5a5";
+          btnRmRef.textContent = "✕ Remove Photo";
+          btnRmRef.addEventListener("click", async () => {
+            try {
+              await callApi("/api/v2_set_ref_delete", { project: slug, name: loc.name, view_id: vw.id });
+              await loadV2Locations();
+            } catch (err) {
+              msg.textContent = "Remove photo failed: " + (err.message || err);
+            }
+          });
+          vAct.appendChild(btnRmRef);
+        }
+
+        if (vw.id !== "main") {
+          const btnRmView = document.createElement("button");
+          btnRmView.type = "button";
+          btnRmView.className = "btn btn--ghost";
+          btnRmView.style.cssText = "color:#f87171;margin-left:auto;";
+          btnRmView.textContent = "🗑️ Remove View";
+          btnRmView.addEventListener("click", async () => {
+            try {
+              await callApi("/api/v2_set_view_save", { project: slug, name: loc.name, view_id: vw.id, delete: true });
+              await loadV2Locations();
+            } catch (err) {
+              msg.textContent = "Remove view failed: " + (err.message || err);
+            }
+          });
+          vAct.appendChild(btnRmView);
+        }
+
+        vItem.appendChild(vAct);
+        viewsContainer.appendChild(vItem);
+      });
+      setPlateWrap.appendChild(viewsContainer);
+      card.appendChild(setPlateWrap);
+
       const foot = document.createElement("div");
       foot.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;";
       const btnSave = document.createElement("button");
@@ -4619,6 +5956,7 @@
       btnSave.className = "btn btn--primary";
       btnSave.style.cssText = "padding:5px 12px;font-size:var(--text-xs);";
       btnSave.textContent = "💾 Save Set";
+
       const btnInsertAfter = document.createElement("button");
       btnInsertAfter.type = "button";
       btnInsertAfter.className = "btn btn--ghost";
@@ -4632,21 +5970,25 @@
 
       btnSave.addEventListener("click", async () => {
         btnSave.disabled = true;
-        msg.textContent = "Saving…";
-        const fields = { description: descTa.value.trim(), lighting: lightInput.value.trim() };
+        msg.textContent = "Saving & syncing…";
+        const fields = {
+          description: descTa.value.trim(),
+          lighting: lightInput.value.trim(),
+          reserve_2d_gaps: gapChk.checked,
+          gap_notes: gapInput.value.trim(),
+        };
         saveCustomSet(slug, { name: loc.name, ...fields });
         try {
-          if (hasContinuityBook && loc.inContinuity) {
-            await callApi("/api/continuity_edit", {
-              project: slug,
-              kind: "locations",
-              name: loc.name,
-              fields,
-            });
-            msg.textContent = "✓ Saved to continuity book";
-          } else {
-            msg.textContent = "✓ Saved to project sets";
-          }
+          const res = await callApi("/api/v2_set_save", {
+            project: slug,
+            name: loc.name,
+            description: fields.description,
+            lighting: fields.lighting,
+            reserve_2d_gaps: fields.reserve_2d_gaps,
+            gap_notes: fields.gap_notes,
+          });
+          const synced = (res && res.sync_report && res.sync_report.updated_steps) || [];
+          msg.textContent = synced.length ? `✓ Saved & synced (${synced.length} step(s))` : "✓ Saved to project sets";
         } catch (err) {
           msg.textContent = "✓ Saved locally (" + err.message + ")";
         } finally {
@@ -4698,6 +6040,95 @@
     const btnReload = $("bV2LocReload");
     const numIn = $("v2LocNewNumber");
 
+    // Top-level "Import Reference Photo & Associate with Location / View" drawer
+    const btnImpToggle = $("bV2LocImportToggle");
+    const impForm = $("v2LocImportForm");
+    const btnImpCancel = $("bV2LocImportCancel");
+    const impFile = $("v2LocImportFile");
+    const impPrev = $("v2LocImportPreview");
+    const impStr = $("v2LocImportStrength");
+    const impStrVal = $("v2LocImportStrengthVal");
+    const btnImpConv = $("bV2LocImportConvert");
+    const btnImpOnly = $("bV2LocImportOnly");
+    const impMsg = $("v2LocImportMsg");
+    let pendingImpDataUrl = "";
+    let pendingImpFilename = "";
+
+    if (impStr && impStrVal) {
+      impStr.addEventListener("input", () => { impStrVal.textContent = Number(impStr.value).toFixed(2); });
+    }
+    if (btnImpToggle && impForm) {
+      btnImpToggle.addEventListener("click", () => {
+        const show = impForm.classList.contains("hidden") || impForm.style.display === "none";
+        impForm.classList.toggle("hidden", !show);
+        impForm.style.display = show ? "flex" : "none";
+      });
+    }
+    if (btnImpCancel && impForm) {
+      btnImpCancel.addEventListener("click", () => {
+        impForm.classList.add("hidden");
+        impForm.style.display = "none";
+      });
+    }
+    if (impFile) {
+      impFile.addEventListener("change", () => {
+        const f = impFile.files && impFile.files[0];
+        if (!f) return;
+        pendingImpFilename = f.name;
+        const reader = new FileReader();
+        reader.onload = () => {
+          pendingImpDataUrl = String(reader.result || "");
+          if (impPrev) {
+            impPrev.src = pendingImpDataUrl;
+            impPrev.style.display = "block";
+          }
+          if (impMsg) impMsg.textContent = `Ready to import "${f.name}"`;
+        };
+        reader.readAsDataURL(f);
+      });
+    }
+    async function runTopLocImport(convertNow) {
+      const selProj = $("proj");
+      const slug = (selProj && selProj.value) || activeProject || "";
+      const setName = ($("v2LocImportSet") && $("v2LocImportSet").value) ? $("v2LocImportSet").value.trim() : "";
+      const viewLabel = ($("v2LocImportView") && $("v2LocImportView").value) ? $("v2LocImportView").value.trim() : "Establishing View";
+      const viewNotes = ($("v2LocImportNotes") && $("v2LocImportNotes").value) ? $("v2LocImportNotes").value.trim() : "";
+      const viewId = /^establishing\s+view$/i.test(viewLabel) ? "main" : viewLabel;
+      if (!slug) { if (impMsg) impMsg.textContent = "Pick a book in Step 01 first."; return; }
+      if (!setName) { if (impMsg) impMsg.textContent = "Select a location / set first."; return; }
+      if (!pendingImpDataUrl) { if (impMsg) impMsg.textContent = "Choose a reference picture file first."; return; }
+      const trigBtn = convertNow ? btnImpConv : btnImpOnly;
+      const stopBusy = startBusyFeedback(trigBtn, impForm, convertNow ? `Converting photo for ${setName}…` : `Importing photo for ${setName}…`);
+      if (impMsg) impMsg.textContent = convertNow ? `Importing & converting photo for "${setName}" (${viewLabel})…` : `Importing photo for "${setName}" (${viewLabel})…`;
+      try {
+        await callApi("/api/v2_set_ref_upload", {
+          project: slug,
+          name: setName,
+          view_id: viewId,
+          view_label: viewLabel,
+          view_notes: viewNotes,
+          filename: pendingImpFilename || "reference.png",
+          image_base64: pendingImpDataUrl,
+          convert_now: convertNow,
+          style_strength: impStr ? parseFloat(impStr.value) : 0.68,
+          engine: _currentV2VisualEngine(),
+        });
+        pendingImpDataUrl = "";
+        pendingImpFilename = "";
+        if (impFile) impFile.value = "";
+        if (impPrev) { impPrev.src = ""; impPrev.style.display = "none"; }
+        if (impMsg) impMsg.textContent = convertNow ? `✓ Imported & converted photo for "${setName}" (${viewLabel})!` : `✓ Imported photo for "${setName}" (${viewLabel})!`;
+        if (window.loadPCastRefs) window.loadPCastRefs();
+        await loadV2Locations();
+      } catch (err) {
+        if (impMsg) impMsg.textContent = "Import failed: " + (err.message || err);
+      } finally {
+        stopBusy();
+      }
+    }
+    if (btnImpConv) btnImpConv.addEventListener("click", () => runTopLocImport(true));
+    if (btnImpOnly) btnImpOnly.addEventListener("click", () => runTopLocImport(false));
+
     if (numIn) {
       numIn.addEventListener("input", updateV2LocInsertHint);
       numIn.addEventListener("change", updateV2LocInsertHint);
@@ -4736,6 +6167,7 @@
         if (!name) { alert("Enter a location / set name first."); return; }
         saveCustomSet(slug, { name, lighting, description });
         try {
+          await callApi("/api/v2_set_save", { project: slug, name, description, lighting });
           await callApi("/api/v2_set_order", {
             project: slug,
             order: v2LocCurrentList.map(x => x.key),
@@ -5257,11 +6689,44 @@
   }
 
   // ===== STEP 15: SPOKEN DIALOGUE DELIVERY =====
-  let v2DialogueState = { project: "", lines: [], scenes: [], dialect: "american", activeScene: "ALL", engine: "gemini-tts", engines: {}, baselines: {} };
+  let v2DialogueState = { project: "", lines: [], scenes: [], dialect: "american", activeScene: "ALL", engine: "gemini-tts", engines: {}, baselines: {}, profiles: {} };
+
+  function normVoiceChar(name) {
+    return String(name || "").replace(/\s*\([^)]*\)\s*/g, " ").trim().toLowerCase();
+  }
+
+  function sameVoiceCharacter(a, b) {
+    const la = String(a || "").trim().toLowerCase();
+    const lb = String(b || "").trim().toLowerCase();
+    return Boolean(la && lb && (la === lb || normVoiceChar(la) === normVoiceChar(lb)));
+  }
+
+  function applyVoiceProfileInMemory(character, prof) {
+    if (!character || !prof) return 0;
+    let count = 0;
+    v2DialogueState.profiles = v2DialogueState.profiles || {};
+    v2DialogueState.profiles[character] = { ...(v2DialogueState.profiles[character] || {}), ...prof };
+    (v2DialogueState.lines || []).forEach(l => {
+      if (!sameVoiceCharacter(l.character, character)) return;
+      if (prof.gemini_voice !== undefined && prof.gemini_voice !== null) l.gemini_voice = prof.gemini_voice;
+      if (prof.kokoro_voice !== undefined && prof.kokoro_voice !== null) {
+        l.kokoro_voice = prof.kokoro_voice;
+        if (prof.kokoro_voice) l.voice = prof.kokoro_voice;
+      }
+      if (prof.kokoro_blend !== undefined && prof.kokoro_blend !== null) l.kokoro_blend = prof.kokoro_blend;
+      if (prof.macos_voice !== undefined && prof.macos_voice !== null) l.macos_voice = prof.macos_voice;
+      if (prof.persona !== undefined && prof.persona !== null) l.persona = prof.persona;
+      if (prof.speed !== undefined && prof.speed !== null && Number.isFinite(Number(prof.speed))) {
+        l.speed = Number(prof.speed);
+      }
+      count += 1;
+    });
+    return count;
+  }
 
   function getCharacterBaseline(character) {
     const b = v2DialogueState.baselines || {};
-    const k = Object.keys(b).find(x => x.toLowerCase() === String(character || "").toLowerCase());
+    const k = Object.keys(b).find(x => sameVoiceCharacter(x, character));
     return k ? b[k] : null;
   }
 
@@ -5342,9 +6807,10 @@
               audio_base64: reader.result,
             });
             v2DialogueState.baselines[ch] = res.baseline;
+            if (res.profile) applyVoiceProfileInMemory(ch, res.profile);
             renderV2DialogueBaselines();
             renderV2DialogueList();
-            setV2DialogueStatus(`✓ Locked "${f.name}" as ${ch}'s voice baseline across all scenes.`);
+            setV2DialogueStatus(`✓ Locked "${f.name}" as ${ch}'s voice baseline and synced profile across ${res.updated_lines || 0} line(s).`);
           } catch (err) {
             setV2DialogueStatus("Upload failed: " + (err.message || err), true);
           }
@@ -5685,20 +7151,12 @@
             kokoro_blend: p.kokoro_blend,
             macos_voice: p.macos_voice,
             persona: p.persona,
+            speed: p.speed,
           });
           // Update in-memory state for all lines of this character WITHOUT touching emotion/tone or note
-          v2DialogueState.lines.forEach(l => {
-            if (l.character.toLowerCase() === line.character.toLowerCase()) {
-              l.gemini_voice = p.gemini_voice;
-              l.kokoro_voice = p.kokoro_voice;
-              l.kokoro_blend = p.kokoro_blend;
-              l.macos_voice = p.macos_voice;
-              l.voice = p.kokoro_voice;
-              l.persona = p.persona;
-            }
-          });
+          applyVoiceProfileInMemory(line.character, res.profile || p);
           renderV2DialogueList();
-          setV2DialogueStatus(`✓ Saved ${line.character}'s voice profile across ${res.updated_lines || 0} lines in all scenes (scene tones untouched).`);
+          setV2DialogueStatus(`✓ Saved ${line.character}'s voice profile (voice, blend, persona, speed) across ${res.updated_lines || 0} lines in all scenes (scene tones untouched).`);
         } catch (err) {
           setV2DialogueStatus("Could not apply voice profile: " + (err.message || err), true);
         }
@@ -5752,18 +7210,26 @@
         btnBase.textContent = isThisBase ? `✓ ${line.character.toUpperCase()} Baseline` : `🎯 Set as ${line.character.toUpperCase()} Baseline`;
         btnBase.title = `Lock this exact rendered take as ${line.character}'s audio voice baseline for all other lines`;
         btnBase.addEventListener("click", async () => {
-          setV2DialogueStatus(`Locking ${line.id} as ${line.character}'s audio voice baseline…`);
+          const p = extractCardPayload(card, line);
+          setV2DialogueStatus(`Locking ${line.id} as ${line.character}'s voice baseline and filling voice profile across all scenes…`);
           try {
             const res = await callApi("/api/v2_voice_baseline_set", {
               project: v2DialogueState.project,
               character: line.character,
               from_line_id: line.id,
-              text: (card.querySelector(".v2-dlg-text")?.value || line.text || "").trim(),
+              text: p.text || line.text || "",
+              gemini_voice: p.gemini_voice,
+              kokoro_voice: p.kokoro_voice,
+              kokoro_blend: p.kokoro_blend,
+              macos_voice: p.macos_voice,
+              persona: p.persona,
+              speed: p.speed,
             });
             v2DialogueState.baselines[line.character] = res.baseline;
+            applyVoiceProfileInMemory(line.character, res.profile || p);
             renderV2DialogueBaselines();
             renderV2DialogueList();
-            setV2DialogueStatus(`✓ Locked ${line.id} as ${line.character}'s permanent audio baseline. Future renders for ${line.character} will match this voice.`);
+            setV2DialogueStatus(`✓ Locked ${line.id} as ${line.character}'s voice baseline and filled voice profile settings across ${res.updated_lines || 0} lines in all scenes (scene tones untouched).`);
           } catch (err) {
             setV2DialogueStatus("Could not set baseline: " + (err.message || err), true);
           }
@@ -5922,6 +7388,7 @@
       v2DialogueState.engines = data.engines || {};
       v2DialogueState.macos_voices = data.macos_voices || [];
       v2DialogueState.baselines = data.baselines || {};
+      v2DialogueState.profiles = data.profiles || {};
       if (v2DialogueState.activeScene !== "ALL" && !v2DialogueState.scenes.includes(v2DialogueState.activeScene)) {
         v2DialogueState.activeScene = v2DialogueState.scenes[0] || "ALL";
       }
@@ -6057,13 +7524,42 @@
       return;
     }
 
-    const PRESETS = [
-      ["space_adventure", "Space & Cockpit"],
-      ["action_launch", "Rocket Launch & Shake"],
-      ["rainy_home", "Rainy Home & Room"],
-      ["cosmic_storm", "Ice Rings & Wind"],
-      ["forest_nature", "Quiet Night & Nature"],
-    ];
+    function populateV2FoleyPresetSelect(selEl, selectedVal) {
+      if (!selEl) return;
+      const list = (Array.isArray(v2SoundState.presets) && v2SoundState.presets.length)
+        ? v2SoundState.presets
+        : [
+            { id: "custom", label: "✏️ Custom (From Text)", prompt: "", group: "Core" },
+            { id: "silent", label: "🔇 Silent (No SFX)", prompt: "Silent (no ambient SFX or foley).", group: "Core" },
+            { id: "soft_rain_room", label: "Soft Distant Rain & Quiet Room", prompt: "Subtle muffled distant rain outside a quiet cozy room.", group: "Universal" },
+            { id: "rainy_home", label: "Rain on Window & Cozy Room", prompt: "Steady rain pattering on a living room window.", group: "Universal" },
+            { id: "forest_nature", label: "Quiet Night & Nature Breeze", prompt: "Gentle evening breeze with distant night crickets.", group: "Universal" },
+          ];
+      const byGroup = new Map();
+      list.forEach(p => {
+        const g = p.group || "Story";
+        if (!byGroup.has(g)) byGroup.set(g, []);
+        byGroup.get(g).push(p);
+      });
+      selEl.textContent = "";
+      byGroup.forEach((items, gName) => {
+        const grp = document.createElement("optgroup");
+        grp.label = gName;
+        items.forEach(p => {
+          const o = document.createElement("option");
+          o.value = p.id;
+          o.textContent = p.label || p.id;
+          if (p.id === selectedVal) o.selected = true;
+          grp.appendChild(o);
+        });
+        selEl.appendChild(grp);
+      });
+      if (selectedVal && [...selEl.options].some(o => o.value === selectedVal)) {
+        selEl.value = selectedVal;
+      }
+    }
+    window._populateV2FoleyPresetSelect = populateV2FoleyPresetSelect;
+
     const MOODS = [
       ["wonder", "Score: Wonder"],
       ["epic", "Score: Epic"],
@@ -6075,32 +7571,121 @@
 
     scenes.forEach(sc => {
       const row = document.createElement("div");
-      row.className = "direct-story-card v2-sound-scene-row";
+      row.className = "v2-sound-scene-row" + (sc.has_sfx ? " has-audio" : "");
       row.dataset.sceneId = sc.scene;
-      row.style.cssText = "padding:10px 12px;background:#0f172a;border:1px solid #232d3f;";
 
-      const top = document.createElement("div");
-      top.style.cssText = "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px";
-      const titleWrap = document.createElement("div");
-      const st = document.createElement("strong");
-      st.style.color = "#f59e0b";
-      st.textContent = `${sc.scene} · ${sc.heading || "Scene"}`;
-      titleWrap.appendChild(st);
+      // Tile Header: Scene ID Pill + Heading + Status Badge
+      const hdr = document.createElement("div");
+      hdr.className = "v2-sc-hdr";
+      const titleGroup = document.createElement("div");
+      titleGroup.className = "v2-sc-title-group";
+      const idPill = document.createElement("span");
+      idPill.className = "v2-sc-id-pill";
+      idPill.textContent = sc.scene;
+      const headEl = document.createElement("span");
+      headEl.className = "v2-sc-heading";
+      headEl.textContent = sc.heading || "Scene";
+      titleGroup.appendChild(idPill);
+      titleGroup.appendChild(headEl);
+
+      const stBadge = document.createElement("span");
+      stBadge.className = "status-badge " + (sc.has_sfx ? "status-badge--synced" : "");
+      stBadge.style.cssText = "font-size:10px;flex-shrink:0;";
+      stBadge.textContent = sc.has_sfx ? "✓ Custom SFX" : "Default";
+      hdr.appendChild(titleGroup);
+      hdr.appendChild(stBadge);
+      row.appendChild(hdr);
+
+      // Full untruncated scene action description
       if (sc.hint) {
         const hint = document.createElement("div");
-        hint.style.cssText = "font-size:11px;color:#94a3b8;margin-top:2px";
-        hint.textContent = sc.hint.slice(0, 120) + (sc.hint.length > 120 ? "…" : "");
-        titleWrap.appendChild(hint);
+        hint.className = "v2-sc-desc";
+        hint.textContent = sc.hint;
+        row.appendChild(hint);
       }
-      top.appendChild(titleWrap);
 
+      const normCue = s => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+      const origCue = (sc.sfx_cue || "").trim();
+      const origPreset = sc.sfx_preset || "";
+      const sameDescCount = scenes.filter(x => normCue(x.sfx_cue) && normCue(x.sfx_cue) === normCue(origCue)).length;
+
+      // Controls: Full-width SFX text override + 2-column Preset & Score Mood selects
+      const ctrls = document.createElement("div");
+      ctrls.className = "v2-sc-controls";
+
+      const cueWrap = document.createElement("div");
+      const cueLbl = document.createElement("label");
+      cueLbl.className = "v2-sc-field-lbl";
+      cueLbl.textContent = "SFX Description (custom text overrides preset)";
+      const cueIn = document.createElement("textarea");
+      cueIn.rows = 2;
+      cueIn.className = "v2-sc-sfx-cue";
+      cueIn.value = sc.sfx_cue || "";
+      cueIn.placeholder = "Type custom SFX (e.g. a low spaceship hum and distant voices in background)…";
+      cueWrap.appendChild(cueLbl);
+      cueWrap.appendChild(cueIn);
+
+      const selRow = document.createElement("div");
+      selRow.className = "v2-sc-selects";
+
+      const preWrap = document.createElement("div");
+      const preLbl = document.createElement("label");
+      preLbl.className = "v2-sc-field-lbl";
+      preLbl.textContent = "SFX Preset";
+      const selPre = document.createElement("select");
+      selPre.className = "v2-sc-sfx-preset";
+      populateV2FoleyPresetSelect(selPre, sc.sfx_preset);
+      selPre.addEventListener("change", () => {
+        const picked = (v2SoundState.presets || []).find(p => p.id === selPre.value);
+        if (picked && picked.prompt && selPre.value !== "custom") {
+          cueIn.value = picked.prompt;
+        }
+      });
+      cueIn.addEventListener("input", () => {
+        if (cueIn.value.trim() && cueIn.value.trim() !== origCue) {
+          selPre.value = "custom";
+        }
+      });
+      preWrap.appendChild(preLbl);
+      preWrap.appendChild(selPre);
+
+      const moodWrap = document.createElement("div");
+      const moodLbl = document.createElement("label");
+      moodLbl.className = "v2-sc-field-lbl";
+      moodLbl.textContent = "Score Mood";
+      const selMood = document.createElement("select");
+      selMood.className = "v2-sc-score-mood";
+      MOODS.forEach(([k, l]) => {
+        const o = document.createElement("option");
+        o.value = k; o.textContent = l;
+        if (k === sc.score_mood) o.selected = true;
+        selMood.appendChild(o);
+      });
+      moodWrap.appendChild(moodLbl);
+      moodWrap.appendChild(selMood);
+
+      selRow.appendChild(preWrap);
+      selRow.appendChild(moodWrap);
+      ctrls.appendChild(cueWrap);
+      ctrls.appendChild(selRow);
+      row.appendChild(ctrls);
+
+      // Action buttons row
       const btns = document.createElement("div");
-      btns.style.cssText = "display:flex;gap:6px;flex-wrap:wrap";
+      btns.className = "v2-sc-actions";
       const btnRen = document.createElement("button");
       btnRen.type = "button";
       btnRen.className = "btn btn--primary";
-      btnRen.style.cssText = "padding:4px 10px;font-size:var(--text-xs)";
-      btnRen.textContent = sc.has_sfx ? "↺ Redo Scene SFX" : "✨ Render Scene SFX";
+      btnRen.style.flex = "1";
+      btnRen.textContent = sc.has_sfx ? "↺ Redo SFX" : "✨ Render SFX";
+
+      const btnProp = document.createElement("button");
+      btnProp.type = "button";
+      btnProp.className = "btn btn--secondary";
+      btnProp.textContent = sameDescCount > 1
+        ? `📌 Propagate (${sameDescCount})`
+        : "📌 Save & Propagate";
+      btnProp.title = "Save this SFX preset, description (or blank), score mood, and audio clip, and copy it to every scene with the same SFX description";
 
       const upIn = document.createElement("input");
       upIn.type = "file";
@@ -6109,61 +7694,26 @@
       const btnUp = document.createElement("button");
       btnUp.type = "button";
       btnUp.className = "btn btn--ghost";
-      btnUp.style.cssText = "padding:4px 8px;font-size:var(--text-xs)";
       btnUp.textContent = "⬆ Upload";
       btnUp.addEventListener("click", () => upIn.click());
 
       btns.appendChild(btnRen);
+      btns.appendChild(btnProp);
       btns.appendChild(btnUp);
       btns.appendChild(upIn);
-      top.appendChild(btns);
-      row.appendChild(top);
+      row.appendChild(btns);
 
-      const ctrls = document.createElement("div");
-      ctrls.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px";
-      const cueIn = document.createElement("input");
-      cueIn.type = "text";
-      cueIn.className = "v2-sc-sfx-cue";
-      cueIn.value = sc.sfx_cue || "";
-      cueIn.placeholder = "Describe SFX needed for this scene (e.g. rockets burning, hull shaking)…";
-      cueIn.style.cssText = "flex:1;min-width:200px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
-
-      const selPre = document.createElement("select");
-      selPre.className = "v2-sc-sfx-preset";
-      selPre.style.cssText = "padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
-      PRESETS.forEach(([k, l]) => {
-        const o = document.createElement("option");
-        o.value = k; o.textContent = l;
-        if (k === sc.sfx_preset) o.selected = true;
-        selPre.appendChild(o);
-      });
-
-      const selMood = document.createElement("select");
-      selMood.className = "v2-sc-score-mood";
-      selMood.style.cssText = "padding:5px 8px;background:#0a0d14;color:#cbd5e1;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)";
-      MOODS.forEach(([k, l]) => {
-        const o = document.createElement("option");
-        o.value = k; o.textContent = l;
-        if (k === sc.score_mood) o.selected = true;
-        selMood.appendChild(o);
-      });
-
-      ctrls.appendChild(cueIn);
-      ctrls.appendChild(selPre);
-      ctrls.appendChild(selMood);
-      row.appendChild(ctrls);
-
+      // Audio player pinned evenly at tile bottom
       const player = document.createElement("div");
-      player.style.cssText = "background:#0a0d14;padding:4px 8px;border-radius:4px;font-size:11px;color:#64748b";
+      player.className = "v2-sc-player";
       if (sc.has_sfx && sc.sfx_url) {
         const aud = document.createElement("audio");
         aud.controls = true;
         aud.preload = "none";
         aud.src = sc.sfx_url + (sc.sfx_url.includes("?") ? "&" : "?") + "t=" + Date.now();
-        aud.style.cssText = "width:100%;height:28px";
         player.appendChild(aud);
       } else {
-        player.textContent = "Using video-aligned / master SFX — click ✨ Render Scene SFX or ⬆ Upload to customize this scene";
+        player.textContent = "Using master / video-aligned SFX — click ✨ Render SFX or ⬆ Upload";
       }
       row.appendChild(player);
 
@@ -6185,11 +7735,52 @@
           sc.has_sfx = true;
           sc.sfx_url = res.audio_url;
           renderV2SoundScenesList();
-          setV2SoundStatus(`✓ Rendered custom SFX for ${sc.scene}!`);
+          const lyrTag = (res.layers && res.layers.length) ? ` (layers: ${res.layers.join(", ")})` : "";
+          setV2SoundStatus(`✓ Rendered custom SFX for ${sc.scene}${lyrTag}!`);
           const newAud = document.querySelector(`#v2SoundScenesList .v2-sound-scene-row[data-scene-id="${sc.scene}"] audio`);
           if (newAud) newAud.play().catch(() => {});
         } catch (err) {
           setV2SoundStatus(`Scene ${sc.scene} SFX failed: ` + (err.message || err), true);
+        } finally {
+          stopBusy();
+        }
+      });
+
+      btnProp.addEventListener("click", async () => {
+        const curCue = cueIn.value.trim();
+        const curPre = selPre.value;
+        const curMood = selMood.value;
+        const presetChanged = curPre !== origPreset;
+        const cueChanged = curCue !== origCue;
+        const stopBusy = startBusyFeedback(btnProp, row, `Propagating ${sc.scene} SFX to matching scenes…`);
+        setV2SoundStatus(`Saving & propagating ${sc.scene}'s SFX to all scenes with the same description…`);
+        try {
+          const res = await callApi("/api/v2_sound_sfx_propagate", {
+            project: v2SoundState.project,
+            source_scene: sc.scene,
+            match_cue: origCue,
+            sfx_cue: curCue,
+            sfx_preset: curPre,
+            score_mood: curMood,
+            duration: 8,
+            render_source: presetChanged || cueChanged || !sc.has_sfx,
+          });
+          const updatedIds = new Set(res.updated_scenes || [sc.scene]);
+          const urls = res.audio_urls || {};
+          (v2SoundState.scenes || []).forEach(item => {
+            if (!updatedIds.has(item.scene)) return;
+            item.sfx_cue = curCue;
+            item.sfx_preset = curPre;
+            item.score_mood = curMood;
+            if (urls[item.scene]) {
+              item.has_sfx = true;
+              item.sfx_url = urls[item.scene];
+            }
+          });
+          renderV2SoundScenesList();
+          setV2SoundStatus(`✓ Saved & propagated SFX to ${res.count || updatedIds.size} matching scene(s): ${(res.updated_scenes || []).join(", ")}`);
+        } catch (err) {
+          setV2SoundStatus(`Propagate failed for ${sc.scene}: ` + (err.message || err), true);
         } finally {
           stopBusy();
         }
@@ -6264,11 +7855,15 @@
       const data = await callApi(`/api/v2_sound_design?project=${encodeURIComponent(slug)}`);
       v2SoundState.project = slug;
       v2SoundState.sfx_mode = data.sfx_mode || "hybrid";
+      v2SoundState.presets = Array.isArray(data.presets) ? data.presets : [];
       v2SoundState.scenes = data.scenes || [];
       renderV2SoundModeUI();
       renderV2SoundScenesList();
       const f = data.foley || {};
       const s = data.score || {};
+      if (window._populateV2FoleyPresetSelect) {
+        window._populateV2FoleyPresetSelect($("v2FoleyPreset"), f.preset || "custom");
+      }
       if ($("v2FoleyPrompt")) $("v2FoleyPrompt").value = f.prompt || "";
       if ($("v2FoleyPreset") && f.preset) $("v2FoleyPreset").value = f.preset;
       if ($("v2FoleyDuration") && f.duration) $("v2FoleyDuration").value = String(f.duration);
@@ -6326,16 +7921,57 @@
 
     const FOLEY_PRESET_PROMPTS = {
       space_adventure: "Starship bridge hum, cockpit console telemetry chimes, and clean sci-fi instrumentation.",
+      spaceship_voices: "A low spaceship hum and distant voices in background.",
       rainy_home: "Steady rain pattering on a living room window, individual droplets on glass, and soft distant thunder.",
+      soft_rain_room: "Subtle muffled distant rain outside a quiet cozy room (not hitting the window), gentle soft indoor room tone.",
       cosmic_storm: "Sweeping atmospheric wind gusts, sparkling ice-ring crystal chimes, and deep planetary resonance.",
       action_launch: "Building rocket engine roar, heavy sub-bass ignition rumble, and rising thruster turbine whine.",
       forest_nature: "Gentle evening breeze with rhythmic distant night crickets and quiet outdoor air.",
+      silent: "Silent (no ambient SFX or foley).",
     };
     const selFoleyPreset = $("v2FoleyPreset");
+    const taFoleyPrompt = $("v2FoleyPrompt");
     if (selFoleyPreset) {
       selFoleyPreset.addEventListener("change", () => {
-        const p = FOLEY_PRESET_PROMPTS[selFoleyPreset.value];
-        if (p && $("v2FoleyPrompt")) $("v2FoleyPrompt").value = p;
+        const found = (v2SoundState.presets || []).find(x => x.id === selFoleyPreset.value);
+        const p = (found && found.prompt) || FOLEY_PRESET_PROMPTS[selFoleyPreset.value];
+        if (p && taFoleyPrompt) taFoleyPrompt.value = p;
+      });
+    }
+    if (taFoleyPrompt && selFoleyPreset) {
+      taFoleyPrompt.addEventListener("input", () => {
+        const curTxt = taFoleyPrompt.value.trim();
+        const isStock = (v2SoundState.presets || []).some(x => String(x.prompt || "").trim() === curTxt) ||
+          Object.values(FOLEY_PRESET_PROMPTS).some(v => v.trim() === curTxt);
+        if (curTxt && !isStock) {
+          selFoleyPreset.value = "custom";
+        }
+      });
+    }
+    const btnSavePreset = $("bV2SaveSfxPreset");
+    if (btnSavePreset) {
+      btnSavePreset.addEventListener("click", async () => {
+        const slug = getSlug();
+        const prompt = (taFoleyPrompt?.value || "").trim();
+        if (!prompt) { setV2SoundStatus("Type an SFX description first before saving as a reusable preset.", true); return; }
+        const label = window.prompt("Name for this reusable SFX preset (available in all stories):", prompt.slice(0, 36));
+        if (!label || !label.trim()) return;
+        btnSavePreset.disabled = true;
+        try {
+          const res = await callApi("/api/v2_sound_preset_save", { project: slug, label: label.trim(), prompt });
+          if (Array.isArray(res.presets) && res.presets.length) {
+            v2SoundState.presets = res.presets;
+            if (window._populateV2FoleyPresetSelect) {
+              window._populateV2FoleyPresetSelect($("v2FoleyPreset"), res.saved?.id || "custom");
+            }
+            renderV2SoundScenesList();
+          }
+          setV2SoundStatus(`✓ Saved "${label.trim()}" to Reusable SFX Library (available across all stories).`);
+        } catch (err) {
+          setV2SoundStatus("Could not save preset: " + (err.message || err), true);
+        } finally {
+          btnSavePreset.disabled = false;
+        }
       });
     }
 
@@ -6345,6 +7981,7 @@
       cozy: "Gentle 3/4 family waltz with warm Rhodes electric piano chords, soft bass, and delicate music-box twinkles.",
       mysterious: "Dark minor-key cosmic synth drone, eerie glass-harmonica shimmer, and sparse echoing metallic bells.",
       playful: "Bouncy 145 BPM pizzicato strings and cheerful staccato xylophone & glockenspiel adventure melody.",
+      none: "Silent (no musical score).",
     };
     const selScoreMood = $("v2ScoreMood");
     if (selScoreMood) {
@@ -6371,7 +8008,8 @@
           const aud = _renderV2SoundPlayer("v2FoleyPlayerWrap", res.audio_url, "");
           const bF = $("v2FoleyStatusBadge");
           if (bF) { bF.textContent = "✓ Rendered"; bF.className = "status-badge status-badge--synced"; }
-          setV2SoundStatus(`✓ Generated ${res.duration || 12}s Foley track!`);
+          const lyrTag = (res.layers && res.layers.length) ? ` (${res.layers.join(", ")})` : "";
+          setV2SoundStatus(`✓ Generated ${res.duration || 12}s Foley track${lyrTag}!`);
           if (aud) aud.play().catch(() => {});
         } catch (err) {
           setV2SoundStatus("Foley render failed: " + (err.message || err), true);
@@ -6577,17 +8215,24 @@
     } catch (e) {}
   }
 
-  async function renderSingleKeyframe(shot, promptText, triggerBtn, cardEl) {
+  async function renderSingleKeyframe(shot, promptText, triggerBtn, cardEl, opts = {}) {
     const stopBusy = startBusyFeedback(triggerBtn, cardEl, `Generating keyframe ${shot.id}…`);
     setV2KfStatus(`Generating 16:9 keyframe for ${shot.id} (${_currentV2VisualEngine()})…`);
     try {
-      const res = await callApi("/api/v2_keyframe_render", {
+      const payload = {
         project: v2KfState.project,
         id: shot.id,
         prompt: promptText,
         aspect_ratio: "16:9",
         engine: _currentV2VisualEngine(),
-      });
+      };
+      if (opts.initStrength !== undefined && opts.initStrength !== null && opts.initStrength !== "auto") {
+        payload.init_strength = Number(opts.initStrength);
+      }
+      if (opts.freshSeed) {
+        payload.fresh_seed = true;
+      }
+      const res = await callApi("/api/v2_keyframe_render", payload);
       shot.prompt = promptText;
       if (!shot.has_image) v2KfState.rendered_shots++;
       shot.has_image = true;
@@ -6601,10 +8246,19 @@
       }
       renderV2KfScenesBar();
       renderV2KfGrid();
+      const qaLbl = res.qa_engine ? ` (${res.qa_engine})` : "";
       const physTag = res.physics_repaired
-        ? (res.physics_passed ? " · ✓ Physics auto-repaired" : " · ⚠️ Physics flagged (see card)")
-        : (res.physics_passed === false ? " · ⚠️ Physics flagged (see card)" : " · ✓ Physics verified");
-      setV2KfStatus(`✓ Rendered keyframe ${shot.id} (${res.model || "image"})${physTag}`, res.physics_passed === false);
+        ? (res.physics_passed ? ` · ✓ QA auto-repaired${qaLbl}` : ` · ⚠️ QA flagged${qaLbl}`)
+        : (res.physics_passed === false ? ` · ⚠️ QA flagged${qaLbl}` : ` · ✓ QA verified${qaLbl}`);
+      const refNames = (res.char_refs_used || []).map(x => x.name).filter(Boolean);
+      const setTag = res.set_ref_used && res.set_ref_used.name ? ` · Set: ${res.set_ref_used.name}` : "";
+      const refTag = refNames.length
+        ? `${setTag} · Turnarounds: ${refNames.join(", ")}`
+        : (setTag || (res.refs_used ? ` · ${res.refs_used} ref(s)` : ""));
+      const lockTag = res.init_strength_used
+        ? ` · Lock ${Number(res.init_strength_used).toFixed(2)} (${res.primary_ref_id || res.continuity_mode})`
+        : (res.anchor_shot_ref ? ` · Anchor ${res.anchor_shot_ref}` : "");
+      setV2KfStatus(`✓ Rendered keyframe ${shot.id} (${res.model || "image"}${refTag}${lockTag})${physTag}`, res.physics_passed === false);
     } catch (err) {
       setV2KfStatus(`Keyframe ${shot.id} failed: ` + (err.message || err), true);
     } finally {
@@ -6662,8 +8316,29 @@
         img.alt = `Keyframe ${shot.id}`;
         img.style.cssText = "width:100%;height:100%;object-fit:cover;cursor:zoom-in;display:block";
         img.title = "Click to view full-size keyframe";
-        img.addEventListener("click", () => window.open(shot.image_url, "_blank"));
+        img.addEventListener("click", () => window.open(img.src, "_blank"));
         preview.appendChild(img);
+        if (shot.has_pass1 && shot.pass1_url) {
+          let showingBefore = false;
+          const btnReveal = document.createElement("button");
+          btnReveal.type = "button";
+          btnReveal.className = "btn btn--secondary";
+          btnReveal.style.cssText = "position:absolute;bottom:6px;left:6px;padding:2px 8px;font-size:10px;background:rgba(15,23,42,0.88);border:1px solid #f59e0b;color:#fde68a;";
+          btnReveal.textContent = "👁️ Show Pass 1 (Before 2D)";
+          btnReveal.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            showingBefore = !showingBefore;
+            img.src = showingBefore ? shot.pass1_url : shot.image_url;
+            btnReveal.textContent = showingBefore ? "👁️ Show Pass 2 (With 2D Cast)" : "👁️ Show Pass 1 (Before 2D)";
+          });
+          preview.appendChild(btnReveal);
+        }
+        if (shot.is_anchor) {
+          const ab = document.createElement("span");
+          ab.style.cssText = "position:absolute;top:6px;left:6px;padding:2px 8px;border-radius:999px;background:rgba(56,189,248,0.92);color:#082f49;font-size:10.5px;font-weight:700;";
+          ab.textContent = "📍 Scene Anchor";
+          preview.appendChild(ab);
+        }
         if (shot.locked) {
           const lbadge = document.createElement("span");
           lbadge.style.cssText = "position:absolute;top:6px;right:6px;padding:2px 8px;border-radius:999px;background:rgba(16,185,129,0.92);color:#022c22;font-size:11px;font-weight:700;";
@@ -6671,6 +8346,17 @@
           preview.appendChild(lbadge);
           card.style.borderColor = "#10b981";
         }
+      } else if (shot.has_pass1 && shot.pass1_url) {
+        const img = document.createElement("img");
+        img.src = shot.pass1_url;
+        img.alt = `Pass 1 Live Plate ${shot.id}`;
+        img.style.cssText = "width:100%;height:100%;object-fit:cover;cursor:zoom-in;display:block";
+        img.addEventListener("click", () => window.open(shot.pass1_url, "_blank"));
+        preview.appendChild(img);
+        const p1Badge = document.createElement("span");
+        p1Badge.style.cssText = "position:absolute;top:6px;left:6px;padding:2px 8px;border-radius:999px;background:rgba(245,158,11,0.9);color:#0f172a;font-size:10px;font-weight:700;";
+        p1Badge.textContent = "1️⃣ Pass 1 Ready · Run Pass 2 for 2D Cast";
+        preview.appendChild(p1Badge);
       } else {
         const ph = document.createElement("span");
         ph.style.cssText = "font-size:var(--text-xs);padding:12px;text-align:center";
@@ -6685,13 +8371,140 @@
       title.textContent = `${shot.id} · ${shot.type} · ${shot.lens_mm}mm · ${shot.movement} (${shot.seconds}s)`;
       card.appendChild(title);
 
+      // Attached Step 10 Turnaround & Step 11 Set Reference Strip
+      const charRefs = Array.isArray(shot.char_refs) ? shot.char_refs : [];
+      const matchedLocs = Array.isArray(shot.matched_locations) ? shot.matched_locations : [];
+      if (charRefs.length || matchedLocs.length || shot.prompt_outdated) {
+        const refBar = document.createElement("div");
+        refBar.className = "v2-kf-refs";
+        charRefs.forEach(cr => {
+          const chip = document.createElement("span");
+          if (cr.has_ref && cr.ref_url) {
+            chip.className = "v2-kf-ref-chip";
+            chip.title = `Attached ${cr.ref_source || "turnaround"} reference for ${cr.name} (click to inspect)`;
+            const thumb = document.createElement("img");
+            thumb.src = cr.ref_url;
+            thumb.alt = cr.name;
+            chip.appendChild(thumb);
+            const lbl = document.createElement("span");
+            lbl.textContent = cr.name;
+            chip.appendChild(lbl);
+            chip.addEventListener("click", () => window.open(cr.ref_url, "_blank"));
+          } else {
+            chip.className = "v2-kf-ref-chip v2-kf-ref-chip--missing";
+            chip.title = `No Step 10 turnaround found for ${cr.name} yet — generate in Step 10 for visual lock`;
+            chip.textContent = `⚠ ${cr.name} (no turnaround)`;
+          }
+          refBar.appendChild(chip);
+        });
+        if (matchedLocs.length || shot.set_ref_url) {
+          const locChip = document.createElement("span");
+          locChip.className = "v2-kf-ref-chip v2-kf-ref-chip--set";
+          if (shot.set_ref_url) {
+            const setThumb = document.createElement("img");
+            setThumb.src = shot.set_ref_url;
+            setThumb.alt = matchedLocs.join(" + ") || "Set Plate";
+            locChip.appendChild(setThumb);
+          }
+          const locLbl = document.createElement("span");
+          locLbl.textContent = `🏛 ${matchedLocs.join(" + ") || "Set Plate"}`;
+          locChip.appendChild(locLbl);
+          locChip.title = shot.set_ref_url
+            ? "Locked Step 11 Set Plate attached as primary environment reference (click to inspect)"
+            : "Step 11 locked location description applied";
+          if (shot.set_ref_url) {
+            locChip.style.cursor = "pointer";
+            locChip.addEventListener("click", () => window.open(shot.set_ref_url, "_blank"));
+          }
+          refBar.appendChild(locChip);
+        }
+        if (shot.prompt_outdated && shot.default_prompt && !shot.locked) {
+          const syncChip = document.createElement("button");
+          syncChip.type = "button";
+          syncChip.className = "v2-kf-ref-chip v2-kf-ref-chip--sync";
+          syncChip.textContent = "🔄 Sync Prompt";
+          syncChip.title = "Saved prompt differs from latest Steps 08–12 cast/set/shot details — click to refresh this shot's prompt";
+          syncChip.addEventListener("click", () => {
+            ta.value = shot.default_prompt;
+            shot.prompt = shot.default_prompt;
+            shot.prompt_outdated = false;
+            syncChip.remove();
+            setV2KfStatus(`✓ Refreshed ${shot.id} prompt from latest Steps 08–12 (click Save Prompts or Generate to persist).`);
+          });
+          refBar.appendChild(syncChip);
+        }
+        card.appendChild(refBar);
+      }
+
       // Editable visual prompt
       const ta = document.createElement("textarea");
       ta.className = "v2-kf-prompt";
-      ta.rows = 3;
+      ta.rows = 4;
       ta.value = shot.prompt || "";
       ta.style.cssText = "width:100%;padding:6px 8px;background:#0a0d14;color:#e2e8f0;border:1px solid #334155;border-radius:4px;font-size:11px;resize:vertical;margin-top:4px";
       card.appendChild(ta);
+
+      // Same-Angle Camera Lock, Similarity Slider & Scene Seed controls (#1)
+      let selectedStrength = "auto";
+      const hasSpatialBase = Boolean(shot.prev_rendered_id || (sc.anchor_shot_id && sc.anchor_shot_id !== shot.id));
+      const camBox = document.createElement("div");
+      camBox.className = "v2-kf-camlock";
+      const camTop = document.createElement("div");
+      camTop.className = "v2-kf-camlock__row";
+
+      const modeBadge = document.createElement("span");
+      const isSame = shot.camera_match_mode === "same_angle";
+      const isInc = shot.camera_match_mode === "incremental";
+      modeBadge.className = "v2-kf-camlock__badge" + (isSame ? " v2-kf-camlock__badge--locked" : "");
+      if (isSame) {
+        modeBadge.textContent = `🎯 Same Angle · Auto Lock (${shot.recommended_strength || 0.45})`;
+      } else if (isInc) {
+        modeBadge.textContent = `🔄 Incremental · Auto Lock (${shot.recommended_strength || 0.62})`;
+      } else if (sc.anchor_shot_id && sc.anchor_shot_id !== shot.id) {
+        modeBadge.textContent = `📍 Anchor: ${sc.anchor_shot_id}`;
+      } else {
+        modeBadge.textContent = `🎬 Scene Seed Locked`;
+      }
+      camTop.appendChild(modeBadge);
+
+      const seedLbl = document.createElement("label");
+      seedLbl.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:#94a3b8;cursor:pointer";
+      const freshSeedChk = document.createElement("input");
+      freshSeedChk.type = "checkbox";
+      freshSeedChk.className = "v2-kf-fresh-seed";
+      seedLbl.appendChild(freshSeedChk);
+      seedLbl.appendChild(document.createTextNode("🎲 New Seed"));
+      seedLbl.title = "Unchecked = share deterministic Scene Seed across this scene for maximum consistency; check to roll a random seed";
+      camTop.appendChild(seedLbl);
+      camBox.appendChild(camTop);
+
+      if (hasSpatialBase && !shot.locked) {
+        const sliderRow = document.createElement("div");
+        sliderRow.className = "v2-kf-camlock__row";
+        const sLbl = document.createElement("span");
+        sLbl.style.cssText = "font-size:10.5px;color:#94a3b8;white-space:nowrap";
+        sLbl.textContent = "Change:";
+        const sRange = document.createElement("input");
+        sRange.type = "range";
+        sRange.min = "0.25";
+        sRange.max = "1.00";
+        sRange.step = "0.05";
+        sRange.value = String(shot.recommended_strength != null ? shot.recommended_strength : 1.0);
+        sRange.title = "Lower (0.30-0.45) = lock background & only shift character pose/expression; 1.00 = fresh camera angle using references only";
+        const sVal = document.createElement("span");
+        sVal.style.cssText = "font-size:10.5px;color:#fde68a;min-width:68px;text-align:right;font-weight:600";
+        sVal.textContent = shot.recommended_strength != null ? `Auto (${Number(shot.recommended_strength).toFixed(2)})` : "Auto (Fresh)";
+        sRange.addEventListener("input", () => {
+          const v = parseFloat(sRange.value);
+          selectedStrength = v;
+          sVal.textContent = v >= 0.99 ? "Fresh (1.0)" : `Lock (${v.toFixed(2)})`;
+        });
+        sliderRow.appendChild(sLbl);
+        sliderRow.appendChild(sRange);
+        sliderRow.appendChild(sVal);
+        camBox.appendChild(sliderRow);
+      }
+      card.appendChild(camBox);
 
       // Action buttons
       const row = document.createElement("div");
@@ -6703,7 +8516,10 @@
       btnGen.style.cssText = "padding:4px 10px;font-size:var(--text-xs);flex:1";
       btnGen.textContent = shot.locked ? "🔒 Locked" : (shot.has_image ? "↺ Re-roll" : "✨ Generate Keyframe");
       btnGen.disabled = Boolean(shot.locked);
-      btnGen.addEventListener("click", () => renderSingleKeyframe(shot, ta.value.trim(), btnGen, card));
+      btnGen.addEventListener("click", () => renderSingleKeyframe(shot, ta.value.trim(), btnGen, card, {
+        initStrength: selectedStrength,
+        freshSeed: Boolean(freshSeedChk.checked),
+      }));
 
       const upIn = document.createElement("input");
       upIn.type = "file";
@@ -6748,20 +8564,223 @@
       row.appendChild(btnGen);
       row.appendChild(btnUp);
 
+      // #3 Clone Prev Frame & Edit button (shown when a prior rendered shot or Scene Anchor exists and shot is unlocked)
+      const cloneSourceId = shot.prev_rendered_id || (sc.anchor_shot_id && sc.anchor_shot_id !== shot.id ? sc.anchor_shot_id : "");
+      let clonePanel = null;
+      if (cloneSourceId && !shot.locked) {
+        const btnClone = document.createElement("button");
+        btnClone.type = "button";
+        btnClone.className = "btn btn--ghost";
+        btnClone.style.cssText = "padding:4px 8px;font-size:var(--text-xs);color:#7dd3fc";
+        btnClone.textContent = "📋 Clone Prev";
+        btnClone.title = `Clone ${cloneSourceId} directly into ${shot.id} and apply a tight locked-camera edit (or copy frame for Canvas mask inpainting)`;
+        btnClone.addEventListener("click", () => {
+          if (clonePanel) clonePanel.style.display = clonePanel.style.display === "none" ? "flex" : "none";
+        });
+        row.appendChild(btnClone);
+
+        clonePanel = document.createElement("div");
+        clonePanel.className = "v2-kf-clone-panel";
+        clonePanel.style.display = "none";
+        const cHdr = document.createElement("div");
+        cHdr.style.cssText = "font-size:11px;font-weight:700;color:#7dd3fc";
+        cHdr.textContent = `📋 Clone ${cloneSourceId} → ${shot.id} (Locked-Camera Background)`;
+        const cIn = document.createElement("input");
+        cIn.type = "text";
+        cIn.value = [shot.action, shot.expression].filter(Boolean).join(". ");
+        cIn.placeholder = "Describe ONLY what changes (e.g. Judah flops down beside Tommy)…";
+        cIn.style.cssText = "width:100%;padding:5px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:11px";
+        const cBtns = document.createElement("div");
+        cBtns.style.cssText = "display:flex;gap:6px;flex-wrap:wrap";
+        const btnCloneApply = document.createElement("button");
+        btnCloneApply.type = "button";
+        btnCloneApply.className = "btn btn--primary";
+        btnCloneApply.style.cssText = "padding:4px 9px;font-size:11px";
+        btnCloneApply.textContent = "✨ Clone & Apply Action";
+        btnCloneApply.addEventListener("click", async () => {
+          const stopBusy = startBusyFeedback(btnCloneApply, card, `Cloning ${cloneSourceId} & applying action…`);
+          try {
+            const res = await callApi("/api/v2_keyframe_clone_edit", {
+              project: v2KfState.project,
+              id: shot.id,
+              source_id: cloneSourceId,
+              edit_instruction: cIn.value.trim(),
+              prompt: ta.value.trim(),
+              apply_edit: true,
+              strength: 0.38,
+              engine: _currentV2VisualEngine(),
+            });
+            if (!shot.has_image) v2KfState.rendered_shots++;
+            shot.has_image = true;
+            shot.image_url = res.image_url + "?t=" + Date.now();
+            renderV2KfScenesBar();
+            renderV2KfGrid();
+            setV2KfStatus(`✓ Cloned ${res.source_id} & applied locked-camera edit for ${shot.id} (strength ${res.strength_used}).`);
+          } catch (err) {
+            setV2KfStatus("Clone & edit failed: " + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        });
+        const btnCloneOnly = document.createElement("button");
+        btnCloneOnly.type = "button";
+        btnCloneOnly.className = "btn btn--secondary";
+        btnCloneOnly.style.cssText = "padding:4px 9px;font-size:11px";
+        btnCloneOnly.textContent = "📋 Copy Frame Only (for Canvas)";
+        btnCloneOnly.addEventListener("click", async () => {
+          const stopBusy = startBusyFeedback(btnCloneOnly, card, `Copying ${cloneSourceId}…`);
+          try {
+            const res = await callApi("/api/v2_keyframe_clone_edit", {
+              project: v2KfState.project,
+              id: shot.id,
+              source_id: cloneSourceId,
+              apply_edit: false,
+            });
+            if (!shot.has_image) v2KfState.rendered_shots++;
+            shot.has_image = true;
+            shot.image_url = res.image_url + "?t=" + Date.now();
+            renderV2KfScenesBar();
+            renderV2KfGrid();
+            setV2KfStatus(`✓ Copied ${res.source_id} into ${shot.id} — click 🎨 Mask Inpaint to edit only the changing region!`);
+          } catch (err) {
+            setV2KfStatus("Copy failed: " + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        });
+        cBtns.appendChild(btnCloneApply);
+        cBtns.appendChild(btnCloneOnly);
+        clonePanel.appendChild(cHdr);
+        clonePanel.appendChild(cIn);
+        clonePanel.appendChild(cBtns);
+      }
+
+      // #4 Camera-Angle Shift button (ComfyUI Qwen-Image-Edit `apps/angles` + free local Kontext/FLUX.2 fallback)
+      const angleSourceAvail = Boolean(cloneSourceId || sc.has_set_plate);
+      let anglePanel = null;
+      if (angleSourceAvail && !shot.locked) {
+        const btnAngle = document.createElement("button");
+        btnAngle.type = "button";
+        btnAngle.className = "btn btn--ghost";
+        btnAngle.style.cssText = "padding:4px 8px;font-size:var(--text-xs);color:#d8b4fe";
+        btnAngle.textContent = "🎥 New Angle";
+        btnAngle.title = "Generate a new camera angle of this scene's Anchor / Set Plate using ComfyUI Angles (Qwen-Image-Edit) or free local Kontext/FLUX.2";
+        btnAngle.addEventListener("click", () => {
+          if (anglePanel) anglePanel.style.display = anglePanel.style.display === "none" ? "flex" : "none";
+        });
+        row.appendChild(btnAngle);
+
+        anglePanel = document.createElement("div");
+        anglePanel.className = "v2-kf-angle-panel";
+        anglePanel.style.display = "none";
+        const aHdr = document.createElement("div");
+        aHdr.style.cssText = "font-size:11px;font-weight:700;color:#d8b4fe";
+        aHdr.textContent = `🎥 Shift Camera Angle from ${cloneSourceId || "Step 11 Set Plate"}`;
+        const aRow = document.createElement("div");
+        aRow.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center";
+        const aSel = document.createElement("select");
+        aSel.style.cssText = "flex:1;min-width:140px;padding:4px 7px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:11px";
+        [
+          ["rotate_left_45", "↺ Rotate 45° Left"],
+          ["rotate_right_45", "↻ Rotate 45° Right"],
+          ["move_forward", "🔍 Move Forward (Closer)"],
+          ["move_back", "🔭 Move Back (Wider)"],
+          ["move_left", "⬅ Truck Left"],
+          ["move_right", "➡ Truck Right"],
+          ["move_up", "⬆ Crane Up"],
+          ["move_down", "⬇ Crane Down"],
+          ["low_angle", "📐 Low Angle"],
+          ["top_down", "🦅 Top-Down View"],
+        ].forEach(([val, lbl]) => {
+          const opt = document.createElement("option");
+          opt.value = val;
+          opt.textContent = lbl;
+          aSel.appendChild(opt);
+        });
+        const btnRunAngle = document.createElement("button");
+        btnRunAngle.type = "button";
+        btnRunAngle.className = "btn btn--primary";
+        btnRunAngle.style.cssText = "padding:4px 10px;font-size:11px";
+        btnRunAngle.textContent = "✨ Render Angle";
+        btnRunAngle.addEventListener("click", async () => {
+          const stopBusy = startBusyFeedback(btnRunAngle, card, `Generating ${aSel.options[aSel.selectedIndex].textContent} for ${shot.id}…`);
+          try {
+            const res = await callApi("/api/v2_keyframe_angle_shift", {
+              project: v2KfState.project,
+              id: shot.id,
+              source_id: cloneSourceId,
+              move: aSel.value,
+              details: ta.value.trim(),
+              engine: _currentV2VisualEngine(),
+            });
+            if (!shot.has_image) v2KfState.rendered_shots++;
+            shot.has_image = true;
+            shot.image_url = res.image_url + "?t=" + Date.now();
+            renderV2KfScenesBar();
+            renderV2KfGrid();
+            setV2KfStatus(`✓ Rendered ${res.move_label} for ${shot.id} from ${res.source} (${res.model}).`);
+          } catch (err) {
+            setV2KfStatus("Camera angle shift failed: " + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        });
+        aRow.appendChild(aSel);
+        aRow.appendChild(btnRunAngle);
+        anglePanel.appendChild(aHdr);
+        anglePanel.appendChild(aRow);
+      }
+
       if (shot.has_image) {
+        // #2 Pin as Scene Anchor button
+        const btnAnchor = document.createElement("button");
+        btnAnchor.type = "button";
+        btnAnchor.className = "btn " + (shot.is_anchor ? "btn--secondary" : "btn--ghost");
+        btnAnchor.style.cssText = "padding:4px 8px;font-size:var(--text-xs);" + (shot.is_anchor ? "border-color:#38bdf8;color:#bae6fd" : "color:#94a3b8");
+        btnAnchor.textContent = shot.is_anchor ? "📍 Anchor ✓" : "📍 Set Anchor";
+        btnAnchor.title = shot.is_anchor
+          ? `Pinned as ${sc.id}'s Scene Master Anchor (click to unpin)`
+          : `Pin ${shot.id} as ${sc.id}'s Scene Master Anchor so all other shots in ${sc.id} match this room & lighting`;
+        btnAnchor.addEventListener("click", async () => {
+          const nextAnchor = shot.is_anchor ? "" : shot.id;
+          try {
+            await callApi("/api/v2_keyframe_anchor", {
+              project: v2KfState.project,
+              scene: sc.id,
+              shot_id: nextAnchor,
+            });
+            sc.anchor_shot_id = nextAnchor;
+            (sc.shots || []).forEach(s => { s.is_anchor = Boolean(nextAnchor && s.id === nextAnchor); });
+            renderV2KfGrid();
+            setV2KfStatus(nextAnchor ? `📍 Pinned ${nextAnchor} as Scene Anchor for ${sc.id} — subsequent shots will lock to it.` : `Cleared Scene Anchor for ${sc.id}.`);
+          } catch (err) {
+            setV2KfStatus("Could not update Scene Anchor: " + (err.message || err), true);
+          }
+        });
+        row.appendChild(btnAnchor);
+
+        // #4 Direct Mask Inpaint in Canvas Studio
         const btnCanvas = document.createElement("button");
         btnCanvas.type = "button";
         btnCanvas.className = "btn btn--ghost";
         btnCanvas.style.cssText = "padding:4px 8px;font-size:var(--text-xs);color:#38bdf8";
-        btnCanvas.textContent = "🎨 Canvas";
-        btnCanvas.title = `Open ${shot.id} in Canvas & Compare Studio for brush/mask inpainting`;
+        btnCanvas.textContent = "🎨 Mask Inpaint";
+        btnCanvas.title = `Open ${shot.id} in Canvas Studio to paint a mask over ONLY the changing region (100% pixel-identical background)`;
         btnCanvas.addEventListener("click", () => {
           const wbCompareBtn = document.querySelector('#workbenchDropdown .wb-tab-btn[data-target="panel-compare"]');
           if (wbCompareBtn) wbCompareBtn.click();
           else if (typeof window.activateWorkspaceTab === "function") window.activateWorkspaceTab("canvas-compare", true);
-          const shotNum = parseInt(String(shot.id).split("-").pop() || "1", 10) || 1;
-          const shotIn = document.querySelector('#canvasStudioHost [data-role="export-shot"]');
-          if (shotIn) shotIn.value = String(shotNum);
+          setTimeout(() => {
+            if (typeof window.openKeyframeInCanvasStudio === "function") {
+              window.openKeyframeInCanvasStudio({
+                project: v2KfState.project,
+                shotId: shot.id,
+                imageUrl: shot.image_url,
+                prompt: [shot.action, shot.expression].filter(Boolean).join(". ") || ta.value.trim(),
+                engine: _currentV2VisualEngine(),
+              });
+            }
+          }, 80);
         });
         row.appendChild(btnCanvas);
 
@@ -6847,6 +8866,8 @@
 
       row.appendChild(upIn);
       card.appendChild(row);
+      if (clonePanel) card.appendChild(clonePanel);
+      if (anglePanel) card.appendChild(anglePanel);
 
       // Separate Cascading Modification Boxes (clears automatically when 🔒 Lock is pushed)
       if (shot.has_image && !shot.locked) {
@@ -6959,6 +8980,115 @@
         card.appendChild(modBox);
       }
 
+      // Two-Pass "2D Meets Realism" Hybrid Controls (Pass 1 Live Plate w/ Gaps -> Pass 2 Bring 2D Cast In)
+      if (!shot.locked) {
+        const hybDet = document.createElement("details");
+        hybDet.style.cssText = "margin-top:8px;padding:6px 8px;background:#0a0d14;border:1px solid rgba(245,158,11,0.32);border-radius:6px;";
+        if ((v2KfState.hybrid_mode && v2KfState.hybrid_mode.enabled) || shot.has_pass1) {
+          hybDet.open = true;
+        }
+        const hybSum = document.createElement("summary");
+        hybSum.style.cssText = "cursor:pointer;font-size:11px;font-weight:700;color:#fde68a;";
+        hybSum.textContent = shot.has_pass1
+          ? "🎭 Two-Pass Hybrid (✓ Pass 1 Ready → Bring 2D Cast In)"
+          : "🎭 Two-Pass 2D-Meets-Realism (Pass 1 Gaps → Pass 2 2D Cast)";
+        hybDet.appendChild(hybSum);
+
+        const gapIn = document.createElement("input");
+        gapIn.type = "text";
+        gapIn.placeholder = "Empty space / 2D placement (e.g. Bear in empty chair on right, Otter on table foreground)";
+        gapIn.style.cssText = "width:100%;margin-top:6px;padding:5px 7px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;font-size:11px;";
+        hybDet.appendChild(gapIn);
+
+        const sheetChecks = [];
+        if (Array.isArray(v2KfState.cast_sheets) && v2KfState.cast_sheets.length) {
+          const csWrap = document.createElement("div");
+          csWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;";
+          v2KfState.cast_sheets.forEach(cs => {
+            const lb = document.createElement("label");
+            lb.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#bae6fd;background:#0f172a;border:1px solid #334155;border-radius:4px;padding:2px 6px;cursor:pointer;";
+            const ck = document.createElement("input");
+            ck.type = "checkbox";
+            ck.value = cs.rel_book;
+            if ((shot.characters || []).some(cn => cn.toLowerCase() === cs.name.toLowerCase())) ck.checked = true;
+            lb.appendChild(ck);
+            lb.appendChild(document.createTextNode(`${cs.name} (${cs.kind})`));
+            csWrap.appendChild(lb);
+            sheetChecks.push(ck);
+          });
+          hybDet.appendChild(csWrap);
+        }
+
+        const hybBtns = document.createElement("div");
+        hybBtns.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;";
+        const btnP1 = document.createElement("button");
+        btnP1.type = "button";
+        btnP1.className = "btn btn--secondary";
+        btnP1.style.cssText = "flex:1;padding:4px 8px;font-size:11px;";
+        btnP1.textContent = shot.has_pass1 ? "↺ Redo Pass 1 (Gaps)" : "1️⃣ Pass 1: Live Plate w/ Gaps";
+        btnP1.addEventListener("click", async () => {
+          const stopBusy = startBusyFeedback(btnP1, card, `Pass 1 live plate for ${shot.id}…`);
+          setV2KfStatus(`Rendering Pass 1 Live-Action Plate (with reserved 2D gaps) for ${shot.id}…`);
+          try {
+            const res = await callApi("/api/v2_keyframe_hybrid_pass", {
+              project: v2KfState.project,
+              id: shot.id,
+              pass_num: 1,
+              prompt: ta.value.trim(),
+              gap_notes: gapIn.value.trim(),
+              engine: _currentV2VisualEngine(),
+            });
+            shot.has_pass1 = true;
+            shot.pass1_url = res.pass1_url + "?t=" + Date.now();
+            renderV2KfGrid();
+            setV2KfStatus(`✓ Pass 1 Live Plate saved for ${shot.id}. Now click "2️⃣ Pass 2: Bring 2D Cast In"!`);
+          } catch (err) {
+            setV2KfStatus(`Pass 1 failed for ${shot.id}: ` + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        });
+
+        const btnP2 = document.createElement("button");
+        btnP2.type = "button";
+        btnP2.className = "btn btn--primary";
+        btnP2.style.cssText = "flex:1;padding:4px 8px;font-size:11px;";
+        btnP2.textContent = "2️⃣ Pass 2: Bring 2D Cast In";
+        btnP2.disabled = !shot.has_pass1;
+        btnP2.title = shot.has_pass1 ? "Composite checked 2D character sheets into Pass 1's empty gaps" : "Run Pass 1 first to lock the live-action plate";
+        btnP2.addEventListener("click", async () => {
+          const pickedSheets = sheetChecks.filter(c => c.checked).map(c => c.value);
+          const stopBusy = startBusyFeedback(btnP2, card, `Pass 2 bringing 2D cast into ${shot.id}…`);
+          setV2KfStatus(`Pass 2: Locking Pass 1 & compositing ${pickedSheets.length} 2D character sheet(s) into ${shot.id}…`);
+          try {
+            const res = await callApi("/api/v2_keyframe_hybrid_pass", {
+              project: v2KfState.project,
+              id: shot.id,
+              pass_num: 2,
+              prompt: ta.value.trim(),
+              placement_notes: gapIn.value.trim(),
+              cartoon_refs: pickedSheets,
+              engine: _currentV2VisualEngine(),
+            });
+            if (!shot.has_image) v2KfState.rendered_shots++;
+            shot.has_image = true;
+            shot.image_url = res.image_url + "?t=" + Date.now();
+            renderV2KfScenesBar();
+            renderV2KfGrid();
+            setV2KfStatus(`✓ Pass 2 Hybrid composite rendered for ${shot.id} (${res.model || "local"}) — use 👁️ toggle for Before/After reveal!`);
+          } catch (err) {
+            setV2KfStatus(`Pass 2 failed for ${shot.id}: ` + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        });
+
+        hybBtns.appendChild(btnP1);
+        hybBtns.appendChild(btnP2);
+        hybDet.appendChild(hybBtns);
+        card.appendChild(hybDet);
+      }
+
       grid.appendChild(card);
     });
 
@@ -6967,6 +9097,50 @@
       window.scrollTo({ top: savedY, behavior: "instant" });
       grid.style.minHeight = "";
     });
+  }
+
+  const v2KfDismissedSetPopupFor = new Set();
+
+  function updateV2KfMissingSetsWarning(slug, setPlatesCount, missingList) {
+    const banner = $("v2KfMissingSetsBanner");
+    const modal = $("v2KfMissingSetsModal");
+    const listEl = $("v2KfMissingSetsList");
+    const missing = Array.isArray(missingList) ? missingList : [];
+    const totalPlates = Number(setPlatesCount || 0);
+
+    if (banner) {
+      if (totalPlates === 0 || missing.length > 0) {
+        banner.style.display = "flex";
+        banner.textContent = "";
+        const txt = document.createElement("span");
+        txt.textContent = totalPlates === 0
+          ? `⚠️ No Step 11 set plates rendered yet (${missing.length} location(s) need plates) — backgrounds may drift between shots until Step 11 set plates are generated.`
+          : `⚠️ ${missing.length} location(s) still lack Step 11 set plates: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "…" : ""}`;
+        const goBtn = document.createElement("button");
+        goBtn.type = "button";
+        goBtn.className = "btn btn--primary";
+        goBtn.style.cssText = "padding:4px 10px;font-size:11px;white-space:nowrap";
+        goBtn.textContent = "🏛 Go to Step 11";
+        goBtn.addEventListener("click", () => activateStep(11));
+        banner.appendChild(txt);
+        banner.appendChild(goBtn);
+      } else {
+        banner.style.display = "none";
+      }
+    }
+
+    // Pop up the modal dialog whenever entering Step 17 with ZERO Step 11 set plates
+    if (modal && currentStep === 17 && totalPlates === 0 && !v2KfDismissedSetPopupFor.has(slug)) {
+      if (listEl) {
+        listEl.textContent = "";
+        missing.slice(0, 10).forEach(locName => {
+          const sp = document.createElement("span");
+          sp.textContent = `🏛 ${locName}`;
+          listEl.appendChild(sp);
+        });
+      }
+      modal.style.display = "flex";
+    }
   }
 
   async function loadV2Keyframes() {
@@ -6986,6 +9160,10 @@
       v2KfState.project = slug;
       v2KfState.scenes = data.scenes || [];
       v2KfState.look = data.look || "";
+      v2KfState.hybrid_mode = data.hybrid_mode || {};
+      v2KfState.cast_sheets = data.cast_sheets || [];
+      v2KfState.set_plates_count = Number(data.set_plates_count || 0);
+      v2KfState.missing_set_plates = data.missing_set_plates || [];
       v2KfState.total_shots = data.total_shots || 0;
       v2KfState.rendered_shots = data.rendered_shots || 0;
       if (!v2KfState.activeSceneId || !v2KfState.scenes.some(s => s.id === v2KfState.activeSceneId)) {
@@ -6993,37 +9171,237 @@
       }
       renderV2KfScenesBar();
       renderV2KfGrid();
+      updateV2KfMissingSetsWarning(slug, v2KfState.set_plates_count, v2KfState.missing_set_plates);
     } catch (e) {
       setV2KfStatus("Could not load keyframes: " + (e.message || e), true);
     }
   }
 
+  let v2LocalModelsPollTimer = null;
+
+  async function loadV2LocalConsistencyPanel() {
+    const box = $("v2KfLocalModelsBox");
+    if (!box || box.style.display === "none") return;
+    try {
+      const st = await callApi("/api/v2_local_consistency_status");
+      box.textContent = "";
+      const hdr = document.createElement("div");
+      hdr.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap";
+      const hTitle = document.createElement("strong");
+      hTitle.style.cssText = "font-size:12.5px;color:#34d399";
+      hTitle.textContent = "🆓 100% Free Local Consistency Engines (Your RTX GPU — Zero API Fees)";
+      const btnRef = document.createElement("button");
+      btnRef.type = "button";
+      btnRef.className = "btn btn--ghost";
+      btnRef.style.cssText = "padding:3px 8px;font-size:11px";
+      btnRef.textContent = "↻ Refresh Status";
+      btnRef.addEventListener("click", () => loadV2LocalConsistencyPanel());
+      hdr.appendChild(hTitle);
+      hdr.appendChild(btnRef);
+      box.appendChild(hdr);
+
+      const grid = document.createElement("div");
+      grid.className = "v2-kf-local-grid";
+
+      const downloads = st.downloads || {};
+      let anyDownloading = false;
+      (st.sd_cli_models || []).forEach(m => {
+        const c = document.createElement("div");
+        c.className = "v2-kf-local-card" + (m.ready ? " is-ready" : "");
+        const top = document.createElement("div");
+        top.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:6px";
+        const nm = document.createElement("strong");
+        nm.style.color = "#f8fafc";
+        nm.textContent = m.label;
+        const bdg = document.createElement("span");
+        bdg.style.cssText = "font-size:10px;font-weight:700;padding:2px 6px;border-radius:999px;" +
+          (m.ready ? "background:rgba(16,185,129,0.2);color:#6ee7b7" : "background:rgba(245,158,11,0.18);color:#fde68a");
+        bdg.textContent = m.ready ? "✓ Ready" : `${m.missing_gb} GB`;
+        top.appendChild(nm);
+        top.appendChild(bdg);
+        const sm = document.createElement("div");
+        sm.style.cssText = "font-size:10.5px;color:#94a3b8;line-height:1.35";
+        sm.textContent = m.summary;
+        c.appendChild(top);
+        c.appendChild(sm);
+
+        const job = downloads[m.id];
+        if (!m.ready) {
+          if (job && job.state === "downloading") {
+            anyDownloading = true;
+            const prog = document.createElement("div");
+            prog.style.cssText = "font-size:10.5px;color:#38bdf8;margin-top:4px";
+            prog.textContent = `⬇ Downloading ${job.current_file} (${job.pct || 0}%)…`;
+            c.appendChild(prog);
+          } else {
+            const dlBtn = document.createElement("button");
+            dlBtn.type = "button";
+            dlBtn.className = "btn btn--secondary";
+            dlBtn.style.cssText = "margin-top:4px;padding:4px 8px;font-size:11px";
+            dlBtn.textContent = `⬇ Free Download (${m.missing_gb} GB)`;
+            dlBtn.addEventListener("click", async () => {
+              dlBtn.disabled = true;
+              dlBtn.textContent = "Starting free download…";
+              try {
+                await callApi("/api/v2_local_consistency_download", { model_id: m.id });
+                loadV2LocalConsistencyPanel();
+              } catch (err) {
+                setV2KfStatus("Download failed: " + (err.message || err), true);
+                dlBtn.disabled = false;
+              }
+            });
+            c.appendChild(dlBtn);
+            if (job && job.state === "error" && job.error) {
+              const er = document.createElement("div");
+              er.style.cssText = "font-size:10px;color:#f87171";
+              er.textContent = job.error;
+              c.appendChild(er);
+            }
+          }
+        }
+        grid.appendChild(c);
+      });
+
+      // Ollama Free Vision QA card
+      const ol = st.ollama || {};
+      const olReady = Boolean(ol.running && ol.best_model);
+      const olCard = document.createElement("div");
+      olCard.className = "v2-kf-local-card" + (olReady ? " is-ready" : "");
+      olCard.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <strong style="color:#f8fafc">👁️ Ollama Vision QA (Free)</strong>
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:999px;${olReady ? "background:rgba(16,185,129,0.2);color:#6ee7b7" : "background:rgba(148,163,184,0.2);color:#cbd5e1"}">${olReady ? "✓ " + ol.best_model : (ol.running ? "No VL model" : "Offline")}</span>
+        </div>
+        <div style="font-size:10.5px;color:#94a3b8;line-height:1.35">
+          ${olReady ? "Automatically checks physics &amp; room continuity locally at $0 cost." : "Install Ollama &amp; run <code>ollama pull qwen2.5vl:7b</code> (or <code>gemma3:12b</code>) for free local Vision QA."}
+        </div>`;
+      grid.appendChild(olCard);
+
+      // ComfyUI Qwen-Image-Edit Angles card
+      const cf = st.comfyui || {};
+      const cfCard = document.createElement("div");
+      cfCard.className = "v2-kf-local-card" + (cf.angles_ready ? " is-ready" : "");
+      cfCard.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <strong style="color:#f8fafc">🎥 ComfyUI Angles (Qwen-Edit)</strong>
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:999px;${cf.angles_ready ? "background:rgba(16,185,129,0.2);color:#6ee7b7" : "background:rgba(168,85,247,0.2);color:#e9d5ff"}">${cf.angles_ready ? "✓ Ready" : (cf.angles_missing_gb ? cf.angles_missing_gb + " GB pack" : "Not installed")}</span>
+        </div>
+        <div style="font-size:10.5px;color:#94a3b8;line-height:1.35">
+          ${cf.angles_ready ? "Active! New camera angles rotate your Set Plate / Anchor automatically." : "Install the free <code>image-qwen-edit</code> pack in Models &amp; Hardware for native 3D camera rotation (Kontext/FLUX.2 fallback active meanwhile)."}
+        </div>`;
+      grid.appendChild(cfCard);
+
+      box.appendChild(grid);
+
+      if (v2LocalModelsPollTimer) { clearTimeout(v2LocalModelsPollTimer); v2LocalModelsPollTimer = null; }
+      if (anyDownloading) {
+        v2LocalModelsPollTimer = setTimeout(() => loadV2LocalConsistencyPanel(), 2500);
+      }
+    } catch (err) {
+      box.textContent = "Could not probe local consistency models: " + (err.message || err);
+    }
+  }
+
   function initV2Keyframes() {
+    const btnLocalToggle = $("bV2KfLocalModelsToggle");
+    const localBox = $("v2KfLocalModelsBox");
+    if (btnLocalToggle && localBox) {
+      btnLocalToggle.addEventListener("click", () => {
+        const open = localBox.style.display === "none" || !localBox.style.display;
+        localBox.style.display = open ? "flex" : "none";
+        if (open) loadV2LocalConsistencyPanel();
+      });
+    }
+    const btnPlateAudit = $("bV2KfPlateAudit");
+    const plateAuditBox = $("v2KfPlateAuditBox");
+    if (btnPlateAudit && plateAuditBox) {
+      btnPlateAudit.addEventListener("click", async () => {
+        const slug = v2KfState.project || ($("proj")?.value || "").trim();
+        if (!slug) { setV2KfStatus("Select a book in Step 01 first.", true); return; }
+        plateAuditBox.style.display = "block";
+        plateAuditBox.innerHTML = `<div style="font-size:12px;color:#94a3b8">🧩 Building per-plate consistency contact sheets (Step 10 characters &amp; Step 11 sets vs Step 17 keyframes)…</div>`;
+        try {
+          const res = await callApi("/api/v2_plate_audit", { project: slug });
+          const sheets = res.sheets || [];
+          const warns = res.warnings || [];
+          const ts = Date.now();
+          let html = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <strong style="color:${res.passed ? "#34d399" : "#fbbf24"};font-size:13px">${res.passed ? "✓ Plate Consistency Audit Passed" : "⚠️ Plate Consistency Audit"} (${res.plate_count || 0} plates · ${res.total_rendered_stills || 0} keyframes)</strong>
+            <button type="button" class="btn btn--ghost" id="bV2KfPlateAuditClose" style="padding:2px 8px;font-size:11px">✕ Close</button>
+          </div>`;
+          if (warns.length) {
+            html += `<div style="font-size:11px;color:#fbbf24;margin-bottom:8px">${warns.map(w => `• ${esc(w)}`).join("<br>")}</div>`;
+          }
+          if (!sheets.length) {
+            html += `<div style="font-size:12px;color:#94a3b8">No plate sheets built yet — render Step 10 character turnarounds / Step 11 set plates and Step 17 keyframes first.</div>`;
+          } else {
+            html += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">` +
+              sheets.map(s => `<div style="background:#0a0d14;border:1px solid #334155;border-radius:8px;padding:8px">
+                <div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:4px">${s.kind === "character" ? "👤" : "🏛️"} ${esc(s.label)} <span style="color:#94a3b8;font-weight:400">(${s.still_count} shot${s.still_count === 1 ? "" : "s"})</span></div>
+                <a href="${esc(s.sheet_url)}?t=${ts}" target="_blank" rel="noopener"><img src="${esc(s.sheet_url)}?t=${ts}" alt="${esc(s.label)} plate sheet" style="width:100%;border-radius:6px;display:block"></a>
+              </div>`).join("") + `</div>`;
+          }
+          plateAuditBox.innerHTML = html;
+          const btnClose = $("bV2KfPlateAuditClose");
+          if (btnClose) btnClose.addEventListener("click", () => { plateAuditBox.style.display = "none"; });
+        } catch (err) {
+          plateAuditBox.innerHTML = `<div style="font-size:12px;color:#f87171">Plate audit failed: ${esc(err.message || err)}</div>`;
+        }
+      });
+    }
+    const btnGoStep11 = $("bV2KfGoStep11");
+    const btnDismissWarn = $("bV2KfDismissSetsWarn");
+    const warnModal = $("v2KfMissingSetsModal");
+    if (btnGoStep11) {
+      btnGoStep11.addEventListener("click", () => {
+        if (warnModal) warnModal.style.display = "none";
+        activateStep(11);
+      });
+    }
+    if (btnDismissWarn) {
+      btnDismissWarn.addEventListener("click", () => {
+        if (v2KfState.project) v2KfDismissedSetPopupFor.add(v2KfState.project);
+        if (warnModal) warnModal.style.display = "none";
+      });
+    }
+    window.__v2ActivateStep = activateStep;
     const btnReload = $("bV2KfReload");
     const btnRenderScene = $("bV2KfRenderScene");
     const btnSavePrompts = $("bV2KfSavePrompts");
     const btnRebuildPrompts = $("bV2KfRebuildPrompts");
+    const btnRebuildAllPrompts = $("bV2KfRebuildAllPrompts");
     if (btnReload) btnReload.addEventListener("click", () => loadV2Keyframes());
     if (btnRebuildPrompts) {
       btnRebuildPrompts.addEventListener("click", async () => {
         const sc = (v2KfState.scenes || []).find(s => s.id === v2KfState.activeSceneId);
-        if (!sc) return;
-        await loadV2Keyframes();
-        const freshSc = (v2KfState.scenes || []).find(s => s.id === sc.id);
-        if (!freshSc) return;
-        const prompts = {};
-        (freshSc.shots || []).forEach(sh => {
-          if (sh.default_prompt) {
-            sh.prompt = sh.default_prompt;
-            prompts[sh.id] = sh.default_prompt;
-          }
-        });
-        renderV2KfGrid();
+        if (!sc || !v2KfState.project) return;
+        setV2KfStatus(`Syncing ${sc.id} prompts from latest Steps 08–12 (cast, turnarounds, sets, shotlist)…`);
         try {
-          await callApi("/api/v2_keyframe_prompts_save", { project: v2KfState.project, prompts });
-          setV2KfStatus(`✓ Synced ${Object.keys(prompts).length} prompts in ${sc.id} with latest locked wardrobes & locations.`);
+          const res = await callApi("/api/v2_keyframe_sync_prompts", {
+            project: v2KfState.project,
+            scene: sc.id,
+          });
+          await loadV2Keyframes();
+          const skipNote = res.skipped_locked ? ` (${res.skipped_locked} locked kept)` : "";
+          setV2KfStatus(`✓ Synced ${res.updated || 0} prompt(s) in ${sc.id} with latest Steps 08–12 cast, turnarounds & sets${skipNote}.`);
         } catch (err) {
           setV2KfStatus("Sync failed: " + (err.message || err), true);
+        }
+      });
+    }
+    if (btnRebuildAllPrompts) {
+      btnRebuildAllPrompts.addEventListener("click", async () => {
+        if (!v2KfState.project) return;
+        setV2KfStatus("Syncing ALL unlocked scenes' prompts from latest Steps 08–12…");
+        try {
+          const res = await callApi("/api/v2_keyframe_sync_prompts", {
+            project: v2KfState.project,
+          });
+          await loadV2Keyframes();
+          const skipNote = res.skipped_locked ? ` (${res.skipped_locked} locked kept)` : "";
+          setV2KfStatus(`✓ Synced ${res.updated || 0} prompt(s) across all scenes with latest Steps 08–12 cast, turnarounds & sets${skipNote}.`);
+        } catch (err) {
+          setV2KfStatus("Sync all failed: " + (err.message || err), true);
         }
       });
     }
@@ -7192,6 +9570,14 @@
         badge.title = "Enforced as visually distinct from other cast members unless explicitly described as twins.";
       }
       titleRow.appendChild(badge);
+
+      if (c.style_override) {
+        const ovPill = document.createElement("span");
+        ovPill.style.cssText = "padding:2px 8px;border-radius:999px;background:rgba(14,165,233,0.16);border:1px solid rgba(56,189,248,0.45);color:#bae6fd;font-size:11px;font-weight:600";
+        const stObj = V2_STYLE_RECIPES[c.style_override];
+        ovPill.textContent = `🎨 Style Override: ${stObj ? stObj.label : c.style_override}`;
+        titleRow.appendChild(ovPill);
+      }
 
       const idSel = document.createElement("select");
       idSel.style.cssText = "margin-left:auto;background:#0f172a;color:#cbd5e1;border:1px solid #334155;border-radius:6px;padding:2px 6px;font-size:11px;max-width:240px";
@@ -7444,10 +9830,130 @@
           }
           row.appendChild(upIn);
           box.appendChild(row);
+
+          // One-Click Restyle Front View into any of the 30+ visual styles (FLUX.2-klein-4B -r ref)
+          if (vk === "front" && vinfo.has_image) {
+            const restyleRow = document.createElement("div");
+            restyleRow.style.cssText = "display:flex;gap:4px;align-items:center;margin-top:2px;";
+            const restyleSel = document.createElement("select");
+            restyleSel.style.cssText = "flex:1;min-width:0;padding:3px 6px;background:#0f172a;color:#bae6fd;border:1px solid #334155;border-radius:4px;font-size:11px;";
+            populateStyleSelect(restyleSel, c.style_override || v2TurnState.look || "claymation", null);
+            const btnRestyle = document.createElement("button");
+            btnRestyle.type = "button";
+            btnRestyle.className = "btn btn--secondary";
+            btnRestyle.style.cssText = "padding:3px 8px;font-size:11px;flex-shrink:0;";
+            btnRestyle.textContent = "🎨 Restyle";
+            btnRestyle.title = "Transform this Front View into the selected visual style while preserving character identity & pose.";
+            btnRestyle.addEventListener("click", async () => {
+              const targetStyle = restyleSel.value;
+              if (!targetStyle) return;
+              const styleLbl = (V2_STYLE_RECIPES[targetStyle] || {}).label || targetStyle;
+              const stopBusy = startBusyFeedback(btnRestyle, box, `Restyling ${c.name} into ${styleLbl}…`);
+              setV2TurnStatus(`Restyling ${c.name} (${of.scenes}) into ${styleLbl} using Front View reference…`);
+              try {
+                const res = await callApi("/api/v2_turnaround_restyle", {
+                  project: v2TurnState.project,
+                  character: c.name,
+                  outfit_id: of.id || "default",
+                  style_id: targetStyle,
+                  desc: c.desc,
+                  wardrobe: of.wardrobe || "",
+                });
+                of.views[vk] = { has_image: true, image_url: res.image_url + "?t=" + Date.now() };
+                await loadV2Turnarounds();
+                setV2TurnStatus(`✓ Restyled ${c.name} into ${res.style_name || styleLbl} (${res.model || "local"})!`);
+              } catch (err) {
+                setV2TurnStatus("Restyle failed: " + (err.message || err), true);
+              } finally {
+                stopBusy();
+              }
+            });
+            restyleRow.appendChild(restyleSel);
+            restyleRow.appendChild(btnRestyle);
+            box.appendChild(restyleRow);
+          }
+
           grid.appendChild(box);
         });
 
         sec.appendChild(grid);
+
+        // 3-Panel Pro Character Sheet (Front Close-Up Portrait | Full Body Front | Full Body Back) from 2D_Realism_Tutorial.pdf
+        const sheetBar = document.createElement("div");
+        sheetBar.style.cssText = "margin-top:10px;padding:8px;background:#0a0d14;border:1px solid rgba(56,189,248,0.35);border-radius:8px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;";
+        const shInfo = of.sheet || {};
+        if (shInfo.has_image && shInfo.image_url) {
+          const shImg = document.createElement("img");
+          shImg.src = shInfo.image_url + "?t=" + Date.now();
+          shImg.alt = `${c.name} 3-Panel Pro Sheet`;
+          shImg.style.cssText = "width:140px;aspect-ratio:4/3;object-fit:cover;border-radius:6px;border:1px solid #38bdf8;cursor:zoom-in;";
+          shImg.addEventListener("click", () => window.open(shInfo.image_url, "_blank"));
+          sheetBar.appendChild(shImg);
+        }
+        const shMeta = document.createElement("div");
+        shMeta.style.cssText = "flex:1;min-width:200px;display:flex;flex-direction:column;gap:4px;";
+        const shTitle = document.createElement("strong");
+        shTitle.style.cssText = "font-size:11px;color:#bae6fd;";
+        shTitle.textContent = "📋 3-Panel Pro Sheet (Close-Up Portrait | Full Body Front | Full Body Back — 4:3)";
+        shMeta.appendChild(shTitle);
+        const shCtrls = document.createElement("div");
+        shCtrls.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;";
+        const shModeSel = document.createElement("select");
+        shModeSel.style.cssText = "padding:3px 7px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:11px;";
+        [
+          ["auto", "Style: Auto (Character / Book Style)"],
+          ["realistic", "Style: Realistic Photo Sheet (Human Actor)"],
+          ["2d", "Style: Shared 2D Cartoon Sheet (1940s Cel)"],
+        ].forEach(([mv, ml]) => {
+          const o = document.createElement("option");
+          o.value = mv;
+          o.textContent = ml;
+          shModeSel.appendChild(o);
+        });
+        const btnSheet = document.createElement("button");
+        btnSheet.type = "button";
+        btnSheet.className = "btn btn--primary";
+        btnSheet.style.cssText = "padding:4px 10px;font-size:11px;";
+        btnSheet.textContent = shInfo.has_image ? "↺ Regenerate 3-Panel Sheet" : "📋 Generate 3-Panel Pro Sheet";
+        btnSheet.addEventListener("click", async () => {
+          const stopBusy = startBusyFeedback(btnSheet, sheetBar, `Generating 3-Panel Pro Sheet for ${c.name}…`);
+          setV2TurnStatus(`Generating 4:3 3-Panel Pro Sheet (Portrait | Front | Back) for ${c.name}…`);
+          try {
+            const res = await callApi("/api/v2_turnaround_sheet", {
+              project: v2TurnState.project,
+              character: c.name,
+              outfit_id: of.id || "default",
+              sheet_mode: shModeSel.value,
+              desc: c.desc,
+              wardrobe: of.wardrobe || "",
+              look: v2TurnState.look,
+              engine: _currentV2VisualEngine(),
+            });
+            of.sheet = { has_image: true, image_url: res.sheet_url + "?t=" + Date.now() };
+            if (window.loadPCastRefs) window.loadPCastRefs();
+            renderV2Turnarounds();
+            setV2TurnStatus(`✓ Generated 3-Panel Pro Sheet for ${c.name} (${res.style_id}, ${res.model || "local"})!`);
+          } catch (err) {
+            setV2TurnStatus("3-Panel Sheet failed: " + (err.message || err), true);
+          } finally {
+            stopBusy();
+          }
+        });
+        shCtrls.appendChild(shModeSel);
+        shCtrls.appendChild(btnSheet);
+        if (shInfo.has_image && shInfo.image_url) {
+          const dlLink = document.createElement("a");
+          dlLink.href = shInfo.image_url;
+          dlLink.download = `${c.slug || "character"}_sheet.png`;
+          dlLink.className = "btn btn--ghost";
+          dlLink.style.cssText = "padding:4px 8px;font-size:11px;text-decoration:none;color:#fde68a;";
+          dlLink.textContent = "⬇ Export Sheet";
+          shCtrls.appendChild(dlLink);
+        }
+        shMeta.appendChild(shCtrls);
+        sheetBar.appendChild(shMeta);
+        sec.appendChild(sheetBar);
+
         card.appendChild(sec);
       });
 
@@ -7465,6 +9971,7 @@
     const slug = ($("proj")?.value || "").trim();
     if (!slug) return;
     try {
+      await loadV2CharacterTypes();
       const data = await callApi(`/api/v2_turnarounds?project=${encodeURIComponent(slug)}`);
       v2TurnState = { project: slug, look: data.look || "pixar_3d", characters: data.characters || [] };
       renderV2Turnarounds();
@@ -7478,6 +9985,74 @@
     if (btnRel) btnRel.addEventListener("click", () => loadV2Turnarounds());
     const selProj = $("proj");
     if (selProj) selProj.addEventListener("change", () => { if (currentStep === 10) loadV2Turnarounds(); });
+
+    // Wire Step 18 Two-Pass Hybrid Video Prompt Exporter
+    const btnHybVid = $("bV2HybridPromptsGen");
+    if (btnHybVid) {
+      btnHybVid.addEventListener("click", async () => {
+        const slug = ($("proj")?.value || activeProject || "").trim();
+        const stEl = $("v2HybridVidStatus");
+        if (!slug) { if (stEl) stEl.textContent = "Select a book in Step 01 first."; return; }
+        btnHybVid.disabled = true;
+        if (stEl) stEl.textContent = "Building Pass 1 (Real Plate with Gaps) + Pass 2 (Bring 2D Cast In) video prompts…";
+        try {
+          const res = await callApi("/api/v2_hybrid_video_prompts", {
+            project: slug,
+            scene_id: ($("v2HybridVidScene")?.value || "").trim(),
+            gap_notes: ($("v2HybridVidGaps")?.value || "").trim(),
+          });
+          if ($("v2HybridP1Text")) $("v2HybridP1Text").value = res.pass1_prompt || "";
+          if ($("v2HybridP2Text")) $("v2HybridP2Text").value = res.pass2_prompt || "";
+          if ($("v2HybridPromptsOut")) $("v2HybridPromptsOut").style.display = "grid";
+          if (stEl) stEl.textContent = `✓ Generated Two-Pass prompts for ${res.scene_id} (Live: ${(res.live_cast || []).join(", ")} · 2D: ${(res.cartoon_cast || []).join(", ")})`;
+        } catch (err) {
+          if (stEl) stEl.textContent = "Error: " + (err.message || err);
+        } finally {
+          btnHybVid.disabled = false;
+        }
+      });
+    }
+    const wireCopy = (btnId, taId) => {
+      const b = $(btnId);
+      if (!b) return;
+      b.addEventListener("click", () => {
+        const txt = $(taId)?.value || "";
+        if (!txt) return;
+        navigator.clipboard?.writeText(txt).catch(() => {});
+        const prev = b.textContent;
+        b.textContent = "✓ Copied!";
+        setTimeout(() => { b.textContent = prev; }, 1200);
+      });
+    };
+    wireCopy("bV2CopyHybridP1", "v2HybridP1Text");
+    wireCopy("bV2CopyHybridP2", "v2HybridP2Text");
+    wireCopy("bV2BeatPromptCopy", "v2BeatPromptOut");
+
+    const btnBeatPrompt = $("bV2BeatPromptGen");
+    if (btnBeatPrompt) {
+      btnBeatPrompt.addEventListener("click", async () => {
+        const slug = ($("proj")?.value || activeProject || "").trim();
+        const stEl = $("v2LocalVideoStatus");
+        if (!slug) { if (stEl) stEl.textContent = "Select a book in Step 01 first."; return; }
+        btnBeatPrompt.disabled = true;
+        if (stEl) stEl.textContent = "Building timed 0.0–Xs beat-by-beat motion prompt…";
+        try {
+          const res = await callApi("/api/v2_beat_motion_prompt", {
+            project: slug,
+            shot_id: ($("v2LocalVideoShotSelect")?.value || "").trim(),
+            duration: parseFloat($("v2LocalVideoDuration")?.value || "6"),
+          });
+          if ($("v2BeatPromptOut")) $("v2BeatPromptOut").value = res.prompt || "";
+          if ($("v2BeatPromptWrap")) $("v2BeatPromptWrap").style.display = "block";
+          if ($("v2OmniPrompt") && res.prompt) $("v2OmniPrompt").value = res.prompt;
+          if (stEl) stEl.textContent = `✓ Built ${res.duration}s beat-by-beat prompt for ${res.shot_id} (${res.style_name}).`;
+        } catch (err) {
+          if (stEl) stEl.textContent = "Beat prompt error: " + (err.message || err);
+        } finally {
+          btnBeatPrompt.disabled = false;
+        }
+      });
+    }
   }
 
   // ===== STEPS 19-22: POLISH, TIMELINE, AUDIO MIX, PREMIERE & EXPORT =====
@@ -7624,15 +10199,42 @@
             foley_db: parseFloat($("v2MixFolRange")?.value || "-3"),
             score_db: parseFloat($("v2MixScoRange")?.value || "-6"),
             ducking: Boolean($("v2MixDucking")?.checked),
+            normalize_lufs: Boolean($("v2MixLufsNorm")?.checked),
+            lufs: -14,
           });
           const aud = _renderV2SoundPlayer("v2MixPlayerWrap", res.audio_url, "");
-          if ($("v2MixBadge")) $("v2MixBadge").textContent = `✓ Mixed (${res.duration_sec || 0}s)`;
-          if (st) st.textContent = `✓ Mixed master audio (${res.duration_sec || 0}s)!`;
+          const lufsTag = res.lufs_master && res.lufs_master.normalized && res.lufs_master.after_lufs != null
+            ? ` · ${Number(res.lufs_master.after_lufs).toFixed(1)} LUFS`
+            : "";
+          if ($("v2MixBadge")) $("v2MixBadge").textContent = `✓ Mixed (${res.duration_sec || 0}s${lufsTag})`;
+          if (st) st.textContent = `✓ Mixed master audio (${res.duration_sec || 0}s${lufsTag})!`;
           if (aud) aud.play().catch(() => {});
         } catch (err) {
           if (st) { st.style.color = "#f87171"; st.textContent = "Mix failed: " + (err.message || err); }
         } finally {
           stopBusy();
+        }
+      });
+    }
+
+    const btnLufsNorm = $("bV2MixLufsBtn");
+    if (btnLufsNorm) {
+      btnLufsNorm.addEventListener("click", async () => {
+        const slug = getSlug();
+        if (!slug) return;
+        const st = $("v2MixStatus");
+        btnLufsNorm.disabled = true;
+        if (st) { st.style.color = "#34d399"; st.textContent = "Measuring loudness & normalizing master_mix.wav to -14 LUFS (48 kHz)…"; }
+        try {
+          const res = await callApi("/api/v2_lufs_normalize", { project: slug, target_lufs: -14.0 });
+          _renderV2SoundPlayer("v2MixPlayerWrap", res.audio_url, "");
+          const bL = res.before_lufs != null ? Number(res.before_lufs).toFixed(1) : "?";
+          const aL = res.after_lufs != null ? Number(res.after_lufs).toFixed(1) : "-14.0";
+          if (st) st.textContent = `✓ Normalized master audio: ${bL} LUFS ➔ ${aL} LUFS (48 kHz peak-limited).`;
+        } catch (err) {
+          if (st) { st.style.color = "#f87171"; st.textContent = "LUFS normalize failed: " + (err.message || err); }
+        } finally {
+          btnLufsNorm.disabled = false;
         }
       });
     }
@@ -7645,6 +10247,7 @@
       const runtime = $("v2TlRuntime")?.value || "ffmpeg";
       const silenceCut = Boolean($("v2ExpSilenceCut")?.checked);
       const autoReframe = Boolean($("v2ExpAutoReframe")?.checked);
+      const burnCaptions = Boolean($("v2ExpBurnCaptions")?.checked);
       const stopBusy = startBusyFeedback(btn, null, `Building ${target} (${runtime})…`);
       if (st) { st.style.color = "#34d399"; st.textContent = `Building ${target} for "${slug}" (runtime: ${runtime})…`; }
       try {
@@ -7654,8 +10257,10 @@
           runtime,
           silence_cut: silenceCut,
           auto_reframe: autoReframe,
+          burn_captions: burnCaptions,
         });
-        if (st) st.textContent = `✓ Ready: ${target}`;
+        const capTag = res.captions_burned ? ` · 💬 ${res.captions_burned} safe-zone caption cue(s) burned in` : "";
+        if (st) st.textContent = `✓ Ready: ${target}${capTag}`;
         if (res.video_url) await loadV2PostProd();
         if (res.download_url) window.open(res.download_url, "_blank");
       } catch (err) {
@@ -7705,6 +10310,8 @@
     bindExp("bV2ExpMasterMp4", "master_mp4", "v2ExpStatus");
     bindExp("bV2ExpShorts", "shorts_9x16", "v2ExpStatus");
     bindExp("bV2ExpFountain", "fountain", "v2ExpStatus");
+    bindExp("bV2ExpPitchPptx", "pitch_pptx", "v2ExpStatus");
+    bindExp("bV2ExpProdXlsx", "prod_xlsx", "v2ExpStatus");
     bindExp("bV2ExpEdl", "edl", "v2ExpStatus");
     bindExp("bV2ExpStems", "stems_zip", "v2ExpStatus");
 
@@ -7717,6 +10324,191 @@
         } else {
           const st = $("v2ExpStatus");
           if (st) { st.style.color = "#f87171"; st.textContent = "Mix your master audio in Step 21 first."; }
+        }
+      });
+    }
+
+    const renderCapPreview = (cues, srtUrl, infoLine) => {
+      const st = $("v2CaptionsStatus");
+      const box = $("v2CaptionsPreview");
+      if (st) {
+        st.style.color = "#34d399";
+        st.innerHTML = `${esc(infoLine)} ${srtUrl ? `· <a href="${esc(srtUrl)}" target="_blank" rel="noopener" style="color:#c4b5fd;text-decoration:underline">⬇ Download safe_captions.srt</a>` : ""}`;
+      }
+      if (box) {
+        box.style.display = "block";
+        box.textContent = (cues || []).slice(0, 40).map(c =>
+          `[${Number(c.start).toFixed(2)}s–${Number(c.end).toFixed(2)}s · ${c.font_px || 56}px] ${c.text}`
+        ).join("\n") || "(No caption cues generated yet)";
+      }
+    };
+
+    const btnBuildCaps = $("bV2BuildCaptions");
+    if (btnBuildCaps) {
+      btnBuildCaps.addEventListener("click", async () => {
+        const slug = getSlug();
+        if (!slug) return;
+        const st = $("v2CaptionsStatus");
+        btnBuildCaps.disabled = true;
+        if (st) { st.style.color = "#cbd5e1"; st.textContent = "Building Audio-First Clock & frame-snapped Reels safe-zone captions…"; }
+        try {
+          const res = await callApi("/api/v2_audio_first_clock", { project: slug, fps: 24, use_whisper: true });
+          renderCapPreview(
+            res.cues || [],
+            res.srt_url,
+            `✓ Built ${res.cue_count || 0} safe-zone caption cue(s) via ${res.engine || "clock"} (drift: ${res.sync_drift_ms ?? 0} ms · min ${res.min_caption_px || 56} px)`
+          );
+        } catch (err) {
+          if (st) { st.style.color = "#f87171"; st.textContent = "Caption build failed: " + (err.message || err); }
+        } finally {
+          btnBuildCaps.disabled = false;
+        }
+      });
+    }
+
+    const btnCapFix = $("bV2CapFix");
+    if (btnCapFix) {
+      btnCapFix.addEventListener("click", async () => {
+        const slug = getSlug();
+        const findW = ($("v2CapFind")?.value || "").trim();
+        const repW = ($("v2CapReplace")?.value || "").trim();
+        const st = $("v2CaptionsStatus");
+        if (!slug || !findW) {
+          if (st) { st.style.color = "#fbbf24"; st.textContent = "Enter a word to find (e.g. Cloud) and its replacement (e.g. Claude)."; }
+          return;
+        }
+        btnCapFix.disabled = true;
+        try {
+          const res = await callApi("/api/v2_caption_proofread", { project: slug, find: findW, replace: repW });
+          renderCapPreview(
+            res.cues || [],
+            res.srt_url,
+            `✓ Proofread applied: replaced "${findW}" ➔ "${repW}" in ${res.changed_cues || 0} cue(s) & updated safe_captions.srt`
+          );
+        } catch (err) {
+          if (st) { st.style.color = "#f87171"; st.textContent = "Proofread failed: " + (err.message || err); }
+        } finally {
+          btnCapFix.disabled = false;
+        }
+      });
+    }
+
+    // Adder #1: Reference-Video -> Editing Style Guide Analyzer (Step 20)
+    let pendingRefVidData = { base64: "", filename: "" };
+    const refFileIn = $("v2RefVidFile");
+    if (refFileIn) {
+      refFileIn.addEventListener("change", () => {
+        const f = refFileIn.files && refFileIn.files[0];
+        if (!f) return;
+        const st = $("v2RefVidStatus");
+        if (st) { st.style.color = "#cbd5e1"; st.textContent = `Loaded reference file: ${f.name} (${(f.size / 1048576).toFixed(1)} MB) — click Analyze.`; }
+        const rd = new FileReader();
+        rd.onload = () => { pendingRefVidData = { base64: String(rd.result || ""), filename: f.name }; };
+        rd.readAsDataURL(f);
+      });
+    }
+    const btnRefAnalyze = $("bV2RefVidAnalyze");
+    if (btnRefAnalyze) {
+      btnRefAnalyze.addEventListener("click", async () => {
+        const slug = getSlug();
+        if (!slug) return;
+        const st = $("v2RefVidStatus");
+        const guideEl = $("v2RefVidGuide");
+        const swEl = $("v2RefVidSwatches");
+        btnRefAnalyze.disabled = true;
+        if (st) { st.style.color = "#cbd5e1"; st.textContent = "Analyzing reference video cut rhythm, color palette & pacing…"; }
+        try {
+          const res = await callApi("/api/v2_editing_style_analyze", {
+            project: slug,
+            video_base64: pendingRefVidData.base64,
+            filename: pendingRefVidData.filename,
+            url: ($("v2RefVidUrl")?.value || "").trim(),
+            use_whisper: Boolean($("v2RefVidWhisper")?.checked),
+          });
+          if ($("v2TlCrossfade") && res.recommended_crossfade != null) {
+            $("v2TlCrossfade").value = String(res.recommended_crossfade);
+          }
+          if (st) {
+            st.style.color = "#34d399";
+            st.innerHTML = `✓ ${esc(res.pacing_label || "Style Guide Ready")} · Avg shot: ${res.avg_shot_seconds}s · Recommended crossfade: ${res.recommended_crossfade}s · <a href="${esc(res.guide_url || "#")}" target="_blank" rel="noopener" style="color:#7dd3fc;text-decoration:underline">Open Editing Style Guide.md</a>`;
+          }
+          if (swEl) {
+            swEl.innerHTML = (res.palette || []).map(hx =>
+              `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px;background:#0a0d14;border:1px solid #334155;font-size:10px;color:#cbd5e1"><span style="width:12px;height:12px;border-radius:2px;background:${esc(hx)};display:inline-block"></span>${esc(hx)}</span>`
+            ).join("");
+          }
+          if (guideEl && res.guide_markdown) {
+            guideEl.style.display = "block";
+            guideEl.textContent = res.guide_markdown;
+          }
+        } catch (err) {
+          if (st) { st.style.color = "#f87171"; st.textContent = "Reference analysis failed: " + (err.message || err); }
+        } finally {
+          btnRefAnalyze.disabled = false;
+        }
+      });
+    }
+
+    // Adder #2: Dialogue & Narration Humanizer (Steps 06 & 15)
+    const runHumanizer = async (btn, statusEl, dialogueOnly, reloadFn) => {
+      const slug = getSlug();
+      if (!slug) return;
+      btn.disabled = true;
+      if (statusEl) { statusEl.style.color = "#cbd5e1"; statusEl.textContent = "Humanizing AI clichés & smoothing spoken cadence…"; }
+      try {
+        const res = await callApi("/api/v2_humanize_script", { project: slug, apply: true, dialogue_only: dialogueOnly });
+        if (statusEl) {
+          statusEl.style.color = "#34d399";
+          statusEl.textContent = res.lines_changed
+            ? `✓ Humanized ${res.lines_changed} line(s) across ${res.scenes_scanned} scene(s).`
+            : `✓ Scanned ${res.lines_scanned} line(s) — already sounded natural & human!`;
+        }
+        if (res.lines_changed && typeof reloadFn === "function") reloadFn();
+      } catch (err) {
+        if (statusEl) { statusEl.style.color = "#f87171"; statusEl.textContent = "Humanizer failed: " + (err.message || err); }
+      } finally {
+        btn.disabled = false;
+      }
+    };
+    const btnSpHum = $("bV2SpHumanize");
+    if (btnSpHum) btnSpHum.addEventListener("click", () => runHumanizer(btnSpHum, $("v2SpHumanizeStatus"), false, () => { if (typeof loadV2Screenplay === "function") loadV2Screenplay(); }));
+    const btnDlgHum = $("bV2DlgHumanize");
+    if (btnDlgHum) btnDlgHum.addEventListener("click", () => runHumanizer(btnDlgHum, $("v2DialogueSummary"), true, () => { if (typeof loadV2Dialogue === "function") loadV2Dialogue(); }));
+
+    // Adder #4: Code-Drawn Title Cards & Explainers (Step 20)
+    const btnCdRender = $("bV2CdRender");
+    if (btnCdRender) {
+      btnCdRender.addEventListener("click", async () => {
+        const slug = getSlug();
+        if (!slug) return;
+        const st = $("v2CdStatus");
+        const prev = $("v2CdPreview");
+        btnCdRender.disabled = true;
+        if (st) { st.style.color = "#cbd5e1"; st.textContent = "Rendering deterministic code-drawn MP4…"; }
+        try {
+          const rawB = ($("v2CdBullets")?.value || "").trim();
+          const bullets = rawB ? rawB.split("|").map(s => s.trim()).filter(Boolean) : [];
+          const res = await callApi("/api/v2_code_drawn_render", {
+            project: slug,
+            template_id: $("v2CdTemplate")?.value || "cinema_title_card",
+            title: ($("v2CdTitle")?.value || "").trim(),
+            subtitle: ($("v2CdSubtitle")?.value || "").trim(),
+            bullets,
+            aspect: $("v2CdAspect")?.value || "16:9",
+            duration: 4.0,
+            fps: 30,
+          });
+          if (st) {
+            st.style.color = "#34d399";
+            st.innerHTML = `✓ Rendered ${esc(res.template_id)} (${res.aspect}, ${res.fps} fps) · <a href="${esc(res.download_url)}" target="_blank" rel="noopener" style="color:#fde68a;text-decoration:underline">⬇ Download MP4</a>`;
+          }
+          if (prev && res.video_url) {
+            prev.innerHTML = `<video controls playsinline src="${esc(res.video_url)}?t=${Date.now()}" style="max-width:420px;width:100%;border-radius:8px;border:1px solid #334155"></video>`;
+          }
+        } catch (err) {
+          if (st) { st.style.color = "#f87171"; st.textContent = "Render failed: " + (err.message || err); }
+        } finally {
+          btnCdRender.disabled = false;
         }
       });
     }
@@ -7772,11 +10564,11 @@
       });
     });
 
-    // Bind next/prev buttons in all step action docks
+    // Bind next/prev buttons in all step action docks (Approve & Next advances the bi-directional sync queue!)
     document.querySelectorAll(".btn-step-next").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
-        activateStep(currentStep + 1);
+        handleV2ApproveNextClick();
       });
     });
 
@@ -7807,8 +10599,14 @@
     } catch (e) {}
     activateStep(savedStep);
 
+    const selProjSync = $("proj");
+    if (selProjSync) {
+      selProjSync.addEventListener("change", () => loadV2WorkflowSync());
+    }
+
     setTimeout(() => {
       checkStepStorylineDrift();
+      loadV2WorkflowSync();
       loadV2Coverage();
       loadV2Scope();
       loadV2GeminiStatus();

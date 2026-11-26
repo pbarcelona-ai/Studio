@@ -1,5 +1,6 @@
 """GET routes of the JSON API."""
 import re
+from pathlib import Path
 from typing import Any
 import character_tokens
 import detect_scene_changes
@@ -448,24 +449,29 @@ def _v2_dialogue(r: Request):
         except Exception as e:
             log.debug("voice_cast.json read failed: %s", e)
 
-    from .routes_post import VOICE_LIBRARY_DIR, _voice_library_load, find_kokoro_python
+    from .routes_post import VOICE_LIBRARY_DIR, _norm_voice_char, _voice_library_load, find_kokoro_python
     global_lib = _voice_library_load()
     global_lib_lc = {str(k).lower(): v for k, v in global_lib.items() if isinstance(v, dict)}
+    global_lib_norm = {_norm_voice_char(str(k)): v for k, v in global_lib.items() if isinstance(v, dict)}
 
     vc_lc = {str(k).lower(): v for k, v in vc.items()}
+    vc_norm = {_norm_voice_char(str(k)): v for k, v in vc.items()}
     prof_lc = {str(k).lower(): v for k, v in profiles.items() if isinstance(v, dict)}
+    prof_norm = {_norm_voice_char(str(k)): v for k, v in profiles.items() if isinstance(v, dict)}
     baselines = {}
     for ch_name, binfo in baselines_raw.items():
         if not isinstance(binfo, dict) or not binfo.get("file"):
             continue
         bf = pd / str(binfo["file"])
         if bf.is_file() and bf.stat().st_size > 100:
+            b_prof = binfo.get("profile") if isinstance(binfo.get("profile"), dict) else (prof_lc.get(ch_name.lower()) or prof_norm.get(_norm_voice_char(ch_name)) or {})
             baselines[ch_name] = {
                 "file": str(binfo["file"]),
                 "source": str(binfo.get("source") or "custom"),
                 "text": str(binfo.get("text") or ""),
                 "saved_to_library": bool(binfo.get("saved_to_library", ch_name.lower() in global_lib_lc)),
                 "source_project": str(binfo.get("source_project") or slug),
+                "profile": b_prof,
                 "audio_url": f"/file/{slug}/{binfo['file']}",
             }
 
@@ -532,11 +538,18 @@ def _v2_dialogue(r: Request):
                 note = str(el.get("note") or "").strip()
                 raw_ov = saved.get(lid)
                 ov: dict[str, Any] = raw_ov if isinstance(raw_ov, dict) else {}
-                g_entry = global_lib_lc.get(char.lower()) or {}
-                cp = prof_lc.get(char.lower()) or g_entry or {}
+                ch_norm = _norm_voice_char(char)
+                g_entry = global_lib_lc.get(char.lower()) or global_lib_norm.get(ch_norm) or {}
+                b_entry = next(
+                    (bv for bk, bv in baselines.items() if bk.lower() == char.lower() or _norm_voice_char(bk) == ch_norm),
+                    {},
+                )
+                b_prof = b_entry.get("profile") if isinstance(b_entry, dict) and isinstance(b_entry.get("profile"), dict) else {}
+                cp = prof_lc.get(char.lower()) or prof_norm.get(ch_norm) or b_prof or g_entry or {}
                 # Auto-inherit baseline WAV from global cross-film library for new films if not cleared/set yet
                 if (
                     char.lower() not in {k.lower() for k in baselines}
+                    and ch_norm not in {_norm_voice_char(k) for k in baselines}
                     and char.lower() not in cleared_baselines
                     and g_entry.get("wav_file")
                 ):
@@ -556,14 +569,16 @@ def _v2_dialogue(r: Request):
                             "saved_to_library": True,
                             "source_project": str(g_entry.get("source_project") or "library"),
                             "inherited_from_library": True,
+                            "profile": cp,
                             "audio_url": f"/file/{slug}/{rel_f}",
                         }
-                voice = ov.get("voice") or vc_lc.get(char.lower()) or cp.get("kokoro_voice") or ("bm_fable" if dialect == "british" else "am_puck")
+                voice = ov.get("voice") or vc_lc.get(char.lower()) or vc_norm.get(ch_norm) or cp.get("kokoro_voice") or ("bm_fable" if dialect == "british" else "am_puck")
                 wav_rel = f"audio/dialogue/{lid}.wav"
                 wav_path = pd / wav_rel
                 has_audio = wav_path.is_file() and wav_path.stat().st_size > 100
                 if sc_id not in scenes_seen:
                     scenes_seen.append(sc_id)
+                eff_speed = ov.get("speed") if ov.get("speed") is not None else cp.get("speed", 1.0)
                 lines.append({
                     "id": lid,
                     "scene": sc_id,
@@ -576,9 +591,9 @@ def _v2_dialogue(r: Request):
                     "kokoro_voice": ov.get("kokoro_voice") or cp.get("kokoro_voice") or voice,
                     "kokoro_blend": ov.get("kokoro_blend") or cp.get("kokoro_blend") or "",
                     "macos_voice": ov.get("macos_voice") or cp.get("macos_voice") or "",
-                    "persona": ov.get("persona") if "persona" in ov else cp.get("persona", ""),
+                    "persona": ov.get("persona") or cp.get("persona") or "",
                     "emotion": ov.get("emotion", "natural"),
-                    "speed": float(ov.get("speed", 1.0)),
+                    "speed": float(eff_speed if eff_speed is not None else 1.0),
                     "has_audio": has_audio,
                     "audio_url": f"/file/{slug}/{wav_rel}" if has_audio else "",
                 })
@@ -616,6 +631,8 @@ def _v2_sound_design(r: Request):
         except Exception:
             saved = {}
 
+    from .routes_post import _auto_scene_sfx_profile, build_story_sfx_presets
+
     scenes = []
     raw_saved_scenes = saved.get("scenes")
     saved_scenes: dict[str, Any] = raw_saved_scenes if isinstance(raw_saved_scenes, dict) else {}
@@ -630,23 +647,8 @@ def _v2_sound_design(r: Request):
             sc_id = str(sc.get("scene") or sp_file.stem.replace("scene-", ""))
             heading = str(sc.get("heading") or "")
             actions = [str(el.get("text") or "").strip() for el in (sc.get("elements") or []) if isinstance(el, dict) and el.get("type") == "action"]
-            hint = (" ".join(actions))[:180]
-            low = (heading + " " + hint).lower()
-            if any(w in low for w in ("launch", "blast", "liftoff", "ignition", "roar", "shake", "shaking", "rocket", "thruster")):
-                auto_preset, auto_cue = "action_launch", "Rockets burning, spaceship hull shaking, heavy ignition rumble"
-                auto_mood = "epic"
-            elif any(w in low for w in ("rain", "window", "living room", "kitchen", "bedroom", "home", "house")):
-                auto_preset, auto_cue = "rainy_home", "Rain pattering on window, warm indoor room ambiance"
-                auto_mood = "cozy"
-            elif any(w in low for w in ("ring", "ice", "storm", "wind", "geyser", "crater", "titan", "enceladus")):
-                auto_preset, auto_cue = "cosmic_storm", "Atmospheric wind gusts, shimmering ice particles, planetary rumble"
-                auto_mood = "mysterious"
-            elif any(w in low for w in ("night", "backyard", "park", "garden", "grass", "tree")):
-                auto_preset, auto_cue = "forest_nature", "Evening breeze and gentle outdoor ambient air"
-                auto_mood = "playful"
-            else:
-                auto_preset, auto_cue = "space_adventure", "Starship bridge hum, cockpit console chimes, space ambiance"
-                auto_mood = "wonder"
+            hint = " ".join(a for a in actions if a)
+            auto_preset, auto_cue, auto_mood = _auto_scene_sfx_profile(heading, hint)
 
             raw_ov = saved_scenes.get(sc_id)
             ov: dict[str, Any] = raw_ov if isinstance(raw_ov, dict) else {}
@@ -656,12 +658,18 @@ def _v2_sound_design(r: Request):
                 "scene": sc_id,
                 "heading": heading,
                 "hint": hint,
-                "sfx_cue": ov.get("sfx_cue") or auto_cue,
+                "sfx_cue": ov["sfx_cue"] if "sfx_cue" in ov else auto_cue,
                 "sfx_preset": ov.get("sfx_preset") or auto_preset,
                 "score_mood": ov.get("score_mood") or auto_mood,
                 "has_sfx": has_sc_wav,
                 "sfx_url": f"/file/{slug}/audio/foley/scene_{sc_id}.wav" if has_sc_wav else "",
             })
+
+    story_presets = build_story_sfx_presets(pd, slug)
+    default_story_preset = next((p for p in story_presets if p.get("group") == "This Story"), None) or next(
+        (p for p in story_presets if p.get("id") not in ("custom", "silent")),
+        {"id": "soft_rain_room", "prompt": "Quiet cozy indoor room ambiance, subtle natural air."},
+    )
 
     foley_wav = pd / "audio" / "foley" / "foley_master.wav"
     score_wav = pd / "audio" / "score" / "score_master.wav"
@@ -670,16 +678,17 @@ def _v2_sound_design(r: Request):
 
     return {
         "sfx_mode": str(saved.get("sfx_mode") or "hybrid"),
+        "presets": story_presets,
         "foley": {
-            "prompt": foley_cfg.get("prompt") or "Starship bridge hum, cockpit console telemetry chimes, and clean sci-fi instrumentation.",
-            "preset": foley_cfg.get("preset") or "space_adventure",
+            "prompt": foley_cfg.get("prompt") or str(default_story_preset.get("prompt") or ""),
+            "preset": foley_cfg.get("preset") or str(default_story_preset.get("id") or "custom"),
             "duration": int(foley_cfg.get("duration") or 12),
             "has_audio": foley_wav.is_file() and foley_wav.stat().st_size > 100,
             "audio_url": f"/file/{slug}/audio/foley/foley_master.wav" if (foley_wav.is_file() and foley_wav.stat().st_size > 100) else "",
         },
         "score": {
             "prompt": score_cfg.get("prompt") or "Sweeping cinematic orchestral strings, warm French horns, and sparkling celesta arpeggios in major key.",
-            "mood": score_cfg.get("mood") or "wonder",
+            "mood": score_cfg.get("mood") or (scenes[0]["score_mood"] if scenes else "wonder"),
             "duration": int(score_cfg.get("duration") or 12),
             "has_audio": score_wav.is_file() and score_wav.stat().st_size > 100,
             "audio_url": f"/file/{slug}/audio/score/score_master.wav" if (score_wav.is_file() and score_wav.stat().st_size > 100) else "",
@@ -688,107 +697,87 @@ def _v2_sound_design(r: Request):
     }
 
 
+@route("GET", "/api/v2_workflow_sync")
+def _v2_workflow_sync(r: Request):
+    """Return the persisted bi-directional workflow sync queue and top-banner instructions for a project."""
+    from studio_app import workflow_sync
+
+    slug = r.q("project")
+    raw_cur = r.q("current_step")
+    cur_step = int(raw_cur) if raw_cur and raw_cur.isdigit() else 1
+    if not slug:
+        return {"queue": {"active": False, "items": []}, "banner": {"active": False}}
+    pd = pdir(slug, "book")
+    doc = workflow_sync.load_queue(pd)
+    banner = workflow_sync.summarize_banner_state(doc, cur_step)
+    return {"queue": doc, "banner": banner}
+
+
+@route("GET", "/api/v2_local_consistency_status")
+def _v2_local_consistency_status(r: Request):
+    """Return live status of 100% free local consistency models (sd-cli Kontext/Klein 9B, Ollama Vision QA, ComfyUI Angles)."""
+    import json as _json
+    from local_runners.comfyui_runner import ComfyUIRunner
+    from local_runners.sd_cli_runner import SdCliRunner
+    from studio_app import local_vision_qa, routes_post
+
+    sd_runner = SdCliRunner()
+    sd_models = sd_runner.describe_consistency_models()
+    ollama_info = local_vision_qa.detect_ollama_vision_models(timeout=1.5)
+
+    # Check ComfyUI `apps/angles` readiness
+    angles_ready = False
+    angles_missing_gb = 0.0
+    comfy_installed = False
+    try:
+        comfy_installed = ComfyUIRunner().is_installed()
+        ad = ROOT / "apps" / "angles"
+        if (ad / "app.json").is_file():
+            mf = _json.loads((ad / "app.json").read_text(encoding="utf-8"))
+            missing_models = []
+            for m in mf.get("models") or []:
+                fname = Path(str(m.get("file") or "")).name
+                mdir = str(m.get("dir") or "")
+                if fname and not (ROOT / "models" / mdir / fname).is_file():
+                    missing_models.append(m)
+            angles_ready = comfy_installed and len(missing_models) == 0
+            angles_missing_gb = round(sum(float(m.get("gb", 0.0)) for m in missing_models), 2)
+    except Exception as e:
+        log.debug("angles app readiness probe failed: %s", e)
+
+    dl_jobs = routes_post.get_local_model_download_status()
+    return {
+        "sd_cli_installed": sd_runner.is_installed(),
+        "sd_cli_models": sd_models,
+        "downloads": dl_jobs,
+        "ollama": ollama_info,
+        "comfyui": {
+            "installed": comfy_installed,
+            "angles_ready": angles_ready,
+            "angles_missing_gb": angles_missing_gb,
+        },
+    }
+
+
 @route("GET", "/api/v2_keyframes")
 def _v2_keyframes(r: Request):
-    """Return all scenes & shots from shots/shotlist.json with keyframe PNG status and editable prompts."""
+    """Return all scenes & shots from shots/shotlist.json with keyframe PNG status, turnaround refs, and accurate Steps 08-12 prompts."""
     import json
+    from studio_app import keyframe_context
 
     slug = r.q("project")
     if not slug:
         return {"scenes": [], "look": "", "total_shots": 0, "rendered_shots": 0, "gemini_ready": False}
     pd = pdir(slug, "book")
 
-    look = "pixar_3d"
-    gp_path = pd / "global_params.json"
-    if gp_path.is_file():
-        try:
-            gp = json.loads(gp_path.read_text(encoding="utf-8")) or {}
-            look = str(gp.get("look") or look)
-        except Exception as e:
-            log.debug("global_params.json read failed: %s", e)
-
-    # Character visual/wardrobe tokens (prefer Step 08 saved dossiers, fallback to continuity book)
-    char_tokens = {}
-    loc_tokens = {}
-    for cb_file in (pd / f"{slug}.json", pd / "continuity.json"):
-        if cb_file.is_file():
-            try:
-                cb = json.loads(cb_file.read_text(encoding="utf-8")) or {}
-                for c in cb.get("characters") or []:
-                    if isinstance(c, dict) and c.get("name") and c.get("token"):
-                        char_tokens[str(c["name"]).lower()] = str(c["token"]).strip()
-                for loc in cb.get("locations") or []:
-                    if isinstance(loc, dict) and loc.get("name") and loc.get("token"):
-                        loc_tokens[str(loc["name"]).lower()] = str(loc["token"]).strip()
-                break
-            except Exception as e:
-                log.debug("continuity book %s read failed: %s", cb_file.name, e)
-    try:
-        for ch in character_tokens.list_characters(slug) or []:
-            if isinstance(ch, dict) and ch.get("name"):
-                vt = str(ch.get("visual_token") or ch.get("token") or "").strip()
-                desc = str(ch.get("description") or "").strip()
-                if vt or desc:
-                    char_tokens[str(ch["name"]).lower()] = vt or desc
-    except Exception as e:
-        log.debug("character_tokens read failed: %s", e)
-
-    def _match_location_token(heading_text: str) -> str:
-        low_h = heading_text.lower()
-        for lname, ltok in loc_tokens.items():
-            if lname and lname in low_h:
-                return ltok
-        return ""
-
-    # Load per-character scene/location wardrobe states (e.g. S001-S003 Living Room vs S004-S015 Spaceship)
-    wardrobe_states = {}
-    ws_path = pd / "wardrobe_states.json"
-    if ws_path.is_file():
-        try:
-            raw_ws = json.loads(ws_path.read_text(encoding="utf-8")) or {}
-            wardrobe_states = {str(k).lower(): v for k, v in raw_ws.items() if isinstance(v, list)}
-        except Exception as e:
-            log.debug("wardrobe_states.json read failed: %s", e)
-
-    def _scene_num(sid: str) -> int:
-        digits = "".join(c for c in str(sid or "") if c.isdigit())
-        return int(digits) if digits else 0
-
-    def _match_wardrobe_state(char_name: str, sc_id: str, heading_text: str) -> str:
-        states = wardrobe_states.get(char_name.lower()) or []
-        if not states:
-            return ""
-        sn = _scene_num(sc_id)
-        low_h = heading_text.lower()
-        for st in states:
-            if not isinstance(st, dict) or not str(st.get("wardrobe") or "").strip():
-                continue
-            sc_spec = str(st.get("scenes") or "").strip()
-            loc_spec = str(st.get("location") or "").strip().lower()
-            # Match scene range like "S001-S003" or comma list "S001, S002"
-            if sc_spec and sn > 0:
-                matched = False
-                for part in sc_spec.replace(" ", "").split(","):
-                    if "-" in part:
-                        a, b = part.split("-", 1)
-                        na, nb = _scene_num(a), _scene_num(b)
-                        if na and nb and na <= sn <= nb:
-                            matched = True
-                            break
-                    elif _scene_num(part) == sn:
-                        matched = True
-                        break
-                if matched:
-                    w = str(st["wardrobe"]).strip()
-                    loc_lbl = str(st.get("location") or "").strip()
-                    return f"{w} (in {loc_lbl})" if loc_lbl else w
-            if loc_spec and loc_spec in low_h:
-                return str(st["wardrobe"]).strip()
-        return ""
+    ctx = keyframe_context.load_keyframe_project_context(slug, pd)
+    look = ctx["look"]
+    hybrid_mode = ctx["hybrid_mode"]
 
     saved_prompts: dict[str, Any] = {}
-    locked_ids = set()
+    locked_ids: set[str] = set()
     pending_edits_map: dict[str, Any] = {}
+    anchors_map: dict[str, str] = {}
     kf_meta = pd / "keyframes_v2.json"
     if kf_meta.is_file():
         try:
@@ -796,6 +785,9 @@ def _v2_keyframes(r: Request):
             saved_prompts = kf_doc.get("prompts") or {}
             locked_ids = {str(x) for x in (kf_doc.get("locked") or [])}
             pending_edits_map = kf_doc.get("pending_edits") or {}
+            raw_anchors = kf_doc.get("anchors") or {}
+            if isinstance(raw_anchors, dict):
+                anchors_map = {str(k): str(v) for k, v in raw_anchors.items() if str(k).strip() and str(v).strip()}
         except Exception as e:
             log.debug("keyframes_v2.json read failed: %s", e)
 
@@ -807,28 +799,41 @@ def _v2_keyframes(r: Request):
         except Exception as e:
             log.debug("shotlist.json read failed: %s", e)
 
-    look_labels = {
-        "live_action": "cinematic live-action film still, photorealistic, 35mm film grain",
-        "claymation": "handcrafted stop-motion claymation still, tactile miniature set, warm studio lighting",
-        "pixar_3d": "Pixar 3D animated film still, expressive characters, rich volumetric lighting",
-        "pixar_disney": "classic stylized 3D animated feature film still, warm storybook lighting",
-        "travel_poster": "vintage illustrated travel poster art style, bold graphic composition",
-        "cyberpunk_3d": "stylized 3D sci-fi cinematic still, dramatic neon rim lighting",
-    }
-    style_prefix = look_labels.get(look, "cinematic 3D animated film still")
-
     scenes = []
     total_shots = 0
     rendered_shots = 0
+    missing_set_plates: list[str] = []
+    seen_missing_locs: set[str] = set()
+
     for sc in raw_scenes:
         if not isinstance(sc, dict):
             continue
         sc_id = str(sc.get("id") or sc.get("scene") or "S001")
         heading = str(sc.get("heading") or "")
+        anchor_shot_id = anchors_map.get(sc_id, "")
+        sc_seed = keyframe_context.compute_scene_seed(slug, sc_id)
+        _sc_loc_tok, sc_set_img, sc_loc_names = keyframe_context.match_location_context(ctx, heading)
+        sc_has_set_plate = bool(sc_set_img and sc_set_img.is_file())
+        sc_set_plate_url = ""
+        if sc_has_set_plate and sc_set_img is not None:
+            try:
+                sc_set_plate_url = f"/file/{slug}/{sc_set_img.relative_to(pd).as_posix()}"
+            except ValueError:
+                sc_set_plate_url = ""
+        elif heading or sc_loc_names:
+            loc_label = sc_loc_names[0] if sc_loc_names else heading
+            loc_key = loc_label.lower()
+            if loc_key not in seen_missing_locs:
+                seen_missing_locs.add(loc_key)
+                missing_set_plates.append(loc_label)
+
+        raw_sc_shots = [sh for sh in (sc.get("shots") or []) if isinstance(sh, dict)]
         shots_out = []
-        for idx, sh in enumerate(sc.get("shots") or [], start=1):
-            if not isinstance(sh, dict):
-                continue
+        prev_sh_raw: dict[str, Any] | None = None
+        prev_prompt_eff = ""
+        prev_rendered_id = ""
+
+        for idx, sh in enumerate(raw_sc_shots, start=1):
             n = int(sh.get("n") or idx)
             sid = f"{sc_id}-{n:02d}"
             stype = str(sh.get("type") or "MS")
@@ -836,43 +841,32 @@ def _v2_keyframes(r: Request):
             secs = sh.get("seconds") or 4.0
             comp = str(sh.get("composition") or "").strip()
             act = str(sh.get("action") or "").strip()
-            light = str(sh.get("lighting") or "").strip()
-            chars = [str(c) for c in (sh.get("characters") or []) if c]
-            toks = []
-            attention_notes = []
-            for c in chars:
-                base_tok = char_tokens.get(c.lower(), "")
-                sc_wardrobe = _match_wardrobe_state(c, sc_id, heading)
-                if sc_wardrobe and base_tok:
-                    toks.append(f"{c}: {base_tok} | SCENE WARDROBE: {sc_wardrobe}")
-                elif sc_wardrobe:
-                    toks.append(f"{c}: {sc_wardrobe}")
-                elif base_tok:
-                    toks.append(f"{c}: {base_tok}")
-                    if "striped" in base_tok.lower() or len(base_tok) < 25:
-                        attention_notes.append(f"{c}'s wardrobe needs specific solid colors/outfit in Step 08")
-                else:
-                    attention_notes.append(f"{c} has no visual/wardrobe description in Step 08")
-            loc_tok = _match_location_token(heading)
 
-            bits = [f"{style_prefix}, {stype} shot ({lens}mm lens)"]
-            if loc_tok:
-                bits.append(f"LOCKED LOCATION ({heading}): {loc_tok}")
-            elif heading:
-                bits.append(f"LOCKED LOCATION: {heading}")
-            if comp:
-                bits.append(comp)
-            if act and act.lower() not in comp.lower():
-                bits.append(act)
-            if light:
-                bits.append(f"Lighting: {light}")
-            if toks:
-                bits.append("LOCKED CHARACTERS & SINGULAR WARDROBE (exact clothing colors & outfit unchanged in this scene): " + "; ".join(toks[:4]))
-            default_prompt = ". ".join(b.rstrip(".") for b in bits if b)
+            info = keyframe_context.build_shot_keyframe_info(sh, sc_id, heading, ctx)
+            default_prompt = info["default_prompt"]
+            attention_notes = list(info["attention_notes"])
+            chars = list(info["characters"])
+
+            raw_saved = str(saved_prompts.get(sid) or "").strip()
+            is_locked = sid in locked_ids
+            broken_saved = bool(raw_saved) and not is_locked and keyframe_context.is_saved_prompt_broken_or_stale(raw_saved, info)
+            # Auto-heal clearly broken legacy prompts (e.g. "MOM: mom" or missing matched location details) on unlocked shots
+            effective_prompt = default_prompt if (not raw_saved or broken_saved) else raw_saved
+            prompt_outdated = bool(raw_saved and not broken_saved and not is_locked and raw_saved != default_prompt)
+
+            cam_mode = "none"
+            rec_strength: float | None = None
+            if prev_sh_raw is not None:
+                cam_mode, rec_strength = keyframe_context.detect_camera_continuity(
+                    sh, prev_sh_raw, effective_prompt, prev_prompt_eff
+                )
 
             png_rel = f"keyframes/{sid}.png"
             png_path = pd / png_rel
             has_img = png_path.is_file() and png_path.stat().st_size > 200
+            p1_rel = f"keyframes/{sid}_pass1.png"
+            p1_path = pd / p1_rel
+            has_p1 = p1_path.is_file() and p1_path.stat().st_size > 200
             total_shots += 1
             if has_img:
                 rendered_shots += 1
@@ -886,17 +880,41 @@ def _v2_keyframes(r: Request):
                 "movement": str(sh.get("movement") or "static"),
                 "seconds": secs,
                 "action": act or comp[:120],
+                "expression": str(sh.get("expression") or "").strip(),
                 "characters": chars,
+                "char_refs": info["char_refs"],
+                "matched_locations": info["matched_locations"],
+                "set_ref_url": info["set_ref_url"],
                 "default_prompt": default_prompt,
-                "prompt": saved_prompts.get(sid) or default_prompt,
+                "prompt": effective_prompt,
+                "prompt_outdated": prompt_outdated,
+                "auto_upgraded": broken_saved,
+                "camera_match_mode": cam_mode,
+                "recommended_strength": rec_strength,
+                "prev_rendered_id": prev_rendered_id,
+                "is_anchor": bool(anchor_shot_id and anchor_shot_id == sid),
                 "has_image": has_img,
-                "locked": sid in locked_ids,
+                "has_pass1": has_p1,
+                "pass1_url": f"/file/{slug}/{p1_rel}" if has_p1 else "",
+                "locked": is_locked,
                 "pending_edits": list(pending_edits_map.get(sid) or []),
                 "image_url": f"/file/{slug}/{png_rel}" if has_img else "",
                 "needs_attention": bool(attention_notes) and not has_img,
                 "attention_reason": "; ".join(attention_notes),
             })
-        scenes.append({"id": sc_id, "heading": heading, "shots": shots_out})
+            prev_sh_raw = sh
+            prev_prompt_eff = effective_prompt
+            if has_img:
+                prev_rendered_id = sid
+        scenes.append({
+            "id": sc_id,
+            "heading": heading,
+            "scene_seed": sc_seed,
+            "anchor_shot_id": anchor_shot_id,
+            "has_set_plate": sc_has_set_plate,
+            "set_plate_url": sc_set_plate_url,
+            "shots": shots_out,
+        })
 
     gemini_ready = False
     try:
@@ -905,9 +923,34 @@ def _v2_keyframes(r: Request):
     except Exception as e:
         log.debug("gemini_omni probe failed: %s", e)
 
+    # Collect Step 10 character sheets/front views for Step 17 Two-Pass Hybrid picker
+    cast_sheets: list[dict[str, Any]] = []
+    t_dir = pd / "assets" / "turnarounds"
+    if t_dir.is_dir():
+        seen_c: set[str] = set()
+        for pat, kind_lbl in (("*_sheet.png", "3-Panel Sheet"), ("*_front.png", "Front View")):
+            for p in sorted(t_dir.glob(pat)):
+                if p.stat().st_size <= 100:
+                    continue
+                cname = p.stem.rsplit("_", 1)[0].replace("_", " ").strip().upper()
+                if cname in seen_c:
+                    continue
+                seen_c.add(cname)
+                rel_book = p.relative_to(pd).as_posix()
+                cast_sheets.append({
+                    "name": cname,
+                    "kind": kind_lbl,
+                    "url": f"/file/{slug}/{rel_book}",
+                    "rel_book": rel_book,
+                })
+
     return {
         "scenes": scenes,
         "look": look,
+        "hybrid_mode": hybrid_mode,
+        "cast_sheets": cast_sheets,
+        "set_plates_count": ctx["set_plates_count"],
+        "missing_set_plates": missing_set_plates,
         "total_shots": total_shots,
         "rendered_shots": rendered_shots,
         "gemini_ready": gemini_ready,
@@ -925,10 +968,14 @@ def _v2_turnarounds(r: Request):
     pd = pdir(slug, "book")
 
     look = "pixar_3d"
+    hybrid_mode: dict[str, Any] = {}
     gp_path = pd / "global_params.json"
     if gp_path.is_file():
         try:
-            look = str((json.loads(gp_path.read_text(encoding="utf-8")) or {}).get("look") or look)
+            gp_doc = json.loads(gp_path.read_text(encoding="utf-8")) or {}
+            look = str(gp_doc.get("look") or look)
+            if isinstance(gp_doc.get("hybrid_mode"), dict):
+                hybrid_mode = gp_doc["hybrid_mode"]
         except Exception as e:
             log.debug("global_params.json read failed: %s", e)
 
@@ -1000,6 +1047,10 @@ def _v2_turnarounds(r: Request):
                         parts.append(extra)
                 combined = ". ".join(p.rstrip(". ") for p in parts if p)
                 _add(ch["name"], combined, prefer=True)
+                ck = str(ch["name"]).strip().lower()
+                if ck in chars:
+                    chars[ck]["archetype"] = str(full_ch.get("archetype") or "")
+                    chars[ck]["style_override"] = str(full_ch.get("style_override") or "")
     except Exception as e:
         log.debug("character_tokens read failed: %s", e)
 
@@ -1036,12 +1087,20 @@ def _v2_turnarounds(r: Request):
                             rel, p = leg, pd / leg
                     ok = p.is_file() and p.stat().st_size > 100
                     views[v] = {"has_image": ok, "image_url": f"/file/{slug}/{rel}" if ok else ""}
+                sh_rel = f"assets/turnarounds/{safe}_{oid}_sheet.png"
+                sh_p = pd / sh_rel
+                if not (sh_p.is_file() and sh_p.stat().st_size > 100) and idx == 1:
+                    leg_sh = f"assets/turnarounds/{safe}_sheet.png"
+                    if (pd / leg_sh).is_file() and (pd / leg_sh).stat().st_size > 100:
+                        sh_rel, sh_p = leg_sh, pd / leg_sh
+                sh_ok = sh_p.is_file() and sh_p.stat().st_size > 100
                 outfits.append({
                     "id": oid,
                     "scenes": sc_lbl,
                     "location": loc_lbl,
                     "wardrobe": w_txt,
                     "views": views,
+                    "sheet": {"has_image": sh_ok, "image_url": f"/file/{slug}/{sh_rel}" if sh_ok else ""},
                 })
         else:
             views = {}
@@ -1050,15 +1109,27 @@ def _v2_turnarounds(r: Request):
                 p = pd / rel
                 ok = p.is_file() and p.stat().st_size > 100
                 views[v] = {"has_image": ok, "image_url": f"/file/{slug}/{rel}" if ok else ""}
+            sh_rel = f"assets/turnarounds/{safe}_sheet.png"
+            sh_p = pd / sh_rel
+            sh_ok = sh_p.is_file() and sh_p.stat().st_size > 100
             outfits.append({
                 "id": "default",
                 "scenes": "All Scenes",
                 "location": "",
                 "wardrobe": item["desc"],
                 "views": views,
+                "sheet": {"has_image": sh_ok, "image_url": f"/file/{slug}/{sh_rel}" if sh_ok else ""},
             })
 
-        out.append({"name": item["name"], "slug": safe, "desc": item["desc"], "outfits": outfits, "views": outfits[0]["views"]})
+        out.append({
+            "name": item["name"],
+            "slug": safe,
+            "desc": item["desc"],
+            "archetype": item.get("archetype", ""),
+            "style_override": item.get("style_override", ""),
+            "outfits": outfits,
+            "views": outfits[0]["views"],
+        })
 
     import character_identity
     t_dir = pd / "assets" / "turnarounds"
@@ -1069,7 +1140,7 @@ def _v2_turnarounds(r: Request):
         ref_file = ident.pop("ref_source_file", "")
         ident["ref_source_url"] = f"/file/{slug}/assets/turnarounds/{ref_file}" if ref_file else ""
         entry["identity"] = ident
-    return {"characters": out, "look": look}
+    return {"characters": out, "look": look, "hybrid_mode": hybrid_mode}
 
 
 @route("GET", "/api/v2_postprod")
@@ -1240,7 +1311,226 @@ def _v2_sets_hidden(r: Request):
     # Remove any deleted set from order so numbering stays contiguous
     del_set = set(deleted)
     order = [x for x in order if x not in del_set]
-    return {"deleted": deleted, "order": order}
+    custom_sets: list[dict[str, Any]] = []
+    cs_path = pd / "sets_custom.json"
+    if cs_path.is_file():
+        try:
+            raw_cs = json.loads(cs_path.read_text(encoding="utf-8")) or {}
+            if isinstance(raw_cs, dict):
+                for k_cs, val in raw_cs.items():
+                    if isinstance(val, dict) and str(k_cs).strip().lower() not in del_set:
+                        custom_sets.append({
+                            "name": str(val.get("name") or k_cs).strip(),
+                            "description": str(val.get("description") or "").strip(),
+                            "lighting": str(val.get("lighting") or "").strip(),
+                            "reserve_2d_gaps": bool(val.get("reserve_2d_gaps", False)),
+                            "gap_notes": str(val.get("gap_notes") or "").strip(),
+                        })
+        except Exception as e:
+            log.debug("sets_custom.json read failed: %s", e)
+    set_images: dict[str, str] = {}
+    sets_img_dir = pd / "assets" / "sets"
+    if sets_img_dir.is_dir():
+        for sp in sorted(sets_img_dir.glob("*")):
+            if sp.is_file() and sp.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") and sp.stat().st_size > 100:
+                if "__view_" not in sp.stem.lower() and not sp.stem.lower().endswith("_baseline"):
+                    set_images[sp.stem.lower()] = f"/file/{slug}/assets/sets/{sp.name}"
+
+    # Load multi-view metadata, imported reference photos, converted plates, and pinned baselines
+    set_views: dict[str, Any] = {}
+    views_path = pd / "sets_views.json"
+    if views_path.is_file():
+        try:
+            raw_v = json.loads(views_path.read_text(encoding="utf-8")) or {}
+            raw_sets = raw_v.get("sets") if isinstance(raw_v, dict) else {}
+            if isinstance(raw_sets, dict):
+                for sk, sdata in raw_sets.items():
+                    if not isinstance(sdata, dict):
+                        continue
+                    sk_low = str(sk).strip().lower()
+                    if sk_low in del_set:
+                        continue
+                    b_vid = str(sdata.get("baseline_view_id") or "").strip()
+                    b_snap = str(sdata.get("baseline_snapshot") or "").strip()
+                    b_snap_p = (pd / b_snap) if b_snap else None
+                    b_url = (
+                        f"/file/{slug}/{b_snap}"
+                        if (b_snap_p and b_snap_p.is_file() and b_snap_p.stat().st_size > 100)
+                        else ""
+                    )
+                    views_out: list[dict[str, Any]] = []
+                    for vw in sdata.get("views") or []:
+                        if not isinstance(vw, dict):
+                            continue
+                        vid = str(vw.get("id") or "main").strip()
+                        ref_rel = str(vw.get("ref_image") or "").strip()
+                        conv_rel = str(vw.get("converted_image") or "").strip()
+                        ref_ok = bool(ref_rel and (pd / ref_rel).is_file() and (pd / ref_rel).stat().st_size > 100)
+                        conv_ok = bool(conv_rel and (pd / conv_rel).is_file() and (pd / conv_rel).stat().st_size > 100)
+                        views_out.append({
+                            "id": vid,
+                            "label": str(vw.get("label") or ("Establishing View" if vid == "main" else vid)).strip(),
+                            "notes": str(vw.get("notes") or "").strip(),
+                            "has_ref": ref_ok,
+                            "ref_url": f"/file/{slug}/{ref_rel}" if ref_ok else "",
+                            "ref_rel": ref_rel if ref_ok else "",
+                            "has_converted": conv_ok,
+                            "converted_url": f"/file/{slug}/{conv_rel}" if conv_ok else "",
+                            "converted_rel": conv_rel if conv_ok else "",
+                            "is_baseline": bool(b_vid and vid == b_vid and b_url),
+                        })
+                    set_views[sk_low] = {
+                        "baseline_view_id": b_vid if b_url else "",
+                        "baseline_url": b_url,
+                        "views": views_out,
+                    }
+        except Exception as e:
+            log.debug("sets_views.json read failed: %s", e)
+
+    # Also return active Step 09 film style summary so Step 11 shows what imported photos convert into
+    import character_types_registry as ctr
+
+    film_style_label = "Film Visual Style"
+    gp_path = pd / "global_params.json"
+    if gp_path.is_file():
+        try:
+            gp = json.loads(gp_path.read_text(encoding="utf-8")) or {}
+            raw_hm = gp.get("hybrid_mode")
+            hm: dict[str, Any] = raw_hm if isinstance(raw_hm, dict) else {}
+            look_id = str(hm.get("world_style") or "live_action") if hm.get("enabled") else str(gp.get("look") or "")
+            st_rec = ctr.get_style(look_id) if look_id else None
+            if st_rec:
+                film_style_label = str(st_rec.get("name") or st_rec.get("label") or look_id)
+            elif str(gp.get("positives") or "").strip():
+                film_style_label = str(gp["positives"]).strip().split(",")[0][:48]
+        except Exception as e:
+            log.debug("global_params style label read failed: %s", e)
+
+    return {
+        "deleted": deleted,
+        "order": order,
+        "custom": custom_sets,
+        "set_images": set_images,
+        "set_views": set_views,
+        "film_style_label": film_style_label,
+    }
+
+
+@route("GET", "/api/character_types")
+def _character_types(r: Request):
+    """Return all built-in + custom visual styles (with motion cadence) and character archetypes."""
+    import character_types_registry as ctr
+
+    return ctr.registry_payload()
+
+
+@route("GET", "/api/v2_cast_references")
+def _v2_cast_references(r: Request):
+    """Return all uploaded Step 08 cast reference images and Step 10 Front View turnarounds for a book."""
+    import character_identity
+
+    slug = r.q("project")
+    if not slug:
+        return {"references": []}
+    pd = pdir(slug, "book")
+    repo_root = pd.parent.parent.parent
+    refs: list[dict[str, str]] = []
+    seen_rel: set[str] = set()
+
+    def _add(char_label: str, path: Path, source: str) -> None:
+        if not path.is_file() or path.stat().st_size <= 100:
+            return
+        try:
+            rel_repo = path.relative_to(repo_root).as_posix()
+            rel_book = path.relative_to(pd).as_posix()
+        except ValueError:
+            return
+        if rel_repo in seen_rel:
+            return
+        seen_rel.add(rel_repo)
+        refs.append({
+            "character": char_label,
+            "label": f"{char_label} ({source})",
+            "url": f"/file/{slug}/{rel_book}",
+            "rel_path": rel_repo,
+            "source": source,
+            "slug": character_identity.safe_char_slug(char_label),
+        })
+
+    # 1. Step 08 uploaded cast reference images
+    cast_ref_dir = pd / "assets" / "cast_refs"
+    if cast_ref_dir.is_dir():
+        for p in sorted(cast_ref_dir.glob("*_ref.*")):
+            if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+                cname = p.stem[: -len("_ref")].replace("_", " ").strip().upper()
+                _add(cname, p, "Step 08 Reference")
+
+    # 2. Step 10 3-Panel Pro Character Sheets & Front View turnarounds
+    t_dir = pd / "assets" / "turnarounds"
+    if t_dir.is_dir():
+        for p in sorted(t_dir.glob("*_sheet.png")):
+            cname = p.stem[: -len("_sheet")].replace("__", " ").replace("_", " ").strip().upper()
+            _add(cname, p, "Step 10 3-Panel Sheet")
+        for p in sorted(t_dir.glob("*_front.png")):
+            cname = p.stem[: -len("_front")].replace("__", " ").replace("_", " ").strip().upper()
+            _add(cname, p, "Step 10 Front View")
+
+    # 3. Step 11 Location / Set Environments (for Multi-Ref Hybrid Single Prompts)
+    sets_dir = pd / "assets" / "sets"
+    if sets_dir.is_dir():
+        for p in sorted(sets_dir.glob("*")):
+            if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+                sname = p.stem.replace("_", " ").strip().upper()
+                _add(sname, p, "Step 11 Set")
+
+    return {"project": slug, "references": refs}
+
+
+@route("GET", "/api/v2_plate_audit")
+def _v2_plate_audit_get(r: Request):
+    """Return cached per-plate consistency audit report (`qa/plate_audit.json`) if available."""
+    import json
+    slug = str(r.q("project") or "").strip()
+    if not slug:
+        return {"status": "ok", "project": "", "sheets": [], "missing_plates": [], "unplated_stills": [], "warnings": []}
+    pd = pdir(slug, "book")
+    rp = pd / "qa" / "plate_audit.json"
+    if rp.is_file():
+        try:
+            data = json.loads(rp.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except Exception as e:
+            log.debug("failed reading cached plate_audit.json: %s", e)
+    return {"status": "ok", "project": slug, "passed": False, "total_rendered_stills": 0, "plate_count": 0, "sheets": [], "missing_plates": [], "unplated_stills": [], "warnings": []}
+
+
+@route("GET", "/api/v2_editing_style")
+def _v2_editing_style_get(r: Request):
+    """Return cached Reference-Video Editing Style Guide (`references/editing_style.json`) if present."""
+    import json
+
+    slug = str(r.q("project") or "").strip()
+    if not slug:
+        return {"status": "ok", "project": "", "has_guide": False}
+    pd = pdir(slug, "book")
+    jp = pd / "references" / "editing_style.json"
+    if jp.is_file():
+        try:
+            data = json.loads(jp.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                data["has_guide"] = True
+                return data
+        except Exception as e:
+            log.debug("failed reading editing_style.json: %s", e)
+    return {"status": "ok", "project": slug, "has_guide": False}
+
+
+@route("GET", "/api/v2_code_drawn_templates")
+def _v2_code_drawn_templates_get(r: Request):
+    """List available deterministic 60 fps code-drawn title card and explainer templates."""
+    import code_drawn_templates
+    return {"status": "ok", "templates": code_drawn_templates.CODE_DRAWN_TEMPLATES}
 
 
 

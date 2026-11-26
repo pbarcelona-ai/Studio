@@ -80,16 +80,50 @@ def _cb_get(r: Request):
 
 @route("POST", "/api/continuity_edit")
 def _cb_edit(r: Request):
+    import continuity_sync
+
     d = _book(r.body.get("project"))
     conflicts.check("continuity", r.body)
     fields = r.body.get("fields")
     if not isinstance(fields, dict):
         raise PlanError("fields must be an object")
+    kind = str(r.body.get("kind", ""))
+    name = str(r.body.get("name", ""))
+    prev_book = continuity_book.load(d)
+    prev_item = next(
+        (x for x in (prev_book.get(kind) or []) if isinstance(x, dict) and str(x.get("name") or "") == name),
+        {},
+    )
     try:
-        continuity_book.edit(d, str(r.body.get("kind", "")), str(r.body.get("name", "")), fields)
+        updated_item = continuity_book.edit(d, kind, name, fields)
     except ValueError as e:
         raise PlanError(str(e)) from e
-    return _cb_view(d)
+
+    slug = str(r.body.get("project") or d.name)
+    sync_report: dict = {"updated_steps": [], "changes": [], "preserved": []}
+    if kind == "characters":
+        sync_report = continuity_sync.sync_character_profile(
+            d,
+            slug,
+            name=name,
+            old_token=str(prev_item.get("token") or ""),
+            new_token=str(updated_item.get("token") or ""),
+            old_voice=str(prev_item.get("voice") or ""),
+            new_voice=str(updated_item.get("voice") or ""),
+            source_step="step07",
+        )
+    elif kind == "locations":
+        sync_report = continuity_sync.sync_location_change(
+            d,
+            slug,
+            name=name,
+            old_desc=str(prev_item.get("token") or prev_item.get("description") or ""),
+            new_desc=str(updated_item.get("token") or ""),
+            source_step="step07",
+        )
+    res = _cb_view(d)
+    res["sync_report"] = sync_report
+    return res
 
 
 @route("POST", "/api/continuity_approve")
@@ -121,9 +155,12 @@ def _sl_get(r: Request):
 
 @route("POST", "/api/shot_edit")
 def _sl_edit(r: Request):
+    import continuity_sync
+
     d = _book(r.body.get("project"))
     conflicts.check("shotlist", r.body)
     sid, action = str(r.body.get("scene", "")), str(r.body.get("action", "edit"))
+    sync_report: dict = {"updated_steps": [], "changes": [], "preserved": []}
     try:
         n = int(r.body.get("n", 0))
         if action == "edit":
@@ -131,6 +168,9 @@ def _sl_edit(r: Request):
             if not isinstance(fields, dict):
                 raise PlanError("fields must be an object")
             shot_list.edit_shot(d, sid, n, fields)
+            sync_report = continuity_sync.sync_shot_edit(
+                d, str(r.body.get("project") or d.name), scene_id=sid, shot_n=n, fields=fields,
+            )
         elif action == "move":
             shot_list.move_shot(d, sid, n, int(r.body.get("to", 0)))
         elif action == "delete":
@@ -141,7 +181,9 @@ def _sl_edit(r: Request):
             raise PlanError("action is edit, move, delete or add")
     except (TypeError, ValueError, shot_list.ShotListError) as e:
         raise PlanError(str(e)) from e
-    return _sl_view(d)
+    res = _sl_view(d)
+    res["sync_report"] = sync_report
+    return res
 
 
 @route("POST", "/api/shot_list_approve")

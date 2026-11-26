@@ -98,6 +98,9 @@ def prepare(pdir: Path, sid: str) -> dict:
         raise ClipError("this style has no picture set")
     seconds = {(v["scene"], v["shot"]): v["seconds"] for v in edl.cut(edl.load(pdir) or edl.assemble(pdir), "main")["tracks"]["video"]}
     card = styles.card_of(pdir, sid)
+    import character_types_registry as _ctr
+    st_meta = _ctr.get_style(sid) or {}
+    cadence = str(st_meta.get("motion_cadence") or "").strip()
     kf = setdir / "images" / f"{KEYFRAMES}_keyframes"
     shutil.rmtree(kf, ignore_errors=True)
     kf.mkdir(parents=True)
@@ -107,7 +110,10 @@ def prepare(pdir: Path, sid: str) -> dict:
         if m is None:
             raise ClipError(f"no motion prompt for {s['scene']} shot {s['shot']}: write the motion prompts again")
         shutil.copy2(setdir / s["image"], kf / f"image-{s['row']:04d}.png")
-        rows.append({"chapter": s["scene"], "shot": s["shot"], "prompt": f"{card['prefix']}. {m['motion']}", "negative": f"{card['negative']}, morphing, flicker",
+        prompt_str = f"{card['prefix']}. {m['motion']}"
+        if cadence:
+            prompt_str = f"{prompt_str}. Motion cadence: {cadence}"
+        rows.append({"chapter": s["scene"], "shot": s["shot"], "prompt": prompt_str, "negative": f"{card['negative']}, morphing, flicker",
                      "seed": s["seed"], "seconds": round(seconds.get((s["scene"], s["shot"]), 4.0), 2)})
     with open(setdir / "all_shots.csv", "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, list(rows[0]))

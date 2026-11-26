@@ -134,6 +134,22 @@ class ComfyUIRunner(LocalRunner):
         except Exception:
             return False
 
+    def has_node(self, node_name: str) -> bool:
+        """Return True if the running ComfyUI server exposes `node_name` in `/object_info`."""
+        try:
+            quoted = urllib.parse.quote(node_name, safe="")
+            with urllib.request.urlopen(f"{self.base_url}/object_info/{quoted}", timeout=2.0) as resp:
+                if not (200 <= resp.status < 300):
+                    return False
+                data = json.loads(resp.read().decode("utf-8"))
+                return isinstance(data, dict) and node_name in data
+        except Exception:
+            return False
+
+    def upload_image(self, file_path: Path, max_mb: float | None = None) -> str:
+        """Upload an image file to ComfyUI's `/upload/image` input directory and return its registered name."""
+        return self._upload_file(file_path, max_mb=max_mb)
+
     def install(self, on_progress: ProgressCallback | None = None, **_kwargs: Any) -> dict[str, Any]:
         if on_progress:
             on_progress({"phase": "checking", "progress": 1.0})
@@ -229,8 +245,61 @@ class ComfyUIRunner(LocalRunner):
 
         mkey = model_key(manifest)
         vram_need = float(manifest.get("min_vram_gb") or 0.0)
-        acquire_media_lease(media_vram_gb=vram_need, model_key=mkey, profile=spec.get("profile"))
-        self.pantry.prepare(str(manifest.get("id") or "app"), mkey)
+        declared_nodes = [str(o.get("node")) for o in (manifest.get("outputs") or []) if isinstance(o, dict) and o.get("node") is not None]
+        out_dir = Path(str(spec.get("output_dir") or app_dir / "out"))
+        return self._execute_workflow(
+            bound_wf,
+            output_dir=out_dir,
+            app_id=str(manifest.get("id") or "app"),
+            model_cache_key=mkey,
+            min_vram_gb=vram_need,
+            declared_nodes=declared_nodes,
+            manifest=manifest,
+            profile=spec.get("profile"),
+            on_progress=on_progress,
+        )
+
+    def run_workflow(
+        self,
+        workflow: dict[str, Any],
+        *,
+        output_dir: Path,
+        app_id: str = "dynamic",
+        model_cache_key: str = "dynamic",
+        min_vram_gb: float = 0.0,
+        declared_nodes: list[str] | None = None,
+        profile: Any = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Execute a pre-built ComfyUI API workflow dict through Pantry, WebSocket progress, and `/view` download."""
+        self._cancelled = False
+        return self._execute_workflow(
+            workflow,
+            output_dir=Path(output_dir),
+            app_id=app_id,
+            model_cache_key=model_cache_key,
+            min_vram_gb=min_vram_gb,
+            declared_nodes=declared_nodes or [],
+            manifest={"id": app_id, "pack": app_id, "models": []},
+            profile=profile,
+            on_progress=on_progress,
+        )
+
+    def _execute_workflow(
+        self,
+        bound_wf: dict[str, Any],
+        *,
+        output_dir: Path,
+        app_id: str,
+        model_cache_key: str,
+        min_vram_gb: float,
+        declared_nodes: list[str],
+        manifest: dict[str, Any],
+        profile: Any = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        acquire_media_lease(media_vram_gb=min_vram_gb, model_key=model_cache_key, profile=profile)
+        self.pantry.prepare(app_id, model_cache_key)
 
         client_id = f"neon-{uuid.uuid4().hex[:12]}"
         meter = Meter(
@@ -292,13 +361,19 @@ class ComfyUIRunner(LocalRunner):
 
             nodes_done = 0
             if ws_sock is not None:
-                ws_sock.settimeout(5.0)
+                ws_sock.settimeout(15.0)
                 deadline = time.monotonic() + self.timeout
                 while time.monotonic() < deadline and not self._cancelled:
                     try:
                         frame_res = _ws_read_frame(ws_sock)
                     except TimeoutError:
-                        break
+                        # Model loading / GGUF dequantization can exceed 15s between WS events; poll /history to check if still running
+                        with contextlib.suppress(Exception):
+                            with urllib.request.urlopen(f"{self.base_url}/history/{prompt_id}", timeout=5.0) as hchk:
+                                hdata = json.loads(hchk.read().decode("utf-8"))
+                            if prompt_id in hdata:
+                                break
+                        continue
                     except OSError:
                         break
                     if frame_res is None:
@@ -358,10 +433,17 @@ class ComfyUIRunner(LocalRunner):
                 with contextlib.suppress(Exception):
                     ws_sock.close()
 
-        # Fetch history & download output artifacts
-        with urllib.request.urlopen(f"{self.base_url}/history/{prompt_id}", timeout=15.0) as hresp:
-            hist_all = json.loads(hresp.read().decode("utf-8"))
-        hist = hist_all.get(prompt_id) or {}
+        # Wait briefly for /history/{prompt_id} if WS disconnected early
+        hist: dict[str, Any] = {}
+        poll_deadline = time.monotonic() + min(self.timeout, 120.0)
+        while time.monotonic() < poll_deadline and not self._cancelled:
+            with urllib.request.urlopen(f"{self.base_url}/history/{prompt_id}", timeout=15.0) as hresp:
+                hist_all = json.loads(hresp.read().decode("utf-8"))
+            hist = hist_all.get(prompt_id) or {}
+            if hist:
+                break
+            time.sleep(0.5)
+
         raw_outputs: list[dict[str, Any]] = []
         for nid, node_out in (hist.get("outputs") or {}).items():
             if not isinstance(node_out, dict):
@@ -376,11 +458,9 @@ class ComfyUIRunner(LocalRunner):
                             "type": str(item.get("type") or "output"),
                         })
 
-        declared_nodes = [str(o.get("node")) for o in (manifest.get("outputs") or []) if isinstance(o, dict) and o.get("node") is not None]
         chosen = pick_outputs(raw_outputs, declared_nodes)
 
-        out_dir = Path(str(spec.get("output_dir") or app_dir / "out"))
-        out_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
         saved_paths: list[str] = []
         for idx, item in enumerate(chosen):
             q = urllib.parse.urlencode({
@@ -390,7 +470,7 @@ class ComfyUIRunner(LocalRunner):
             })
             with urllib.request.urlopen(f"{self.base_url}/view?{q}", timeout=30.0) as vresp:
                 content = vresp.read()
-            dest = out_dir / f"out-{idx:02d}-{Path(item['filename']).name}"
+            dest = output_dir / f"out-{idx:02d}-{Path(item['filename']).name}"
             dest.write_bytes(content)
             saved_paths.append(str(dest))
 

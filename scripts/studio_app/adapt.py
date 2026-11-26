@@ -58,6 +58,7 @@ def adaptation_edit(b: dict) -> dict:
     if not plan:
         raise PlanError("this book has no film plan yet: run Adapt first")
     before = [s["id"] for s in plan["scenes"]]
+    before_map = {str(s["id"]): dict(s) for s in plan["scenes"]}
     action = b.get("action")
     merged = None
     if action == "merge":
@@ -70,7 +71,22 @@ def adaptation_edit(b: dict) -> dict:
     _remove_scene_files(d, set(before) - {s["id"] for s in plan["scenes"]})      # scenes that are gone
     if merged:
         _remove_scene_files(d, [merged])                                         # the joined scene is a new scene: its screenplay is written again
-    return adaptation_data(b.get("project"))
+
+    import continuity_sync
+    sync_report: dict = {"updated_steps": [], "changes": [], "preserved": []}
+    slug = str(b.get("project") or d.name)
+    for sc in plan.get("scenes") or []:
+        sid = str(sc.get("id") or "")
+        old_sc = before_map.get(sid)
+        if old_sc and old_sc != sc:
+            r = continuity_sync.sync_scene_edit(d, slug, scene_id=sid, old_scene=old_sc, new_scene=sc, source_step="step05")
+            for k in ("updated_steps", "changes", "preserved"):
+                for item in r.get(k) or []:
+                    if item not in sync_report[k]:
+                        sync_report[k].append(item)
+    res = adaptation_data(b.get("project"))
+    res["sync_report"] = sync_report
+    return res
 
 
 def screenplay_data(slug, sid: str = "") -> dict:
@@ -95,6 +111,8 @@ def screenplay_edit(b: dict) -> dict:
     if not plan:
         raise PlanError("this book has no film plan yet")
     action = b.get("action")
+    sync_report: dict = {"updated_steps": [], "changes": [], "preserved": []}
+    slug = str(b.get("project") or d.name)
     try:
         if action == "save_scene":
             sid = str(b.get("scene", ""))
@@ -102,6 +120,13 @@ def screenplay_edit(b: dict) -> dict:
                 raise PlanError("that scene is not in the plan")
             sp.save_scene(d, sid, {"heading": b.get("heading"), "elements": b.get("elements")}, edited=True)
             feedback.resolve(d, sid)                         # the scene was updated after a storyboard change: its red outline goes
+            import continuity_sync
+            sync_report = continuity_sync.sync_scene_edit(
+                d, slug, scene_id=sid,
+                heading=str(b.get("heading") or ""),
+                elements=b.get("elements") if isinstance(b.get("elements"), list) else [],
+                source_step="step06",
+            )
         elif action == "approve":
             flagged = feedback.open_flags(d)
             if flagged:
@@ -120,11 +145,21 @@ def screenplay_edit(b: dict) -> dict:
             # Rewrite the scene using AI with additional instructions
             _rewrite_scene_with_ai(d, plan, sid, instructions)
             feedback.resolve(d, sid)                         # the scene was updated: its red outline goes
+            saved_sc = sp.load_scene(d, sid) or {}
+            import continuity_sync
+            sync_report = continuity_sync.sync_scene_edit(
+                d, slug, scene_id=sid,
+                heading=str(saved_sc.get("heading") or ""),
+                elements=saved_sc.get("elements") if isinstance(saved_sc.get("elements"), list) else [],
+                source_step="step06",
+            )
         else:
             raise PlanError("unknown screenplay action")
     except sp.ScreenplayError as e:
         raise PlanError(str(e)) from e
-    return screenplay_data(b.get("project"))
+    res = screenplay_data(b.get("project"))
+    res["sync_report"] = sync_report
+    return res
 
 
 def _rewrite_scene_with_ai(pdir, plan, sid, instructions):
@@ -299,15 +334,39 @@ def cast_lock_data(slug) -> dict:
 
 def cast_lock_edit(b: dict) -> dict:
     """POST body: {project, scene, kind: character|location, name?, token?, reference?}: lock (or, with no token and reference, unlock)."""
+    import continuity_sync
+
     d = _book(b.get("project"))
     plan = ad.load(d)
     if not plan:
         raise PlanError("this book has no film plan yet")
+    sid = str(b.get("scene", ""))
+    kind = str(b.get("kind", ""))
+    cname = str(b.get("name", ""))
+    new_tok = str(b.get("token", ""))
+    new_ref = str(b.get("reference", ""))
+    prev_lock = cast_lock.load(d)
+    old_tok = str(((prev_lock.get(sid) or {}).get("characters") or {}).get(cname, {}).get("token") or "") if kind == "character" else ""
     try:
-        cast_lock.set_lock(d, plan, str(b.get("scene", "")), str(b.get("kind", "")), str(b.get("name", "")), str(b.get("token", "")), str(b.get("reference", "")))
+        cast_lock.set_lock(d, plan, sid, kind, cname, new_tok, new_ref)
     except cast_lock.LockError as e:
         raise PlanError(str(e)) from e
-    return cast_lock_data(b.get("project"))
+
+    sync_report: dict = {"updated_steps": [], "changes": [], "preserved": []}
+    if kind == "character" and cname.strip():
+        sync_report = continuity_sync.sync_scene_wardrobe(
+            d,
+            str(b.get("project") or d.name),
+            character=cname,
+            scene_ids=[sid],
+            wardrobe_text=new_tok,
+            old_wardrobe=old_tok,
+            reference=new_ref,
+            source_step="step07",
+        )
+    res = cast_lock_data(b.get("project"))
+    res["sync_report"] = sync_report
+    return res
 
 
 # ------------------------------------------------------------------------------------------ colour grade per scene

@@ -1,0 +1,48 @@
+10 Claude Animation Styles in the Rain · playbook by @tonistelk
+
+Steps:
+1. Use Claude Code (works best) or the Claude app with code/artifacts on
+2. Paste the base scene prompt first, then add ONE style prompt below
+3. Claude codes the whole animation itself (canvas/SVG for 2D, Three.js for 3D). Ask "render it as a 1080x1920 MP4 with Remotion" to get a video
+4. Want a tweak? Just say it: "heavier rain", "bigger umbrella", "slower walk"
+
+## Base scene (paste this first)
+Code a 5-second vertical animation (1080x1920, 60 fps) with Remotion. Strict side view of a young woman walking from left to right through a rainy night street, large in the frame. She wears a long navy A-line coat, black boots and long black hair, and holds a red paper umbrella in her near hand with the canopy just above her head. The camera tracks her smoothly. Behind her, old wooden shopfronts scroll past with parallax: warm lit lattice windows, noren curtains in doorways and swaying paper lanterns. Rain falls the whole time, drops make ripples in the puddles, and the wet street reflects her and the lights. Use one shared walk cycle (hips, knees, shoulders, elbows) so the motion looks natural with no foot sliding. Everything must be deterministic (no random without a seed).
+
+## 1. 8-Bit Quest
+Style: 16-bit pixel art game. Draw on a small canvas (about 180x320) and scale it up with crisp pixels, limited colour palette, character animated in steps like a sprite. Game HUD: a coin counter, a step counter, 3 hearts and a "DRY" bar. A pixel sign "RAIN QUEST", spinning coins she collects with "+10" pop-ups, and a crowd of pixel people at the bottom holding tiny umbrellas and a "GO!" sign.
+
+## 2. Chalk Doodle
+Style: chalkboard lesson. Green chalkboard with a wooden frame and a chalk tray. Everything is drawn in chalk strokes with a rough texture (SVG noise + displacement filter), chalk handwriting font, the umbrella in red chalk. Notes write themselves on: "Rainy Night 101", "UMBRELLA > RAIN" with a tick, an arrow pointing to "UMBRELLA", a "LANTERN" label, and "stay dry!" at the bottom. Rain is short chalk dashes.
+
+## 3. Golden Neon
+Style: glow sketch. Black background, the street and the woman drawn with dotted golden lines that glow (dashed SVG strokes + blur glow). The umbrella glows red-gold, a spotlight beam follows her, a glowing ring on the floor under her feet, rain as dotted gold streaks, and a small "RAIN" label at the top.
+
+## 4. Retro Console
+Style: early 2000s game console graphics. Three.js with blocky low-poly models, tiny pixelated textures, flat lighting and fog. Render at 1/3 resolution and scale up for that retro look, with faint scanlines. Camera slightly ahead of her at a 3/4 side angle, warm lit shopfronts close behind her, mirror-wet ground.
+
+## 5. Pop Comic
+Style: pop-art comic. Thick black outlines, halftone dots, speed lines, a yellow caption box "MEANWHILE, IN THE RAIN...". Two comic panels: the street scene on top and a close-up of her face under the umbrella below with a speech bubble "Almost home...". A small "PLIP!" pops on the umbrella with each step.
+
+## 6. Flat Poster
+Style: flat illustration. No outlines, flat shapes, simple soft shadows. Navy night palette, street lamps with light cones from the top, geometric shopfronts with warm windows and flat orange lanterns, flat rounded rain streaks and small warm specks floating in the air. The woman has a minimal face and a two-tone umbrella.
+
+## 7. Line Diagram
+Style: minimal line art. Black background, thin white hairlines. The woman is a clean line figure with dot joints and small rotating rings around the joints, big faint construction circles behind her, an "UMBRELLA" callout. Rain is small white ticks with a dot at the head. Rows of small white pins along the bottom ripple as she passes.
+
+## 8. Cinematic 3D
+Style: cinematic CGI. Three.js night street, dark and moody, layered fog, glossy reflective wet floor, cyan rim light on her and glowing cyan rings on the ground, warm windows and red lanterns with soft glow, heavy line rain with ripple rings. ACES tone mapping and soft glow on bright parts.
+
+## 9. Toy Bricks
+Style: glossy toy bricks. Everything built from shiny plastic bricks with bevelled edges and small studs (MeshPhysicalMaterial with clearcoat + RoomEnvironment reflections). The woman is a toy minifigure: yellow head, black hair piece, navy coat, claw hands holding a red brick umbrella. Legs swing from the hip. Rain as thin clear plastic rods, glossy tiled floor, slightly blurred background.
+
+## 10. Soft 3D
+Style: smooth 3D explainer animation. Glossy, toy-like plastic materials, warm dusk lighting, honey-wood shopfronts with blue noren. Camera close to her so she is very large. Blur the background (render it as a separate layer) for a shallow depth-of-field look, and keep her sharp with a soft contact shadow and glossy raindrops.
+
+
+
+
+
+
+
+

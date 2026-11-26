@@ -113,8 +113,40 @@ def load_global_params(project: str) -> dict[str, Any]:
     except (OSError, ValueError):
         return clean_global_params({})
 
-def save_global_params(project: str, positives: str, negatives: str) -> None:
-    """Save global parameters for a project."""
+def save_global_params(
+    project: str,
+    positives: str,
+    negatives: str,
+    look: str = "",
+    motion_cadence: str = "",
+    hybrid_mode: dict[str, Any] | None = None,
+) -> None:
+    """Save global parameters for a project (preserving optional look / motion_cadence / hybrid_mode)."""
     path = pdir(project) / GLOBAL_PARAMS_FILE
     pdir(project).mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(clean_global_params({"positives": positives, "negatives": negatives}), indent=1))
+    existing: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                existing = raw
+        except (OSError, ValueError):
+            existing = {}
+    doc = clean_global_params({"positives": positives, "negatives": negatives})
+    eff_look = str(look or existing.get("look") or "").strip()
+    eff_motion = str(motion_cadence or existing.get("motion_cadence") or "").strip()
+    if eff_look:
+        doc["look"] = eff_look
+    if eff_motion:
+        doc["motion_cadence"] = eff_motion
+    if isinstance(hybrid_mode, dict):
+        doc["hybrid_mode"] = {
+            "enabled": bool(hybrid_mode.get("enabled", False)),
+            "world_style": str(hybrid_mode.get("world_style") or "live_action").strip(),
+            "live_style": str(hybrid_mode.get("live_style") or "live_action").strip(),
+            "cartoon_style": str(hybrid_mode.get("cartoon_style") or "vintage_1940s_2d").strip(),
+            "animate_on_twos": bool(hybrid_mode.get("animate_on_twos", True)),
+        }
+    elif isinstance(existing.get("hybrid_mode"), dict):
+        doc["hybrid_mode"] = existing["hybrid_mode"]
+    path.write_text(json.dumps(doc, indent=1), encoding="utf-8")

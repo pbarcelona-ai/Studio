@@ -1,11 +1,15 @@
 @echo off
 rem Start local ComfyUI server on 127.0.0.1:8188 for Pistachio's Studio (RTX 5090 CUDA)
-cd /d "%~dp0.local_ai\ComfyUI"
-set "PY=.venv\Scripts\python.exe"
+setlocal
+set "ROOT=%~dp0"
+set "PY=%ROOT%.venv\Scripts\python.exe"
+if not exist "%PY%" set "PY=%ROOT%.local_ai\ComfyUI\.venv\Scripts\python.exe"
 if not exist "%PY%" (
-  echo ComfyUI environment not found at .local_ai\ComfyUI\.venv
+  echo Python environment not found for ComfyUI.
   pause
   exit /b 1
 )
-"%PY%" main.py --listen 127.0.0.1 --port 8188 %*
-if errorlevel 1 pause
+set "PYTHONPATH=%ROOT%.local_ai\ComfyUI\.venv\Lib\site-packages;%ROOT%.venv\Lib\site-packages"
+cd /d "%ROOT%.local_ai\ComfyUI"
+start "Pistachio ComfyUI (RTX 5090)" "%PY%" -X utf8 main.py --listen 127.0.0.1 --port 8188 %*
+exit /b 0

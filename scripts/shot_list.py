@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -63,17 +64,145 @@ def save(pdir: Path, d: dict) -> None:
     tmp.replace(path(pdir))
 
 
+_TYPE_ALIASES: dict[str, str] = {
+    "TWO-SHOT": "TWO SHOT", "2-SHOT": "TWO SHOT", "2 SHOT": "TWO SHOT",
+    "GROUP SHOT": "GROUP", "CLOSE-UP": "CU", "CLOSE UP": "CU", "CLOSEUP": "CU",
+    "EXTREME CLOSE-UP": "ECU", "EXTREME CLOSE UP": "ECU", "MEDIUM CLOSE-UP": "MCU", "MEDIUM CLOSE UP": "MCU",
+    "MEDIUM SHOT": "MS", "MEDIUM": "MS", "MEDIUM LONG SHOT": "MLS", "MEDIUM WIDE": "MLS", "MWS": "MLS",
+    "LONG SHOT": "LS", "FULL SHOT": "LS", "FS": "LS",
+    "EXTREME LONG SHOT": "ELS", "EXTREME WIDE": "ELS", "EWS": "ELS", "ESTABLISHING": "ELS", "ESTABLISHING SHOT": "ELS",
+    "WIDE SHOT": "WS", "WIDE": "WS", "OVER THE SHOULDER": "OTS", "OVER-THE-SHOULDER": "OTS", "OS": "OTS",
+    "POINT OF VIEW": "POV", "DETAIL": "INSERT", "DETAIL SHOT": "INSERT", "CUTAWAY": "INSERT",
+}
+
+_HEIGHT_ALIASES: dict[str, str] = {
+    "ground level": "ground", "floor": "ground", "floor level": "ground", "worm's eye": "ground", "worms eye": "ground", "worm eye": "ground",
+    "low angle": "low", "knee": "low", "knee level": "low", "hip": "low", "hip level": "low", "table": "low", "table level": "low", "tabletop": "low", "dog": "low", "dog level": "low", "dog eye": "low",
+    "eye level": "eye", "neutral": "eye", "normal": "eye", "mid": "eye", "medium": "eye", "waist": "eye", "waist level": "eye", "chest": "eye", "chest level": "eye", "child eye": "eye", "child's eye": "eye", "kid eye": "eye", "subject eye": "eye", "seated": "eye", "standing": "eye",
+    "shoulder level": "shoulder", "over shoulder": "shoulder",
+    "high angle": "high", "elevated": "high", "adult eye": "high", "adult's eye": "high",
+    "top down": "overhead", "bird's eye": "overhead", "birds eye": "overhead", "bird eye": "overhead", "aerial": "overhead", "god's eye": "overhead", "gods eye": "overhead", "top": "overhead", "ceiling": "overhead",
+}
+
+_MOVE_ALIASES: dict[str, str] = {
+    "none": "static", "still": "static", "fixed": "static", "locked": "static", "locked off": "static", "tripod": "static", "hold": "static", "stationary": "static",
+    "pan left": "pan", "pan right": "pan", "panning": "pan", "whip pan": "pan", "swish pan": "pan", "pan across": "pan",
+    "tilt up": "tilt", "tilt down": "tilt", "tilting": "tilt", "pedestal": "tilt", "pedestal up": "tilt", "pedestal down": "tilt",
+    "dolly": "dolly in", "dolly forward": "dolly in", "push": "push in", "creep in": "push in", "move in": "push in", "drift in": "push in",
+    "dolly back": "dolly out", "dolly backward": "dolly out", "pull": "pull out", "pull back": "pull out", "drift out": "pull out", "retreat": "pull out",
+    "lateral": "truck", "sideways": "truck", "truck left": "truck", "truck right": "truck", "slide": "truck", "slider": "truck", "dolly lateral": "truck",
+    "boom": "crane", "boom up": "crane", "boom down": "crane", "jib": "crane", "jib up": "crane", "jib down": "crane", "crane up": "crane", "crane down": "crane", "rise": "crane", "rising": "crane", "descend": "crane", "descending": "crane", "swoop": "crane", "elevation": "crane",
+    "hand held": "handheld", "shaky": "handheld", "shake": "handheld", "camera shake": "handheld", "rumble": "handheld", "vibrating": "handheld", "vibration": "handheld",
+    "steadycam": "steadicam", "gimbal": "steadicam", "stabilized": "steadicam", "floating": "steadicam",
+    "zoom in": "zoom", "zoom out": "zoom", "crash zoom": "zoom", "snap zoom": "zoom", "dolly zoom": "zoom", "zooming": "zoom",
+    "track": "tracking", "follow": "tracking", "following": "tracking", "orbit": "tracking", "orbiting": "tracking", "arc": "tracking", "arcing": "tracking", "circle": "tracking", "circling": "tracking", "drift": "tracking", "drifting": "tracking", "glide": "tracking", "gliding": "tracking", "sweep": "tracking", "sweeping": "tracking", "dolly track": "tracking",
+}
+
+_TRANSITION_ALIASES: dict[str, str] = {
+    "": "cut", "none": "cut", "hard cut": "cut", "straight cut": "cut", "standard cut": "cut", "direct cut": "cut", "jump cut": "cut", "cut to": "cut", "end": "cut", "end of scene": "cut",
+    "match": "match cut", "graphic match": "match cut", "visual match": "match cut", "audio match": "match cut", "sound match": "match cut",
+    "smash": "smash cut", "impact cut": "smash cut", "hard smash cut": "smash cut",
+    "cross dissolve": "dissolve", "crossfade": "dissolve", "cross fade": "dissolve", "lap dissolve": "dissolve", "fade": "dissolve", "morph": "dissolve", "soft dissolve": "dissolve",
+    "fade from black": "fade in", "fade up": "fade in", "iris in": "fade in",
+    "fade to black": "fade out", "fade to white": "fade out", "fade down": "fade out", "iris out": "fade out", "wipe": "fade out", "iris": "fade out",
+    "swish pan": "whip pan", "whip": "whip pan",
+    "j cut": "j-cut", "jcut": "j-cut",
+    "l cut": "l-cut", "lcut": "l-cut",
+}
+
+_MODIFIER_WORDS_RE = re.compile(r"\b(?:slow|slowly|gentle|gently|subtle|subtly|slight|slightly|smooth|smoothly|quick|quickly|fast|rapid|gradual|gradually|micro|very|soft|softly|steady|steadily|dramatic|sweeping|slight|tight|wide)\b")
+
+
+def _norm_spaces(val: str) -> str:
+    return " ".join(re.sub(r"[-_/]+", " ", str(val or "").lower()).split())
+
+
+def _normalize_type(raw: object) -> str:
+    t = " ".join(str(raw or "").upper().split())
+    if t in SHOT_TYPES:
+        return t
+    if t in _TYPE_ALIASES:
+        return _TYPE_ALIASES[t]
+    cleaned = t.replace("-", " ")
+    if cleaned in SHOT_TYPES:
+        return cleaned
+    return _TYPE_ALIASES.get(cleaned, t)
+
+
+def _normalize_height(raw: object) -> str:
+    h = str(raw or "eye").lower().strip()
+    if h in HEIGHTS:
+        return h
+    norm = _norm_spaces(h)
+    if norm in HEIGHTS:
+        return norm
+    if norm in _HEIGHT_ALIASES:
+        return _HEIGHT_ALIASES[norm]
+    stripped = " ".join(_MODIFIER_WORDS_RE.sub(" ", norm).split())
+    if stripped in HEIGHTS:
+        return stripped
+    if stripped in _HEIGHT_ALIASES:
+        return _HEIGHT_ALIASES[stripped]
+    # Check phrase prefixes/suffixes like "eye level with Tommy"
+    for cand in (*HEIGHTS, *_HEIGHT_ALIASES):
+        if norm.startswith(cand + " ") or norm.endswith(" " + cand):
+            return cand if cand in HEIGHTS else _HEIGHT_ALIASES[cand]
+    return h
+
+
+def _normalize_move(raw: object) -> str:
+    mv = str(raw or "static").lower().strip()
+    if mv in MOVES:
+        return mv
+    # If compound movement ("dolly in and tilt up", "slow pan / tracking"), evaluate primary phrase first
+    primary = re.split(r"\s*(?:,|/|&|\+|\band\b|\bto\b|\binto\b|\bwith\b)\s*", mv, maxsplit=1)[0].strip()
+    for candidate in (mv, primary):
+        norm = _norm_spaces(candidate)
+        if norm in MOVES:
+            return norm
+        if norm in _MOVE_ALIASES:
+            return _MOVE_ALIASES[norm]
+        stripped = " ".join(_MODIFIER_WORDS_RE.sub(" ", norm).split())
+        if stripped in MOVES:
+            return stripped
+        if stripped in _MOVE_ALIASES:
+            return _MOVE_ALIASES[stripped]
+        for key in (*MOVES, *_MOVE_ALIASES):
+            if stripped.startswith(key + " ") or stripped.endswith(" " + key):
+                return key if key in MOVES else _MOVE_ALIASES[key]
+    return mv
+
+
+def _normalize_transition(raw: object) -> str:
+    tr = str(raw or "cut").lower().strip()
+    if tr in TRANSITIONS:
+        return tr
+    norm = _norm_spaces(tr)
+    if norm in TRANSITIONS:
+        return norm
+    if norm in _TRANSITION_ALIASES:
+        return _TRANSITION_ALIASES[norm]
+    stripped = " ".join(_MODIFIER_WORDS_RE.sub(" ", norm).split())
+    if stripped in TRANSITIONS:
+        return stripped
+    if stripped in _TRANSITION_ALIASES:
+        return _TRANSITION_ALIASES[stripped]
+    return tr
+
+
 # ---------------------------------------------------------------------------------------------- checking one shot
 def clean_shot(s: dict, n: int) -> dict:
     """A checked shot (ValueError says what is wrong, for the AI or for the page)."""
     if not isinstance(s, dict):
         raise ValueError("every shot is an object")
-    t = str(s.get("type", "")).upper().strip()
+    t = _normalize_type(s.get("type", ""))
     if t not in SHOT_TYPES:
-        raise ValueError(f"shot type must be one of {', '.join(SHOT_TYPES)}")
+        raise ValueError(f"shot type {t!r} must be one of {', '.join(SHOT_TYPES)}")
     try:
-        lens = int(float(s.get("lens_mm", 0)))
-        secs = float(s.get("seconds", 0))
+        raw_lens = str(s.get("lens_mm", 0)).lower().replace("mm", "").strip()
+        raw_secs = str(s.get("seconds", 0)).lower().removesuffix("sec").removesuffix("s").strip()
+        lens = int(float(raw_lens))
+        secs = float(raw_secs)
         prio = int(s.get("priority", 2))
     except (TypeError, ValueError):
         raise ValueError("lens_mm, seconds and priority are numbers") from None
@@ -83,9 +212,14 @@ def clean_shot(s: dict, n: int) -> dict:
         raise ValueError(f"seconds is the shot's length ({MIN_SECONDS}-60)")
     if prio not in (1, 2, 3):
         raise ValueError("priority is 1 (must have), 2 or 3 (nice to have)")
-    h, mv, tr = str(s.get("height", "eye")).lower(), str(s.get("movement", "static")).lower(), str(s.get("transition", "cut")).lower()
+    h = _normalize_height(s.get("height", "eye"))
+    mv = _normalize_move(s.get("movement", "static"))
+    tr = _normalize_transition(s.get("transition", "cut"))
     if h not in HEIGHTS or mv not in MOVES or tr not in TRANSITIONS:
-        raise ValueError(f"height is one of {', '.join(HEIGHTS)}; movement one of {', '.join(MOVES)}; transition one of {', '.join(TRANSITIONS)}")
+        raise ValueError(
+            f"invalid camera/transition (got height={h!r}, movement={mv!r}, transition={tr!r}): "
+            f"height is one of {', '.join(HEIGHTS)}; movement one of {', '.join(MOVES)}; transition one of {', '.join(TRANSITIONS)}"
+        )
     if not str(s.get("action", "")).strip():
         raise ValueError("every shot says what happens in it ('action')")
     src = str(s.get("source", "ai")).lower()

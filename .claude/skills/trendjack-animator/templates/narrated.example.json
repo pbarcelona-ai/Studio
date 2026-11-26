@@ -1,0 +1,113 @@
+{
+  "_note": "FICTIONAL EXAMPLE of a spoken ad (3D explainer format). Copy to <your ad folder>/ad.json and replace everything. Shot times are seconds of voice/take1.mp3; set them after the voice step (adtool.py words / lines). Generation runs through the Starpop MCP tools; 'refs' holds the Starpop media references (image:<uuid>, audio:<uuid>) so every step can be rerun. The voice is made by scripts/elevenlabs_tts.py (ElevenLabs direct), never inside Starpop.",
+  "name": "<CODE>.1-explainer-holiday-plants-v1",
+  "audio": "voice",
+  "look": "Clean glossy 3D product visualization, studio lighting with soft reflections, seamless curved backdrop, crisp materials, smooth simple shapes, premium commercial render.",
+  "product_photo": "refs/product.jpg",
+  "voice": {
+    "voice_id": "<<FILL>>",
+    "model": "eleven_v4",
+    "language_code": "en",
+    "stability": 0.5,
+    "similarity_boost": 0.75,
+    "speed": 1.0,
+    "delivery": "warm, calm, matter-of-fact",
+    "lines": [
+      "Why do houseplants die while you're away?",
+      "Not too much sun. Too little water.",
+      "This pot hides a water tank inside.",
+      "A cotton wick pulls water up to the roots.",
+      "Only as much as the plant drinks.",
+      "Acme Self-Watering Pot. Link below."
+    ]
+  },
+  "music": {
+    "title": "Acme explainer bed",
+    "style": "Playful light instrumental, plucked bass and pizzicato strings with a soft ticking pulse, curious mood, 95 bpm, no vocals",
+    "negative_tags": "vocals, singing, choir, EDM, sad",
+    "take": 1,
+    "volume": 0.16,
+    "_note": "Made by the user on suno.com and saved as music/take1.mp3. Leave the music block out for a talk/founder ad."
+  },
+  "caption_replace": {},
+  "captions": {
+    "on": true,
+    "y": 1300,
+    "size": 64,
+    "max_words": 4,
+    "max_width": 680,
+    "font": null,
+    "small_words": [
+      "the",
+      "a",
+      "an",
+      "and",
+      "to",
+      "of",
+      "in",
+      "on",
+      "for",
+      "with",
+      "but",
+      "or",
+      "at",
+      "by",
+      "so"
+    ],
+    "no_end_words": []
+  },
+  "references": {},
+  "sheets": {},
+  "shots": [
+    {
+      "id": "s1",
+      "start": 0.0,
+      "end": 2.2,
+      "lyric": "Why do houseplants die while you're away?",
+      "refs": [],
+      "still": "Setting: a seamless light-blue studio stage with a curved backdrop, soft studio light. Close-up at plant height: a droopy houseplant with brown leaf tips in a plain white pot stands alone on the stage floor. No text anywhere in the image.",
+      "motion": "Camera: slow push-in from a medium shot to a close-up of the drooping leaves. One leaf slowly sags lower.",
+      "seconds": 3,
+      "still_ref": null,
+      "clip_ref": null
+    },
+    {
+      "id": "s3",
+      "start": 4.2,
+      "end": 6.4,
+      "lyric": "This pot hides a water tank inside.",
+      "refs": ["product"],
+      "still": "The pot is copied exactly from the attached product photo. Setting: the same light-blue studio stage. Medium shot: the pot with a healthy plant stands on the stage; its front half is cut away like a clean cross-section, showing a hidden water tank in the lower part, filled with clear blue water. No text anywhere in the image.",
+      "motion": "Camera: slow orbit 45 degrees around the pot toward the cutaway side. The water in the tank ripples gently.",
+      "seconds": 3,
+      "still_ref": null,
+      "clip_ref": null
+    },
+    {
+      "id": "s6",
+      "start": 11.2,
+      "end": 13.4,
+      "lyric": "Acme Self-Watering Pot. Link below.",
+      "refs": ["product"],
+      "still": "The pot is copied exactly from the attached product photo. Setting: the same light-blue studio stage. Low angle hero shot: the pot with a lush green plant in the centre of the stage, soft rim light. No text anywhere in the image.",
+      "motion": "Camera: low slow dolly toward the pot, ending on a hero close-up. The leaves sway slightly.",
+      "seconds": 3,
+      "caption_y": 640,
+      "clip_model": "minimax-h3-max",
+      "still_ref": null,
+      "clip_ref": null
+    }
+  ],
+  "models": {
+    "sheet": "gpt-image-2",
+    "still": "nano-banana-2.1",
+    "still_resolution": "1K",
+    "clip": "minimax-h3-max-turbo",
+    "clip_strong": "minimax-h3-max",
+    "clip_resolution": "768p",
+    "lipsync_clip": "minimax-h3-max"
+  },
+  "refs": {
+    "product": "image:<uuid of the uploaded product photo>"
+  }
+}

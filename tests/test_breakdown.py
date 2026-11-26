@@ -129,6 +129,26 @@ class TestShotList:
         with pytest.raises(ValueError):
             sl.clean_shot({**base, **bad}, 1)
 
+    def test_shot_normalizes_cinematography_synonyms(self):
+        base = {"type": "close-up", "lens_mm": "50mm", "height": "eye-level", "movement": "slow push-in", "transition": "hard cut", "priority": 2, "action": "Tommy smiles", "seconds": "4s", "source": "ai"}
+        cleaned = sl.clean_shot(base, 1)
+        assert cleaned["type"] == "CU"
+        assert cleaned["lens_mm"] == 50
+        assert cleaned["height"] == "eye"
+        assert cleaned["movement"] == "push in"
+        assert cleaned["transition"] == "cut"
+        assert cleaned["seconds"] == 4.0
+
+        c2 = sl.clean_shot({**base, "height": "bird's-eye", "movement": "gentle orbit around rocket", "transition": "fade to black"}, 2)
+        assert c2["height"] == "overhead"
+        assert c2["movement"] == "tracking"
+        assert c2["transition"] == "fade out"
+
+        c3 = sl.clean_shot({**base, "height": "dog eye level", "movement": "dolly in and tilt up", "transition": "match-cut"}, 3)
+        assert c3["height"] == "low"
+        assert c3["movement"] == "dolly in"
+        assert c3["transition"] == "match cut"
+
     def test_needs_a_continuity_book(self, scripted):
         with pytest.raises(sl.ShotListError, match="continuity book"):
             sl.write(scripted, sl.fake_ask(scripted))

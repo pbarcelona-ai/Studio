@@ -260,6 +260,9 @@
       </div>
     </nav>
 
+    <!-- PERSISTENT BI-DIRECTIONAL WORKFLOW GUIDANCE BANNER (only clears once all required steps are run & approved) -->
+    <div id="v2BiDirBanner" class="v2-bidir-banner" style="display:none" role="status" aria-live="assertive"></div>
+
     <!-- 22 GUIDED TOP-TO-BOTTOM STEP WORKSPACES -->
     <main class="studio-pipeline-viewport" id="pipelineViewport">
 
@@ -616,7 +619,9 @@
                   <span>Import .fdx / .fountain</span>
                   <input type="file" id="spImportFile" accept=".fdx,.fountain,.fntn" style="display:none" aria-label="Import screenplay file">
               </label>
+              <button type="button" class="btn btn--ghost" id="bV2SpHumanize" title="Strip stiff AI prose clichés &amp; em-dash clutter so screenplay &amp; spoken lines sound natural">✍️ Humanize Script &amp; Dialogue</button>
               <span id="spFiles"></span>
+              <span id="v2SpHumanizeStatus" style="font-size:var(--text-xs);color:#34d399" aria-live="polite"></span>
           </div>
 
           <!-- MCP Integration Buttons -->
@@ -808,14 +813,47 @@
               <div id="v2CastSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading characters for this book…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--primary" id="bV2CastAddToggle" style="padding:5px 12px;font-size:var(--text-xs)">➕ Add Character</button>
+                <button type="button" class="btn btn--secondary" id="bV2CastCustomTypeToggle" style="padding:5px 12px;font-size:var(--text-xs)">✨ + Custom Type</button>
                 <button type="button" class="btn btn--secondary" id="bV2CastSync" style="padding:5px 12px;font-size:var(--text-xs)">🔄 Sync from Book</button>
                 <button type="button" class="btn btn--ghost" id="bV2CastReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
               </div>
             </div>
 
+            <!-- Inline Add Custom Character Type Form -->
+            <div id="v2CastCustomTypeForm" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid #232d3f;display:none;flex-direction:column;gap:8px">
+              <div style="font-size:var(--text-xs);font-weight:700;color:#fde68a">✨ Create Reusable Character Type (available in Step 08 across all books)</div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:8px">
+                <div>
+                  <label class="f" for="v2CastCustomTypeName">Character Type Name</label>
+                  <input type="text" id="v2CastCustomTypeName" placeholder="e.g. Steampunk Automaton" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                </div>
+                <div>
+                  <label class="f" for="v2CastCustomTypeCat">Category</label>
+                  <select id="v2CastCustomTypeCat" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                    <option value="Custom">Custom</option>
+                    <option value="Humans">Humans</option>
+                    <option value="Animals &amp; Anthro">Animals &amp; Anthro</option>
+                    <option value="Toys &amp; Objects">Toys &amp; Objects</option>
+                    <option value="Sci-Fi &amp; Tech">Sci-Fi &amp; Tech</option>
+                    <option value="Fantasy &amp; Myth">Fantasy &amp; Myth</option>
+                    <option value="Biblical &amp; Epic">Biblical &amp; Epic</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="f" for="v2CastCustomTypeHint">Default Visual Cue (optional)</label>
+                  <input type="text" id="v2CastCustomTypeHint" placeholder="e.g. riveted brass joints, glowing amber lenses" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button type="button" class="btn btn--primary" id="bV2CastCustomTypeSave" style="padding:5px 14px;font-size:var(--text-xs)">💾 Save Character Type</button>
+                <button type="button" class="btn btn--ghost" id="bV2CastCustomTypeCancel" style="padding:5px 12px;font-size:var(--text-xs)">Cancel</button>
+                <span id="v2CastCustomTypeMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
+              </div>
+            </div>
+
             <!-- Inline Add Character Form -->
             <div id="v2CastAddForm" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid #232d3f;display:flex;flex-direction:column;gap:8px">
-              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:8px">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(190px, 1fr));gap:8px">
                 <div>
                   <label class="f" for="v2CastNewName">Character Name</label>
                   <input type="text" id="v2CastNewName" placeholder="e.g. Captain Vega" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
@@ -823,6 +861,16 @@
                 <div>
                   <label class="f" for="v2CastNewToken">Visual Consistency Token (optional)</label>
                   <input type="text" id="v2CastNewToken" placeholder="e.g. captain_vega_explorer" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f59e0b;border:1px solid #334155;border-radius:6px;font-family:var(--font-mono);font-size:var(--text-xs)">
+                </div>
+                <div>
+                  <label class="f" for="v2CastNewArchetype">Character Type / Archetype</label>
+                  <select id="v2CastNewArchetype" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)"></select>
+                </div>
+                <div>
+                  <label class="f" for="v2CastNewStyle">Visual Style Override (Mixed-Media)</label>
+                  <select id="v2CastNewStyle" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                    <option value="">Book Default (Step 09)</option>
+                  </select>
                 </div>
               </div>
               <div>
@@ -859,40 +907,112 @@
           ✨ <strong>Autopilot Pick:</strong> Realistic Live Action &mdash; <em>35mm cinema camera, natural film grain, realistic practical lighting.</em>
         </div>
         <div class="step-zone-workspace">
+          <!-- Category Filter Bar & Custom Style Builder Toggle -->
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:var(--space-2)">
+            <div id="v2StyleCats" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+            <button type="button" class="btn btn--secondary" id="bV2StyleCustomToggle" style="padding:5px 12px;font-size:var(--text-xs)">➕ Add Custom Style</button>
+          </div>
+
+          <!-- Inline Custom Style Form -->
+          <div id="v2StyleCustomForm" class="direct-story-card hidden" style="margin-bottom:var(--space-3);display:none;flex-direction:column;gap:8px">
+            <div style="font-size:var(--text-xs);font-weight:700;color:#fde68a">🎨 Add Custom Visual Style (saved across all projects, turnarounds &amp; single prompts)</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:8px">
+              <div>
+                <label class="f" for="v2StyleCustomLabel">Style Name</label>
+                <input type="text" id="v2StyleCustomLabel" placeholder="e.g. Felt Diorama Stop-Motion" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+              </div>
+              <div>
+                <label class="f" for="v2StyleCustomCat">Category</label>
+                <select id="v2StyleCustomCat" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                  <option value="Custom">Custom</option>
+                  <option value="Cinematic &amp; 3D">Cinematic &amp; 3D</option>
+                  <option value="2D, Anime &amp; Illustration">2D, Anime &amp; Illustration</option>
+                  <option value="Stop-Motion, Tactile &amp; Toy">Stop-Motion, Tactile &amp; Toy</option>
+                  <option value="Retro, Game &amp; Vector">Retro, Game &amp; Vector</option>
+                  <option value="Painterly &amp; Storybook">Painterly &amp; Storybook</option>
+                </select>
+              </div>
+              <div>
+                <label class="f" for="v2StyleCustomSummary">Short Description</label>
+                <input type="text" id="v2StyleCustomSummary" placeholder="e.g. Handmade wool felt puppets on tabletop sets" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+              </div>
+            </div>
+            <div>
+              <label class="f" for="v2StyleCustomPos">Image Prompt Keywords</label>
+              <textarea id="v2StyleCustomPos" rows="2" placeholder="needle-felted wool puppet, stitched seams, miniature craft set, warm studio lighting…" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px;font:inherit;font-size:var(--text-xs)"></textarea>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:8px">
+              <div>
+                <label class="f" for="v2StyleCustomNeg">Negative Keywords</label>
+                <input type="text" id="v2StyleCustomNeg" placeholder="photorealistic, glossy plastic, smooth cgi…" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              </div>
+              <div>
+                <label class="f" for="v2StyleCustomMotion">Motion Cadence (for video clips)</label>
+                <input type="text" id="v2StyleCustomMotion" placeholder="stop-motion 12fps stepped cadence, subtle wool fiber shift…" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button type="button" class="btn btn--primary" id="bV2StyleCustomSave" style="padding:6px 14px;font-size:var(--text-xs)">💾 Save Custom Style</button>
+              <button type="button" class="btn btn--ghost" id="bV2StyleCustomCancel" style="padding:6px 12px;font-size:var(--text-xs)">Cancel</button>
+              <span id="v2StyleCustomMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
+            </div>
+          </div>
+
           <div id="v2StyleGrid" role="radiogroup" aria-label="Film visual style" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(195px, 1fr));gap:var(--space-2)">
             <button type="button" class="deliverable-card v2-style-card" data-look="live_action" role="radio" aria-checked="true" style="text-align:left;cursor:pointer">
               <span class="deliverable-title">🎬 Realistic Live Action</span>
               <p class="deliverable-desc">Cinematic, as if filmed with a camera: real people, real places, natural light.</p>
             </button>
-            <button type="button" class="deliverable-card v2-style-card" data-look="claymation" role="radio" aria-checked="false" style="text-align:left;cursor:pointer">
-              <span class="deliverable-title">🧸 Claymation</span>
-              <p class="deliverable-desc">Stop-motion with handmade plasticine clay figures and miniature sets.</p>
-            </button>
-            <button type="button" class="deliverable-card v2-style-card" data-look="pixar_3d" role="radio" aria-checked="false" style="text-align:left;cursor:pointer">
-              <span class="deliverable-title">✨ 3D Pixar</span>
-              <p class="deliverable-desc">3D animated feature: stylized expressive characters, soft global light, rich color.</p>
-            </button>
-            <button type="button" class="deliverable-card v2-style-card" data-look="pixar_disney" role="radio" aria-checked="false" style="text-align:left;cursor:pointer">
-              <span class="deliverable-title">🏰 Pixar-Disney Hybrid</span>
-              <p class="deliverable-desc">3D animation with a classic hand-drawn storybook fairy-tale feel.</p>
-            </button>
-            <button type="button" class="deliverable-card v2-style-card" data-look="travel_poster" role="radio" aria-checked="false" style="text-align:left;cursor:pointer">
-              <span class="deliverable-title">🚂 Vintage Travel Poster</span>
-              <p class="deliverable-desc">1930s Art Deco lithograph: flat bold shapes, limited printed palette, screen grain.</p>
-            </button>
-            <button type="button" class="deliverable-card v2-style-card" data-look="cyberpunk_3d" role="radio" aria-checked="false" style="text-align:left;cursor:pointer">
-              <span class="deliverable-title">🌆 Cyberpunk Neon 3D</span>
-              <p class="deliverable-desc">3D neon city at night: glowing magenta/cyan signs, rain reflections, volumetric fog.</p>
-            </button>
           </div>
 
           <!-- Selected Style Prompt Preview & Apply to Book -->
           <div class="direct-story-card" style="margin-top:var(--space-3)">
+            <div id="v2StylePreviewBox" style="display:none;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;padding:10px;background:#0a0d14;border:1px solid rgba(245,158,11,0.35);border-radius:8px">
+              <img id="v2StylePreviewImg" alt="Selected style sample preview" style="width:240px;aspect-ratio:16/10;object-fit:cover;border-radius:8px;border:1px solid #f59e0b;background:#020617;cursor:zoom-in">
+              <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <strong id="v2StylePreviewTitle" style="font-size:var(--text-base);color:#f8fafc"></strong>
+                  <span id="v2StylePreviewCat" class="status-badge status-badge--synced" style="font-size:10px"></span>
+                </div>
+                <p id="v2StylePreviewDesc" style="margin:0;font-size:var(--text-xs);color:#cbd5e1;line-height:1.45"></p>
+                <small style="font-size:11px;color:#94a3b8">Canned visual &amp; motion cadence sample for this style (fixed reference preview).</small>
+              </div>
+            </div>
             <label class="f" for="v2StylePos">Active Style Keywords (applied to every keyframe &amp; character prompt)</label>
             <textarea id="v2StylePos" rows="2" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px;font:inherit;font-size:var(--text-xs)"></textarea>
             <label class="f" for="v2StyleNeg" style="margin-top:6px">Style Negative Keywords (things to avoid)</label>
             <textarea id="v2StyleNeg" rows="2" style="width:100%;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px;font:inherit;font-size:var(--text-xs)"></textarea>
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px">
+            <label class="f" for="v2StyleMotion" style="margin-top:6px">Motion Cadence (automatically appended to I2V video clips)</label>
+            <textarea id="v2StyleMotion" rows="2" style="width:100%;background:#0a0d14;color:#bae6fd;border:1px solid #334155;border-radius:6px;padding:8px;font:inherit;font-size:var(--text-xs)"></textarea>
+
+            <!-- Hybrid "Real Life Meets 2D" Mixed-Media Mode (from 2D_Realism_Tutorial.pdf) -->
+            <div id="v2HybridBox" style="margin-top:10px;padding:10px;background:#0a0d14;border:1px solid rgba(245,158,11,0.38);border-radius:8px">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                <label style="display:inline-flex;align-items:center;gap:8px;font-size:var(--text-xs);font-weight:700;color:#fde68a;cursor:pointer">
+                  <input type="checkbox" id="v2HybridEnabled">
+                  🎭 Enable "2D Meets Realism" Hybrid Mode (Live-Action Sets &amp; Actors + Hand-Drawn 2D Cast)
+                </label>
+                <span style="font-size:11px;color:#94a3b8">Locks one shared 2D style line across all cartoon sheets &amp; enables Two-Pass Keyframes</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(190px, 1fr));gap:8px;margin-top:8px">
+                <div>
+                  <label class="f" for="v2HybridLiveStyle">Live-Action World &amp; Real Actor Style</label>
+                  <select id="v2HybridLiveStyle" style="width:100%;padding:6px 8px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)"></select>
+                </div>
+                <div>
+                  <label class="f" for="v2HybridCartoonStyle">Shared 2D Cartoon Cast Style Line</label>
+                  <select id="v2HybridCartoonStyle" style="width:100%;padding:6px 8px;background:#0f172a;color:#bae6fd;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)"></select>
+                </div>
+                <div style="display:flex;align-items:flex-end">
+                  <label style="display:inline-flex;align-items:center;gap:6px;font-size:var(--text-xs);color:#cbd5e1;cursor:pointer;padding:6px 0">
+                    <input type="checkbox" id="v2HybridTwos" checked>
+                    Animate 2D cast on twos (12 fps)
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px">
               <button type="button" class="btn btn--primary" id="bV2StyleApply" style="padding:6px 14px">💾 Apply Style to Book</button>
               <span id="v2StyleMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
             </div>
@@ -950,9 +1070,41 @@
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
               <div id="v2LocSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading locations &amp; sets for this book…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button type="button" class="btn btn--primary" id="bV2LocAddToggle" style="padding:5px 12px;font-size:var(--text-xs)">➕ Add Set</button>
+                <button type="button" class="btn btn--primary" id="bV2LocImportToggle" style="padding:5px 12px;font-size:var(--text-xs)">📷 Import Reference Photo</button>
+                <button type="button" class="btn btn--secondary" id="bV2LocAddToggle" style="padding:5px 12px;font-size:var(--text-xs)">➕ Add Set</button>
                 <button type="button" class="btn btn--secondary" id="bV2LocBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Extract Sets from Script</button>
                 <button type="button" class="btn btn--ghost" id="bV2LocReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>
+              </div>
+            </div>
+
+            <!-- Inline Import Reference Photo & Associate with Location / View -->
+            <div id="v2LocImportForm" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid #232d3f;display:none;flex-direction:column;gap:8px">
+              <div style="font-size:var(--text-xs);font-weight:700;color:#fde68a">📷 Import a Reference Photo &amp; Convert to Your Film's Visual Style</div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:8px">
+                <div>
+                  <label class="f" for="v2LocImportSet">Associate with Location / Set</label>
+                  <select id="v2LocImportSet" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px"></select>
+                </div>
+                <div>
+                  <label class="f" for="v2LocImportView">View Name (e.g. Establishing View, Kitchen Doorway)</label>
+                  <input type="text" id="v2LocImportView" value="Establishing View" placeholder="Establishing View" style="width:100%;padding:7px 10px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px">
+                </div>
+                <div>
+                  <label class="f" for="v2LocImportNotes">View Angle / Notes (optional)</label>
+                  <input type="text" id="v2LocImportNotes" placeholder="e.g. Looking from sofa toward kitchen doorway" style="width:100%;padding:7px 10px;background:#0a0d14;color:#cbd5e1;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                </div>
+                <div>
+                  <label class="f" for="v2LocImportStrength">Style Conversion Strength (<span id="v2LocImportStrengthVal">0.68</span>)</label>
+                  <input type="range" id="v2LocImportStrength" min="0.45" max="0.90" step="0.02" value="0.68" style="width:100%;accent-color:#f59e0b" title="Lower keeps more of the raw photo; higher converts more strongly into your film's visual style">
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <input type="file" id="v2LocImportFile" accept="image/*" style="font-size:var(--text-xs);color:#cbd5e1">
+                <img id="v2LocImportPreview" alt="Selected reference photo preview" style="display:none;width:112px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;border:1px solid #f59e0b">
+                <button type="button" class="btn btn--primary" id="bV2LocImportConvert" style="padding:6px 14px;font-size:var(--text-xs)">✨ Import &amp; Convert to Film Style</button>
+                <button type="button" class="btn btn--secondary" id="bV2LocImportOnly" style="padding:6px 12px;font-size:var(--text-xs)">📥 Import Photo Only</button>
+                <button type="button" class="btn btn--ghost" id="bV2LocImportCancel" style="padding:6px 10px;font-size:var(--text-xs)">Cancel</button>
+                <span id="v2LocImportMsg" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></span>
               </div>
             </div>
 
@@ -986,7 +1138,7 @@
           </div>
 
           <!-- Dynamic Editable Sets Grid -->
-          <div id="v2LocGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(290px, 1fr));gap:var(--space-3)"></div>
+          <div id="v2LocGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(420px, 1fr));gap:var(--space-3)"></div>
         </div>
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Turnarounds</button>
@@ -1193,6 +1345,7 @@
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--primary" id="bV2DialogueRenderScene">🎙️ Render Scene Audio</button>
                 <button type="button" class="btn btn--secondary" id="bV2DialogueSaveAll">💾 Save Line Edits</button>
+                <button type="button" class="btn btn--ghost" id="bV2DlgHumanize" title="Clean robotic AI phrasing &amp; em-dash clutter from spoken dialogue before TTS rendering">✍️ Humanize Dialogue</button>
                 <button type="button" class="btn btn--ghost" id="bV2DialogueReload">↻ Reload</button>
               </div>
             </div>
@@ -1256,14 +1409,18 @@
                 <span class="deliverable-title">🎧 Video-Aligned Foley (SFX)</span>
                 <span class="status-badge" id="v2FoleyStatusBadge">Ready</span>
               </div>
-              <textarea id="v2FoleyPrompt" aria-label="Foley SFX prompt" rows="3" placeholder="Describe ambient sound & SFX (e.g., rain on window, rocket thruster hum, cockpit console chimes)…" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);resize:vertical"></textarea>
+              <textarea id="v2FoleyPrompt" aria-label="Foley SFX prompt" rows="3" placeholder="Type any custom SFX to override the preset (e.g., crackling fireplace with soft distant rain, ocean waves, footsteps on gravel, ticking clock)…" style="width:100%;padding:8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs);resize:vertical"></textarea>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <select id="v2FoleyPreset" aria-label="Foley SFX preset" style="flex:1;padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
+                  <option value="custom">Preset: ✏️ Custom (Override with Text Above)</option>
                   <option value="space_adventure">Preset: Space &amp; Cockpit Adventure</option>
+                  <option value="spaceship_voices">Preset: Low Spaceship Hum &amp; Distant Voices</option>
                   <option value="rainy_home">Preset: Rainy Living Room &amp; Cozy Home</option>
+                  <option value="soft_rain_room">Preset: Soft Distant Rain &amp; Quiet Room (Subtle)</option>
                   <option value="cosmic_storm">Preset: Ice Rings &amp; Atmospheric Wind</option>
                   <option value="action_launch">Preset: Rocket Launch &amp; Thruster Boost</option>
                   <option value="forest_nature">Preset: Quiet Night &amp; Distant Crickets</option>
+                  <option value="silent">Preset: Silent (No SFX)</option>
                 </select>
                 <select id="v2FoleyDuration" aria-label="Foley SFX duration" style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
                   <option value="8">8 sec</option>
@@ -1273,6 +1430,7 @@
               </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
                 <button type="button" class="btn btn--primary" id="bV2RenderFoley" style="flex:1">✨ Generate &amp; Preview Foley</button>
+                <button type="button" class="btn btn--secondary" id="bV2SaveSfxPreset" title="Save the SFX text above into your reusable cross-story SFX library">📚 Save Preset for Reuse</button>
                 <button type="button" class="btn btn--ghost" id="bV2UploadFoley">⬆ Upload SFX</button>
                 <input type="file" id="v2UploadFoleyInput" aria-label="Upload Foley SFX audio file" accept="audio/*" style="display:none">
               </div>
@@ -1295,6 +1453,7 @@
                   <option value="cozy">Mood: Warm &amp; Cozy Family</option>
                   <option value="mysterious">Mood: Cosmic Mystery</option>
                   <option value="playful">Mood: Playful &amp; Whimsical</option>
+                  <option value="none">Mood: Silent (No Score)</option>
                 </select>
                 <select id="v2ScoreDuration" aria-label="Soundtrack score duration" style="padding:6px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:4px;font-size:var(--text-xs)">
                   <option value="8">8 sec</option>
@@ -1326,7 +1485,7 @@
                 <span id="v2SoundScenesSummary" style="color:#94a3b8;font-size:var(--text-xs);margin-left:8px">Loading scenes from screenplay…</span>
               </div>
             </div>
-            <div id="v2SoundScenesList" style="display:flex;flex-direction:column;gap:10px"></div>
+            <div id="v2SoundScenesList" class="v2-sound-scenes-grid"></div>
           </div>
         </div>
         <div class="step-zone-dock">
@@ -1358,12 +1517,39 @@
                 </label>
                 <button type="button" class="btn btn--primary" id="bV2KfRenderScene">🎨 Generate Scene Keyframes</button>
                 <button type="button" class="btn btn--secondary" id="bV2KfSavePrompts">💾 Save Prompts Only</button>
-                <button type="button" class="btn btn--ghost" id="bV2KfRebuildPrompts" title="Rebuild this scene's prompts using your latest Step 08 character wardrobe & Step 11 location locks">🔄 Sync Wardrobe &amp; Set Locks</button>
+                <button type="button" class="btn btn--ghost" id="bV2KfRebuildPrompts" title="Rebuild this scene's unlocked prompts from latest Steps 08-12 (cast, turnarounds, sets, props, shotlist)">🔄 Sync Scene Prompts</button>
+                <button type="button" class="btn btn--ghost" id="bV2KfRebuildAllPrompts" title="Rebuild ALL unlocked scenes' prompts across the entire project from latest Steps 08-12">🔄 Sync All Scenes</button>
+                <button type="button" class="btn btn--ghost" id="bV2KfPlateAudit" title="Build side-by-side contact sheets comparing every Step 10 character &amp; Step 11 set plate against all Step 17 keyframes">🧩 Plate Consistency Sheets</button>
+                <button type="button" class="btn btn--ghost" id="bV2KfLocalModelsToggle" title="Check &amp; install 100% free local consistency models (FLUX.1 Kontext Dev, FLUX.2 Klein 9B, Ollama Vision QA, ComfyUI Angles)">🆓 Free Local Engines</button>
                 <button type="button" class="btn btn--ghost" id="bV2KfReload">↻ Reload</button>
               </div>
             </div>
+            <div id="v2KfLocalModelsBox" class="v2-kf-local-panel" style="display:none"></div>
+            <div id="v2KfPlateAuditBox" class="v2-kf-local-panel" style="display:none"></div>
             <div id="v2KfScenes" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:6px"></div>
+            <div id="v2KfMissingSetsBanner" class="v2-kf-sets-banner" style="display:none"></div>
             <div id="v2KfStatus" style="font-size:var(--text-xs);color:#34d399" aria-live="polite"></div>
+          </div>
+
+          <!-- Missing Step 11 Set Plates Popup Modal -->
+          <div id="v2KfMissingSetsModal" class="v2-kf-modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="v2KfMissingSetsTitle">
+            <div class="v2-kf-modal">
+              <div class="v2-kf-modal__hdr">
+                <h3 id="v2KfMissingSetsTitle">⚠️ No Step 11 Set Plates Rendered Yet</h3>
+              </div>
+              <p class="v2-kf-modal__body">
+                Step 17 found <strong>0 rendered set plates</strong> from <strong>Step 11 (Sets &amp; Locations)</strong>.
+                Without empty room/location set plates, backgrounds, furniture, and lighting can shift between shots in the same scene.
+              </p>
+              <div id="v2KfMissingSetsList" class="v2-kf-modal__list"></div>
+              <p class="v2-kf-modal__hint">
+                Go to <strong>Step 11</strong> and render your location set plates first — Step 17 will then automatically lock every scene to its set plate alongside your Step 10 character turnarounds.
+              </p>
+              <div class="v2-kf-modal__actions">
+                <button type="button" class="btn btn--primary" id="bV2KfGoStep11">🏛 Go to Step 11 (Render Set Plates)</button>
+                <button type="button" class="btn btn--ghost" id="bV2KfDismissSetsWarn">Continue to Step 17 Anyway</button>
+              </div>
+            </div>
           </div>
 
           <!-- Dynamic Scene Filmstrip Grid -->
@@ -1419,9 +1605,52 @@
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <button type="button" class="btn btn--primary" id="bV2RunLocalVideo">🎬 Synthesize Shot Video Locally</button>
               <button type="button" class="btn btn--secondary" id="bV2RunLocalVideoBatch">⚡ Render All Keyframed Shots</button>
+              <button type="button" class="btn btn--ghost" id="bV2BeatPromptGen" title="Build a timed 0.0-Xs beat-by-beat motion prompt with Essential Sequence, Style Cadence Lock, and Foley Audio cues">⏱️ Build Beat-by-Beat Prompt</button>
               <button type="button" class="btn btn--ghost" id="bV2ReloadVideos">↻ Reload Clips</button>
             </div>
+            <div id="v2BeatPromptWrap" style="display:none;margin-top:8px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <label class="f" for="v2BeatPromptOut" style="margin:0;color:#6ee7b7">⏱️ Timed Beat-by-Beat Motion Prompt (0.0–Xs + Essential Sequence + Audio)</label>
+                <button type="button" class="btn btn--ghost" id="bV2BeatPromptCopy" style="padding:2px 8px;font-size:11px">📋 Copy Prompt</button>
+              </div>
+              <textarea id="v2BeatPromptOut" rows="7" style="width:100%;background:#0a0d14;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px;font-family:var(--font-mono);font-size:11px"></textarea>
+            </div>
             <div id="v2LocalVideoStatus" style="font-size:var(--text-xs);color:#34d399;margin-top:6px" aria-live="polite"></div>
+          </div>
+
+          <!-- Two-Pass "2D Meets Realism" Video Prompt Exporter (Seedance 2.5 / Wan / Kling) -->
+          <div class="direct-story-card" id="v2HybridVideoCard" style="margin-bottom:var(--space-3);border-color:rgba(245,158,11,0.38)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <h3 style="margin:0;font-size:var(--text-base);color:#fde68a">🎭 Two-Pass "2D Meets Realism" Video Prompts (Pass 1 Real Plate + Pass 2 Bring 2D Cast In)</h3>
+              <button type="button" class="btn btn--secondary" id="bV2HybridPromptsGen" style="padding:5px 12px;font-size:var(--text-xs)">📋 Generate Two-Pass Prompts</button>
+            </div>
+            <div style="display:grid;grid-template-columns:180px 1fr;gap:8px;margin-bottom:8px">
+              <div>
+                <label class="f" for="v2HybridVidScene">Scene</label>
+                <input type="text" id="v2HybridVidScene" placeholder="S001 (blank = first)" style="width:100%;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              </div>
+              <div>
+                <label class="f" for="v2HybridVidGaps">Planned Empty Spaces (where 2D characters will live)</label>
+                <input type="text" id="v2HybridVidGaps" placeholder="e.g. empty chair to my right for @bear, table foreground for @otter, open air above for @bluebird" style="width:100%;padding:6px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              </div>
+            </div>
+            <div id="v2HybridPromptsOut" style="display:none;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:10px">
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                  <label class="f" for="v2HybridP1Text" style="margin:0;color:#34d399">Pass 1: Live-Action Video with Gaps</label>
+                  <button type="button" class="btn btn--ghost" id="bV2CopyHybridP1" style="padding:2px 8px;font-size:11px">📋 Copy Pass 1</button>
+                </div>
+                <textarea id="v2HybridP1Text" rows="6" style="width:100%;background:#0a0d14;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px;font-family:var(--font-mono);font-size:11px"></textarea>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                  <label class="f" for="v2HybridP2Text" style="margin:0;color:#bae6fd">Pass 2: Lock @video1 &amp; Bring 2D Cast In (On Twos)</label>
+                  <button type="button" class="btn btn--ghost" id="bV2CopyHybridP2" style="padding:2px 8px;font-size:11px">📋 Copy Pass 2</button>
+                </div>
+                <textarea id="v2HybridP2Text" rows="6" style="width:100%;background:#0a0d14;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px;font-family:var(--font-mono);font-size:11px"></textarea>
+              </div>
+            </div>
+            <div id="v2HybridVidStatus" style="font-size:var(--text-xs);color:#94a3b8;margin-top:4px" aria-live="polite"></div>
           </div>
 
           <!-- Gemini Omni 1.2 Flash Interactive Generator & Conversational Editor -->
@@ -1560,6 +1789,70 @@
             <div id="v2TlStatus" style="font-size:var(--text-xs);color:#34d399;margin-bottom:8px" aria-live="polite"></div>
             <div id="v2TlTracks" style="display:flex;flex-direction:column;gap:8px"></div>
           </div>
+
+          <!-- Reference-Video -> Editing Style Guide Analyzer (#1) -->
+          <div class="direct-story-card" id="v2RefStyleCard" style="margin-bottom:var(--space-3);border-color:rgba(56,189,248,0.35)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <h3 style="margin:0;font-size:var(--text-base);color:#7dd3fc">🎬 Reference-Video &rarr; Editing Style Guide Analyzer</h3>
+              <span style="font-size:var(--text-xs);color:#94a3b8">Measures real cut rhythm, speech pacing &amp; color palette</span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+              <label class="btn btn--ghost" style="cursor:pointer;margin:0;padding:5px 10px;font-size:var(--text-xs)">
+                📁 Upload Reference MP4
+                <input type="file" id="v2RefVidFile" accept="video/*" style="display:none">
+              </label>
+              <input type="text" id="v2RefVidUrl" placeholder="Or paste permitted video URL (yt-dlp)…" style="flex:1;min-width:200px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              <label style="display:inline-flex;align-items:center;gap:5px;font-size:var(--text-xs);color:#cbd5e1;cursor:pointer">
+                <input type="checkbox" id="v2RefVidWhisper"> Measure speech (Whisper)
+              </label>
+              <button type="button" class="btn btn--secondary" id="bV2RefVidAnalyze" style="padding:5px 12px;font-size:var(--text-xs)">🔍 Analyze &amp; Build Style Guide</button>
+            </div>
+            <div id="v2RefVidStatus" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite"></div>
+            <div id="v2RefVidSwatches" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
+            <pre id="v2RefVidGuide" style="display:none;margin-top:8px;max-height:150px;overflow:auto;background:#0a0d14;border:1px solid #1e293b;border-radius:6px;padding:8px;font-size:11px;color:#cbd5e1;white-space:pre-wrap"></pre>
+          </div>
+
+          <!-- Deterministic 60fps Code-Drawn Animation & Title-Card Pack (#4) -->
+          <div class="direct-story-card" id="v2CodeDrawnCard" style="margin-bottom:var(--space-3);border-color:rgba(245,158,11,0.35)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <h3 style="margin:0;font-size:var(--text-base);color:#fde68a">✨ Code-Drawn Title Cards &amp; Explainers (Deterministic MP4)</h3>
+              <span style="font-size:var(--text-xs);color:#94a3b8">Zero-hallucination intros, chalkboards, blueprints, neon hooks &amp; credits</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:8px;margin-bottom:8px">
+              <div>
+                <label class="f" for="v2CdTemplate">Template Style</label>
+                <select id="v2CdTemplate" style="width:100%;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                  <option value="cinema_title_card">🎬 Cinema Title Card &amp; Chapter Opener</option>
+                  <option value="chalkboard_handdraw">🖍️ Chalkboard Doodle Reveal (HandDraw)</option>
+                  <option value="blueprint_diagram">📐 Blueprint / Line Diagram Explainer</option>
+                  <option value="golden_neon_kinetic">✨ Golden Neon Glow Kinetic Card</option>
+                  <option value="paper_cutout_credits">✂️ Storybook Paper-Cutout Credits</option>
+                  <option value="kinetic_quote_card">⚡ Kinetic Word-Pop Hook Card</option>
+                </select>
+              </div>
+              <div>
+                <label class="f" for="v2CdTitle">Main Title / Hook</label>
+                <input type="text" id="v2CdTitle" placeholder="Chapter One: Mission to Saturn" style="width:100%;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              </div>
+              <div>
+                <label class="f" for="v2CdSubtitle">Subtitle</label>
+                <input type="text" id="v2CdSubtitle" placeholder="A Pistachio's Studio Original" style="width:100%;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              </div>
+              <div>
+                <label class="f" for="v2CdAspect">Format &amp; FPS</label>
+                <select id="v2CdAspect" style="width:100%;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                  <option value="16:9">16:9 Cinema (30 fps)</option>
+                  <option value="9:16">9:16 Vertical Shorts (30 fps)</option>
+                </select>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="text" id="v2CdBullets" placeholder="Optional bullets separated by | (e.g. Lift off | Pass Mars | Reach Titan)" style="flex:1;min-width:220px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              <button type="button" class="btn btn--primary" id="bV2CdRender" style="padding:6px 14px;font-size:var(--text-xs)">🎬 Render Code-Drawn MP4</button>
+            </div>
+            <div id="v2CdStatus" style="font-size:var(--text-xs);color:#34d399;margin-top:6px" aria-live="polite"></div>
+            <div id="v2CdPreview" style="margin-top:8px"></div>
+          </div>
         </div>
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Polish</button>
@@ -1603,10 +1896,18 @@
           </div>
           <div class="direct-story-card" style="margin-top:var(--space-3)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-              <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-xs);color:#cbd5e1">
-                <input type="checkbox" id="v2MixDucking" checked> Auto-duck Score &amp; Foley during spoken dialogue
-              </label>
-              <button type="button" class="btn btn--primary" id="bV2MixRender">🎚️ Mix &amp; Preview Master Audio</button>
+              <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+                <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-xs);color:#cbd5e1">
+                  <input type="checkbox" id="v2MixDucking" checked> Auto-duck Score &amp; Foley during spoken dialogue
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:var(--text-xs);color:#cbd5e1">
+                  <input type="checkbox" id="v2MixLufsNorm" checked> Master to -14 LUFS + Peak Limiter (48 kHz)
+                </label>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <button type="button" class="btn btn--ghost" id="bV2MixLufsBtn" title="Measure integrated loudness and normalize master_mix.wav to -14 LUFS">🔊 Normalize -14 LUFS</button>
+                <button type="button" class="btn btn--primary" id="bV2MixRender">🎚️ Mix &amp; Preview Master Audio</button>
+              </div>
             </div>
             <div id="v2MixPlayerWrap" style="background:#0a0d14;padding:8px 10px;border-radius:6px;font-size:var(--text-xs);color:#64748b">
               Not mixed yet — click 🎚️ Mix &amp; Preview Master Audio
@@ -1651,6 +1952,9 @@
             <label style="display:inline-flex;align-items:center;gap:6px;font-size:var(--text-xs);color:#cbd5e1;cursor:pointer">
               <input type="checkbox" id="v2ExpAutoReframe" checked> 🎯 Face-Tracked Auto-Reframe on 9:16 Shorts
             </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:var(--text-xs);color:#cbd5e1;cursor:pointer">
+              <input type="checkbox" id="v2ExpBurnCaptions"> 💬 Burn Safe-Zone Captions into MP4 (&ge; 56 px)
+            </label>
           </div>
           <div class="export-deliverables-grid">
             <div class="deliverable-card">
@@ -1673,6 +1977,33 @@
               <p class="deliverable-desc">Compiles all scenes of this book into an industry-standard Fountain screenplay file.</p>
               <button type="button" class="btn btn--secondary" id="bV2ExpFountain" style="margin-top:auto">📄 Export Fountain Screenplay</button>
             </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">📊 Film Pitch Deck (.pptx)</span>
+              <p class="deliverable-desc">Auto-builds a widescreen pitch presentation with your logline, cast turnarounds, Step 11 set plates &amp; keyframes.</p>
+              <button type="button" class="btn btn--secondary" id="bV2ExpPitchPptx" style="margin-top:auto">📊 Export Pitch Deck (.pptx)</button>
+            </div>
+            <div class="deliverable-card">
+              <span class="deliverable-title">📑 Production Breakdown (.xlsx)</span>
+              <p class="deliverable-desc">Multi-tab Excel workbook with Shot List (+ runtime SUM formula), Cast/Wardrobe tracker &amp; Set Plates status.</p>
+              <button type="button" class="btn btn--secondary" id="bV2ExpProdXlsx" style="margin-top:auto">📑 Export Breakdown (.xlsx)</button>
+            </div>
+          </div>
+
+          <!-- 2B. AUDIO-FIRST CLOCK & SAFE-ZONE CAPTIONS (REELS / SHORTS) -->
+          <div class="direct-story-card" id="v2CaptionsCard" style="margin-top:var(--space-3);border-color:rgba(168,85,247,0.35)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <h3 style="margin:0;font-size:var(--text-base);color:#d8b4fe">⏱️ Audio-First Clock &amp; Safe-Zone Captions (9:16 Reels / Shorts)</h3>
+              <button type="button" class="btn btn--secondary" id="bV2BuildCaptions" style="padding:5px 12px;font-size:var(--text-xs)">🎙️ Build Frame-Snapped Captions (.srt)</button>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+              <input type="text" id="v2CapFind" placeholder="Proofread find (e.g. Cloud)" style="flex:1;min-width:140px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              <input type="text" id="v2CapReplace" placeholder="Replace with (e.g. Claude)" style="flex:1;min-width:140px;padding:5px 8px;background:#0a0d14;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+              <button type="button" class="btn btn--ghost" id="bV2CapFix" style="padding:5px 10px;font-size:var(--text-xs)">✏️ Proofread &amp; Fix Captions</button>
+            </div>
+            <div id="v2CaptionsStatus" style="font-size:var(--text-xs);color:#94a3b8" aria-live="polite">
+              Snaps word timings to whole frames (≤ 40 ms A/V sync), enforces 1080×1920 phone safe bands (≥ 56 px), and lets you proofread names before export.
+            </div>
+            <div id="v2CaptionsPreview" style="display:none;margin-top:6px;max-height:140px;overflow-y:auto;background:#0a0d14;border:1px solid #1e293b;border-radius:6px;padding:8px;font-family:var(--font-mono);font-size:11px;color:#cbd5e1"></div>
           </div>
 
           <!-- 3. PRO TECHNICAL & NLE CONSOLE -->
@@ -2462,6 +2793,84 @@
     </div>
     <div style="margin-top:10px"><label class="f" for="pneg">Negative prompt (things to avoid; blank = the model's default)</label>
       <textarea id="pneg" rows="2" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit" placeholder="blurry, low quality, distorted, text, watermark" autocomplete="off"></textarea></div>
+
+    <!-- Reference Picture + Instant Local Image / Video Generation -->
+    <div id="pRefBox" style="margin-top:14px;padding:12px;border:1px solid #334155;border-radius:8px;background:rgba(15,23,42,0.55)">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <strong style="color:#fde68a;font-size:var(--text-sm)">📷 Reference Picture &amp; Style (Optional — Image or Video)</strong>
+        <span id="pRefLabel" class="warn" style="font-size:var(--text-xs)">Pick a cast member's reference from Step 08/10 or upload any photo.</span>
+      </div>
+      <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div style="min-width:250px;flex:1">
+          <label class="f" for="pCastRef">Cast / 3-Panel Sheet / Set Reference (add 1 or multiple for Hybrid scenes)</label>
+          <div style="display:flex;gap:6px">
+            <select id="pCastRef" style="flex:1">
+              <option value="">None (text prompt only)</option>
+            </select>
+            <button type="button" id="bPRefAdd" title="Add selected cast sheet or set to the multi-reference stack">➕ Add Ref</button>
+            <button type="button" id="bPCastRefReload" title="Reload cast sheets &amp; sets from the active book">↻</button>
+          </div>
+        </div>
+        <div style="min-width:240px;flex:1">
+          <label class="f" for="pStyleSel">Visual Style (47+ styles + custom)</label>
+          <div style="display:flex;gap:6px">
+            <select id="pStyleSel" style="flex:1;min-width:0">
+              <option value="">None (use prompt as written)</option>
+            </select>
+            <button type="button" id="bPStyleGalleryToggle" title="Browse all visual styles with animated previews">🎨 Style Gallery</button>
+          </div>
+        </div>
+        <div style="min-width:110px">
+          <label class="f" for="pRefAspect">Aspect Ratio</label>
+          <select id="pRefAspect" style="width:100%">
+            <option value="16:9" selected>16:9</option>
+            <option value="1:1">1:1</option>
+            <option value="9:16">9:16</option>
+            <option value="4:3">4:3</option>
+          </select>
+        </div>
+        <div style="min-width:95px">
+          <label class="f" for="pRefDur">Video (sec)</label>
+          <input type="number" id="pRefDur" min="2" max="12" value="4" style="width:100%">
+        </div>
+      </div>
+
+      <!-- Active Style Preview Banner (shown when a style is picked) -->
+      <div id="pStylePreviewBox" class="p-style-preview" style="display:none">
+        <img id="pStylePreviewImg" alt="Selected visual style preview">
+        <div class="p-style-preview__body">
+          <div class="p-style-preview__hdr">
+            <strong id="pStylePreviewTitle"></strong>
+            <span id="pStylePreviewCat" class="status-badge status-badge--synced" style="font-size:10px"></span>
+            <button type="button" id="bPStyleAppend" title="Append this style's keywords directly into the Prompts textarea">➕ Insert Keywords</button>
+            <button type="button" id="bPStyleClear" title="Clear selected visual style">✕ Clear Style</button>
+          </div>
+          <p id="pStylePreviewDesc"></p>
+        </div>
+      </div>
+
+      <!-- Visual Style Gallery Drawer (all 47+ built-in & custom styles with animated previews) -->
+      <div id="pStyleGalleryPanel" class="p-style-gallery" style="display:none">
+        <div class="p-style-gallery__bar">
+          <div id="pStyleCats" class="p-style-gallery__cats"></div>
+          <input type="search" id="pStyleSearch" placeholder="Search styles (e.g. claymation, anime, noir, pixel)…" autocomplete="off">
+        </div>
+        <div id="pStyleGrid" class="p-style-grid" role="radiogroup" aria-label="Single prompt visual style gallery"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px">
+        <input type="file" id="pRefFile" accept="image/*" multiple style="display:none">
+        <button type="button" id="bPRefUpload">📷 Upload Reference Picture(s)</button>
+        <button type="button" id="bPRefClear" disabled>✕ Clear All Refs</button>
+        <img id="pRefPreview" alt="Selected reference preview" style="display:none;width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #f59e0b;cursor:zoom-in">
+        <div id="pRefStack" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto">
+          <button type="button" id="bPRefGenImg" class="primary">✨ Generate Image with Reference(s)</button>
+          <button type="button" id="bPRefGenVid" class="primary">🎬 Generate Video with Reference(s)</button>
+        </div>
+      </div>
+      <div id="pRefStatus" class="warn" role="status" aria-live="polite" style="margin-top:8px"></div>
+      <div id="pRefResult" style="margin-top:10px"></div>
+    </div>
     <div style="margin-top:10px"><label class="f" for="pidea">Or give a short idea and let the AI write detailed prompts</label>
       <textarea id="pidea" rows="2" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit" placeholder="a lighthouse keeper sees something strange in the fog" autocomplete="off"></textarea>
       <div class="row" style="margin-top:6px;align-items:center;gap:10px">

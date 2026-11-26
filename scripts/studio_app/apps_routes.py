@@ -188,6 +188,34 @@ def _run_app(r: Request) -> dict[str, Any]:
         raw_inputs = {}
     if not isinstance(raw_inputs, dict):
         raise PlanError("inputs must be a JSON object")
+    raw_inputs = dict(raw_inputs)
+
+    out_dir = config.ROOT / "my_downloads" / app_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Support browser data-URI uploads & relative workspace paths (e.g. Step 08/10 cast refs) for media inputs
+    for inp in manifest.get("inputs") or []:
+        iid = str(inp.get("id") or "")
+        itype = str(inp.get("type") or "").lower()
+        val = raw_inputs.get(iid)
+        if itype in ("image", "video", "audio") and isinstance(val, str) and val.strip():
+            sval = val.strip()
+            if sval.startswith("data:") and "," in sval:
+                hdr_part, b64_part = sval.split(",", 1)
+                ext = ".png" if itype == "image" else (".mp4" if itype == "video" else ".wav")
+                if "jpeg" in hdr_part or "jpg" in hdr_part:
+                    ext = ".jpg"
+                elif "webp" in hdr_part:
+                    ext = ".webp"
+                in_dir = out_dir / "inputs"
+                in_dir.mkdir(parents=True, exist_ok=True)
+                saved_in = in_dir / f"{iid}{ext}"
+                saved_in.write_bytes(base64.b64decode(b64_part))
+                raw_inputs[iid] = str(saved_in)
+            elif not Path(sval).is_absolute():
+                cand = (config.ROOT / sval.lstrip("/")).resolve()
+                if cand.is_file():
+                    raw_inputs[iid] = str(cand)
 
     for inp in manifest.get("inputs") or []:
         iid = str(inp.get("id") or "")
@@ -201,8 +229,6 @@ def _run_app(r: Request) -> dict[str, Any]:
     except ValueError as exc:
         raise PlanError(str(exc)) from exc
 
-    out_dir = config.ROOT / "my_downloads" / app_id
-    out_dir.mkdir(parents=True, exist_ok=True)
     runner = ComfyUIRunner()
 
     def _on_progress(ev: dict[str, Any]) -> None:
@@ -222,8 +248,14 @@ def _run_app(r: Request) -> dict[str, Any]:
             },
             on_progress=_on_progress,
         )
-    except (ValueError, RuntimeError) as exc:
-        raise PlanError(str(exc)) from exc
+    except (ValueError, RuntimeError, OSError) as exc:
+        msg = str(exc)
+        if "10061" in msg or "Connection refused" in msg or "actively refused" in msg:
+            raise PlanError(
+                f"ComfyUI server is not running at {runner.base_url}. "
+                "Start your local ComfyUI server first, then click Run App again."
+            ) from exc
+        raise PlanError(msg) from exc
 
     return {
         "status": "completed",
