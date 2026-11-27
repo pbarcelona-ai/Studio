@@ -75,3 +75,13 @@ def test_static_files_served_with_types(server):
     status, hdrs, _ = server.request("GET", "/static/css/studio.css")
     assert status == 200 and hdrs["Content-Type"].startswith("text/css")
     assert server.request("GET", "/static/nope.js")[0] == 404
+
+
+def test_draggable_popups_script_and_css_wired():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    css = (WEB / "static" / "css" / "studio.css").read_text(encoding="utf-8")
+    js = (WEB / "static" / "js" / "draggable_popups.js").read_text(encoding="utf-8")
+    assert '/static/js/draggable_popups.js' in html
+    assert ".popup-drag-handle" in css and ".popup-is-moved" in css
+    for token in ("modal-overlay", "v2-kf-modal-backdrop", "DIALOG", "cmd-palette", "chatPanel", "MutationObserver"):
+        assert token in js

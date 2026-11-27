@@ -1041,6 +1041,21 @@
   }
   .modal-overlay.open .modal { transform: scale(1);
   }
+  .popup-drag-handle {
+    cursor: grab;
+    touch-action: none;
+  }
+  .popup-is-dragging,
+  .popup-is-dragging .popup-drag-handle {
+    cursor: grabbing !important;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .modal-overlay.open .modal.popup-is-moved,
+  .popup-is-moved {
+    transform: none !important;
+    transition: none !important;
+  }
   .skeleton { background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg) 50%, var(--bg-hover) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: var(--radius-sm);
   }
   .skeleton-text { height: 1rem; margin-bottom: var(--space-2);
