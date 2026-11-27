@@ -305,15 +305,55 @@ def load_keyframe_project_context(slug: str, pd: Path) -> dict[str, Any]:
                         set_images[nk] = pd / crel
                         break
 
-    # --- Continuity Props ---
+    # --- Continuity Props & Step 07 Visual Props / Dynamic Backdrops ---
     props_map: dict[str, dict[str, str]] = {}
     for pr in cb.get("props") or []:
-        if isinstance(pr, dict) and pr.get("name") and pr.get("token"):
+        if isinstance(pr, dict) and pr.get("name") and (pr.get("token") or pr.get("description")):
             pname = str(pr["name"]).strip()
-            ptok = str(pr["token"]).strip()
+            ptok = str(pr.get("token") or pr.get("description") or "").strip()
             nk = _norm_key(pname)
             if nk:
                 props_map[nk] = {"name": pname, "token": ptok}
+
+    prop_images: dict[str, dict[str, Any]] = {}
+    pb_doc = _read_json_dict(pd / "props_backdrops.json")
+    for it in pb_doc.get("items") or []:
+        if not isinstance(it, dict):
+            continue
+        iname = str(it.get("name") or "").strip()
+        if not iname:
+            continue
+        ikind = str(it.get("kind") or "prop").strip().lower()
+        iprompt = str(it.get("prompt") or "").strip()
+        nk = _norm_key(iname)
+        short_nm = re.sub(r"\s*\([^)]*\)\s*", "", iname).strip()
+        short_k = _norm_key(short_nm)
+        if iprompt and nk:
+            props_map[nk] = {"name": iname, "token": iprompt}
+            if short_k and short_k not in props_map:
+                props_map[short_k] = {"name": iname, "token": iprompt}
+        img_rel = str(it.get("image") or "").strip()
+        img_path = (pd / img_rel) if img_rel else None
+        if img_path is None or not (img_path.is_file() and img_path.stat().st_size > 100):
+            safe_id = str(it.get("id") or "").strip()
+            cand = (pd / "assets" / "props" / f"{safe_id}.png") if safe_id else None
+            img_path = cand if (cand and cand.is_file() and cand.stat().st_size > 100) else None
+        if img_path is not None:
+            entry = {"path": img_path, "name": iname, "kind": ikind, "prompt": iprompt}
+            if nk:
+                prop_images[nk] = entry
+            if short_k and short_k not in prop_images:
+                prop_images[short_k] = entry
+
+    props_assets_dir = pd / "assets" / "props"
+    if props_assets_dir.is_dir():
+        for p in sorted(props_assets_dir.glob("*.png"), key=lambda x: x.stat().st_mtime):
+            if p.stat().st_size <= 100:
+                continue
+            raw_lbl = p.stem.replace("_", " ").strip()
+            nk = _norm_key(raw_lbl)
+            if nk and nk not in prop_images:
+                prop_images[nk] = {"path": p, "name": raw_lbl.title(), "kind": "prop", "prompt": ""}
 
     return {
         "slug": slug,
@@ -331,6 +371,7 @@ def load_keyframe_project_context(slug: str, pd: Path) -> dict[str, Any]:
         "set_images": set_images,
         "set_plates_count": len(set_images),
         "props_map": props_map,
+        "prop_images": prop_images,
     }
 
 
@@ -1213,6 +1254,61 @@ def collect_render_references(
         sec_lbl = "pinned Scene Anchor" if secondary_id == anchor_ref else "previous shot"
         legend_parts.append(f"Image {len(ref_imgs)} = {sec_lbl} {secondary_id}")
 
+    # Attach matching Step 07 Visual Prop & Dynamic Backdrop plates (if rendered/imported) alongside Static Sets & Cast!
+    prop_refs_used: list[dict[str, str]] = []
+    prop_images = ctx.get("prop_images") or {}
+    if prop_images and len(ref_imgs) < max_refs:
+        tshot = target_shot or {}
+        shot_prop_blob = _norm_key(
+            " ".join(
+                [
+                    str(heading or ""),
+                    " ".join(str(x) for x in (tshot.get("props") or [])),
+                    str(tshot.get("composition") or ""),
+                    str(tshot.get("action") or ""),
+                    str(tshot.get("blocking") or ""),
+                    str(prompt or ""),
+                ]
+            )
+        )
+        matched_props: list[dict[str, Any]] = []
+        seen_prop_paths: set[Path] = set()
+        for pk, pinfo in prop_images.items():
+            if not pk or len(pk) < 3:
+                continue
+            ppath = pinfo.get("path")
+            if not isinstance(ppath, Path) or not ppath.is_file():
+                continue
+            rp = ppath.resolve()
+            if rp in seen_paths or rp in seen_prop_paths:
+                continue
+            if re.search(rf"\b{re.escape(pk)}\b", shot_prop_blob):
+                seen_prop_paths.add(rp)
+                matched_props.append(pinfo)
+        # Prefer dynamic backdrops first (e.g. Saturn, Moon, Mars), then hero props
+        matched_props.sort(key=lambda x: (0 if x.get("kind") == "backdrop" else 1, str(x.get("name") or "")))
+        for pinfo in matched_props:
+            if len(ref_imgs) >= max_refs:
+                break
+            ppath = pinfo["path"]
+            ref_imgs.append(ppath)
+            seen_paths.add(ppath.resolve())
+            pname = str(pinfo.get("name") or ppath.stem)
+            pkind = str(pinfo.get("kind") or "prop")
+            try:
+                purl = f"/file/{ctx['slug']}/{ppath.relative_to(ctx['pd']).as_posix()}"
+            except ValueError:
+                purl = ""
+            if pkind == "backdrop":
+                legend_parts.append(
+                    f"Image {len(ref_imgs)} = LOCKED STEP 07 BACKDROP ({pname}) — match EXACT celestial/sky backdrop colors, features & lighting from Image {len(ref_imgs)}"
+                )
+            else:
+                legend_parts.append(
+                    f"Image {len(ref_imgs)} = LOCKED STEP 07 PROP ({pname}) — match EXACT prop shape, materials, colors & details from Image {len(ref_imgs)}"
+                )
+            prop_refs_used.append({"name": pname, "kind": pkind, "url": purl, "file": ppath.name})
+
     ref_legend = ""
     if legend_parts:
         ref_legend = "ATTACHED VISUAL REFERENCES (STRICT IDENTITY & CONTINUITY LOCK): " + "; ".join(legend_parts) + ".\n"
@@ -1320,6 +1416,7 @@ def collect_render_references(
         "primary_ref_id": primary_ref_id,
         "char_refs_used": char_refs_used,
         "set_ref_used": set_ref_used,
+        "prop_refs_used": prop_refs_used,
         "resolved_characters": resolved_chars,
         "style_negatives": effective_negatives,
     }

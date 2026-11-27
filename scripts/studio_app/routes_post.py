@@ -5658,22 +5658,20 @@ def _render_set_view_plate(
         if is_photo:
             init_strength = float(style_strength) if style_strength is not None else 0.52
             directives.append(
-                f"REFERENCE PHOTO MATCH (Image {len(ref_imgs)}): Preserve ONLY the exact subject, structure, layout, proportions, and camera perspective shown in Image {len(ref_imgs)}. "
-                "STRICT FIDELITY: Do NOT add any new objects, eyes, faces, stickers, labels, buttons, knobs, characters, or extra details that are not present in Image 1."
+                f"Faithful rendering of the exact image in Image {len(ref_imgs)}, preserving the exact subject, shapes, colors, background, and camera framing of Image {len(ref_imgs)} unchanged."
             )
         else:
             # Real-world photo -> stylized film (e.g. 3D Pixar / 2D / claymation) conversion!
-            # Lead with the target art style FIRST so 4-step FLUX.2 Klein prioritizes complete stylization.
+            # CRITICAL: Keep the prompt 100% subject-agnostic (NO room/cabinet/window/furniture nouns and NO
+            # negative-list nouns in the positive prompt, because 4-step FLUX.2 at cfg=1.0 will draw mentioned nouns!).
             init_strength = float(style_strength) if style_strength is not None else 0.72
             directives.append(
-                f"{style_pos}. Complete stylized animated movie art conversion of Image {len(ref_imgs)} — "
-                f"re-render EVERY wall, cabinet, countertop, floor tile, appliance, prop, fabric, window, and light source from Image {len(ref_imgs)} "
-                f"entirely in {style_pos}, with simplified painterly stylized materials, soft rounded bevelled CGI shapes, smooth clean surfaces, and warm animated film lighting "
-                "(completely stylized animated film artwork, NOT a real-world photograph, NOT realistic camera photography). "
-                f"Keep the exact room layout, furniture positions, camera angle, and existing objects from Image {len(ref_imgs)}. "
-                f"STRICT FIDELITY: Do NOT add any new objects, eyes, googly eyes, faces, wall art, framed pictures, stickers, labels, buttons, knobs, extra props, characters, or creatures that are not in Image {len(ref_imgs)}."
+                f"{style_pos}. Stylized animated movie rendering of the exact image in Image {len(ref_imgs)}. "
+                f"Re-render only the exact subject, shapes, surfaces, colors, background, and composition already visible in Image {len(ref_imgs)} "
+                f"entirely in {style_pos}, with smooth stylized surfaces, soft rounded bevelled edges, and clean animated film shading. "
+                f"Keep the exact background, framing, and empty areas of Image {len(ref_imgs)} completely unchanged."
             )
-            style_neg = ", ".join(x for x in (style_neg, "raw photograph, unstyled real photo, camera snapshot, real estate photography") if x)
+            style_neg = ", ".join(x for x in (style_neg, "raw photograph, unstyled real photo, camera snapshot, added objects, extra furniture, extra props, room interior added") if x)
 
     if baseline_img is not None and (ref_img is None or baseline_img.resolve() != ref_img.resolve()):
         ref_imgs.append(baseline_img)
@@ -5701,11 +5699,8 @@ def _render_set_view_plate(
     view_heading = f"{name} — {view_lbl}" if (view_lbl and vid != "main") else name
     if ref_img is not None:
         # When converting an imported photo, convert the image AS-IS into the target art style
-        # WITHOUT following the old pre-import text prompt (desc / view_desc / lighting).
-        bits: list[str] = list(directives) + [
-            style_pos,
-            "Convert the imported image faithfully as-is; keep only what is in Image 1 with no people or characters added",
-        ]
+        # WITHOUT following the old pre-import text prompt or mentioning unrelated nouns.
+        bits: list[str] = list(directives)
     else:
         bits = list(directives) + [
             f"Wide establishing set plate of {view_heading}",
@@ -6676,12 +6671,12 @@ def _v2_character_ref_upload(r: Request):
 
         restyle_base = str(st.get("restyle_prompt") or f"Complete style transformation into {st['name']} style: {eff_pos}")
         # Convert the imported photo AS-IS into the target art style WITHOUT following the original character prompt
+        # or introducing unrelated nouns into the positive prompt.
         prompt = (
-            f"{eff_pos}. {restyle_base}. Convert Image 1 AS-IS into {st['name']} animated movie art — "
-            "preserve the exact subject, framing, pose, facial expression, hairstyle, colors, outfit, and composition already shown in Image 1, "
-            "while completely transforming the rendering medium and materials into stylized animated art "
-            "(NOT a real-world photograph, NOT realistic camera photography). "
-            "Do NOT replace the subject, pose, framing, or outfit with anything not shown in Image 1; no text or watermarks."
+            f"{eff_pos}. {restyle_base}. Stylized animated movie rendering of Image 1 AS-IS — "
+            f"re-render only the exact subject, framing, pose, expression, features, colors, clothing, and background already visible in Image 1 "
+            f"entirely in {st['name']} stylized animated art, with smooth stylized materials and clean animated film shading. "
+            "Keep the exact framing, pose, and background of Image 1 unchanged."
         )
         req_engine = str(r.body.get("engine") or "auto").strip().lower()
         model_used = _render_keyframe_local_or_gemini(
@@ -7816,6 +7811,300 @@ def _v2_blender_cast_guides(r: Request):
     except (RuntimeError, ValueError) as e:
         raise PlanError(str(e)) from e
     return {"status": "ok", **res}
+
+
+def _render_prop_or_backdrop_plate(
+    slug: str,
+    pd: Path,
+    name: str,
+    *,
+    kind: str = "prop",
+    item_id: str = "",
+    prompt_override: str = "",
+    use_ref: bool = True,
+    req_engine: str = "auto",
+    style_strength: float | None = None,
+) -> dict[str, Any]:
+    """Generate or style-convert a Step 07 Prop or Dynamic Backdrop visual plate."""
+    from studio_app import props_backdrops
+
+    safe = str(item_id or props_backdrops.safe_item_slug(name)).strip()
+    resolved_kind = props_backdrops.classify_kind(name, kind)
+    style_pos, style_neg, _style_lbl, _hybrid = _resolve_set_film_style(pd)
+
+    # Check if an imported reference photo exists for this prop/backdrop
+    cur_data = props_backdrops.load_props_backdrops(pd, slug, auto_extract=False)
+    cur_item: dict[str, Any] = {}
+    for it in cur_data.get("items") or []:
+        if str(it.get("id") or "") == safe or props_backdrops.norm_item_key(str(it.get("name") or "")) == props_backdrops.norm_item_key(name):
+            cur_item = it
+            break
+
+    ref_rel = str(cur_item.get("ref_image") or "").strip()
+    ref_img: Path | None = None
+    if use_ref and ref_rel and (pd / ref_rel).is_file() and (pd / ref_rel).stat().st_size > 64:
+        ref_img = pd / ref_rel
+
+    props_dir = pd / "assets" / "props"
+    props_dir.mkdir(parents=True, exist_ok=True)
+    out_rel = f"assets/props/{safe}.png"
+    out_png = pd / out_rel
+
+    ref_imgs: list[Path] = []
+    init_img: Path | None = None
+    init_strength = 0.0
+
+    if ref_img is not None:
+        # Convert the imported photo AS-IS into the Step 09 film art style with a strictly
+        # subject-agnostic prompt — NEVER inject old text prompts or unrelated room/object nouns!
+        ref_imgs.append(ref_img)
+        init_img = ref_img
+        init_strength = style_strength if style_strength is not None else 0.68
+        prompt = (
+            f"Stylized animated movie rendering of the exact image in Image 1: {style_pos}. "
+            "STRICT AS-IS CONVERSION: Convert ONLY what is actually present in Image 1 into this exact illustrated film style — "
+            "preserve the exact subject, silhouette, proportions, framing, surface texture, and original color palette of Image 1. "
+            "Do NOT add extra objects, surrounding rooms, walls, furniture, people, or background elements that are not in Image 1."
+        )
+        eff_neg = ", ".join(
+            x
+            for x in (
+                style_neg,
+                "photorealistic, raw photograph, DSLR photo, camera snapshot, people, characters, extra objects, clutter, added furniture, eyes, faces, stickers, decals",
+            )
+            if x
+        )
+    else:
+        item_prompt = str(prompt_override or cur_item.get("prompt") or "").strip()
+        if not item_prompt:
+            item_prompt = f"{name}"
+        if resolved_kind == "backdrop":
+            prompt = (
+                f"Wide cinematic scenic backdrop plate of {name}: {item_prompt}. "
+                f"Art style: {style_pos}. Empty scenic vista plate only, no people, no foreground characters."
+            )
+        else:
+            prompt = (
+                f"Clean hero prop design plate of {name}: {item_prompt}. "
+                f"Art style: {style_pos}. Single isolated prop only, no people, no characters, clean neutral studio backdrop."
+            )
+        eff_neg = ", ".join(
+            x
+            for x in (
+                style_neg,
+                "people, characters, person, crowd, hands, eyes, googly eyes, faces, anthropomorphic, watermark, text",
+            )
+            if x
+        )
+
+    aspect = "16:9" if resolved_kind == "backdrop" else "1:1"
+    model_used = _render_keyframe_local_or_gemini(
+        prompt,
+        out_png,
+        aspect_ratio=aspect,
+        ref_images=ref_imgs if ref_imgs else None,
+        engine=req_engine,
+        seed=-1,
+        init_strength=init_strength,
+        init_image=init_img,
+        prefer_edit=bool(ref_imgs),
+        bypass_cache=True,
+        extra_negative=eff_neg,
+    )
+
+    updated_item = props_backdrops.update_item_assets(
+        pd,
+        slug,
+        name=name,
+        kind=resolved_kind,
+        item_id=safe,
+        image_rel=out_rel,
+    )
+    return {
+        "status": "ok",
+        "item": updated_item,
+        "image_url": f"/file/{slug}/{out_rel}",
+        "converted_url": f"/file/{slug}/{out_rel}",
+        "used_ref_photo": bool(ref_img),
+        "model": model_used,
+    }
+
+
+@route("POST", "/api/v2_props_backdrops_extract")
+def _v2_props_backdrops_extract(r: Request):
+    """Step 07: Pull Props & Dynamic Backdrops from script, beats, shot list, and Continuity Book."""
+    from studio_app import props_backdrops
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("project is required")
+    pd = pdir(slug, "book")
+    return props_backdrops.extract_props_and_backdrops_from_script(
+        pd,
+        slug,
+        merge_existing=bool(r.body.get("merge_existing", True)),
+    )
+
+
+@route("POST", "/api/v2_prop_backdrop_save")
+def _v2_prop_backdrop_save(r: Request):
+    """Step 07: Add, update, or delete a Prop or Dynamic Backdrop and sync its prompt downstream."""
+    from studio_app import props_backdrops
+
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    item_id = str(r.body.get("id") or "").strip()
+    delete = bool(r.body.get("delete", False))
+    if not slug or (not name and not item_id):
+        raise PlanError("project and item name are required")
+    pd = pdir(slug, "book")
+    raw_scenes = r.body.get("scenes")
+    scenes: list[str] | None = None
+    if isinstance(raw_scenes, list):
+        scenes = [str(x).strip() for x in raw_scenes if str(x).strip()]
+    elif isinstance(raw_scenes, str):
+        scenes = [x.strip() for x in re.split(r"[,;\s]+", raw_scenes) if x.strip()]
+    return props_backdrops.save_prop_backdrop_item(
+        pd,
+        slug,
+        name=name,
+        kind=str(r.body.get("kind") or "prop").strip().lower(),
+        prompt=str(r.body.get("prompt") or "").strip(),
+        home_room=str(r.body.get("home_room") or "").strip(),
+        state=str(r.body.get("state") or "").strip(),
+        scenes=scenes,
+        item_id=item_id,
+        delete=delete,
+    )
+
+
+@route("POST", "/api/v2_prop_backdrop_render")
+def _v2_prop_backdrop_render(r: Request):
+    """Step 07: Generate a stylized Prop/Backdrop plate from its prompt or re-convert an imported photo as-is."""
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    if not slug or not name:
+        raise PlanError("project and item name are required")
+    pd = pdir(slug, "book")
+    raw_ss = r.body.get("style_strength")
+    style_strength: float | None = None
+    if raw_ss is not None and str(raw_ss).strip() != "":
+        try:
+            style_strength = max(0.25, min(0.95, float(raw_ss)))
+        except (TypeError, ValueError):
+            style_strength = None
+    return _render_prop_or_backdrop_plate(
+        slug,
+        pd,
+        name,
+        kind=str(r.body.get("kind") or "prop").strip().lower(),
+        item_id=str(r.body.get("id") or "").strip(),
+        prompt_override=str(r.body.get("prompt") or "").strip(),
+        use_ref=bool(r.body.get("use_ref", True)),
+        req_engine=str(r.body.get("engine") or "auto").strip().lower(),
+        style_strength=style_strength,
+    )
+
+
+@route("POST", "/api/v2_prop_backdrop_upload")
+def _v2_prop_backdrop_upload(r: Request):
+    """Step 07: Import a photo for a Prop or Dynamic Backdrop, convert as-is, run image-to-text, and queue bi-directional sync."""
+    from studio_app import props_backdrops, set_vision_sync, upload_validation
+
+    slug = str(r.body.get("project") or "").strip()
+    name = str(r.body.get("name") or "").strip()
+    b64 = str(r.body.get("image_base64") or "").strip()
+    if not slug or not name or not b64:
+        raise PlanError("project, item name, and image_base64 are required")
+
+    raw, detected_ext = upload_validation.decode_verified_base64(b64, kind="image", min_bytes=64)
+    ext = detected_ext if detected_ext in (".png", ".jpg", ".webp") else ".png"
+
+    pd = pdir(slug, "book")
+    kind = props_backdrops.classify_kind(name, str(r.body.get("kind") or ""))
+    safe = str(r.body.get("id") or props_backdrops.safe_item_slug(name)).strip()
+
+    refs_dir = pd / "assets" / "props" / "refs"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+    for old_ext in (".png", ".jpg", ".jpeg", ".webp"):
+        old_p = refs_dir / f"{safe}_ref{old_ext}"
+        if old_p.is_file():
+            old_p.unlink(missing_ok=True)
+    ref_rel = f"assets/props/refs/{safe}_ref{ext}"
+    (pd / ref_rel).write_bytes(raw)
+
+    item = props_backdrops.update_item_assets(
+        pd,
+        slug,
+        name=name,
+        kind=kind,
+        item_id=safe,
+        ref_rel=ref_rel,
+    )
+    out: dict[str, Any] = {
+        "status": "ok",
+        "item": item,
+        "name": name,
+        "kind": kind,
+        "ref_url": f"/file/{slug}/{ref_rel}",
+        "ref_rel": ref_rel,
+    }
+
+    if bool(r.body.get("convert_now", True)):
+        raw_ss = r.body.get("style_strength")
+        style_strength: float | None = None
+        if raw_ss is not None and str(raw_ss).strip() != "":
+            try:
+                style_strength = max(0.25, min(0.95, float(raw_ss)))
+            except (TypeError, ValueError):
+                style_strength = None
+        conv = _render_prop_or_backdrop_plate(
+            slug,
+            pd,
+            name,
+            kind=kind,
+            item_id=safe,
+            use_ref=True,
+            req_engine=str(r.body.get("engine") or "auto").strip().lower(),
+            style_strength=style_strength,
+        )
+        out["converted_url"] = conv["converted_url"]
+        out["image_url"] = conv["image_url"]
+        out["model"] = conv["model"]
+        out["item"] = conv["item"]
+
+    # Automatically run image-to-text on the imported photo to update the prop/backdrop prompt across Steps 07 & 17
+    if bool(r.body.get("auto_describe", True)):
+        try:
+            vision_sync = set_vision_sync.sync_prop_or_backdrop_from_imported_image(
+                pd,
+                slug,
+                name,
+                pd / ref_rel,
+                kind=kind,
+                item_id=safe,
+            )
+            out["vision_sync"] = vision_sync
+            if vision_sync.get("ok"):
+                out["prompt"] = vision_sync.get("prompt", "")
+        except Exception as e:
+            log.debug("Auto image-to-text on prop/backdrop import skipped for %s: %s", name, e)
+
+    # Queue bi-directional workflow sync starting at the earliest inception of this prop/backdrop in the pipeline
+    try:
+        bidir = set_vision_sync.record_import_bidirectional_sync(
+            pd,
+            slug,
+            kind=kind,
+            name=name,
+            source_step=7,
+        )
+        out["earliest_inception_step"] = bidir["earliest_inception_step"]
+        out["bidirectional_sync"] = bidir
+    except Exception as e:
+        log.debug("Bi-directional sync on prop/backdrop import skipped for %s: %s", name, e)
+
+    return out
 
 
 

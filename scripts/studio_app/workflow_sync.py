@@ -72,9 +72,9 @@ STEP_CATALOG: dict[int, dict[str, str]] = {
         "action": "Update affected Character Turnarounds in Step 10 by clicking '✨ Generate' / '↺ Re-roll', '🎨 Restyle', or '📷' upload on any character view",
     },
     11: {
-        "short": "11 Sets",
-        "title": "Locations & Environment Sets",
-        "action": "Update affected Set Plates in Step 11 by clicking '🎨 Generate / Re-convert', '📷 Import Photo', or '📌 Set Baseline' on any set card",
+        "short": "11 Static Sets",
+        "title": "Static Sets",
+        "action": "Update affected Static Set Plates in Step 11 by clicking '🎨 Generate / Re-convert', '📷 Import Photo', or '📌 Set Baseline' on any set card",
     },
     12: {
         "short": "12 Shots",

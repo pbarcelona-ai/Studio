@@ -1560,5 +1560,17 @@ def _v2_render_job_get(r: Request):
     return {"status": "ok", "job": rec}
 
 
+@route("GET", "/api/v2_props_backdrops")
+def _v2_props_backdrops_get(r: Request):
+    """Step 07: List Visual Props & Dynamic Backdrops (auto-extracted from script on first load)."""
+    from studio_app import props_backdrops
+
+    slug = str(r.q("project") or "").strip()
+    if not slug:
+        return {"status": "ok", "project": "", "items": [], "counts": {"total": 0, "props": 0, "backdrops": 0, "with_images": 0}}
+    pd = pdir(slug, "book")
+    return props_backdrops.load_props_backdrops(pd, slug, auto_extract=True)
+
+
 
 

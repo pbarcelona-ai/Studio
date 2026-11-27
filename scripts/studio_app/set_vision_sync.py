@@ -163,6 +163,85 @@ def find_earliest_set_inception(pd: Path, slug: str, set_name: str) -> int:
     return 7
 
 
+def find_earliest_prop_inception(pd: Path, slug: str, item_name: str) -> int:
+    """Find the earliest pipeline step (3, 5, 6, or 7) where a prop or dynamic backdrop first appears."""
+    import continuity_book
+
+    norm_target = _norm_loc(item_name)
+    # Strip prefixes like "space:" or "sky:" for broader script text matching
+    short_target = re.sub(r"^(?:space|sky|viewscreen|exterior)\s*[:\-]\s*", "", str(item_name or ""), flags=re.IGNORECASE).strip()
+    norm_short = _norm_loc(short_target) or norm_target
+    if not norm_short:
+        return 6 if (pd / "screenplay").is_dir() else 7
+
+    patterns = [re.compile(rf"\b{re.escape(norm_short)}\b", re.IGNORECASE)]
+    if norm_target and norm_target != norm_short:
+        patterns.append(re.compile(rf"\b{re.escape(norm_target)}\b", re.IGNORECASE))
+
+    def _matches(text: str) -> bool:
+        nt = _norm_loc(text)
+        return any(p.search(nt) for p in patterns)
+
+    # Step 03: Coverage (`readin/coverage.json`)
+    cov_path = pd / "readin" / "coverage.json"
+    if cov_path.is_file():
+        try:
+            cov = json.loads(cov_path.read_text(encoding="utf-8")) or {}
+            blob = " ".join([
+                str(cov.get("logline") or ""),
+                str(cov.get("filmable") or ""),
+                str(cov.get("premise") or ""),
+                " ".join(str(e) for e in (cov.get("key_events") or [])),
+            ])
+            if _matches(blob):
+                return 3
+        except (OSError, ValueError):
+            pass
+
+    # Step 05: Beats / Adaptation (`adaptation/adaptation.json`)
+    adapt_path = pd / "adaptation" / "adaptation.json"
+    if adapt_path.is_file():
+        try:
+            ad = json.loads(adapt_path.read_text(encoding="utf-8")) or {}
+            for sc in ad.get("scenes") or []:
+                if not isinstance(sc, dict):
+                    continue
+                blob = f"{sc.get('location') or ''} {sc.get('title') or ''} {sc.get('summary') or ''}"
+                if _matches(blob):
+                    return 5
+        except (OSError, ValueError):
+            pass
+
+    # Step 06: Screenplay (`screenplay/scene-*.json`)
+    sp_dir = pd / "screenplay"
+    has_screenplay = False
+    if sp_dir.is_dir():
+        for sp_f in sorted(sp_dir.glob("scene-*.json")):
+            has_screenplay = True
+            try:
+                sc = json.loads(sp_f.read_text(encoding="utf-8")) or {}
+                if _matches(str(sc.get("heading") or "")):
+                    return 6
+                for el in sc.get("elements") or []:
+                    if isinstance(el, dict) and _matches(str(el.get("text") or "")):
+                        return 6
+            except (OSError, ValueError):
+                continue
+
+    # If imported in Step 07 for a newly introduced prop/backdrop, still prompt upstream script review when earlier steps exist
+    if has_screenplay:
+        return 6
+    if adapt_path.is_file():
+        return 5
+    if cov_path.is_file():
+        return 3
+
+    for cb_p in (continuity_book.continuity_file(pd), pd / f"{slug}.json", pd / "continuity.json"):
+        if cb_p.is_file():
+            return 7
+    return 7
+
+
 def record_import_bidirectional_sync(
     pd: Path,
     slug: str,
@@ -174,12 +253,14 @@ def record_import_bidirectional_sync(
     """Queue a bi-directional workflow update starting at the earliest pipeline inception of `name`."""
     from studio_app import workflow_sync
 
-    earliest = (
-        find_earliest_character_inception(pd, slug, name)
-        if kind == "character"
-        else find_earliest_set_inception(pd, slug, name)
-    )
-    candidate_upstream = [3, 5, 6, 7] if kind == "character" else [3, 5, 6, 7]
+    if kind == "character":
+        earliest = find_earliest_character_inception(pd, slug, name)
+    elif kind in ("prop", "backdrop"):
+        earliest = find_earliest_prop_inception(pd, slug, name)
+    else:
+        earliest = find_earliest_set_inception(pd, slug, name)
+
+    candidate_upstream = [3, 5, 6] if source_step <= 7 else [3, 5, 6, 7]
     upstream_steps: list[int] = []
     for st in candidate_upstream:
         if earliest <= st < source_step and (st == earliest or workflow_sync.step_has_existing_artifacts(pd, slug, st)):
@@ -187,7 +268,13 @@ def record_import_bidirectional_sync(
     if earliest < source_step and earliest not in upstream_steps:
         upstream_steps.insert(0, earliest)
 
-    label = "character" if kind == "character" else "set"
+    label_map = {
+        "character": "character",
+        "prop": "prop",
+        "backdrop": "backdrop",
+        "set": "static set",
+    }
+    label = label_map.get(kind, "static set")
     summary = (
         f"Imported reference photo for {label} '{name}' (Step {source_step:02d}) — "
         f"bi-directional sync required from earliest inception (Step {earliest:02d})"
@@ -617,7 +704,7 @@ def sync_baselined_set_from_image(
                 views_path.write_text(json.dumps(vdoc, indent=2, ensure_ascii=False), encoding="utf-8")
         except (OSError, ValueError):
             pass
-    updated_steps.append("Step 11 (Locations & Sets)")
+    updated_steps.append("Step 11 (Static Sets)")
 
     # 2. Step 07 (`Continuity Book`)
     if _update_continuity_locations_normalized(pd, slug, name, new_desc, new_light):
@@ -968,4 +1055,156 @@ def sync_character_from_imported_image(
         "updated_steps": updated_steps,
         "keyframes_updated": keyframes_updated,
         "keyframes_skipped_locked": keyframes_skipped_locked,
+    }
+
+
+def describe_prop_or_backdrop_image(
+    image_path: Path,
+    item_name: str,
+    *,
+    kind: str = "prop",
+    existing_prompt: str = "",
+    timeout: float = 40.0,
+) -> dict[str, Any]:
+    """Translate an imported Step 07 prop or backdrop photo into a style-neutral visual prompt."""
+    if not (image_path.is_file() and image_path.stat().st_size > 100):
+        return {"ok": False, "engine": "", "error": "Image file not found or empty"}
+
+    is_backdrop = str(kind or "").strip().lower() == "backdrop"
+    if is_backdrop:
+        subject_guidance = (
+            f"You are a film production designer cataloging an imported reference photo for dynamic scenic backdrop '{item_name}'. "
+            "Carefully inspect the attached image and describe ONLY the actual sky, planet, moon, terrain, space vista, clouds, lighting, "
+            "and color palette visible in the image in completely style-neutral visual terms (NEVER use rendering words like 'photograph', "
+            "'photorealistic', '3D', 'Pixar', 'cartoon', or 'anime', and NEVER mention people or rooms not visible)."
+        )
+        schema_desc = (
+            "1 to 2 crisp sentences describing the exact visible scenic backdrop: celestial body or sky features, "
+            "dominant colors, surface/cloud textures, lighting direction, and atmospheric glow."
+        )
+    else:
+        subject_guidance = (
+            f"You are a film property master cataloging an imported reference photo for story prop '{item_name}'. "
+            "Carefully inspect the attached image and describe ONLY the actual physical object visible in the image — "
+            "its exact shape, state (e.g. folded/flat/open/closed), material, surface texture, colors, markings, and approximate real-world scale — "
+            "in completely style-neutral visual terms (NEVER use rendering words like 'photograph', 'photorealistic', '3D', 'Pixar', 'cartoon', or 'anime', "
+            "and NEVER invent surrounding rooms, walls, furniture, or characters)."
+        )
+        schema_desc = (
+            "1 to 2 crisp sentences describing the exact visible physical prop: object type, exact shape and folded/open state, "
+            "materials, colors, distinctive surface details, and real-world size."
+        )
+
+    prompt = (
+        f"{subject_guidance}\n"
+        "Respond ONLY with valid JSON in this exact schema:\n"
+        "{\n"
+        f'  "description": "{schema_desc}",\n'
+        '  "token": "Compact comma-separated style-neutral visual prompt under 240 characters capturing the exact visible colors, materials, shape, and state."\n'
+        "}"
+    )
+
+    parsed, engine = _call_ollama_vision_json(prompt, image_path, timeout=timeout)
+    if not parsed:
+        parsed, engine = _call_gemini_vision_json(prompt, image_path, timeout=timeout)
+
+    desc = re.sub(r"\s{2,}", " ", _STYLE_WORDS_RE.sub("", str(parsed.get("description") or ""))).strip(" ,;:-")
+    tok = re.sub(r"\s{2,}", " ", _STYLE_WORDS_RE.sub("", str(parsed.get("token") or ""))).strip(" ,;:-")[:260]
+    if desc and not tok:
+        tok = desc[:240]
+    if tok and not desc:
+        desc = tok
+
+    if not desc:
+        return {
+            "ok": False,
+            "engine": engine or "unavailable",
+            "error": "No vision model available (start Ollama with a vision model or configure GEMINI_API_KEY in Step 13).",
+            "description": existing_prompt,
+            "token": existing_prompt[:240],
+        }
+    return {
+        "ok": True,
+        "engine": engine,
+        "description": desc,
+        "token": tok,
+    }
+
+
+def sync_prop_or_backdrop_from_imported_image(
+    pd: Path,
+    slug: str,
+    item_name: str,
+    image_path: Path,
+    *,
+    kind: str = "prop",
+    item_id: str = "",
+    timeout: float = 40.0,
+) -> dict[str, Any]:
+    """Run image-to-text on an imported Step 07 prop/backdrop photo and propagate its prompt across Steps 07 and 17."""
+    from studio_app import props_backdrops
+
+    existing_doc = props_backdrops.load_props_backdrops(pd, slug, auto_extract=False)
+    old_prompt = ""
+    for it in existing_doc.get("items") or []:
+        if str(it.get("id") or "") == item_id or props_backdrops.norm_item_key(str(it.get("name") or "")) == props_backdrops.norm_item_key(item_name):
+            old_prompt = str(it.get("prompt") or "").strip()
+            break
+
+    vision = describe_prop_or_backdrop_image(
+        image_path,
+        item_name,
+        kind=kind,
+        existing_prompt=old_prompt,
+        timeout=timeout,
+    )
+    if not vision.get("ok"):
+        return {
+            "ok": False,
+            "engine": vision.get("engine") or "unavailable",
+            "error": vision.get("error") or "Vision analysis unavailable",
+            "prompt": old_prompt,
+            "updated_steps": [],
+            "keyframes_updated": 0,
+            "keyframes_skipped_locked": 0,
+        }
+
+    new_prompt = str(vision.get("description") or vision.get("token") or "").strip()
+    engine = str(vision.get("engine") or "")
+    updated_steps: list[str] = []
+
+    props_backdrops.update_item_assets(
+        pd,
+        slug,
+        name=item_name,
+        kind=kind,
+        item_id=item_id,
+        prompt=new_prompt,
+        vision_engine=engine,
+        vision_synced_from=image_path.name,
+    )
+    updated_steps.append("Step 07 (Props & Backdrops)")
+
+    sync_res = props_backdrops.sync_item_prompt_to_continuity_and_keyframes(
+        pd,
+        slug,
+        item_name,
+        new_prompt,
+        kind=kind,
+        visual_source="step07_imported_vision",
+    )
+    if sync_res.get("continuity_updated"):
+        updated_steps.append("Step 07 (Continuity Book)")
+    if sync_res.get("keyframes_updated"):
+        updated_steps.append(f"Step 17 (Storyboard Keyframes: {sync_res['keyframes_updated']} prompt(s) synced)")
+
+    return {
+        "ok": True,
+        "engine": engine,
+        "prompt": new_prompt,
+        "description": new_prompt,
+        "token": str(vision.get("token") or new_prompt[:240]),
+        "updated_steps": updated_steps,
+        "keyframes_updated": int(sync_res.get("keyframes_updated") or 0),
+        "keyframes_skipped_locked": int(sync_res.get("keyframes_skipped_locked") or 0),
     }

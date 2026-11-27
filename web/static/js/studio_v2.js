@@ -20,7 +20,7 @@
     { num: 8, id: "cast", name: "08 Cast", title: "Cast & Characters", phase: 2, phaseName: "Cast & World" },
     { num: 9, id: "look", name: "09 Style", title: "Art Direction & Style Recipe", phase: 2, phaseName: "Cast & World" },
     { num: 10, id: "lookdev", name: "10 Turnaround", title: "Look Development & Turnarounds", phase: 2, phaseName: "Cast & World" },
-    { num: 11, id: "locations", name: "11 Sets", title: "Locations & Environment Sets", phase: 2, phaseName: "Cast & World" },
+    { num: 11, id: "locations", name: "11 Static Sets", title: "Static Sets", phase: 2, phaseName: "Cast & World" },
 
     // Phase 3: Cinematography & Hardware
     { num: 12, id: "shots", name: "12 Shots", title: "Shot List & Cinematography", phase: 3, phaseName: "Camera & Compute" },
@@ -539,8 +539,8 @@
         buttonEl: $("bV2LocBuild"),
         statusEl: $("v2LocSummary"),
         badgeEl: $("v2LocBadge"),
-        title: "Extracting locations & sets from script…",
-        doneTitle: "Locations & sets extracted",
+        title: "Extracting static sets from script…",
+        doneTitle: "Static sets extracted",
         scripts: ["continuity_book.py"],
         onComplete: () => loadV2Locations(),
       };
@@ -3899,9 +3899,460 @@
       if (locksSum) locksSum.textContent = "Run Story Breakdown (Step 05) to populate per-scene locks.";
     }
 
+    // 4. Load Visual Props & Dynamic Backdrops (pulled from script with pre-populated prompts)
+    await loadV2PropsBackdrops(slug);
+
     if (badgeEl) {
       badgeEl.textContent = `✓ Rules Loaded (${slug})`;
       badgeEl.className = "status-badge status-badge--synced";
+    }
+  }
+
+  let v2PropsItems = [];
+  let v2PropsFilter = "all";
+
+  function _readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Could not read selected image file."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function renderV2PropsBackdrops(slug) {
+    const grid = $("v2PropsGrid");
+    const sumEl = $("v2PropsSummary");
+    if (!grid) return;
+    const allItems = Array.isArray(v2PropsItems) ? v2PropsItems : [];
+    const propsCount = allItems.filter(it => it.kind !== "backdrop").length;
+    const backdropsCount = allItems.filter(it => it.kind === "backdrop").length;
+    const imgCount = allItems.filter(it => it.image_url || it.ref_url).length;
+    if (sumEl) {
+      sumEl.innerHTML = allItems.length
+        ? `<strong style="color:#f8fafc">${allItems.length} item(s)</strong> (${propsCount} props · ${backdropsCount} backdrops · ${imgCount} with visuals)`
+        : `No props or backdrops pulled yet for "${slug}". Click ⚡ Pull from Script or ➕ Add Prop / Backdrop.`;
+    }
+
+    const visible = allItems.filter(it => v2PropsFilter === "all" || it.kind === v2PropsFilter);
+    grid.textContent = "";
+    if (!visible.length) {
+      const empty = document.createElement("div");
+      empty.style.cssText = "padding:12px;background:#0a0d14;border:1px dashed #334155;border-radius:8px;color:#94a3b8;font-size:12px;";
+      empty.textContent = allItems.length
+        ? `No ${v2PropsFilter === "backdrop" ? "backdrops" : "props"} match this filter. Click All or ➕ Add Prop / Backdrop.`
+        : "Click ⚡ Pull from Script to scan your screenplay, beats, and continuity book for props & dynamic backdrops.";
+      grid.appendChild(empty);
+      return;
+    }
+
+    visible.forEach(it => {
+      const isBackdrop = it.kind === "backdrop";
+      const card = document.createElement("div");
+      card.style.cssText = "background:#0a0d14;border:1px solid " + (isBackdrop ? "rgba(139,92,246,0.4)" : "rgba(56,189,248,0.3)") + ";border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;";
+
+      const hdr = document.createElement("div");
+      hdr.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;";
+      const titleWrap = document.createElement("div");
+      titleWrap.style.cssText = "display:flex;align-items:center;gap:6px;flex-wrap:wrap;";
+      const nm = document.createElement("strong");
+      nm.style.cssText = "color:#f8fafc;font-size:13px;";
+      nm.textContent = it.name || "";
+      const kindPill = document.createElement("span");
+      kindPill.style.cssText = isBackdrop
+        ? "padding:1px 7px;border-radius:999px;background:rgba(139,92,246,0.18);border:1px solid rgba(139,92,246,0.45);color:#c4b5fd;font-size:10px;font-weight:700;"
+        : "padding:1px 7px;border-radius:999px;background:rgba(56,189,248,0.16);border:1px solid rgba(56,189,248,0.4);color:#7dd3fc;font-size:10px;font-weight:700;";
+      kindPill.textContent = isBackdrop ? "🌌 BACKDROP" : "📦 PROP";
+      titleWrap.appendChild(nm);
+      titleWrap.appendChild(kindPill);
+
+      if (it.state || it.home_room) {
+        const stPill = document.createElement("span");
+        stPill.style.cssText = "padding:1px 6px;border-radius:4px;background:#1e293b;color:#cbd5e1;font-size:10px;";
+        stPill.textContent = [it.state, it.home_room].filter(Boolean).join(" · ");
+        titleWrap.appendChild(stPill);
+      }
+
+      const btnDel = document.createElement("button");
+      btnDel.type = "button";
+      btnDel.className = "btn btn--ghost";
+      btnDel.style.cssText = "padding:2px 6px;font-size:11px;color:#f87171;";
+      btnDel.textContent = "🗑️";
+      btnDel.title = `Delete ${it.name}`;
+      hdr.appendChild(titleWrap);
+      hdr.appendChild(btnDel);
+      card.appendChild(hdr);
+
+      if (Array.isArray(it.scenes) && it.scenes.length) {
+        const scRow = document.createElement("div");
+        scRow.style.cssText = "font-size:10px;color:#94a3b8;";
+        scRow.textContent = "Scenes: " + it.scenes.slice(0, 10).join(", ") + (it.scenes.length > 10 ? ` (+${it.scenes.length - 10})` : "");
+        card.appendChild(scRow);
+      }
+
+      // Visual thumbnail preview (imported photo and/or stylized film plate)
+      const mediaRow = document.createElement("div");
+      mediaRow.style.cssText = "display:flex;gap:8px;align-items:stretch;";
+      const bust = `?t=${Date.now()}`;
+      if (it.ref_url || it.image_url) {
+        if (it.ref_url) {
+          const refWrap = document.createElement("div");
+          refWrap.style.cssText = "flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;";
+          const refLbl = document.createElement("div");
+          refLbl.style.cssText = "font-size:10px;color:#94a3b8;";
+          refLbl.textContent = "📷 Imported Ref";
+          const refImg = document.createElement("img");
+          refImg.src = it.ref_url + bust;
+          refImg.alt = `${it.name} reference photo`;
+          refImg.style.cssText = "width:100%;height:110px;object-fit:cover;border-radius:6px;border:1px solid #334155;background:#070b12;";
+          refWrap.appendChild(refLbl);
+          refWrap.appendChild(refImg);
+          mediaRow.appendChild(refWrap);
+        }
+        if (it.image_url) {
+          const pltWrap = document.createElement("div");
+          pltWrap.style.cssText = "flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;";
+          const pltLbl = document.createElement("div");
+          pltLbl.style.cssText = "font-size:10px;color:#34d399;font-weight:600;";
+          pltLbl.textContent = "🎨 Film Style Plate";
+          const pltImg = document.createElement("img");
+          pltImg.src = it.image_url + bust;
+          pltImg.alt = `${it.name} stylized visual plate`;
+          pltImg.style.cssText = "width:100%;height:110px;object-fit:cover;border-radius:6px;border:1px solid rgba(52,211,153,0.45);background:#070b12;";
+          pltWrap.appendChild(pltLbl);
+          pltWrap.appendChild(pltImg);
+          mediaRow.appendChild(pltWrap);
+        }
+      } else {
+        const ph = document.createElement("div");
+        ph.style.cssText = "width:100%;height:74px;border-radius:6px;border:1px dashed #334155;background:#070b12;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:11px;text-align:center;padding:8px;";
+        ph.textContent = "Ready to generate from prompt or import a reference photo";
+        mediaRow.appendChild(ph);
+      }
+      card.appendChild(mediaRow);
+
+      // Editable pre-populated prompt
+      const promptTa = document.createElement("textarea");
+      promptTa.rows = 3;
+      promptTa.value = it.prompt || "";
+      promptTa.setAttribute("aria-label", `Visual prompt for ${it.name}`);
+      promptTa.placeholder = `Visual generation prompt for ${it.name}…`;
+      promptTa.style.cssText = "width:100%;padding:6px 8px;background:#141b27;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit;font-size:11px;";
+      card.appendChild(promptTa);
+
+      // Action buttons
+      const actions = document.createElement("div");
+      actions.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;";
+
+      const btnSave = document.createElement("button");
+      btnSave.type = "button";
+      btnSave.className = "btn btn--secondary";
+      btnSave.style.cssText = "padding:4px 8px;font-size:11px;";
+      btnSave.textContent = "💾 Save Prompt";
+
+      const btnGen = document.createElement("button");
+      btnGen.type = "button";
+      btnGen.className = "btn btn--primary";
+      btnGen.style.cssText = "padding:4px 8px;font-size:11px;";
+      btnGen.textContent = "✨ Generate";
+
+      const btnImportConv = document.createElement("button");
+      btnImportConv.type = "button";
+      btnImportConv.className = "btn btn--secondary";
+      btnImportConv.style.cssText = "padding:4px 8px;font-size:11px;border-color:rgba(56,189,248,0.5);color:#bae6fd;";
+      btnImportConv.textContent = "📷 Import & Convert";
+      btnImportConv.title = "Import a photo, convert it AS-IS to the Step 09 style, run image-to-text to update prompts, and trigger bi-directional sync";
+
+      const btnImportOnly = document.createElement("button");
+      btnImportOnly.type = "button";
+      btnImportOnly.className = "btn btn--ghost";
+      btnImportOnly.style.cssText = "padding:4px 8px;font-size:11px;";
+      btnImportOnly.textContent = "📥 Import Only";
+
+      const fileInp = document.createElement("input");
+      fileInp.type = "file";
+      fileInp.accept = "image/png,image/jpeg,image/webp";
+      fileInp.style.display = "none";
+      let pendingConvertNow = true;
+
+      const msg = document.createElement("div");
+      msg.style.cssText = "font-size:11px;color:#94a3b8;min-height:14px;";
+      if (it.vision_engine) {
+        msg.textContent = `✓ Prompt synced from photo (${it.vision_engine})`;
+        msg.style.color = "#34d399";
+      }
+
+      btnSave.addEventListener("click", async () => {
+        btnSave.disabled = true;
+        msg.style.color = "#fbbf24";
+        msg.textContent = "Saving prompt & syncing…";
+        try {
+          const r = await callApi("/api/v2_prop_backdrop_save", {
+            project: slug,
+            id: it.id,
+            name: it.name,
+            kind: it.kind,
+            prompt: promptTa.value.trim(),
+            home_room: it.home_room || "",
+            state: it.state || "",
+            scenes: it.scenes || [],
+          });
+          if (r && Array.isArray(r.items)) v2PropsItems = r.items;
+          const kfN = (r && r.sync && r.sync.keyframes_updated) || 0;
+          msg.style.color = "#34d399";
+          msg.textContent = kfN ? `✓ Saved & updated ${kfN} Step 17 prompt(s).` : "✓ Saved to Step 07 & Continuity Book.";
+        } catch (err) {
+          msg.style.color = "#f87171";
+          msg.textContent = "Save failed: " + (err.message || err);
+        } finally {
+          btnSave.disabled = false;
+        }
+      });
+
+      btnGen.addEventListener("click", async () => {
+        btnGen.disabled = true;
+        msg.style.color = "#fbbf24";
+        msg.textContent = `Generating ${it.name} in film style…`;
+        try {
+          const r = await callApi("/api/v2_prop_backdrop_render", {
+            project: slug,
+            id: it.id,
+            name: it.name,
+            kind: it.kind,
+            prompt: promptTa.value.trim(),
+            use_ref: false,
+          });
+          msg.style.color = "#34d399";
+          msg.textContent = `✓ Generated via ${(r && r.model) || "local renderer"}.`;
+          await loadV2PropsBackdrops(slug);
+        } catch (err) {
+          msg.style.color = "#f87171";
+          msg.textContent = "Generate failed: " + (err.message || err);
+          btnGen.disabled = false;
+        }
+      });
+
+      btnImportConv.addEventListener("click", () => {
+        pendingConvertNow = true;
+        fileInp.value = "";
+        fileInp.click();
+      });
+      btnImportOnly.addEventListener("click", () => {
+        pendingConvertNow = false;
+        fileInp.value = "";
+        fileInp.click();
+      });
+
+      fileInp.addEventListener("change", async () => {
+        const f = fileInp.files && fileInp.files[0];
+        if (!f) return;
+        btnImportConv.disabled = true;
+        btnImportOnly.disabled = true;
+        msg.style.color = "#fbbf24";
+        msg.textContent = pendingConvertNow
+          ? "Importing photo, converting as-is, running image-to-text & bi-directional sync…"
+          : "Importing photo, running image-to-text & bi-directional sync…";
+        try {
+          const dataUrl = await _readFileAsDataUrl(f);
+          const r = await callApi("/api/v2_prop_backdrop_upload", {
+            project: slug,
+            id: it.id,
+            name: it.name,
+            kind: it.kind,
+            image_base64: dataUrl,
+            convert_now: pendingConvertNow,
+            auto_describe: true,
+          });
+          await loadV2PropsBackdrops(slug);
+          if (typeof loadV2WorkflowSync === "function") {
+            await loadV2WorkflowSync(slug);
+          }
+          const earliest = r && r.earliest_inception_step ? `Step ${String(r.earliest_inception_step).padStart(2, "0")}` : "earlier step";
+          const visOk = r && r.vision_sync && r.vision_sync.ok;
+          const statusNote = visOk
+            ? `✓ Imported, prompt updated via vision, bi-directional update queued from ${earliest}.`
+            : `✓ Imported & bi-directional update queued from ${earliest}.`;
+          const sEl = $("v2PropsSummary");
+          if (sEl) sEl.innerHTML += ` · <span style="color:#34d399">${statusNote}</span>`;
+        } catch (err) {
+          msg.style.color = "#f87171";
+          msg.textContent = "Import failed: " + (err.message || err);
+          btnImportConv.disabled = false;
+          btnImportOnly.disabled = false;
+        }
+      });
+
+      btnDel.addEventListener("click", async () => {
+        btnDel.disabled = true;
+        try {
+          const r = await callApi("/api/v2_prop_backdrop_save", {
+            project: slug,
+            id: it.id,
+            name: it.name,
+            delete: true,
+          });
+          v2PropsItems = (r && Array.isArray(r.items)) ? r.items : [];
+          renderV2PropsBackdrops(slug);
+        } catch (err) {
+          msg.style.color = "#f87171";
+          msg.textContent = "Delete failed: " + (err.message || err);
+          btnDel.disabled = false;
+        }
+      });
+
+      actions.appendChild(btnSave);
+      actions.appendChild(btnGen);
+      if (it.ref_url) {
+        const btnReconv = document.createElement("button");
+        btnReconv.type = "button";
+        btnReconv.className = "btn btn--ghost";
+        btnReconv.style.cssText = "padding:4px 8px;font-size:11px;color:#34d399;";
+        btnReconv.textContent = "🎨 Re-convert Ref";
+        btnReconv.addEventListener("click", async () => {
+          btnReconv.disabled = true;
+          msg.style.color = "#fbbf24";
+          msg.textContent = "Re-converting imported ref photo as-is…";
+          try {
+            await callApi("/api/v2_prop_backdrop_render", {
+              project: slug,
+              id: it.id,
+              name: it.name,
+              kind: it.kind,
+              use_ref: true,
+            });
+            await loadV2PropsBackdrops(slug);
+          } catch (err) {
+            msg.style.color = "#f87171";
+            msg.textContent = "Re-convert failed: " + (err.message || err);
+            btnReconv.disabled = false;
+          }
+        });
+        actions.appendChild(btnReconv);
+      }
+      actions.appendChild(btnImportConv);
+      actions.appendChild(btnImportOnly);
+      actions.appendChild(fileInp);
+      card.appendChild(actions);
+      card.appendChild(msg);
+      grid.appendChild(card);
+    });
+  }
+
+  async function loadV2PropsBackdrops(slugArg) {
+    const selProj = $("proj");
+    const slug = slugArg || (selProj && selProj.value) || activeProject || "";
+    const sumEl = $("v2PropsSummary");
+    const grid = $("v2PropsGrid");
+    if (!grid) return;
+    if (!slug) {
+      v2PropsItems = [];
+      grid.textContent = "";
+      if (sumEl) sumEl.textContent = "Pick a book in Step 01 first.";
+      return;
+    }
+    try {
+      const data = await callApi(`/api/v2_props_backdrops?project=${encodeURIComponent(slug)}`);
+      v2PropsItems = (data && Array.isArray(data.items)) ? data.items : [];
+      renderV2PropsBackdrops(slug);
+    } catch (err) {
+      if (sumEl) sumEl.textContent = "Could not load props & backdrops: " + (err.message || err);
+    }
+  }
+
+  function initV2PropsBackdrops() {
+    const btnExtract = $("bV2PropsExtract");
+    const btnAddToggle = $("bV2PropsAddToggle");
+    const addForm = $("v2PropsAddForm");
+    const btnAddSave = $("bV2PropsAddSave");
+    const btnAddCancel = $("bV2PropsAddCancel");
+    const addMsg = $("v2PropsAddMsg");
+
+    document.querySelectorAll(".v2-pb-filter").forEach(btn => {
+      btn.addEventListener("click", () => {
+        v2PropsFilter = btn.dataset.pbFilter || "all";
+        document.querySelectorAll(".v2-pb-filter").forEach(b => {
+          const active = b === btn;
+          b.classList.toggle("active", active);
+          b.classList.toggle("btn--secondary", active);
+          b.classList.toggle("btn--ghost", !active);
+        });
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        renderV2PropsBackdrops(slug);
+      });
+    });
+
+    if (btnExtract) {
+      btnExtract.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        btnExtract.disabled = true;
+        const sumEl = $("v2PropsSummary");
+        if (sumEl) sumEl.textContent = `Scanning "${slug}" script, beats & continuity book for props & backdrops…`;
+        try {
+          const data = await callApi("/api/v2_props_backdrops_extract", { project: slug, merge_existing: true });
+          v2PropsItems = (data && Array.isArray(data.items)) ? data.items : [];
+          renderV2PropsBackdrops(slug);
+        } catch (err) {
+          if (sumEl) sumEl.textContent = "Pull failed: " + (err.message || err);
+        } finally {
+          btnExtract.disabled = false;
+        }
+      });
+    }
+
+    const setAddOpen = (open) => {
+      if (!addForm) return;
+      addForm.classList.toggle("hidden", !open);
+      addForm.style.display = open ? "flex" : "none";
+    };
+
+    if (btnAddToggle) {
+      btnAddToggle.addEventListener("click", () => {
+        const open = addForm && addForm.classList.contains("hidden");
+        setAddOpen(open);
+      });
+    }
+    if (btnAddCancel) btnAddCancel.addEventListener("click", () => setAddOpen(false));
+
+    if (btnAddSave) {
+      btnAddSave.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or save a book in Step 01 first."); return; }
+        const nameEl = $("v2PropsAddName");
+        const kindEl = $("v2PropsAddKind");
+        const stateEl = $("v2PropsAddState");
+        const promptEl = $("v2PropsAddPrompt");
+        const nm = (nameEl && nameEl.value || "").trim();
+        if (!nm) {
+          if (addMsg) addMsg.textContent = "Enter a prop or backdrop name first.";
+          return;
+        }
+        btnAddSave.disabled = true;
+        if (addMsg) addMsg.textContent = "Saving…";
+        try {
+          const r = await callApi("/api/v2_prop_backdrop_save", {
+            project: slug,
+            name: nm,
+            kind: (kindEl && kindEl.value) || "prop",
+            state: (stateEl && stateEl.value || "").trim(),
+            prompt: (promptEl && promptEl.value || "").trim(),
+          });
+          v2PropsItems = (r && Array.isArray(r.items)) ? r.items : [];
+          renderV2PropsBackdrops(slug);
+          if (nameEl) nameEl.value = "";
+          if (stateEl) stateEl.value = "";
+          if (promptEl) promptEl.value = "";
+          if (addMsg) addMsg.textContent = "";
+          setAddOpen(false);
+        } catch (err) {
+          if (addMsg) addMsg.textContent = "Error: " + (err.message || err);
+        } finally {
+          btnAddSave.disabled = false;
+        }
+      });
     }
   }
 
@@ -4082,6 +4533,8 @@
         }
       });
     }
+
+    initV2PropsBackdrops();
 
     const selProj = $("proj");
     if (selProj) {
@@ -5638,7 +6091,7 @@
       return;
     }
 
-    if (summaryEl) summaryEl.textContent = `Loading all locations & sets for "${slug}"…`;
+    if (summaryEl) summaryEl.textContent = `Loading all static sets for "${slug}"…`;
     if (badgeEl) {
       badgeEl.textContent = "Loading…";
       badgeEl.className = "status-badge status-badge--working";
@@ -6440,7 +6893,7 @@
       btnDelete.addEventListener("click", async () => {
         const ok = await showInstallApprovalModal(
           `Delete Set ${setNum}: "${loc.name}"?`,
-          `This removes Set ${setNum} ("${loc.name}") from Step 11 (Locations & Sets)` +
+          `This removes Set ${setNum} ("${loc.name}") from Step 11 (Static Sets)` +
             (loc.inContinuity ? " and from the Continuity Book (Step 07)" : "") +
             `, and automatically renumbers the remaining sets.\n\nClick OK to delete, or Cancel to keep it.`
         );

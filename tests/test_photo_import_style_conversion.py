@@ -168,9 +168,12 @@ def test_set_import_converts_as_is_without_old_prompt_and_updates_prompt_via_vis
 
     assert res["status"] == "ok"
     assert len(captured_prompts) == 1
-    # Must convert image AS-IS without injecting the original pre-import prompt
+    # Must convert image AS-IS without injecting the original pre-import prompt OR unrelated room/kitchen nouns
     assert "OLD_YELLOW_WALLS_NEVER_USE" not in captured_prompts[0]
     assert "OLD_NEON_LIGHTING" not in captured_prompts[0]
+    low_prompt = captured_prompts[0].lower()
+    for forbidden_noun in ("cabinet", "countertop", "appliance", "floor tile", "window", "furniture", "googly", "stickers"):
+        assert forbidden_noun not in low_prompt, f"Subject-agnostic style prompt must not inject '{forbidden_noun}'"
     # Image-to-text automatically updated sets_custom.json and Continuity Book!
     assert res["vision_sync"]["ok"] is True
     assert "Sage green kitchen" in res["description"]

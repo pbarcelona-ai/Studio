@@ -211,7 +211,7 @@
           <button type="button" class="step-pill" data-step="8" title="Step 08: Cast & Characters">08 Cast</button>
           <button type="button" class="step-pill" data-step="9" title="Step 09: Art Direction & Style">09 Style</button>
           <button type="button" class="step-pill" data-step="10" title="Step 10: Look Development & Turnarounds">10 Turnaround</button>
-          <button type="button" class="step-pill" data-step="11" title="Step 11: Locations & Sets">11 Sets</button>
+          <button type="button" class="step-pill" data-step="11" title="Step 11: Static Sets">11 Static Sets</button>
         </div>
       </div>
       <div class="phase-group" data-phase="3">
@@ -755,11 +755,62 @@
             <div id="v2ContBookView" style="margin-top:8px;display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto"></div>
           </div>
 
+          <!-- 1. Visual Props & Dynamic Backdrops (Pulled from Script) -->
+          <div class="direct-story-card" style="margin-bottom:var(--space-3);border-color:rgba(56,189,248,0.35)">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div>
+                <h3 style="margin:0;font-size:var(--text-base);color:#38bdf8">1. Visual Props &amp; Dynamic Backdrops (Pulled from Script)</h3>
+                <div id="v2PropsSummary" style="font-size:var(--text-xs);color:#94a3b8;margin-top:2px">Loading props &amp; backdrops from script…</div>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <div style="display:flex;gap:4px" role="group" aria-label="Filter props and backdrops">
+                  <button type="button" class="btn btn--secondary v2-pb-filter active" data-pb-filter="all" style="padding:4px 10px;font-size:var(--text-xs)">All</button>
+                  <button type="button" class="btn btn--ghost v2-pb-filter" data-pb-filter="prop" style="padding:4px 10px;font-size:var(--text-xs)">📦 Props</button>
+                  <button type="button" class="btn btn--ghost v2-pb-filter" data-pb-filter="backdrop" style="padding:4px 10px;font-size:var(--text-xs)">🌌 Backdrops</button>
+                </div>
+                <button type="button" class="btn btn--primary" id="bV2PropsExtract" style="padding:6px 12px;font-size:var(--text-xs)">⚡ Pull from Script</button>
+                <button type="button" class="btn btn--secondary" id="bV2PropsAddToggle" style="padding:6px 12px;font-size:var(--text-xs)">➕ Add Prop / Backdrop</button>
+              </div>
+            </div>
+            <p style="margin:6px 0 0;font-size:11px;color:#94a3b8">
+              Dynamic items that move in and out of your Step 11 Static Sets — hero/hand props (e.g. cardboard box, toybox, dog bowl) and changing viewscreen/sky backdrops (e.g. Moon, Mars, Saturn, Titan). Importing a photo converts it <strong>as-is</strong>, updates its prompt via image-to-text, and triggers a bi-directional update from its earliest script inception.
+            </p>
+            <div id="v2PropsAddForm" class="hidden" style="margin-top:10px;padding:10px;background:#0a0d14;border:1px solid #334155;border-radius:8px;display:none;flex-direction:column;gap:8px">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:8px">
+                <div>
+                  <label class="f" for="v2PropsAddName">Prop or Backdrop Name</label>
+                  <input id="v2PropsAddName" type="text" placeholder="e.g. Wooden Toybox or Saturn &amp; Rings" style="width:100%;padding:6px 8px;background:#141b27;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                </div>
+                <div>
+                  <label class="f" for="v2PropsAddKind">Classification</label>
+                  <select id="v2PropsAddKind" style="width:100%;padding:6px 8px;background:#141b27;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                    <option value="prop">📦 Prop (object / furniture / hand prop)</option>
+                    <option value="backdrop">🌌 Backdrop (planet / fly-by / sky / viewscreen)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="f" for="v2PropsAddState">State / Home Room (optional)</label>
+                  <input id="v2PropsAddState" type="text" placeholder="e.g. Folded Flat, or Living Room" style="width:100%;padding:6px 8px;background:#141b27;color:#f8fafc;border:1px solid #334155;border-radius:6px;font-size:var(--text-xs)">
+                </div>
+              </div>
+              <div>
+                <label class="f" for="v2PropsAddPrompt">Visual Generation Prompt</label>
+                <textarea id="v2PropsAddPrompt" rows="2" placeholder="Leave blank to auto-generate a style-neutral visual prompt from the name…" style="width:100%;padding:6px 8px;background:#141b27;color:#f8fafc;border:1px solid #334155;border-radius:6px;font:inherit;font-size:var(--text-xs)"></textarea>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button type="button" class="btn btn--primary" id="bV2PropsAddSave" style="padding:5px 12px;font-size:var(--text-xs)">💾 Save Item</button>
+                <button type="button" class="btn btn--ghost" id="bV2PropsAddCancel" style="padding:5px 10px;font-size:var(--text-xs)">Cancel</button>
+                <span id="v2PropsAddMsg" style="font-size:11px;color:#94a3b8" aria-live="polite"></span>
+              </div>
+            </div>
+            <div id="v2PropsGrid" style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill, minmax(310px, 1fr));gap:10px;max-height:620px;overflow-y:auto"></div>
+          </div>
+
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:var(--space-3)">
-            <!-- 1. Editable World, Wardrobe & Prop Continuity Rules -->
+            <!-- 2. Editable World, Wardrobe & Prop Continuity Rules -->
             <div class="direct-story-card">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-                <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">1. Wardrobe, Props &amp; World Rules</h3>
+                <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">2. Wardrobe, Props &amp; World Rules</h3>
               </div>
               <p style="margin:0;font-size:var(--text-xs);color:#94a3b8">Rules saved here are enforced by the crew across every scene (costumes, key props, historical era, physics, tone).</p>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -774,9 +825,9 @@
               </div>
             </div>
 
-            <!-- 2. Editable Global Lighting, Palette & Visual Continuity -->
+            <!-- 3. Editable Global Lighting, Palette & Visual Continuity -->
             <div class="direct-story-card">
-              <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">2. Lighting, Palette &amp; Visual Continuity</h3>
+              <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">3. Lighting, Palette &amp; Visual Continuity</h3>
               <p style="margin:0;font-size:var(--text-xs);color:#94a3b8">Global positive and negative visual directives applied automatically to every keyframe and video shot.</p>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
                 <button type="button" class="btn btn--ghost v2-light-preset" data-pos="warm golden hour practical lighting, cinematic anamorphic rim light, rich shadow depth" style="padding:3px 8px;font-size:var(--text-xs)">☀️ Golden Hour</button>
@@ -795,13 +846,13 @@
             </div>
           </div>
 
-          <!-- 3. Per-Scene Cast & Location Continuity Locks -->
+          <!-- 4. Per-Scene Cast & Static Set Continuity Locks -->
           <div class="direct-story-card" style="margin-top:var(--space-3)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-              <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">3. Scene-by-Scene Continuity Locks</h3>
+              <h3 style="margin:0;font-size:var(--text-base);color:#f59e0b">4. Scene-by-Scene Continuity Locks</h3>
               <span id="v2ContLocksSummary" style="font-size:var(--text-xs);color:#94a3b8">Loading locks…</span>
             </div>
-            <div style="font-size:11px;color:#94a3b8;margin:4px 0 8px">Click any scene below to lock a scene-specific costume/appearance description or pick a Step 10 character / Step 11 set reference image.</div>
+            <div style="font-size:11px;color:#94a3b8;margin:4px 0 8px">Click any scene below to lock a scene-specific costume/appearance description or pick a Step 10 character / Step 11 static set reference image.</div>
             <div id="v2ContLocksList" style="display:flex;flex-direction:column;gap:8px;max-height:540px;overflow-y:auto;font-size:var(--text-xs);color:#cbd5e1"></div>
           </div>
         </div>
@@ -1106,16 +1157,16 @@
         </div>
         <div class="step-zone-dock">
           <button type="button" class="btn-dock-redo btn-step-prev">⬅ Back to Style</button>
-          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Locations & Sets ➔</button>
+          <button type="button" class="btn-dock-next btn-step-next">Approve & Next: Static Sets ➔</button>
         </div>
       </section>
 
-      <!-- STEP 11: LOCATIONS & SETS -->
+      <!-- STEP 11: STATIC SETS -->
       <section class="step-panel" id="panel-step-11" data-step="11" aria-labelledby="step11Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step11Title">Step 11: Locations &amp; Sets</h2>
-            <p class="step-goal">Review, edit, or add every location and set in your story so backgrounds and lighting stay consistent across cuts.</p>
+            <h2 id="step11Title">Step 11: Static Sets</h2>
+            <p class="step-goal">Review, edit, or add every static set (fixed rooms &amp; permanent environments) in your story so backgrounds and lighting stay consistent across cuts. Dynamic props &amp; backdrops live in Step 07.</p>
           </div>
           <span class="status-badge status-badge--synced" id="v2LocBadge">Loading Sets…</span>
         </div>
@@ -1123,10 +1174,10 @@
           ✨ <strong>Autopilot Pick:</strong> Continuity Set Keycards &amp; Spatial Environment Locking
         </div>
         <div class="step-zone-workspace">
-          <!-- Locations Toolbar -->
+          <!-- Static Sets Toolbar -->
           <div class="direct-story-card" style="margin-bottom:var(--space-3)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-              <div id="v2LocSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading locations &amp; sets for this book…</div>
+              <div id="v2LocSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading static sets for this book…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <button type="button" class="btn btn--primary" id="bV2LocImportToggle" style="padding:5px 12px;font-size:var(--text-xs)">📷 Import Reference Photo</button>
                 <button type="button" class="btn btn--secondary" id="bV2LocBlenderAngles" style="padding:5px 12px;font-size:var(--text-xs)" title="Render 5 consistent true-scale camera angles (Wide, Reverse, Corner, OTS, Top-Down) from one 3D room in standalone Blender">🧊 Render 3D Multi-Angle Set</button>
