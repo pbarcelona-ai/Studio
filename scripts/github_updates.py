@@ -80,14 +80,17 @@ GITHUB_RELEASE_TOOLS: tuple[dict[str, Any], ...] = (
         "name": "Calibre",
         "repo": "kovidgoyal/calibre",
         "version_args": ("--version",),
-        "update_kind": "manual_release",
+        "update_kind": "github_msi_extract",
+        "asset_pattern": r"^calibre-64bit-.*\.msi$",
     },
     {
         "id": "ollama",
         "name": "Ollama",
         "repo": "ollama/ollama",
         "version_args": ("--version",),
-        "update_kind": "manual_release",
+        "update_kind": "github_installer",
+        "asset_pattern": r"^OllamaSetup\.exe$",
+        "installer_args": ("/VERYSILENT", "/NORESTART", "/SUPPRESSMSGBOXES"),
     },
     {
         "id": "trelby",
@@ -320,11 +323,58 @@ def discover_github_items(
                 "update_kind": ukind,
                 "winget_id": str(spec.get("winget_id") or ""),
                 "asset_pattern": str(spec.get("asset_pattern") or ""),
-                "can_auto_update": ukind in ("winget", "github_zip"),
+                "installer_args": list(spec.get("installer_args") or ()),
+                "can_auto_update": ukind in ("winget", "github_zip", "github_installer", "github_msi_extract"),
                 "release_url": f"https://github.com/{spec['repo']}/releases/latest",
             }
         )
     return items
+
+
+def _release_has_platform_asset(assets: list[Any], *, asset_pattern: str = "") -> bool:
+    """Return True if the GitHub release contains an installer/archive applicable to this OS/architecture."""
+    if not assets:
+        return True  # Source-only or tag-only release; cannot filter by assets
+    names = [str(a.get("name") or "") for a in assets if isinstance(a, dict) and a.get("name")]
+    if not names:
+        return True
+    if asset_pattern:
+        pat = re.compile(asset_pattern, re.IGNORECASE)
+        return any(pat.search(n) and "beta" not in n.lower() for n in names)
+    if os.name == "nt":
+        for n in names:
+            low = n.lower()
+            if any(bad in low for bad in ("linux", "darwin", "macos", ".dmg", ".appimage", ".deb", ".rpm", ".flatpak")):
+                continue
+            if "arm64" in low and "x64" not in low and "amd64" not in low and "x86_64" not in low:
+                continue
+            if any(good in low for good in ("win", ".exe", ".msi")):
+                return True
+        return False
+    return True
+
+
+def _winget_user_upgrade_applicable(winget_id: str, timeout: float = 12.0) -> bool:
+    """Verify winget actually has an applicable user-scope installer for this Windows installation."""
+    if os.name != "nt" or not winget_id:
+        return True
+    winget_exe = shutil.which("winget")
+    if not winget_exe:
+        return False
+    try:
+        proc = subprocess.run(
+            [winget_exe, "show", "--id", winget_id, "--exact", "--scope", "user", "--accept-source-agreements"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        combined = ((proc.stdout or "") + "\n" + (proc.stderr or "")).lower()
+        if "no applicable installer found" in combined or "no package found" in combined:
+            return False
+        return proc.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def _fetch_latest_github_release(repo: str, timeout: float = 10.0) -> dict[str, Any]:
@@ -361,6 +411,7 @@ def check_updates(
     prefs_path: Path | None = None,
     release_fetcher: Callable[[str], dict[str, Any]] | None = None,
     git_head_fetcher: Callable[[Path], str] | None = None,
+    winget_applicable_checker: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
     """Check all discovered GitHub-sourced items for available updates (cached for 6h unless force=True)."""
     prefs = load_prefs(prefs_path)
@@ -390,6 +441,7 @@ def check_updates(
     discovered = discover_github_items(repo_root=repo_root, prefs=prefs)
     rel_fetch = release_fetcher or _fetch_latest_github_release
     git_fetch = git_head_fetcher or _fetch_git_remote_head
+    wg_check = winget_applicable_checker or _winget_user_upgrade_applicable
 
     checked: list[dict[str, Any]] = []
     for item in discovered:
@@ -413,8 +465,16 @@ def check_updates(
                     entry["release_url"] = str(rel["html_url"])
                 if tag:
                     entry["latest_version"] = tag
-                    if entry["installed_version"] not in ("", "installed", "unknown"):
-                        entry["update_available"] = is_newer_version(str(entry["installed_version"]), tag)
+                    if entry["installed_version"] not in ("", "installed", "unknown") and is_newer_version(str(entry["installed_version"]), tag):
+                        has_asset = _release_has_platform_asset(
+                            list(rel.get("assets") or []),
+                            asset_pattern=str(entry.get("asset_pattern") or ""),
+                        )
+                        if has_asset:
+                            if entry.get("update_kind") == "winget":
+                                entry["update_available"] = bool(wg_check(str(entry.get("winget_id") or "")))
+                            else:
+                                entry["update_available"] = True
         except Exception as e:
             entry["error"] = str(e)[:180]
 
@@ -526,11 +586,23 @@ def apply_update(
             timeout=240,
         )
         if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or f"winget upgrade exited {proc.returncode}").strip()
+            low = detail.lower()
+            if "no applicable upgrade found" in low or "no applicable update found" in low or "no applicable installer found" in low:
+                prefs["last_checked_ts"] = 0.0
+                save_prefs(prefs, prefs_path)
+                return {
+                    "ok": True,
+                    "inapplicable": True,
+                    "id": item_id,
+                    "name": target["name"],
+                    "message": f"No applicable Windows upgrade for {target['name']} on this installation.",
+                }
             return {
                 "ok": False,
                 "id": item_id,
                 "release_url": target["release_url"],
-                "error": (proc.stderr or proc.stdout or f"winget upgrade exited {proc.returncode}").strip()[:400],
+                "error": detail[:400],
             }
         prefs["dismissed_versions"].pop(item_id, None)
         prefs["last_checked_ts"] = 0.0
@@ -582,6 +654,83 @@ def apply_update(
             "name": target["name"],
             "new_version": tag,
             "message": f"Updated {target['name']} to {tag or 'latest'}.",
+        }
+
+    if ukind in ("github_installer", "github_msi_extract"):
+        rel = (release_fetcher or _fetch_latest_github_release)(str(target["repo"]))
+        pat = re.compile(str(target.get("asset_pattern") or r"\.(?:exe|msi)$"), re.IGNORECASE)
+        asset = next(
+            (
+                a
+                for a in (rel.get("assets") or [])
+                if isinstance(a, dict) and pat.search(str(a.get("name") or "")) and "beta" not in str(a.get("name") or "").lower()
+            ),
+            None,
+        )
+        dl_url = str(asset.get("browser_download_url") or "") if asset else ""
+        if not asset or not dl_url.startswith(("https://github.com/", "https://objects.githubusercontent.com/")):
+            return {
+                "ok": False,
+                "id": item_id,
+                "manual": True,
+                "release_url": target["release_url"],
+                "error": f"No matching Windows installer found in latest release for {target['name']}.",
+            }
+        tag = str(rel.get("tag_name") or "").strip()
+        with tempfile.TemporaryDirectory(prefix="studio-gh-inst-") as tmp:
+            inst_path = Path(tmp) / Path(str(asset["name"])).name
+            req = urllib.request.Request(dl_url, headers={"User-Agent": "Pistachios-Studio-Updater"})
+            with urllib.request.urlopen(req, timeout=240) as resp:  # noqa: S310  verified https github.com release asset URL
+                inst_path.write_bytes(resp.read())
+
+            if ukind == "github_msi_extract":
+                # Portable MSI extraction (e.g. Calibre into .local_ai/apps/CalibrePortable)
+                cur_exe = Path(str(target["local_path"]))
+                dest_dir = cur_exe.parent
+                for anc in cur_exe.parents:
+                    if anc.name == "CalibrePortable":
+                        dest_dir = anc
+                        break
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                argv = ["msiexec.exe", "/a", str(inst_path), "/qn", f"TARGETDIR={dest_dir}"]
+                proc = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300)
+                if proc.returncode != 0:
+                    return {
+                        "ok": False,
+                        "id": item_id,
+                        "release_url": target["release_url"],
+                        "error": (proc.stderr or proc.stdout or f"MSI extract failed ({proc.returncode})").strip()[:400],
+                    }
+                if tag:
+                    (dest_dir / ".github_version").write_text(tag, encoding="utf-8")
+            else:
+                extra_args = [str(a) for a in (target.get("installer_args") or ())]
+                proc = subprocess.run(
+                    [str(inst_path), *extra_args],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                if proc.returncode != 0:
+                    return {
+                        "ok": False,
+                        "id": item_id,
+                        "release_url": target["release_url"],
+                        "error": (proc.stderr or proc.stdout or f"Installer exited with code {proc.returncode}").strip()[:400],
+                    }
+
+        if tag:
+            prefs["installed_versions"][item_id] = tag
+        prefs["dismissed_versions"].pop(item_id, None)
+        prefs["last_checked_ts"] = 0.0
+        save_prefs(prefs, prefs_path)
+        return {
+            "ok": True,
+            "id": item_id,
+            "name": target["name"],
+            "new_version": tag,
+            "message": f"Installed {target['name']} {tag or 'latest'}.",
         }
 
     return {

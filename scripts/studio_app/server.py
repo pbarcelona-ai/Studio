@@ -1,5 +1,7 @@
 """Start-up: choose a port, make the HTTP server, print the link, run until Ctrl-C."""
 import argparse
+import threading
+import time
 import webbrowser
 from http.server import ThreadingHTTPServer
 
@@ -12,6 +14,38 @@ from .log import get_logger
 from .session import SESSION
 
 log = get_logger("server")
+_ACTIVE_SERVER: ThreadingHTTPServer | None = None
+
+
+def request_shutdown(*, stop_jobs: bool = True, delay_s: float = 0.25) -> bool:
+    """Schedule clean shutdown of the active Studio HTTP server and managed child processes."""
+    srv = _ACTIVE_SERVER
+
+    def _do_shutdown() -> None:
+        time.sleep(delay_s)
+        if stop_jobs and JOB.running:
+            try:
+                JOB.stop()
+            except Exception as e:
+                log.debug("JOB.stop during shutdown: %s", e)
+        try:
+            from local_runners.comfyui_lifecycle import stop_managed_comfyui
+
+            stop_managed_comfyui()
+        except Exception as e:
+            log.debug("stop_managed_comfyui during shutdown: %s", e)
+        SESSION.remove()
+        if srv is not None:
+            try:
+                srv.shutdown()
+                srv.server_close()
+            except Exception as e:
+                log.debug("srv.shutdown failed: %s", e)
+
+    if srv is None:
+        return False
+    threading.Thread(target=_do_shutdown, daemon=True, name="studio-shutdown").start()
+    return True
 
 
 class StudioServer(ThreadingHTTPServer):
@@ -41,8 +75,10 @@ def main(argv=None):
         SESSION.remove()
         SESSION.reset()
 
+    global _ACTIVE_SERVER
     ports = ([SESSION.port] if SESSION.port else []) + list(range(a.port, a.port + 20))
     srv = make_server(ports)
+    _ACTIVE_SERVER = srv
     SESSION.save(srv.server_port)
 
     url = f"http://127.0.0.1:{srv.server_port}/?t={SESSION.token}"

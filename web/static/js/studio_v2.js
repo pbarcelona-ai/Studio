@@ -12351,8 +12351,22 @@
         return;
       }
 
+      const refreshRemainingModal = (statusText) => {
+        const remaining = ghList.querySelectorAll(".v2-gh-update-row").length;
+        if (ghBadge) ghBadge.textContent = `${remaining} update${remaining === 1 ? "" : "s"}`;
+        if (ghInlineSt && statusText) {
+          ghInlineSt.style.color = "#34d399";
+          ghInlineSt.textContent = statusText;
+        }
+        if (remaining === 0) {
+          closeGhModal();
+        }
+      };
+
       updates.forEach((it) => {
         const row = document.createElement("div");
+        row.className = "v2-gh-update-row";
+        row.dataset.ghItemId = it.id;
         row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:#0f172a;border:1px solid #334155";
 
         const info = document.createElement("div");
@@ -12377,6 +12391,13 @@
         btnUpd.addEventListener("click", async () => {
           if (!it.can_auto_update) {
             if (it.release_url) window.open(it.release_url, "_blank", "noopener");
+            if (it.latest_version) {
+              try {
+                await callApi("/api/github_updates/prefs", { dismiss_id: it.id, dismiss_version: it.latest_version });
+              } catch (_) { /* ignore */ }
+            }
+            row.remove();
+            refreshRemainingModal(`↗ Opened release page for ${it.name}.`);
             return;
           }
           btnUpd.disabled = true;
@@ -12385,9 +12406,11 @@
           try {
             const res = await callApi("/api/github_updates/apply", { id: it.id });
             if (res.ok) {
-              btnUpd.textContent = "✓ Updated";
-              if (ghMsg) { ghMsg.style.color = "#34d399"; ghMsg.textContent = res.message || `Updated ${it.name}.`; }
+              const doneMsg = res.message || `Updated ${it.name}.`;
+              if (ghMsg) { ghMsg.style.color = "#34d399"; ghMsg.textContent = doneMsg; }
+              row.remove();
               loadExtTools();
+              refreshRemainingModal(`✓ ${doneMsg}`);
             } else {
               btnUpd.disabled = false;
               btnUpd.textContent = "Retry";
@@ -12413,8 +12436,9 @@
               await callApi("/api/github_updates/prefs", { dismiss_id: it.id, dismiss_version: it.latest_version });
             }
             row.remove();
-            if (ghMsg) { ghMsg.style.color = "#94a3b8"; ghMsg.textContent = `Skipped update for ${it.name} (${it.latest_version || "latest"}).`; }
-            if (ghList && ghList.children.length === 0) closeGhModal();
+            const skipMsg = `Skipped update for ${it.name} (${it.latest_version || "latest"}).`;
+            if (ghMsg) { ghMsg.style.color = "#94a3b8"; ghMsg.textContent = skipMsg; }
+            refreshRemainingModal(skipMsg);
           } catch (err) {
             btnSkip.disabled = false;
             if (ghMsg) { ghMsg.style.color = "#f87171"; ghMsg.textContent = "Could not dismiss: " + (err.message || err); }
@@ -12483,13 +12507,22 @@
           if (ghMsg) { ghMsg.style.color = "#38bdf8"; ghMsg.textContent = `Updating ${it.name}…`; }
           try {
             const r = await callApi("/api/github_updates/apply", { id: it.id });
-            if (r.ok) okCount += 1;
+            if (r.ok) {
+              okCount += 1;
+              const rowEl = ghList && ghList.querySelector(`.v2-gh-update-row[data-gh-item-id="${it.id}"]`);
+              if (rowEl) rowEl.remove();
+            }
           } catch (_) { /* continue remaining items */ }
         }
         btnAll.disabled = false;
         btnAll.textContent = "⬇ Update All";
-        if (ghMsg) { ghMsg.style.color = "#34d399"; ghMsg.textContent = `✓ Updated ${okCount} of ${targets.length} item(s).`; }
+        const left = ghList ? ghList.querySelectorAll(".v2-gh-update-row").length : 0;
+        if (ghBadge) ghBadge.textContent = `${left} update${left === 1 ? "" : "s"}`;
+        const summaryMsg = `✓ Updated ${okCount} of ${targets.length} item(s).`;
+        if (ghMsg) { ghMsg.style.color = "#34d399"; ghMsg.textContent = summaryMsg; }
+        if (ghInlineSt) { ghInlineSt.style.color = "#34d399"; ghInlineSt.textContent = summaryMsg; }
         loadExtTools();
+        if (left === 0) closeGhModal();
       });
     }
     if ($("bV2CheckGhUpdates")) {

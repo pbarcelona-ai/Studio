@@ -18,7 +18,7 @@ import shares
 from bookkit import SLUG_RE, slugify
 from layout import project_dir as pdir     # a name -> its folder (books/, characters/ or prompts/); see layout.py
 
-from . import breakdown_routes, clips_routes, collab_routes, crew_routes, edit_routes, library_routes, media_routes, mcp_routes, pictures_routes, readin_routes, routes_get, routes_post, series_routes, setup_install, sound_routes, sources_routes, styles_routes, v1_routes  # noqa: F401  (importing them registers the routes)
+from . import breakdown_routes, clips_routes, collab_routes, crew_routes, edit_routes, library_routes, media_routes, mcp_routes, menu_routes, pictures_routes, readin_routes, routes_get, routes_post, series_routes, setup_install, sound_routes, sources_routes, styles_routes, v1_routes  # noqa: F401  (importing them registers the routes)
 from .api import ROUTES, Request, dispatch, has_route  # noqa: F401  (ROUTES kept for legacy callers/tests)
 
 OPTIONAL_ROUTE_MODULES = ("apps_routes", "compose_routes")
@@ -179,6 +179,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._watch(url)
         if url.path == "/":
             return self._index(query)
+        if url.path == "/manual":
+            return self._manual_page(query)
         if url.path.startswith("/static/"):
             return self._static(url.path)
         if url.path.startswith(("/file/", "/thumb/", "/depth/", "/download/")):
@@ -253,6 +255,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(403, "Open the link printed by studio.py (it contains the token).", "text/plain")
         page = (WEB / "index.html").read_text(encoding="utf-8").replace("__TOKEN__", SESSION.token)
         self._send(200, page, "text/html; charset=utf-8")
+
+    def _manual_page(self, query):
+        """Standalone readable HTML view of STUDIO_MANUAL.md for Help -> Manual -> Open in New Tab."""
+        if not self._host_ok() or not self._authed(query):
+            return self._send(403, "Open the link printed by studio.py (it contains the token).", "text/plain")
+        import html as _html
+
+        import project_manager
+
+        md = project_manager.load_manual_markdown()
+        body = (
+            "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+            "<title>Pistachio's Studio — User Manual</title>"
+            "<style>body{margin:0;padding:32px;background:#0a0d14;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;line-height:1.65;}"
+            "main{max-width:920px;margin:0 auto;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:28px 34px;}"
+            "pre{white-space:pre-wrap;font-family:inherit;margin:0;}</style></head>"
+            f"<body><main><pre>{_html.escape(md)}</pre></main></body></html>"
+        )
+        self._send(200, body, "text/html; charset=utf-8")
 
     def _static(self, path: str):
         """The page's own CSS/JS from web/static/ (nothing secret in them: the token is injected into index.html only)."""

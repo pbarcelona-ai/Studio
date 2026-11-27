@@ -69,6 +69,7 @@ def test_discover_and_check_github_updates_and_notification_toggle(tmp_path: Pat
         prefs_path=prefs_file,
         release_fetcher=lambda repo: {"tag_name": "3.15", "html_url": f"https://github.com/{repo}/releases/tag/3.15"},
         git_head_fetcher=lambda d: "deadbeef",
+        winget_applicable_checker=lambda wid: True,
     )
     assert res["notifications_enabled"] is True
     assert res["updates_available"] == 2
@@ -130,3 +131,114 @@ def test_apply_git_pull_update_and_routes(tmp_path: Path, monkeypatch):
     with pytest.raises(HttpError) as exc:
         mcp_routes.api_github_updates_apply(Request(body={}))
     assert exc.value.code == 400
+
+
+def test_inapplicable_winget_or_platform_updates_are_filtered_out(tmp_path: Path, monkeypatch):
+    prefs_file = tmp_path / "prefs.json"
+    fake_aud = tmp_path / "audacity-win-3.7.9-64bit" / "Audacity.exe"
+    fake_aud.parent.mkdir(parents=True)
+    fake_aud.write_text("", encoding="utf-8")
+    fake_ol = tmp_path / "ollama.exe"
+    fake_ol.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        external_tools,
+        "detect_all_tools",
+        lambda repo_root=None: {
+            "tools": [],
+            "by_id": {
+                "audacity": {"id": "audacity", "installed": True, "path": str(fake_aud)},
+                "ollama": {"id": "ollama", "installed": True, "path": str(fake_ol)},
+            },
+            "installed_count": 2,
+            "total_count": 2,
+        },
+    )
+    monkeypatch.setattr(github_updates, "_probe_cli_version", lambda exe, args: "0.40.18" if "ollama" in exe else "")
+
+    def fake_rel(repo: str) -> dict:
+        if "audacity" in repo:
+            return {
+                "tag_name": "Audacity-4.0.2",
+                "html_url": "https://github.com/audacity/audacity/releases/tag/Audacity-4.0.2",
+                "assets": [{"name": "audacity-win-4.0.2-x86_64.msi"}],
+            }
+        # Linux-only release must not notify on Windows
+        return {
+            "tag_name": "v0.40.19",
+            "html_url": "https://github.com/ollama/ollama/releases/tag/v0.40.19",
+            "assets": [{"name": "ollama-linux-amd64.tar.zst"}],
+        }
+
+    res = github_updates.check_updates(
+        force=True,
+        repo_root=tmp_path,
+        prefs_path=prefs_file,
+        release_fetcher=fake_rel,
+        winget_applicable_checker=lambda wid: False,  # winget says "No applicable installer found"
+    )
+    by_id = {it["id"]: it for it in res["items"]}
+    assert by_id["audacity"]["update_available"] is False
+    assert by_id["audacity"]["notify"] is False
+    if github_updates.os.name == "nt":
+        assert by_id["ollama"]["update_available"] is False
+    assert res["updates_available"] == 0
+
+
+def test_apply_github_installer_runs_silent_installer_for_ollama(tmp_path: Path, monkeypatch):
+    prefs_file = tmp_path / "prefs.json"
+    fake_ol = tmp_path / "ollama.exe"
+    fake_ol.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        external_tools,
+        "detect_all_tools",
+        lambda repo_root=None: {
+            "tools": [],
+            "by_id": {"ollama": {"id": "ollama", "installed": True, "path": str(fake_ol)}},
+            "installed_count": 1,
+            "total_count": 1,
+        },
+    )
+    monkeypatch.setattr(github_updates, "_probe_cli_version", lambda exe, args: "0.40.18")
+
+    class _FakeResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"MZ-fake-installer"
+
+    monkeypatch.setattr(github_updates.urllib.request, "urlopen", lambda req, timeout=240: _FakeResp())
+
+    ran_cmds: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        ran_cmds.append(list(argv))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(github_updates.subprocess, "run", fake_run)
+
+    res = github_updates.apply_update(
+        "ollama",
+        repo_root=tmp_path,
+        prefs_path=prefs_file,
+        release_fetcher=lambda repo: {
+            "tag_name": "v0.40.19",
+            "html_url": "https://github.com/ollama/ollama/releases/tag/v0.40.19",
+            "assets": [
+                {
+                    "name": "OllamaSetup.exe",
+                    "browser_download_url": "https://github.com/ollama/ollama/releases/download/v0.40.19/OllamaSetup.exe",
+                }
+            ],
+        },
+    )
+    assert res["ok"] is True
+    assert res["new_version"] == "v0.40.19"
+    assert ran_cmds and ran_cmds[0][0].endswith("OllamaSetup.exe")
+    assert "/VERYSILENT" in ran_cmds[0]
+    assert github_updates.load_prefs(prefs_file)["installed_versions"]["ollama"] == "v0.40.19"

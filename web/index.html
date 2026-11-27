@@ -127,6 +127,69 @@
       .splash-content { animation: none; }
     }
   </style>
+<nav class="studio-menubar" id="studioMenubar" role="menubar" aria-label="Studio Menu Bar">
+    <div class="mb-group">
+      <div class="mb-item" data-menu="file">
+        <button type="button" class="mb-trigger" role="menuitem" aria-haspopup="true" aria-expanded="false">File</button>
+        <div class="mb-dropdown" role="menu">
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="file:new"><span>New Project…</span><kbd>Ctrl+N</kbd></button>
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="file:open"><span>Open Project…</span><kbd>Ctrl+O</kbd></button>
+          <div class="mb-sep" role="separator"></div>
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="file:save"><span>Save</span><kbd>Ctrl+S</kbd></button>
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="file:save-as"><span>Save As…</span><kbd>Ctrl+Shift+S</kbd></button>
+          <div class="mb-sep" role="separator"></div>
+          <button type="button" class="mb-action mb-action--danger" role="menuitem" data-mb-action="file:exit"><span>Exit</span><kbd>Ctrl+Q</kbd></button>
+        </div>
+      </div>
+
+      <div class="mb-item" data-menu="edit">
+        <button type="button" class="mb-trigger" role="menuitem" aria-haspopup="true" aria-expanded="false">Edit</button>
+        <div class="mb-dropdown" role="menu">
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="edit:undo"><span>Undo</span><kbd>Ctrl+Z</kbd></button>
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="edit:redo"><span>Redo</span><kbd>Ctrl+Y</kbd></button>
+          <div class="mb-sep" role="separator"></div>
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="edit:copy"><span>Copy</span><kbd>Ctrl+C</kbd></button>
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="edit:paste"><span>Paste</span><kbd>Ctrl+V</kbd></button>
+          <div class="mb-sep" role="separator"></div>
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="edit:goto"><span>Goto Step…</span><kbd>Ctrl+G</kbd></button>
+        </div>
+      </div>
+
+      <div class="mb-item" data-menu="view">
+        <button type="button" class="mb-trigger" role="menuitem" aria-haspopup="true" aria-expanded="false">View</button>
+        <div class="mb-dropdown" role="menu">
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="view:pipeline"><span>Pipeline (22-Step Flow)</span><kbd>Ctrl+1</kbd></button>
+          <div class="mb-sep" role="separator"></div>
+          <div class="mb-subwrap">
+            <button type="button" class="mb-action mb-subtrigger" role="menuitem" aria-haspopup="true" aria-expanded="false">
+              <span>Creative Workbench</span><span class="mb-arrow" aria-hidden="true">▸</span>
+            </button>
+            <div class="mb-submenu" role="menu">
+              <button type="button" class="mb-action" role="menuitem" data-mb-action="view:wb:panel-apps"><span>🧩 ComfyUI Apps Gallery</span></button>
+              <button type="button" class="mb-action" role="menuitem" data-mb-action="view:wb:panel-compare"><span>⚖️ Canvas &amp; Compare View</span></button>
+              <button type="button" class="mb-action" role="menuitem" data-mb-action="view:wb:panel-models"><span>🧠 Models &amp; Hardware</span></button>
+              <button type="button" class="mb-action" role="menuitem" data-mb-action="view:wb:panel-prompts"><span>⚡ Single Prompts</span></button>
+              <button type="button" class="mb-action" role="menuitem" data-mb-action="view:wb:panel-library"><span>📚 Prompt Library</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mb-item" data-menu="help">
+        <button type="button" class="mb-trigger" role="menuitem" aria-haspopup="true" aria-expanded="false">Help</button>
+        <div class="mb-dropdown" role="menu">
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="help:manual"><span>Manual</span><kbd>F1</kbd></button>
+          <div class="mb-sep" role="separator"></div>
+          <button type="button" class="mb-action" role="menuitem" data-mb-action="help:about"><span>About Pistachio's Studio</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mb-right">
+      <span class="mb-project-pill" id="mbActiveProjectBadge" title="Active Project and associated Book input">📁 Project: (none)</span>
+      <span class="mb-status-msg" id="mbStatusMsg" aria-live="polite"></span>
+    </div>
+</nav>
 <header class="studio-header">
     <video class="hero-video" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
     <div class="header-brand">
@@ -3798,6 +3861,123 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
     </div>
 </div>
 
+<div class="modal-overlay" id="mbNewProjectModal" role="dialog" aria-modal="true" aria-labelledby="mbNewProjectTitle">
+    <div class="modal" style="max-width:560px;width:min(560px,calc(100vw - 32px));max-height:86vh;display:flex;flex-direction:column;">
+        <div class="modal__header">
+            <h2 class="modal__title" id="mbNewProjectTitle">📄 New Project</h2>
+            <button type="button" class="btn btn--ghost" id="bMbNewClose" aria-label="Close New Project dialog">✕</button>
+        </div>
+        <div class="modal__body mb-scroll" style="display:flex;flex-direction:column;gap:12px;">
+            <div>
+                <label class="f" for="mbNewName">Project Name</label>
+                <input type="text" id="mbNewName" placeholder="e.g. Saturn Rocket Director's Cut" autocomplete="off" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);">
+                <small style="color:#94a3b8">Create any custom project name. Studio keeps it in its own project folder and links it to your chosen book input.</small>
+            </div>
+            <div>
+                <label class="f" for="mbNewBook">Associate with Book (Input)</label>
+                <select id="mbNewBook" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);"></select>
+            </div>
+            <div>
+                <label class="f" for="mbNewStoryText">Or Paste New Story Text (optional when no book is selected)</label>
+                <textarea id="mbNewStoryText" rows="4" placeholder="Paste story text to create a new book for this project…" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font:inherit;"></textarea>
+            </div>
+            <div id="mbNewMsg" style="font-size:12px;color:#f87171;min-height:16px;" aria-live="polite"></div>
+        </div>
+        <div class="modal__footer">
+            <button type="button" class="btn btn--ghost" id="bMbNewCancel">Cancel</button>
+            <button type="button" class="btn btn--primary" id="bMbNewCreate">Create &amp; Open Project</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="mbOpenProjectModal" role="dialog" aria-modal="true" aria-labelledby="mbOpenProjectTitle">
+    <div class="modal" style="max-width:620px;width:min(620px,calc(100vw - 32px));max-height:86vh;display:flex;flex-direction:column;">
+        <div class="modal__header">
+            <h2 class="modal__title" id="mbOpenProjectTitle">📂 Open Project</h2>
+            <button type="button" class="btn btn--ghost" id="bMbOpenClose" aria-label="Close Open Project dialog">✕</button>
+        </div>
+        <div class="modal__body mb-scroll" style="display:flex;flex-direction:column;gap:10px;">
+            <input type="text" id="mbOpenFilter" placeholder="Filter projects or books…" aria-label="Filter projects" autocomplete="off" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);">
+            <div id="mbOpenList" class="mb-scroll" style="max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+            <div id="mbOpenMsg" style="font-size:12px;color:#94a3b8;min-height:16px;" aria-live="polite"></div>
+        </div>
+        <div class="modal__footer">
+            <button type="button" class="btn btn--ghost" id="bMbOpenCancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="mbSaveAsModal" role="dialog" aria-modal="true" aria-labelledby="mbSaveAsTitle">
+    <div class="modal" style="max-width:480px;width:min(480px,calc(100vw - 32px));max-height:80vh;display:flex;flex-direction:column;">
+        <div class="modal__header">
+            <h2 class="modal__title" id="mbSaveAsTitle">💾 Save Project As…</h2>
+            <button type="button" class="btn btn--ghost" id="bMbSaveAsClose" aria-label="Close Save As dialog">✕</button>
+        </div>
+        <div class="modal__body mb-scroll" style="display:flex;flex-direction:column;gap:10px;">
+            <p id="mbSaveAsHint" style="margin:0;font-size:13px;color:#cbd5e1;">Duplicate the current project under a new name while keeping the original intact.</p>
+            <div>
+                <label class="f" for="mbSaveAsName">New Project Name</label>
+                <input type="text" id="mbSaveAsName" placeholder="e.g. My Film Alternate Cut" autocomplete="off" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);">
+            </div>
+            <div id="mbSaveAsMsg" style="font-size:12px;color:#f87171;min-height:16px;" aria-live="polite"></div>
+        </div>
+        <div class="modal__footer">
+            <button type="button" class="btn btn--ghost" id="bMbSaveAsCancel">Cancel</button>
+            <button type="button" class="btn btn--primary" id="bMbSaveAsConfirm">Save As New Project</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="mbGotoStepModal" role="dialog" aria-modal="true" aria-labelledby="mbGotoStepTitle">
+    <div class="modal" style="max-width:560px;width:min(560px,calc(100vw - 32px));max-height:84vh;display:flex;flex-direction:column;">
+        <div class="modal__header">
+            <h2 class="modal__title" id="mbGotoStepTitle">🎯 Goto Step (1–22)</h2>
+            <button type="button" class="btn btn--ghost" id="bMbGotoClose" aria-label="Close Goto Step dialog">✕</button>
+        </div>
+        <div class="modal__body mb-scroll" style="display:flex;flex-direction:column;gap:10px;">
+            <input type="text" id="mbGotoFilter" placeholder="Type step number (1-22) or name (e.g. screenplay, keyframes)…" aria-label="Goto step search" autocomplete="off" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);">
+            <div id="mbGotoList" class="mb-scroll" style="max-height:380px;overflow-y:auto;display:flex;flex-direction:column;gap:5px;"></div>
+        </div>
+        <div class="modal__footer">
+            <button type="button" class="btn btn--ghost" id="bMbGotoCancel">Close</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="mbManualModal" role="dialog" aria-modal="true" aria-labelledby="mbManualTitle">
+    <div class="modal" style="max-width:980px;width:min(980px,calc(100vw - 32px));height:min(84vh,820px);max-height:88vh;display:flex;flex-direction:column;">
+        <div class="modal__header" style="gap:10px;">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;">
+                <h2 class="modal__title" id="mbManualTitle" style="margin:0;">📖 Pistachio's Studio — User Manual</h2>
+                <input type="text" id="mbManualSearch" placeholder="Search manual…" aria-label="Search manual" autocomplete="off" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:12px;min-width:190px;">
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <button type="button" class="btn btn--ghost" id="bMbManualNewTab" style="font-size:12px;padding:4px 10px;">↗ Open in New Tab</button>
+                <button type="button" class="btn btn--ghost" id="bMbManualClose" aria-label="Close Manual">✕</button>
+            </div>
+        </div>
+        <div class="mb-manual-layout">
+            <aside class="mb-manual-toc mb-scroll" id="mbManualToc" aria-label="Manual Table of Contents"></aside>
+            <article class="mb-manual-content mb-scroll" id="mbManualContent">Loading manual…</article>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="mbAboutModal" role="dialog" aria-modal="true" aria-labelledby="mbAboutTitle">
+    <div class="modal" style="max-width:480px;width:min(480px,calc(100vw - 32px));max-height:80vh;display:flex;flex-direction:column;">
+        <div class="modal__header">
+            <h2 class="modal__title" id="mbAboutTitle">ℹ️ About Pistachio's Studio</h2>
+            <button type="button" class="btn btn--ghost" id="bMbAboutClose" aria-label="Close About dialog">✕</button>
+        </div>
+        <div class="modal__body mb-scroll" id="mbAboutBody" style="display:flex;flex-direction:column;gap:8px;font-size:13.5px;line-height:1.55;">
+            Loading Studio info…
+        </div>
+        <div class="modal__footer">
+            <button type="button" class="btn btn--primary" id="bMbAboutOk">OK</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal-overlay" id="warnModal" role="alertdialog" aria-modal="true" aria-labelledby="warnTitle" aria-describedby="warnBody">
     <div class="modal">
         <div class="modal__header"><h2 class="modal__title" id="warnTitle">Are you sure?</h2></div>
@@ -3862,5 +4042,6 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
 <script src="/static/js/packs_vram.js" defer></script>
 <script src="/static/js/canvas_studio.js" defer></script>
 <script src="/static/js/draggable_popups.js" defer></script>
+<script src="/static/js/menubar.js" defer></script>
 </body>
 </html>
