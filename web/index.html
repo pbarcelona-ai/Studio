@@ -616,11 +616,11 @@
           <!-- Round-trip flow diagram & Import/Export buttons -->
           <div id="spFlow" class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;padding:12px;background:var(--bg-tertiary, #1e293b);border-radius:8px;font-size:var(--text-sm);font-family:var(--font-mono, monospace);color:var(--text-muted, #94a3b8);border:1px solid var(--border, #334155);">
               <span style="white-space:nowrap">Round-trip:</span>
-              <span class="flow-step" style="color:var(--accent, #22d3ee)"><b>Export .fdx</b></span>
+              <span class="flow-step" style="color:var(--accent, #22d3ee)"><b>Export .fdx / .fountain</b></span>
               <span class="flow-arrow" aria-hidden="true">→</span>
-              <span class="flow-step" style="color:var(--accent, #22d3ee)"><b>Edit in Final Draft</b></span>
+              <span class="flow-step" style="color:var(--accent, #22d3ee)"><b>Edit in Trelby</b></span>
               <span class="flow-arrow" aria-hidden="true">→</span>
-              <span class="flow-step" style="color:var(--accent, #22d3ee)"><b>Import .fdx</b></span>
+              <span class="flow-step" style="color:var(--accent, #22d3ee)"><b>Import .fdx / .fountain</b></span>
               <span class="flow-arrow" aria-hidden="true">→</span>
               <span class="flow-step" style="color:var(--success, #22c55e)"><b>Continue in Studio</b></span>
           </div>
@@ -641,7 +641,7 @@
           <!-- Screenplay External Tool Integration -->
           <div id="spMcpTools" class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;padding:12px;background:var(--bg-tertiary, #1e293b);border-radius:8px;border:1px solid var(--border, #334155);">
               <span style="font-size:var(--text-xs);color:#94a3b8;font-weight:600">Screenplay Integration:</span>
-              <button type="button" class="btn btn--secondary" id="spMcpFinalDraft" title="Open FDX in Final Draft Web via Playwright MCP" style="padding:6px 12px;font-size:var(--text-xs)">📝 Open in Final Draft Web</button>
+              <button type="button" class="btn btn--secondary" id="spMcpFinalDraft" title="Auto-export .fdx &amp; .fountain and open locally in Trelby" style="padding:6px 12px;font-size:var(--text-xs)">📝 Open in Trelby</button>
               <span id="spMcpStatus" style="font-size:var(--text-xs);color:#64748b;margin-left:auto"></span>
           </div>
 
@@ -2133,17 +2133,39 @@
           <!-- 3. PRO TECHNICAL & NLE CONSOLE -->
           <details style="margin-top:var(--space-4);background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px">
             <summary style="cursor:pointer;font-weight:700;color:#cbd5e1;font-size:var(--text-sm)">
-              ⚙️ Pro Studio NLE &amp; Stems Console (DaVinci Resolve / Premiere)
+              ⚙️ Pro Studio NLE, Open-Source Tools &amp; Stems Console (Kdenlive / OTIO / Resolve / Premiere)
             </summary>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;margin-top:12px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));gap:12px;margin-top:12px">
               <div>
-                <label class="f">NLE Timeline Export</label>
+                <label class="f">Kdenlive / Shotcut Project</label>
+                <button type="button" class="btn btn--secondary" id="bV2ExpKdenlive" style="width:100%">🎞️ Export Kdenlive (.kdenlive)</button>
+              </div>
+              <div>
+                <label class="f">Universal NLE Interchange</label>
+                <button type="button" class="btn btn--secondary" id="bV2ExpOtio" style="width:100%">📐 Export OpenTimelineIO (.otio)</button>
+              </div>
+              <div>
+                <label class="f">Classic NLE Timeline</label>
                 <button type="button" class="btn btn--secondary" id="bV2ExpEdl" style="width:100%">📄 Export Timeline EDL</button>
               </div>
               <div>
                 <label class="f">Uncompressed Audio Stems</label>
                 <button type="button" class="btn btn--secondary" id="bV2ExpStems" style="width:100%">📦 Download All WAV Stems (ZIP)</button>
               </div>
+            </div>
+            <div style="margin-top:14px;padding-top:12px;border-top:1px solid #1e293b">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+                <strong style="font-size:var(--text-xs);color:#cbd5e1">🧩 Installed Open-Source Studio Tools</strong>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                  <label style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#cbd5e1;cursor:pointer" title="Show a popup when installed GitHub repositories or tools have a newer version">
+                    <input type="checkbox" id="chkGhUpdateNotif" checked> 🔔 GitHub Update Notifications
+                  </label>
+                  <button type="button" class="btn btn--ghost" id="bV2CheckGhUpdates" style="padding:3px 10px;font-size:11px">🔄 Check GitHub Updates</button>
+                  <button type="button" class="btn btn--ghost" id="bV2RefreshExtTools" style="padding:3px 10px;font-size:11px">↻ Refresh</button>
+                </div>
+              </div>
+              <div id="v2GhUpdateInlineStatus" style="font-size:11px;color:#94a3b8;margin-bottom:6px" aria-live="polite"></div>
+              <div id="v2ExtToolsList" style="display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:#94a3b8">Click Refresh to inspect installed open-source tools.</div>
             </div>
           </details>
         </div>
@@ -3745,6 +3767,32 @@ projects/characters/main/references/adam/ref_02.png" autocomplete="off"></textar
             <button type="button" class="btn btn--ghost" id="bV2DecisionKeep">Keep Current Line (Dismiss)</button>
             <div style="display:flex;align-items:center;gap:8px;">
                 <button type="button" class="btn btn--primary" id="bV2DecisionApply">✓ Apply Resolution</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="v2GhUpdateModal" role="dialog" aria-modal="true" aria-labelledby="v2GhUpdateModalTitle">
+    <div class="modal" style="max-width:660px;width:min(660px,calc(100vw - 32px));max-height:86vh;display:flex;flex-direction:column;">
+        <div class="modal__header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <h2 class="modal__title" id="v2GhUpdateModalTitle" style="margin:0;">🔄 GitHub Updates Available</h2>
+                <span id="v2GhUpdateBadge" style="font-size:12px;padding:3px 9px;border-radius:999px;background:rgba(34,211,238,0.16);border:1px solid rgba(34,211,238,0.45);color:#67e8f9;font-weight:600;"></span>
+            </div>
+            <button type="button" class="btn btn--ghost" id="bV2GhUpdateClose" aria-label="Close GitHub updates dialog" style="padding:4px 10px;">✕</button>
+        </div>
+        <div class="modal__body" style="overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+            <p id="v2GhUpdateIntro" style="margin:0;font-size:13px;color:#cbd5e1;">Updates are available for the following installed GitHub tools and repositories. Choose whether to update each item or skip it.</p>
+            <div id="v2GhUpdateList" style="display:flex;flex-direction:column;gap:8px;"></div>
+            <div id="v2GhUpdateMsg" style="font-size:12px;color:#34d399;min-height:16px;" aria-live="polite"></div>
+        </div>
+        <div class="modal__footer" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1;cursor:pointer;">
+                <input type="checkbox" id="chkGhUpdateModalNotif" checked> 🔔 Enable update notifications
+            </label>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button type="button" class="btn btn--ghost" id="bV2GhUpdateLater">Not Now</button>
+                <button type="button" class="btn btn--primary" id="bV2GhUpdateAll">⬇ Update All</button>
             </div>
         </div>
     </div>

@@ -3244,7 +3244,7 @@
       });
     }
 
-    // MCP Integration: Open in Final Draft Web via Playwright
+    // Screenplay Integration: Open locally in Trelby (substituting for Final Draft)
     if (btnMcpFinalDraft) {
       btnMcpFinalDraft.addEventListener("click", async () => {
         const selProj = $("proj");
@@ -3252,20 +3252,20 @@
         if (!slug) { alert("Pick a book first."); return; }
         try {
           btnMcpFinalDraft.disabled = true;
-          btnMcpFinalDraft.textContent = "📝 Preparing Final Draft…";
-          setSpMcpResult("Auto-exporting FDX for Final Draft…", [], false);
-          const result = await callApi("/api/mcp/playwright/finaldraft_import", { project: slug, project_title: slug });
+          btnMcpFinalDraft.textContent = "📝 Opening Trelby…";
+          setSpMcpResult("Auto-exporting .fdx & .fountain for Trelby…", [], false);
+          const result = await callApi("/api/mcp/trelby/open", { project: slug });
           if (result.error) throw new Error(result.error);
           const links = [];
-          if (result.fdx_url) links.push({ label: "⬇ Download screenplay.fdx", href: result.fdx_url });
-          if (result.open_url) links.push({ label: "↗ Open Final Draft", href: result.open_url, external: true });
-          setSpMcpResult(`✓ ${result.message || "Ready for Final Draft"}`, links, false);
+          if (result.fountain_url) links.push({ label: "⬇ Download .fountain", href: result.fountain_url });
+          if (result.fdx_url) links.push({ label: "⬇ Download .fdx", href: result.fdx_url });
+          setSpMcpResult(`✓ ${result.message || "Ready in Trelby"}`, links, false);
         } catch (err) {
-          console.error("Playwright MCP failed:", err);
+          console.error("Trelby open failed:", err);
           setSpMcpResult("Error: " + (err.message || err), [], true);
         } finally {
           btnMcpFinalDraft.disabled = false;
-          btnMcpFinalDraft.textContent = "📝 Open in Final Draft Web";
+          btnMcpFinalDraft.textContent = "📝 Open in Trelby";
         }
       });
     }
@@ -12260,8 +12260,243 @@
     bindExp("bV2ExpFountain", "fountain", "v2ExpStatus");
     bindExp("bV2ExpPitchPptx", "pitch_pptx", "v2ExpStatus");
     bindExp("bV2ExpProdXlsx", "prod_xlsx", "v2ExpStatus");
+    bindExp("bV2ExpKdenlive", "kdenlive", "v2ExpStatus");
+    bindExp("bV2ExpOtio", "otio", "v2ExpStatus");
     bindExp("bV2ExpEdl", "edl", "v2ExpStatus");
     bindExp("bV2ExpStems", "stems_zip", "v2ExpStatus");
+
+    const loadExtTools = async () => {
+      const box = $("v2ExtToolsList");
+      if (!box) return;
+      try {
+        const data = await callApi("/api/external_tools");
+        box.innerHTML = "";
+        (data.tools || []).forEach((t) => {
+          const chip = document.createElement("span");
+          chip.style.cssText = t.installed
+            ? "display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;background:#064e3b;color:#a7f3d0;border:1px solid #047857"
+            : "display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;background:#1e293b;color:#94a3b8;border:1px solid #334155";
+          chip.title = `${t.integration}${t.path ? " · " + t.path : ""}`;
+          chip.textContent = `${t.installed ? "✓" : "○"} ${t.name}`;
+          if (t.launchable) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.textContent = "Open";
+            btn.style.cssText = "margin-left:2px;padding:1px 6px;font-size:10px;border-radius:4px;border:1px solid #10b981;background:#022c22;color:#6ee7b7;cursor:pointer";
+            btn.addEventListener("click", async () => {
+              try {
+                await callApi("/api/external_tools/launch", { tool: t.id });
+              } catch (err) {
+                const st = $("v2ExpStatus");
+                if (st) { st.style.color = "#f87171"; st.textContent = `Could not launch ${t.name}: ${err.message || err}`; }
+              }
+            });
+            chip.appendChild(btn);
+          }
+          box.appendChild(chip);
+        });
+      } catch (err) {
+        box.textContent = "Could not load external tools: " + (err.message || err);
+      }
+    };
+    const btnRefreshExt = $("bV2RefreshExtTools");
+    if (btnRefreshExt) btnRefreshExt.addEventListener("click", loadExtTools);
+    loadExtTools();
+
+    // GitHub Update Checker, Popup Modal, and Notification ON/OFF Toggle
+    const ghModal = $("v2GhUpdateModal");
+    const ghList = $("v2GhUpdateList");
+    const ghBadge = $("v2GhUpdateBadge");
+    const ghMsg = $("v2GhUpdateMsg");
+    const ghInlineSt = $("v2GhUpdateInlineStatus");
+    const chkInlineNotif = $("chkGhUpdateNotif");
+    const chkModalNotif = $("chkGhUpdateModalNotif");
+    let ghLastItems = [];
+
+    const syncNotifCheckboxes = (enabled) => {
+      if (chkInlineNotif) chkInlineNotif.checked = Boolean(enabled);
+      if (chkModalNotif) chkModalNotif.checked = Boolean(enabled);
+    };
+
+    const setGhNotifPref = async (enabled) => {
+      syncNotifCheckboxes(enabled);
+      try {
+        await callApi("/api/github_updates/prefs", { notifications_enabled: Boolean(enabled) });
+        if (ghInlineSt) {
+          ghInlineSt.style.color = "#94a3b8";
+          ghInlineSt.textContent = enabled
+            ? "🔔 GitHub update notifications turned ON."
+            : "🔕 GitHub update notifications turned OFF (you can still click Check GitHub Updates anytime).";
+        }
+      } catch (err) {
+        if (ghInlineSt) { ghInlineSt.style.color = "#f87171"; ghInlineSt.textContent = "Failed to save notification setting: " + (err.message || err); }
+      }
+    };
+
+    const closeGhModal = () => {
+      if (ghModal) ghModal.classList.remove("open");
+    };
+
+    const renderGhUpdateModal = (updates) => {
+      if (!ghModal || !ghList) return;
+      ghList.innerHTML = "";
+      if (ghBadge) ghBadge.textContent = `${updates.length} update${updates.length === 1 ? "" : "s"}`;
+      if (ghMsg) ghMsg.textContent = "";
+
+      if (!updates.length) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "padding:10px;border-radius:8px;background:#0f172a;border:1px solid #1e293b;font-size:12.5px;color:#34d399";
+        empty.textContent = "✓ All tracked GitHub repositories and tools are up to date.";
+        ghList.appendChild(empty);
+        return;
+      }
+
+      updates.forEach((it) => {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:#0f172a;border:1px solid #334155";
+
+        const info = document.createElement("div");
+        info.style.cssText = "display:flex;flex-direction:column;gap:3px;min-width:220px;flex:1";
+        const title = document.createElement("div");
+        title.style.cssText = "font-size:13px;font-weight:700;color:#f8fafc";
+        title.textContent = `There is an update for ${it.name}`;
+        const meta = document.createElement("div");
+        meta.style.cssText = "font-size:11.5px;color:#94a3b8";
+        meta.textContent = `${it.repo} · Installed: ${it.installed_version || "unknown"} → Latest: ${it.latest_version || "new"}`;
+        info.appendChild(title);
+        info.appendChild(meta);
+
+        const actions = document.createElement("div");
+        actions.style.cssText = "display:flex;align-items:center;gap:6px;flex-wrap:wrap";
+
+        const btnUpd = document.createElement("button");
+        btnUpd.type = "button";
+        btnUpd.className = "btn btn--primary";
+        btnUpd.style.cssText = "padding:5px 11px;font-size:12px";
+        btnUpd.textContent = it.can_auto_update ? "⬇ Update" : "↗ Open Release";
+        btnUpd.addEventListener("click", async () => {
+          if (!it.can_auto_update) {
+            if (it.release_url) window.open(it.release_url, "_blank", "noopener");
+            return;
+          }
+          btnUpd.disabled = true;
+          btnUpd.textContent = "⏳ Updating…";
+          if (ghMsg) { ghMsg.style.color = "#38bdf8"; ghMsg.textContent = `Updating ${it.name}…`; }
+          try {
+            const res = await callApi("/api/github_updates/apply", { id: it.id });
+            if (res.ok) {
+              btnUpd.textContent = "✓ Updated";
+              if (ghMsg) { ghMsg.style.color = "#34d399"; ghMsg.textContent = res.message || `Updated ${it.name}.`; }
+              loadExtTools();
+            } else {
+              btnUpd.disabled = false;
+              btnUpd.textContent = "Retry";
+              if (res.release_url && res.manual) window.open(res.release_url, "_blank", "noopener");
+              if (ghMsg) { ghMsg.style.color = "#fbbf24"; ghMsg.textContent = res.error || res.message || `Update for ${it.name} requires manual download.`; }
+            }
+          } catch (err) {
+            btnUpd.disabled = false;
+            btnUpd.textContent = "Retry";
+            if (ghMsg) { ghMsg.style.color = "#f87171"; ghMsg.textContent = `Update failed for ${it.name}: ${err.message || err}`; }
+          }
+        });
+
+        const btnSkip = document.createElement("button");
+        btnSkip.type = "button";
+        btnSkip.className = "btn btn--ghost";
+        btnSkip.style.cssText = "padding:5px 10px;font-size:12px";
+        btnSkip.textContent = "Don't Update";
+        btnSkip.addEventListener("click", async () => {
+          btnSkip.disabled = true;
+          try {
+            if (it.latest_version) {
+              await callApi("/api/github_updates/prefs", { dismiss_id: it.id, dismiss_version: it.latest_version });
+            }
+            row.remove();
+            if (ghMsg) { ghMsg.style.color = "#94a3b8"; ghMsg.textContent = `Skipped update for ${it.name} (${it.latest_version || "latest"}).`; }
+            if (ghList && ghList.children.length === 0) closeGhModal();
+          } catch (err) {
+            btnSkip.disabled = false;
+            if (ghMsg) { ghMsg.style.color = "#f87171"; ghMsg.textContent = "Could not dismiss: " + (err.message || err); }
+          }
+        });
+
+        actions.appendChild(btnUpd);
+        actions.appendChild(btnSkip);
+        row.appendChild(info);
+        row.appendChild(actions);
+        ghList.appendChild(row);
+      });
+    };
+
+    const checkGhUpdates = async ({ force = false, showEvenIfUpToDate = false } = {}) => {
+      if (ghInlineSt && force) {
+        ghInlineSt.style.color = "#38bdf8";
+        ghInlineSt.textContent = "Checking installed GitHub repositories & tools for updates…";
+      }
+      try {
+        const res = await callApi(`/api/github_updates${force ? "?force=1" : ""}`);
+        syncNotifCheckboxes(res.notifications_enabled);
+        ghLastItems = res.items || [];
+        const available = ghLastItems.filter((it) => it.update_available);
+        const toNotify = ghLastItems.filter((it) => it.notify);
+        if (ghInlineSt) {
+          ghInlineSt.style.color = available.length ? "#fbbf24" : "#34d399";
+          ghInlineSt.textContent = available.length
+            ? `🔄 ${available.length} GitHub update(s) available across ${ghLastItems.length} tracked item(s).`
+            : `✓ Checked ${ghLastItems.length} GitHub item(s) — everything is up to date.`;
+        }
+        const modalItems = showEvenIfUpToDate ? available : toNotify;
+        if ((showEvenIfUpToDate || (res.notifications_enabled && toNotify.length > 0)) && ghModal) {
+          renderGhUpdateModal(modalItems);
+          ghModal.classList.add("open");
+        }
+      } catch (err) {
+        if (ghInlineSt && force) {
+          ghInlineSt.style.color = "#f87171";
+          ghInlineSt.textContent = "GitHub update check failed: " + (err.message || err);
+        }
+      }
+    };
+
+    if (chkInlineNotif) chkInlineNotif.addEventListener("change", () => setGhNotifPref(chkInlineNotif.checked));
+    if (chkModalNotif) chkModalNotif.addEventListener("change", () => setGhNotifPref(chkModalNotif.checked));
+    if ($("bV2GhUpdateClose")) $("bV2GhUpdateClose").addEventListener("click", closeGhModal);
+    if ($("bV2GhUpdateLater")) $("bV2GhUpdateLater").addEventListener("click", closeGhModal);
+    if (ghModal) {
+      ghModal.addEventListener("click", (e) => {
+        if (e.target === ghModal) closeGhModal();
+      });
+    }
+    if ($("bV2GhUpdateAll")) {
+      $("bV2GhUpdateAll").addEventListener("click", async () => {
+        const btnAll = $("bV2GhUpdateAll");
+        const targets = ghLastItems.filter((it) => it.update_available && it.can_auto_update);
+        if (!targets.length) {
+          if (ghMsg) { ghMsg.style.color = "#94a3b8"; ghMsg.textContent = "No auto-updatable items pending."; }
+          return;
+        }
+        btnAll.disabled = true;
+        btnAll.textContent = "⏳ Updating All…";
+        let okCount = 0;
+        for (const it of targets) {
+          if (ghMsg) { ghMsg.style.color = "#38bdf8"; ghMsg.textContent = `Updating ${it.name}…`; }
+          try {
+            const r = await callApi("/api/github_updates/apply", { id: it.id });
+            if (r.ok) okCount += 1;
+          } catch (_) { /* continue remaining items */ }
+        }
+        btnAll.disabled = false;
+        btnAll.textContent = "⬇ Update All";
+        if (ghMsg) { ghMsg.style.color = "#34d399"; ghMsg.textContent = `✓ Updated ${okCount} of ${targets.length} item(s).`; }
+        loadExtTools();
+      });
+    }
+    if ($("bV2CheckGhUpdates")) {
+      $("bV2CheckGhUpdates").addEventListener("click", () => checkGhUpdates({ force: true, showEvenIfUpToDate: true }));
+    }
+    // Non-blocking startup update check (pops up only when notifications are ON and an update exists)
+    setTimeout(() => checkGhUpdates({ force: false, showEvenIfUpToDate: false }), 1800);
 
     const btnExpAud = $("bV2ExpAudio");
     if (btnExpAud) {

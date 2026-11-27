@@ -552,6 +552,138 @@ def mcp_playwright_run_script(r: Request):
     return result
 
 
+@route("POST", "/api/mcp/trelby/open")
+def mcp_trelby_open(r: Request):
+    """Auto-export .fdx + .fountain and open local Trelby (substituting for Final Draft)."""
+    import external_tools
+    import screenplay_export
+    from layout import project_dir as pdir
+
+    project = str(r.body.get("project") or "").strip()
+    if not project:
+        raise HttpError(400, "project is required")
+
+    book_dir = pdir(project, "book")
+    exports_dir = book_dir / "exports"
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        screenplay_export.export(book_dir, ("fdx", "fountain"))
+    except Exception as e:
+        log.debug("Auto Trelby screenplay export skipped or failed: %s", e)
+
+    fdx_path = _ensure_fdx_export(book_dir)
+    fountain_files = list(exports_dir.glob("*.fountain"))
+    fountain_path = max(fountain_files, key=lambda f: f.stat().st_mtime) if fountain_files else None
+
+    fdx_url = f"/download/{project}/exports/{fdx_path.name}"
+    fountain_url = f"/download/{project}/exports/{fountain_path.name}" if fountain_path else ""
+
+    should_launch = bool(r.body.get("launch", True))
+    trelby_exe = external_tools.find_trelby_executable()
+    launch_res: dict[str, object] = {"launched": False, "installed": trelby_exe is not None, "executable": str(trelby_exe or "")}
+    if should_launch and trelby_exe is not None:
+        try:
+            launch_res = external_tools.launch_trelby(fountain_path or fdx_path)
+        except OSError as e:
+            launch_res = {"launched": False, "installed": True, "executable": str(trelby_exe), "error": str(e)}
+
+    if launch_res.get("launched"):
+        msg = f"Exported {fdx_path.name}" + (f" & {fountain_path.name}" if fountain_path else "") + " and opened Trelby — use File → Import in Trelby to edit, then re-import .fdx/.fountain into Studio."
+        mode = "trelby_local"
+    elif trelby_exe is not None:
+        msg = f"Exported {fdx_path.name}" + (f" & {fountain_path.name}" if fountain_path else "") + " ready for Trelby."
+        mode = "trelby_ready"
+    else:
+        msg = f"Exported {fdx_path.name}" + (f" & {fountain_path.name}" if fountain_path else "") + " — install Trelby (trelby.org) to launch directly from Studio."
+        mode = "local_handoff"
+
+    return {
+        "status": "ok",
+        "mode": mode,
+        "trelby_installed": trelby_exe is not None,
+        "trelby_path": str(trelby_exe or ""),
+        "launched": bool(launch_res.get("launched")),
+        "pid": launch_res.get("pid"),
+        "fdx_path": str(fdx_path),
+        "fdx_url": fdx_url,
+        "fountain_path": str(fountain_path) if fountain_path else "",
+        "fountain_url": fountain_url,
+        "message": msg,
+    }
+
+
+@route("GET", "/api/external_tools")
+def api_external_tools(r: Request):
+    """Return detection status for all installed open-source external creative & AI tools."""
+    import external_tools
+
+    return {"status": "ok", **external_tools.detect_all_tools()}
+
+
+@route("POST", "/api/external_tools/launch")
+def api_external_tools_launch(r: Request):
+    """Launch an allow-listed installed external GUI application."""
+    import external_tools
+
+    tool_id = str(r.body.get("tool") or "").strip().lower()
+    if not tool_id:
+        raise HttpError(400, "tool is required")
+    try:
+        res = external_tools.launch_external_tool(tool_id)
+    except ValueError as e:
+        raise HttpError(400, str(e)) from e
+    if not res.get("launched"):
+        raise HttpError(400, str(res.get("error") or f"Could not launch {tool_id}"))
+    return {"status": "ok", **res}
+
+
+@route("GET", "/api/github_updates")
+def api_github_updates(r: Request):
+    """Check installed GitHub-sourced repos & tools for updates."""
+    import github_updates
+
+    force = str(r.q("force") or "").strip().lower() in ("1", "true", "yes")
+    return {"status": "ok", **github_updates.check_updates(force=force)}
+
+
+@route("POST", "/api/github_updates/prefs")
+def api_github_updates_prefs(r: Request):
+    """Toggle GitHub update notifications ON/OFF or dismiss a version."""
+    import github_updates
+
+    notif = r.body.get("notifications_enabled")
+    notif_bool = bool(notif) if notif is not None else None
+    dismiss_id = str(r.body.get("dismiss_id") or "").strip() or None
+    dismiss_ver = str(r.body.get("dismiss_version") or "").strip() or None
+    clear_id = str(r.body.get("clear_dismiss_id") or "").strip() or None
+    prefs = github_updates.set_preferences(
+        notifications_enabled=notif_bool,
+        dismiss_id=dismiss_id,
+        dismiss_version=dismiss_ver,
+        clear_dismiss_id=clear_id,
+    )
+    return {
+        "status": "ok",
+        "notifications_enabled": prefs["notifications_enabled"],
+        "dismissed_versions": prefs["dismissed_versions"],
+    }
+
+
+@route("POST", "/api/github_updates/apply")
+def api_github_updates_apply(r: Request):
+    """Apply an update for a discovered installed GitHub repository or tool."""
+    import github_updates
+
+    item_id = str(r.body.get("id") or "").strip()
+    if not item_id:
+        raise HttpError(400, "id is required")
+    try:
+        res = github_updates.apply_update(item_id)
+    except ValueError as e:
+        raise HttpError(400, str(e)) from e
+    return {"status": "ok" if res.get("ok") else "manual", **res}
+
+
 @route("POST", "/api/mcp/playwright/finaldraft_import")
 def mcp_playwright_finaldraft_import(r: Request):
     """Auto-export FDX and open/import via Playwright MCP (or return one-click FDX download + Final Draft handoff)."""

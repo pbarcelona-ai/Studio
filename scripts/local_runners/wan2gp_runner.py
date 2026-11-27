@@ -113,9 +113,13 @@ class Wan2GPRunner(LocalRunner):
     name = "wan2gp"
 
     def __init__(self, install_dir: Path | str | None = None, mcp_url: str | None = None) -> None:
-        self.install_dir = Path(install_dir) if install_dir is not None else (
-            Path(os.environ["WAN2GP_DIR"]) if os.environ.get("WAN2GP_DIR") else None
-        )
+        if install_dir is not None:
+            self.install_dir: Path | None = Path(install_dir)
+        elif os.environ.get("WAN2GP_DIR"):
+            self.install_dir = Path(os.environ["WAN2GP_DIR"])
+        else:
+            default_dir = Path(__file__).resolve().parents[2] / ".local_ai" / "Wan2GP"
+            self.install_dir = default_dir if (default_dir / "wgp.py").is_file() else None
         raw_mcp = mcp_url or os.environ.get("WAN2GP_MCP_URL")
         self.mcp_url = normalize_mcp_url(raw_mcp) if raw_mcp else None
         self._proc: subprocess.Popen[Any] | None = None
@@ -126,8 +130,16 @@ class Wan2GPRunner(LocalRunner):
     def _python_exe(self) -> Path | None:
         if self.install_dir is None:
             return None
-        rel = Path("venv/Scripts/python.exe") if sys.platform == "win32" else Path("venv/bin/python")
-        return self.install_dir / rel
+        rels = (
+            (Path(".venv/Scripts/python.exe"), Path("venv/Scripts/python.exe"))
+            if sys.platform == "win32"
+            else (Path(".venv/bin/python"), Path("venv/bin/python"))
+        )
+        for rel in rels:
+            cand = self.install_dir / rel
+            if cand.is_file() or cand.is_symlink():
+                return cand
+        return self.install_dir / rels[-1]
 
     def capabilities(self) -> dict[str, Any]:
         return {

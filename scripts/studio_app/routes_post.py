@@ -6374,6 +6374,21 @@ def _v2_export_make(r: Request):
         out.write_text("\n".join(edl_lines), encoding="utf-8")
         return {"status": "ok", "target": target, "download_url": f"/download/{slug}/exports/timeline.edl"}
 
+    if target in ("otio", "kdenlive"):
+        import external_tools
+
+        res = external_tools.export_otio_and_kdenlive(pd, slug)
+        chosen = res["kdenlive_path"] if target == "kdenlive" else res["otio_path"]
+        return {
+            "status": "ok",
+            "target": target,
+            "clips": res["clip_count"],
+            "used_otio_lib": res["used_otio_lib"],
+            "download_url": f"/download/{slug}/exports/{chosen.name}",
+            "otio_url": f"/download/{slug}/exports/{res['otio_path'].name}",
+            "kdenlive_url": f"/download/{slug}/exports/{res['kdenlive_path'].name}",
+        }
+
     if target == "stems_zip":
         out = exp_dir / "audio_stems.zip"
         wavs = list((pd / "audio").rglob("*.wav")) if (pd / "audio").is_dir() else []
