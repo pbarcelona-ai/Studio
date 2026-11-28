@@ -162,6 +162,7 @@ def screenplay_edit(b: dict) -> dict:
                 elements=b.get("elements") if isinstance(b.get("elements"), list) else [],
                 source_step="step06",
             )
+            ad.sync_beats_from_screenplay(d)
         elif action == "save_all_scenes":
             incoming = b.get("scenes")
             if not isinstance(incoming, list) or not incoming:
@@ -210,6 +211,8 @@ def screenplay_edit(b: dict) -> dict:
                         tmp_rd.replace(readin_sp_path)
                 except (OSError, ValueError):
                     pass
+            if saved_count:
+                ad.sync_beats_from_screenplay(d)
         elif action == "approve":
             flagged = feedback.open_flags(d)
             if flagged:

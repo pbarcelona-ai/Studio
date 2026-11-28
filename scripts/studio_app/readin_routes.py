@@ -140,4 +140,7 @@ def _import(r: Request):
 
     if result.get("errors"):
         raise PlanError("import completed with errors")
-    return result
+    import adaptation
+
+    beat_sync = adaptation.sync_beats_from_screenplay(d)
+    return {**result, "beat_sync": beat_sync}

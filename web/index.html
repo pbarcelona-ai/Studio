@@ -263,7 +263,7 @@
           <button type="button" class="step-pill" data-step="2" title="Step 02: Check & Split Chapters">02 Chapters</button>
           <button type="button" class="step-pill" data-step="3" title="Step 03: Coverage & Logline">03 Coverage</button>
           <button type="button" class="step-pill" data-step="4" title="Step 04: Format & Runtime Scope">04 Scope</button>
-          <button type="button" class="step-pill" data-step="5" title="Step 05: Story Structure & Beats">05 Beats</button>
+          <button type="button" class="step-pill" data-step="5" title="Step 05: Story Outline &amp; Beat Sheet">05 Outline</button>
           <button type="button" class="step-pill" data-step="6" title="Step 06: Screenplay Editor">06 Script</button>
         </div>
       </div>
@@ -579,25 +579,26 @@
         </div>
       </section>
 
-      <!-- STEP 05: STORY STRUCTURE, BEATS & SCENE BREAKDOWN -->
+      <!-- STEP 05: STORY OUTLINE & BEAT SHEET -->
       <section class="step-panel" id="panel-step-5" data-step="5" aria-labelledby="step5Title">
         <div class="step-zone-header">
           <div class="step-title-wrap">
-            <h2 id="step5Title">Step 05: Story Structure, Beats &amp; Scene Breakdown</h2>
-            <p class="step-goal">Full act-by-act beat sheet and complete scene-by-scene story breakdown. Reorder, merge, rename, or adjust scene pacing before writing the screenplay.</p>
+            <h2 id="step5Title">Step 05: Story Outline &amp; Beat Sheet</h2>
+            <p class="step-goal">Pre-script story blueprint: 3-act beat sheet and scene pacing before writing the screenplay — or sync beats back from Step 06 after editing or importing a script.</p>
           </div>
-          <span class="status-badge status-badge--synced" id="v2BeatsBadge">✓ Breakdown Loaded</span>
+          <span class="status-badge status-badge--synced" id="v2BeatsBadge">✓ Outline Loaded</span>
         </div>
         <div class="step-zone-autopilot autopilot-badge">
-          ✨ <strong>Autopilot Pick:</strong> 3-Act Narrative Arc + Scene-by-Scene Beat Breakdown (25% Setup / 50% Confrontation / 25% Climax &amp; Resolution)
+          ✨ <strong>Autopilot Pick:</strong> 3-Act Narrative Arc + Scene-by-Scene Beat Outline (25% Setup / 50% Confrontation / 25% Climax &amp; Resolution)
         </div>
         <div class="step-zone-workspace">
           <!-- Summary & Actions Bar -->
           <div class="direct-story-card" style="margin-bottom:var(--space-3)">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-              <div id="v2BeatsSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading story structure and scene breakdown…</div>
+              <div id="v2BeatsSummary" style="font-size:var(--text-sm);color:#e2e8f0">Loading story outline and beat sheet…</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button type="button" class="btn btn--secondary" id="v2BeatsBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate / Rebuild Beats</button>
+                <button type="button" class="btn btn--secondary" id="v2BeatsBuild" style="padding:5px 12px;font-size:var(--text-xs)">✨ Generate / Rebuild Outline</button>
+                <button type="button" class="btn btn--secondary" id="v2BeatsSyncFromScript" style="padding:5px 12px;font-size:var(--text-xs)" title="Reverse-sync Step 06 screenplay scenes &amp; edits back into Step 05 Story Outline &amp; Beat Sheet">🔄 Sync from Screenplay</button>
                 <button type="button" class="btn btn--secondary v2-early-audit-btn" data-audit-step="5" style="padding:5px 12px;font-size:var(--text-xs)" title="AI beat-by-beat check for location teleports, time jumps, and cast/prop continuity">🔍 Audit Beats</button>
                 <button type="button" class="btn btn--secondary v2-resolve-decisions-btn" data-resolve-step="5" style="padding:5px 12px;font-size:var(--text-xs);border-color:#f59e0b;color:#fde68a" title="Open popup to inspect highlighted Step 05 beat issues and resolve [Needs Decision] conflicts">⚖️ Resolve Decisions</button>
                 <button type="button" class="btn btn--ghost" id="v2BeatsReload" style="padding:5px 12px;font-size:var(--text-xs)">↻ Reload</button>

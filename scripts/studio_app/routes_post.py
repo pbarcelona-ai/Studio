@@ -125,6 +125,21 @@ def _screenplay_edit(r: Request):
     return screenplay_edit(r.body)
 
 
+@route("POST", "/api/v2_beats_sync_from_screenplay")
+def _v2_beats_sync_from_screenplay(r: Request):
+    """Reverse-sync Step 06 screenplay scenes back into Step 05 Story Outline & Beat Sheet."""
+    import adaptation
+
+    slug = str(r.body.get("project") or "").strip()
+    if not slug:
+        raise PlanError("pick a project first")
+    pd = pdir(slug, "book")
+    res = adaptation.sync_beats_from_screenplay(pd)
+    if not res.get("synced"):
+        raise PlanError("No screenplay scenes found in Step 06 to sync into Step 05.")
+    return {"status": "ok", **res}
+
+
 @route("POST", "/api/budget")
 def _budget(r: Request):
     return budget_data(r.body)

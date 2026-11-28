@@ -42,9 +42,9 @@ STEP_CATALOG: dict[int, dict[str, str]] = {
         "action": "Confirm and save Format & Runtime Scope in Step 04",
     },
     5: {
-        "short": "05 Beats",
-        "title": "Story Structure & Beats",
-        "action": "Regenerate or save Story Beats in Step 05",
+        "short": "05 Outline",
+        "title": "Story Outline & Beat Sheet",
+        "action": "Regenerate, sync from screenplay, or save Story Outline & Beat Sheet in Step 05",
     },
     6: {
         "short": "06 Script",
@@ -141,7 +141,7 @@ DEPENDENCY_MAP: dict[int, dict[str, tuple[int, ...]]] = {
     3: {"upstream": (), "downstream": (5, 6, 7, 12, 17)},
     4: {"upstream": (), "downstream": (5, 6, 12, 17)},
     5: {"upstream": (), "downstream": (6, 7, 11, 12, 15, 16, 17, 18, 20, 22)},
-    6: {"upstream": (), "downstream": (7, 8, 11, 12, 14, 15, 16, 17, 18, 20, 21, 22)},
+    6: {"upstream": (5,), "downstream": (7, 8, 11, 12, 14, 15, 16, 17, 18, 20, 21, 22)},
     7: {"upstream": (), "downstream": (8, 10, 11, 12, 17, 18, 20, 22)},
     8: {"upstream": (7,), "downstream": (10, 12, 17, 18, 20, 22)},
     9: {"upstream": (), "downstream": (10, 11, 17, 18, 20, 22)},

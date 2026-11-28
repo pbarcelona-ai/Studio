@@ -85,8 +85,9 @@ Studio is organized into **6 Production Phases** containing **22 sequential step
    - Generate studio script coverage, logline, synopsis, tone notes, and audience rating. Resolve any flagged `[Needs Decision]` items using **Resolve Decisions**.
 4. **Step 04 — Format & Runtime Scope:**
    - Choose your target format (Feature Film, Short Film, Vertical Microdrama, Illustrated Book, Animatic, Trailer, Audiobook, Music Video), aspect ratio (`16:9`, `2.39:1`, `9:16`, `4:3`, `1:1`), and target runtime.
-5. **Step 05 — Story Structure & Beats:**
-   - Review the Act-by-Act beat sheet and scene pacing derived from your book. Edit beats or resolve continuity advisories before drafting the script.
+5. **Step 05 — Story Outline & Beat Sheet:**
+   - Pre-script blueprint: review and edit the 3-act beat sheet and scene pacing before drafting the screenplay.
+   - **Bi-directional Sync:** Editing or importing a screenplay in Step 06 (including `.fdx`/`.fountain` from Trelby) automatically reverse-syncs Step 05's beats and scene summaries—or click **Sync from Screenplay** anytime.
 6. **Step 06 — Screenplay Editor & Trelby Round-Trip:**
    - Edit individual scenes or view all scenes together. Use **Humanize Script & Dialogue** to polish natural speech and **Audit Screenplay Continuity** to catch prop/location contradictions early.
    - **Trelby Integration:** Click **Open in Trelby** to auto-export `.fdx` and `.fountain` and launch local **Trelby** for dedicated screenplay editing. When finished, click **Import .fdx / .fountain** to bring your revisions straight back into Studio.

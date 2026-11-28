@@ -391,3 +391,203 @@ def shot_scene(plan: dict, chapter: int, shot: int, n_shots: int) -> str | None:
         if shot <= acc * n_shots / total + 1e-9:
             return s["id"]
     return scenes[-1]["id"]
+
+
+def _parse_heading_meta(heading: str) -> tuple[str, str, str]:
+    """Extract (title, location, time_of_day) from a screenplay slugline like 'INT. LIVING ROOM - AFTERNOON'."""
+    h = " ".join(str(heading or "").split()).strip()
+    if not h:
+        return "Untitled Scene", "", "day"
+    stripped = re.sub(r"^(?:INT\.?/EXT\.?|EXT\.?/INT\.?|INT\.?|EXT\.?|I/E\.?)\s+", "", h, flags=re.I).strip()
+    parts = [p.strip() for p in re.split(r"\s+[-–—]\s+", stripped) if p.strip()]
+    location = parts[0] if parts else stripped
+    tod = parts[-1].lower() if len(parts) >= 2 else "day"
+    title = location.title()[:80] if location else h[:80]
+    return title, location.lower(), tod
+
+
+def _scene_summary_from_elements(elements: list[dict]) -> tuple[str, list[str], int]:
+    """Derive a concise beat summary, speaking character list, and estimated seconds from screenplay elements."""
+    actions: list[str] = []
+    chars: list[str] = []
+    seen_chars: set[str] = set()
+    words = 0
+    for el in elements or []:
+        if not isinstance(el, dict):
+            continue
+        txt = " ".join(str(el.get("text") or "").split()).strip()
+        words += len(txt.split())
+        etype = str(el.get("type") or "").lower()
+        if etype == "dialogue":
+            ch = str(el.get("character") or "").strip().upper()
+            if ch and ch not in seen_chars:
+                seen_chars.add(ch)
+                chars.append(ch)
+        elif etype == "action" and txt:
+            actions.append(txt)
+    if actions:
+        summary = " ".join(actions)[:260].strip()
+    else:
+        first_dlg = next(
+            (
+                f"{str(e.get('character') or '').upper()}: {str(e.get('text') or '').strip()}"
+                for e in (elements or [])
+                if isinstance(e, dict) and e.get("type") == "dialogue" and e.get("text")
+            ),
+            "",
+        )
+        summary = first_dlg[:260].strip()
+    est_sec = max(4, min(180, int(round(max(words / 2.6, 4.0)))))
+    return summary, chars, est_sec
+
+
+def sync_beats_from_screenplay(pdir: Path) -> dict:
+    """Reverse-sync Step 06 screenplay scenes into Step 05 Story Outline & Beat Sheet (`adaptation.json` & `readin/beats.json`)."""
+    import screenplay as sp
+
+    sp_dir = pdir / "screenplay"
+    plan = load(pdir) or {}
+    existing_scenes: list[dict] = [
+        dict(s) for s in (plan.get("scenes") or []) if isinstance(s, dict) and s.get("id")
+    ]
+    existing_by_id: dict[str, dict] = {str(s["id"]).strip(): s for s in existing_scenes}
+
+    written_by_id: dict[str, dict] = {}
+    extra_written_ids: list[str] = []
+    for s in existing_scenes:
+        sid = str(s["id"]).strip()
+        sc = sp.load_scene(pdir, sid)
+        if sc:
+            written_by_id[sid] = sc
+    if sp_dir.is_dir():
+        for sf in sorted(sp_dir.glob("scene-*.json")):
+            sid = sf.stem[len("scene-"):]
+            if sid and sid not in written_by_id:
+                sc = sp.load_scene(pdir, sid)
+                if sc:
+                    written_by_id[sid] = sc
+                    if sid not in existing_by_id:
+                        extra_written_ids.append(sid)
+
+    if not written_by_id:
+        rd_sp = read_json(pdir / "readin" / "screenplay.json")
+        if isinstance(rd_sp, dict) and isinstance(rd_sp.get("scenes"), list):
+            for idx, sc in enumerate(rd_sp["scenes"], start=1):
+                if isinstance(sc, dict):
+                    sid = f"S{idx:03d}"
+                    written_by_id[sid] = sc
+                    if sid not in existing_by_id:
+                        extra_written_ids.append(sid)
+
+    if not written_by_id:
+        return {"synced": False, "scenes_synced": 0, "beats_synced": 0}
+
+    clip_sec = float(plan.get("clip_seconds") or 4.0)
+    if clip_sec <= 0:
+        clip_sec = 4.0
+    ordered_ids: list[str] = [str(s["id"]).strip() for s in existing_scenes] + extra_written_ids
+    total = len(ordered_ids)
+
+    def _act_for_idx(i0: int) -> str:
+        if total <= 2:
+            return "Act I"
+        frac = i0 / float(total)
+        if frac < 0.25:
+            return "Act I"
+        if frac < 0.75:
+            return "Act II"
+        return "Act III"
+
+    updated_scenes: list[dict] = []
+    for idx0, sid in enumerate(ordered_ids):
+        prev = existing_by_id.get(sid, {})
+        sc = written_by_id.get(sid)
+        if sc is None:
+            # Preserve unwritten planned scenes intact so partial Step 06 edits never drop remaining outline scenes.
+            updated_scenes.append(prev)
+            continue
+
+        heading = str(sc.get("heading") or "")
+        raw_elements = sc.get("elements")
+        elements: list[dict] = (
+            [e for e in raw_elements if isinstance(e, dict)]
+            if isinstance(raw_elements, list)
+            else []
+        )
+        h_title, h_loc, h_tod = _parse_heading_meta(heading)
+        summary, chars, est_sec = _scene_summary_from_elements(elements)
+
+        clips = int(prev.get("clips") or max(1, int(round(est_sec / clip_sec))))
+        secs = round(clips * clip_sec, 1)
+        merged = dict(prev)
+        merged.update(
+            {
+                "id": sid,
+                "act": str(prev.get("act") or _act_for_idx(idx0)),
+                "title": str(prev.get("title") or h_title),
+                "summary": summary or str(prev.get("summary") or h_title),
+                "chapters": prev.get("chapters") if isinstance(prev.get("chapters"), list) and prev.get("chapters") else [1],
+                "anchor": str(prev.get("anchor") or ""),
+                "importance": float(prev.get("importance") or 3.0),
+                "keep": str(prev.get("keep") or "full"),
+                "location": h_loc or str(prev.get("location") or ""),
+                "characters": chars or (prev.get("characters") if isinstance(prev.get("characters"), list) else []),
+                "time_of_day": h_tod or str(prev.get("time_of_day") or "day"),
+                "clips": clips,
+                "seconds": secs,
+            }
+        )
+        updated_scenes.append(merged)
+
+    total_sec = sum(float(s.get("seconds") or 0.0) for s in updated_scenes)
+    acts = plan.get("acts") if isinstance(plan.get("acts"), list) and plan.get("acts") else [
+        {"name": "Act I", "purpose": "Setup", "share": 0.25, "seconds": round(total_sec * 0.25, 1), "first_chapter": 1, "last_chapter": 1},
+        {"name": "Act II", "purpose": "Confrontation", "share": 0.50, "seconds": round(total_sec * 0.50, 1), "first_chapter": 1, "last_chapter": 1},
+        {"name": "Act III", "purpose": "Climax & Resolution", "share": 0.25, "seconds": round(total_sec * 0.25, 1), "first_chapter": 1, "last_chapter": 1},
+    ]
+
+    new_plan = dict(plan)
+    new_plan.update(
+        {
+            "version": int(plan.get("version") or 1),
+            "logline": str(plan.get("logline") or f"Synced from screenplay ({total} scene(s))"),
+            "premise": str(plan.get("premise") or ""),
+            "ending": str(plan.get("ending") or ""),
+            "runtime_minutes": float(plan["runtime_minutes"]) if plan.get("runtime_minutes") else round(max(0.5, total_sec / 60.0), 2),
+            "clip_seconds": clip_sec,
+            "n_chapters": int(plan.get("n_chapters") or 1),
+            "acts": acts,
+            "scenes": updated_scenes,
+            "cut": plan.get("cut") if isinstance(plan.get("cut"), list) else [],
+            "stale": bool(plan.get("stale", False)),
+            "synced_from_screenplay": True,
+        }
+    )
+    save(pdir, new_plan)
+
+    act_groups: dict[str, list[dict]] = {}
+    for s in updated_scenes:
+        act_name = str(s.get("act") or "Act I")
+        act_groups.setdefault(act_name, []).append(
+            {
+                "scene_id": s["id"],
+                "beat": f"{s['id']} — {s.get('title') or s['id']}",
+                "summary": s.get("summary") or "",
+            }
+        )
+    beats_doc = {
+        "synced_from_screenplay": True,
+        "acts": [{"name": k, "beats": v} for k, v in act_groups.items()],
+    }
+    rd_dir = pdir / "readin"
+    rd_dir.mkdir(parents=True, exist_ok=True)
+    beats_path = rd_dir / "beats.json"
+    tmp_b = beats_path.with_suffix(".json.tmp")
+    tmp_b.write_text(json.dumps(beats_doc, indent=1, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp_b, beats_path)
+
+    return {
+        "synced": True,
+        "scenes_synced": len(written_by_id),
+        "beats_synced": sum(len(v) for v in act_groups.values()),
+    }

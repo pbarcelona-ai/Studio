@@ -9,7 +9,7 @@
     { num: 2, phase: "Phase 1 · Story & Script", name: "02 Check & Split Chapters" },
     { num: 3, phase: "Phase 1 · Story & Script", name: "03 Coverage & Logline" },
     { num: 4, phase: "Phase 1 · Story & Script", name: "04 Format & Runtime Scope" },
-    { num: 5, phase: "Phase 1 · Story & Script", name: "05 Story Structure & Beats" },
+    { num: 5, phase: "Phase 1 · Story & Script", name: "05 Story Outline & Beat Sheet" },
     { num: 6, phase: "Phase 1 · Story & Script", name: "06 Screenplay Editor (Trelby)" },
     { num: 7, phase: "Phase 2 · Cast & World", name: "07 Continuity, Rules & Props/Backdrops" },
     { num: 8, phase: "Phase 2 · Cast & World", name: "08 Cast & Characters" },

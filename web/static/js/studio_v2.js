@@ -12,7 +12,7 @@
     { num: 2, id: "chapters", name: "02 Chapters", title: "Check & Split Chapters", phase: 1, phaseName: "Story & Script" },
     { num: 3, id: "coverage", name: "03 Coverage", title: "Coverage & Logline", phase: 1, phaseName: "Story & Script" },
     { num: 4, id: "format", name: "04 Scope", title: "Format & Runtime Scope", phase: 1, phaseName: "Story & Script" },
-    { num: 5, id: "structure", name: "05 Beats", title: "Story Structure & Beats", phase: 1, phaseName: "Story & Script" },
+    { num: 5, id: "structure", name: "05 Outline", title: "Story Outline & Beat Sheet", phase: 1, phaseName: "Story & Script" },
     { num: 6, id: "screenplay", name: "06 Script", title: "Screenplay Editor (Dialogue Default)", phase: 1, phaseName: "Story & Script" },
 
     // Phase 2: Cast & World
@@ -2627,7 +2627,27 @@
   function initV2StoryBreakdown() {
     const btnReload = $("v2BeatsReload");
     const btnBuild = $("v2BeatsBuild");
+    const btnSyncFromScript = $("v2BeatsSyncFromScript");
     if (btnReload) btnReload.addEventListener("click", () => loadV2StoryBreakdown());
+    if (btnSyncFromScript) {
+      btnSyncFromScript.addEventListener("click", async () => {
+        const selProj = $("proj");
+        const slug = (selProj && selProj.value) || activeProject || "";
+        if (!slug) { alert("Pick or open a project first."); return; }
+        btnSyncFromScript.disabled = true;
+        const summaryEl = $("v2BeatsSummary");
+        if (summaryEl) summaryEl.textContent = "Syncing Step 05 Story Outline & Beat Sheet from Step 06 Screenplay…";
+        try {
+          const res = await callApi("/api/v2_beats_sync_from_screenplay", { project: slug });
+          await loadV2StoryBreakdown();
+          if (summaryEl) summaryEl.textContent = `✓ Synced ${res.scenes_synced || 0} scene(s) & ${res.beats_synced || 0} beat(s) from Screenplay.`;
+        } catch (err) {
+          if (summaryEl) summaryEl.textContent = "Could not sync from screenplay: " + (err.message || err);
+        } finally {
+          btnSyncFromScript.disabled = false;
+        }
+      });
+    }
     if (btnBuild) {
       btnBuild.addEventListener("click", async () => {
         const selProj = $("proj");
